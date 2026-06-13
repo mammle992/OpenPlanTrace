@@ -1,0 +1,964 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:openplantrace:schema:benchmark-result:v1",
+  "title": "OpenPlanTrace Benchmark Result",
+  "description": "Schema for OpenPlanTrace benchmark run results. Results record deterministic fixture outcomes, detector metrics, scan-quality counts, and readiness scoreboard data. They do not represent AI output.",
+  "type": "object",
+  "additionalProperties": true,
+  "x-openplantrace-schemaVersion": "openplantrace.benchmark-result.v1",
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "cases",
+    "scoreboard",
+    "reviewQueue",
+    "caseCount",
+    "reviewQueueCount",
+    "passedCaseCount",
+    "failedCaseCount",
+    "skippedCaseCount",
+    "passedAssertionCount",
+    "failedAssertionCount",
+    "passed"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "openplantrace.benchmark-result.v1"
+    },
+    "name": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/caseResult"
+      }
+    },
+    "scoreboard": {
+      "$ref": "#/$defs/scoreboard"
+    },
+    "reviewQueue": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/reviewQueueItem"
+      }
+    },
+    "caseCount": {
+      "$ref": "#/$defs/nonNegativeInteger"
+    },
+    "reviewQueueCount": {
+      "$ref": "#/$defs/nonNegativeInteger"
+    },
+    "passedCaseCount": {
+      "$ref": "#/$defs/nonNegativeInteger"
+    },
+    "failedCaseCount": {
+      "$ref": "#/$defs/nonNegativeInteger"
+    },
+    "skippedCaseCount": {
+      "$ref": "#/$defs/nonNegativeInteger"
+    },
+    "passedAssertionCount": {
+      "$ref": "#/$defs/nonNegativeInteger"
+    },
+    "failedAssertionCount": {
+      "$ref": "#/$defs/nonNegativeInteger"
+    },
+    "passed": {
+      "type": "boolean"
+    }
+  },
+  "$defs": {
+    "assertion": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "name",
+        "passed",
+        "expected",
+        "actual",
+        "message"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "passed": {
+          "type": "boolean"
+        },
+        "expected": {
+          "type": "string"
+        },
+        "actual": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "caseResult": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "fixtureId",
+        "sourcePath",
+        "passed",
+        "scanSucceeded",
+        "durationMilliseconds",
+        "counts",
+        "assertions",
+        "metrics",
+        "qualityIssues",
+        "diagnosticIssues",
+        "stages",
+        "importReadiness",
+        "passedAssertionCount",
+        "failedAssertionCount"
+      ],
+      "properties": {
+        "fixtureId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fixtureName": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "sourcePath": {
+          "type": "string"
+        },
+        "passed": {
+          "type": "boolean"
+        },
+        "scanSucceeded": {
+          "type": "boolean"
+        },
+        "durationMilliseconds": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "counts": {
+          "$ref": "#/$defs/counts"
+        },
+        "assertions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/assertion"
+          }
+        },
+        "errorMessage": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "metrics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/detectorMetric"
+          }
+        },
+        "qualityIssues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/caseIssueSummary"
+          }
+        },
+        "diagnosticIssues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/caseIssueSummary"
+          }
+        },
+        "stages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/stageSummary"
+          }
+        },
+        "importReadiness": {
+          "$ref": "#/$defs/importReadiness"
+        },
+        "scanReviewQueue": {
+          "$ref": "#/$defs/scanReviewQueueSummary"
+        },
+        "skipped": {
+          "type": "boolean"
+        },
+        "skipReason": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "passedAssertionCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "failedAssertionCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        }
+      }
+    },
+    "scanReviewQueueSummary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "count",
+        "kindCounts",
+        "severityCounts"
+      ],
+      "properties": {
+        "count": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "kindCounts": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/nonNegativeInteger"
+          }
+        },
+        "severityCounts": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/nonNegativeInteger"
+          }
+        }
+      }
+    },
+    "caseIssueSummary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "code",
+        "severity",
+        "stage",
+        "scope",
+        "count",
+        "message",
+        "pageNumbers",
+        "maxConfidence",
+        "sourcePrimitiveCount",
+        "sourcePrimitiveIds",
+        "properties"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "$ref": "#/$defs/diagnosticSeverity"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "count": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "message": {
+          "type": "string"
+        },
+        "pageNumbers": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "maxConfidence": {
+          "anyOf": [
+            { "$ref": "#/$defs/confidence" },
+            { "type": "null" }
+          ]
+        },
+        "sourcePrimitiveCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "sourcePrimitiveIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "caseScore": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "fixtureId",
+        "grade",
+        "overallScore",
+        "targetF1",
+        "targetRecall",
+        "targetPrecision",
+        "assertionReliability",
+        "scanQualityScore",
+        "measurementScore",
+        "importReadinessScore",
+        "readyForGeometryImport",
+        "readyForMetricImport",
+        "readyForRoutingImport",
+        "expectedTargetCount",
+        "matchedTargetCount",
+        "missedTargetCount",
+        "extraDetectionCount",
+        "failedAssertionCount",
+        "qualityGrade",
+        "qualityConfidence",
+        "requiresReview",
+        "skipped",
+        "blockingReasons"
+      ],
+      "properties": {
+        "fixtureId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "grade": {
+          "$ref": "#/$defs/scoreGrade"
+        },
+        "overallScore": {
+          "$ref": "#/$defs/confidence"
+        },
+        "targetF1": {
+          "$ref": "#/$defs/confidence"
+        },
+        "targetRecall": {
+          "$ref": "#/$defs/confidence"
+        },
+        "targetPrecision": {
+          "$ref": "#/$defs/confidence"
+        },
+        "assertionReliability": {
+          "$ref": "#/$defs/confidence"
+        },
+        "scanQualityScore": {
+          "$ref": "#/$defs/confidence"
+        },
+        "measurementScore": {
+          "$ref": "#/$defs/confidence"
+        },
+        "importReadinessScore": {
+          "$ref": "#/$defs/confidence"
+        },
+        "readyForGeometryImport": {
+          "type": "boolean"
+        },
+        "readyForMetricImport": {
+          "type": "boolean"
+        },
+        "readyForRoutingImport": {
+          "type": "boolean"
+        },
+        "expectedTargetCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "matchedTargetCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "missedTargetCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "extraDetectionCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "failedAssertionCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "qualityGrade": {
+          "$ref": "#/$defs/qualityGrade"
+        },
+        "qualityConfidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "requiresReview": {
+          "type": "boolean"
+        },
+        "skipped": {
+          "type": "boolean"
+        },
+        "blockingReasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "importReadiness": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "grade",
+        "score",
+        "readyForGeometryImport",
+        "readyForMetricImport",
+        "readyForRoutingImport",
+        "requiresReview",
+        "blockingIssueCodes",
+        "reviewIssueCodes",
+        "recommendedActions",
+        "evidence"
+      ],
+      "properties": {
+        "grade": {
+          "type": "string",
+          "minLength": 1
+        },
+        "score": {
+          "$ref": "#/$defs/confidence"
+        },
+        "readyForGeometryImport": {
+          "type": "boolean"
+        },
+        "readyForMetricImport": {
+          "type": "boolean"
+        },
+        "readyForRoutingImport": {
+          "type": "boolean"
+        },
+        "requiresReview": {
+          "type": "boolean"
+        },
+        "blockingIssueCodes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reviewIssueCodes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "recommendedActions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "pages",
+        "regions",
+        "dimensions",
+        "annotations",
+        "annotationReferences",
+        "gridAxes",
+        "gridBaySpacings",
+        "walls",
+        "wallNodes",
+        "wallEdges",
+        "rooms",
+        "roomAdjacencies",
+        "roomClusters",
+        "openings",
+        "objects",
+        "objectGroups",
+        "objectAggregates",
+        "routingItems",
+        "routingSuppressedObjects",
+        "diagnostics",
+        "diagnosticWarnings",
+        "diagnosticErrors",
+        "qualityGrade",
+        "qualityConfidence",
+        "qualityRequiresReview",
+        "qualityIssues",
+        "hasReliableCalibration",
+        "measurementCheckedCount",
+        "measurementConsistentCount",
+        "measurementOutlierCount",
+        "measurementConsistencyConfidence"
+      ],
+      "properties": {
+        "pages": { "$ref": "#/$defs/nonNegativeInteger" },
+        "regions": { "$ref": "#/$defs/nonNegativeInteger" },
+        "dimensions": { "$ref": "#/$defs/nonNegativeInteger" },
+        "annotations": { "$ref": "#/$defs/nonNegativeInteger" },
+        "annotationReferences": { "$ref": "#/$defs/nonNegativeInteger" },
+        "gridAxes": { "$ref": "#/$defs/nonNegativeInteger" },
+        "gridBaySpacings": { "$ref": "#/$defs/nonNegativeInteger" },
+        "surfacePatterns": {
+          "$ref": "#/$defs/nonNegativeInteger",
+          "description": "Number of dense non-structural surface/detail pattern candidates exported separately from walls."
+        },
+        "walls": { "$ref": "#/$defs/nonNegativeInteger" },
+        "wallNodes": { "$ref": "#/$defs/nonNegativeInteger" },
+        "wallEdges": { "$ref": "#/$defs/nonNegativeInteger" },
+        "rooms": { "$ref": "#/$defs/nonNegativeInteger" },
+        "roomAdjacencies": { "$ref": "#/$defs/nonNegativeInteger" },
+        "roomClusters": { "$ref": "#/$defs/nonNegativeInteger" },
+        "openings": { "$ref": "#/$defs/nonNegativeInteger" },
+        "objects": { "$ref": "#/$defs/nonNegativeInteger" },
+        "objectGroups": { "$ref": "#/$defs/nonNegativeInteger" },
+        "objectAggregates": { "$ref": "#/$defs/nonNegativeInteger" },
+        "routingItems": { "$ref": "#/$defs/nonNegativeInteger" },
+        "routingSuppressedObjects": { "$ref": "#/$defs/nonNegativeInteger" },
+        "diagnostics": { "$ref": "#/$defs/nonNegativeInteger" },
+        "diagnosticWarnings": { "$ref": "#/$defs/nonNegativeInteger" },
+        "diagnosticErrors": { "$ref": "#/$defs/nonNegativeInteger" },
+        "qualityGrade": { "$ref": "#/$defs/qualityGrade" },
+        "qualityConfidence": { "$ref": "#/$defs/confidence" },
+        "qualityRequiresReview": { "type": "boolean" },
+        "qualityIssues": { "$ref": "#/$defs/nonNegativeInteger" },
+        "hasReliableCalibration": { "type": "boolean" },
+        "measurementCheckedCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "measurementConsistentCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "measurementOutlierCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "measurementSelectedMillimetersPerDrawingUnit": { "$ref": "#/$defs/nullableNonNegativeNumber" },
+        "measurementMedianMillimetersPerDrawingUnit": { "$ref": "#/$defs/nullableNonNegativeNumber" },
+        "measurementScaleSpreadRatio": { "$ref": "#/$defs/nullableNonNegativeNumber" },
+        "measurementConsistencyConfidence": { "$ref": "#/$defs/confidence" }
+      }
+    },
+    "detectorMetric": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "detector",
+        "expectedCount",
+        "detectedCount",
+        "matchedCount",
+        "missedCount",
+        "extraCount",
+        "scoredDetectionCount",
+        "reviewOnlyDetectionCount",
+        "recall",
+        "precision",
+        "f1",
+        "matches",
+        "precisionScoringEnabled",
+        "extraDetections",
+        "reviewOnlyDetections"
+      ],
+      "properties": {
+        "detector": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expectedCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "detectedCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "matchedCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "missedCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "extraCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "scoredDetectionCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "reviewOnlyDetectionCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "recall": { "$ref": "#/$defs/confidence" },
+        "precision": { "$ref": "#/$defs/confidence" },
+        "f1": { "$ref": "#/$defs/confidence" },
+        "matches": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/targetMatch"
+          }
+        },
+        "precisionScoringEnabled": { "type": "boolean" },
+        "extraDetections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/detectionSummary"
+          }
+        },
+        "reviewOnlyDetections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/detectionSummary"
+          }
+        }
+      }
+    },
+    "reviewQueueItem": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "fixtureId",
+        "sourcePath",
+        "detector",
+        "kind",
+        "precisionScoringEnabled",
+        "detection",
+        "recommendedAction"
+      ],
+      "properties": {
+        "fixtureId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fixtureName": { "$ref": "#/$defs/nullableString" },
+        "sourcePath": { "type": "string" },
+        "detector": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "$ref": "#/$defs/reviewQueueKind"
+        },
+        "precisionScoringEnabled": { "type": "boolean" },
+        "detection": {
+          "$ref": "#/$defs/detectionSummary"
+        },
+        "recommendedAction": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "reviewQueueKind": {
+      "type": "string",
+      "enum": [
+        "PrecisionExtra",
+        "SpotCheckExtra",
+        "ReviewOnly"
+      ]
+    },
+    "detectionSummary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "detectionId",
+        "detectedTags",
+        "evidence"
+      ],
+      "properties": {
+        "detectionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pageNumber": {
+          "anyOf": [
+            { "type": "integer", "minimum": 1 },
+            { "type": "null" }
+          ]
+        },
+        "bounds": {
+          "anyOf": [
+            { "$ref": "#/$defs/rect" },
+            { "type": "null" }
+          ]
+        },
+        "label": { "$ref": "#/$defs/nullableString" },
+        "text": { "$ref": "#/$defs/nullableString" },
+        "marker": { "$ref": "#/$defs/nullableString" },
+        "category": { "$ref": "#/$defs/nullableString" },
+        "kind": { "$ref": "#/$defs/nullableString" },
+        "layerCategory": { "$ref": "#/$defs/nullableString" },
+        "routingSourceKind": { "$ref": "#/$defs/nullableString" },
+        "routingObstacleKind": { "$ref": "#/$defs/nullableString" },
+        "routingInfluence": { "$ref": "#/$defs/nullableString" },
+        "structuralInfluence": { "$ref": "#/$defs/nullableString" },
+        "roomUseKind": { "$ref": "#/$defs/nullableString" },
+        "count": {
+          "anyOf": [
+            { "$ref": "#/$defs/nonNegativeInteger" },
+            { "type": "null" }
+          ]
+        },
+        "requiresReview": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "suppressesChildObjects": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "detectedTags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidence": {
+          "type": "string"
+        }
+      }
+    },
+    "detectorScore": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "detector",
+        "grade",
+        "score",
+        "expectedCount",
+        "detectedCount",
+        "matchedCount",
+        "missedCount",
+        "extraCount",
+        "recall",
+        "precision",
+        "f1",
+        "caseCount",
+        "recommendedAction"
+      ],
+      "properties": {
+        "detector": { "type": "string", "minLength": 1 },
+        "grade": { "$ref": "#/$defs/scoreGrade" },
+        "score": { "$ref": "#/$defs/confidence" },
+        "expectedCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "detectedCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "matchedCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "missedCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "extraCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "recall": { "$ref": "#/$defs/confidence" },
+        "precision": { "$ref": "#/$defs/confidence" },
+        "f1": { "$ref": "#/$defs/confidence" },
+        "caseCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "recommendedAction": { "type": "string" }
+      }
+    },
+    "diagnosticSeverity": {
+      "type": "string",
+      "enum": [
+        "Trace",
+        "Info",
+        "Warning",
+        "Error"
+      ]
+    },
+    "failureBucket": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "code",
+        "severity",
+        "count",
+        "message",
+        "evidence",
+        "targetIds"
+      ],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "severity": { "$ref": "#/$defs/failureSeverity" },
+        "fixtureId": { "$ref": "#/$defs/nullableString" },
+        "detector": { "$ref": "#/$defs/nullableString" },
+        "count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "message": { "type": "string" },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "targetIds": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "failureSeverity": {
+      "type": "string",
+      "enum": [
+        "Info",
+        "Warning",
+        "Critical"
+      ]
+    },
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nonNegativeNumber": {
+      "type": "number",
+      "minimum": 0
+    },
+    "rect": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "$ref": "#/$defs/nonNegativeNumber" },
+        "height": { "$ref": "#/$defs/nonNegativeNumber" }
+      }
+    },
+    "nullableNonNegativeNumber": {
+      "anyOf": [
+        { "$ref": "#/$defs/nonNegativeNumber" },
+        { "type": "null" }
+      ]
+    },
+    "nullableString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "qualityGrade": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "Poor",
+        "ReviewRequired",
+        "Usable",
+        "Strong"
+      ]
+    },
+    "scoreboard": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "schemaVersion",
+        "generatedAt",
+        "grade",
+        "overallScore",
+        "consumerReadinessScore",
+        "readyForDownstreamUse",
+        "caseCount",
+        "scoredCaseCount",
+        "skippedCaseCount",
+        "failedScanCount",
+        "failedAssertionCount",
+        "expectedTargetCount",
+        "matchedTargetCount",
+        "missedTargetCount",
+        "extraDetectionCount",
+        "cases",
+        "detectors",
+        "failureBuckets",
+        "recommendedNextActions"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "openplantrace.benchmark-scoreboard.v1" },
+        "generatedAt": { "type": "string", "format": "date-time" },
+        "grade": { "$ref": "#/$defs/scoreGrade" },
+        "overallScore": { "$ref": "#/$defs/confidence" },
+        "consumerReadinessScore": { "$ref": "#/$defs/confidence" },
+        "readyForDownstreamUse": { "type": "boolean" },
+        "caseCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "scoredCaseCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "skippedCaseCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "failedScanCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "failedAssertionCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "expectedTargetCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "matchedTargetCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "missedTargetCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "extraDetectionCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "cases": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/caseScore" }
+        },
+        "detectors": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/detectorScore" }
+        },
+        "failureBuckets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/failureBucket" }
+        },
+        "recommendedNextActions": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "stageSummary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "stage",
+        "durationMilliseconds",
+        "inputCount",
+        "outputCount",
+        "diagnosticCount",
+        "infoCount",
+        "warningCount",
+        "errorCount"
+      ],
+      "properties": {
+        "stage": {
+          "type": "string",
+          "minLength": 1
+        },
+        "durationMilliseconds": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "inputCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "outputCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "diagnosticCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "infoCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "warningCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "errorCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        }
+      }
+    },
+    "scoreGrade": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "Blocked",
+        "NeedsWork",
+        "ReviewRequired",
+        "Usable",
+        "Strong"
+      ]
+    },
+    "targetMatch": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "targetIndex",
+        "matched",
+        "score",
+        "evidence"
+      ],
+      "properties": {
+        "targetIndex": { "$ref": "#/$defs/nonNegativeInteger" },
+        "targetId": { "$ref": "#/$defs/nullableString" },
+        "matched": { "type": "boolean" },
+        "detectionId": { "$ref": "#/$defs/nullableString" },
+        "score": { "$ref": "#/$defs/confidence" },
+        "evidence": { "type": "string" }
+      }
+    }
+  }
+}

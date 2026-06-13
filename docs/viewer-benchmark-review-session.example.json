@@ -1,0 +1,227 @@
+{
+  "schemaVersion": "openplantrace.viewer-benchmark-review-session.v1",
+  "tool": "OpenPlanTrace Viewer",
+  "exportedAt": "2026-06-07T00:00:00Z",
+  "manifest": {
+    "schemaVersion": "openplantrace.benchmark-manifest.v1",
+    "name": "Example benchmark draft",
+    "label": "benchmark.draft.json",
+    "fixtureCount": 1,
+    "targetCount": 2
+  },
+  "scan": {
+    "documentId": "example-plan",
+    "pageCount": 1,
+    "qualityGrade": "Strong",
+    "qualityConfidence": 0.88,
+    "diagnostics": {
+      "infoCount": 1,
+      "warningCount": 0,
+      "errorCount": 0,
+      "stageCount": 8,
+      "durationMilliseconds": 42
+    }
+  },
+  "summary": {
+    "activeTargetCount": 2,
+    "filteredTargetCount": 2,
+    "acceptedCount": 1,
+    "rejectedCount": 0,
+    "needsReviewCount": 0,
+    "unreviewedCount": 1,
+    "addedTargetCount": 1,
+    "deletedTargetCount": 0,
+    "boundsEditedCount": 1,
+    "missingBoundsCount": 0,
+    "lowConfidenceCount": 0,
+    "missingEvidenceCount": 1,
+    "filters": {
+      "query": "",
+      "detector": "all",
+      "status": "all",
+      "issue": "all",
+      "page": "all"
+    }
+  },
+  "decisions": [
+    {
+      "reviewKey": "manual|fixture-1|roomMetrics|manual-room-1|1",
+      "id": "manual-room-1",
+      "detectorKey": "roomMetrics",
+      "detectorLabel": "Room targets",
+      "fixtureId": "fixture-1",
+      "fixtureName": "Fixture 1",
+      "pageNumber": 1,
+      "bounds": {
+        "x": 102,
+        "y": 120,
+        "width": 80,
+        "height": 54
+      },
+      "originalPageNumber": 1,
+      "originalBounds": {
+        "x": 100,
+        "y": 120,
+        "width": 80,
+        "height": 54
+      },
+      "confidence": 0.72,
+      "decision": "accepted",
+      "isAdded": true,
+      "boundsEdited": true,
+      "hasEvidence": true,
+      "sourceLayers": [],
+      "sourcePrimitiveIds": [],
+      "evidence": [
+        "Manual reviewer target."
+      ],
+      "criteria": "bounds + page"
+    }
+  ],
+  "boundsEdits": [
+    {
+      "reviewKey": "manual|fixture-1|roomMetrics|manual-room-1|1",
+      "target": {
+        "reviewKey": "manual|fixture-1|roomMetrics|manual-room-1|1",
+        "id": "manual-room-1",
+        "detectorKey": "roomMetrics",
+        "detectorLabel": "Room targets",
+        "fixtureId": "fixture-1",
+        "fixtureName": "Fixture 1",
+        "pageNumber": 1,
+        "bounds": {
+          "x": 102,
+          "y": 120,
+          "width": 80,
+          "height": 54
+        },
+        "originalPageNumber": 1,
+        "originalBounds": {
+          "x": 100,
+          "y": 120,
+          "width": 80,
+          "height": 54
+        },
+        "confidence": 0.72,
+        "decision": "accepted",
+        "isAdded": true,
+        "boundsEdited": true,
+        "hasEvidence": true,
+        "sourceLayers": [],
+        "sourcePrimitiveIds": [],
+        "evidence": [
+          "Manual reviewer target."
+        ],
+        "criteria": "bounds + page"
+      },
+      "pageNumber": 1,
+      "bounds": {
+        "x": 102,
+        "y": 120,
+        "width": 80,
+        "height": 54
+      },
+      "editedAt": "2026-06-07T00:01:00Z"
+    }
+  ],
+  "addedTargets": [
+    {
+      "reviewKey": "manual|fixture-1|roomMetrics|manual-room-1|1",
+      "id": "manual-room-1",
+      "detectorKey": "roomMetrics",
+      "detectorLabel": "Room targets",
+      "fixtureId": "fixture-1",
+      "fixtureName": "Fixture 1",
+      "pageNumber": 1,
+      "bounds": {
+        "x": 102,
+        "y": 120,
+        "width": 80,
+        "height": 54
+      },
+      "originalPageNumber": 1,
+      "originalBounds": {
+        "x": 100,
+        "y": 120,
+        "width": 80,
+        "height": 54
+      },
+      "confidence": 0.72,
+      "decision": "accepted",
+      "isAdded": true,
+      "boundsEdited": true,
+      "hasEvidence": true,
+      "sourceLayers": [],
+      "sourcePrimitiveIds": [],
+      "evidence": [
+        "Manual reviewer target."
+      ],
+      "criteria": "bounds + page",
+      "manifestTarget": {
+        "id": "manual-room-1",
+        "pageNumber": 1,
+        "bounds": {
+          "x": 102,
+          "y": 120,
+          "width": 80,
+          "height": 54
+        },
+        "label": "Office",
+        "minIntersectionOverUnion": 0.5,
+        "confidence": 0.72,
+        "sourcePrimitiveIds": [],
+        "sourceLayers": [],
+        "evidence": [
+          "Manual reviewer target."
+        ],
+        "xReview": {
+          "targetAdded": true,
+          "createdAt": "2026-06-07T00:00:00Z",
+          "decision": "accepted",
+          "reviewedAt": "2026-06-07T00:00:00Z",
+          "boundsEdited": true,
+          "boundsEditedAt": "2026-06-07T00:01:00Z",
+          "tool": "OpenPlanTrace Viewer"
+        }
+      }
+    }
+  ],
+  "deletedTargets": [],
+  "reviewIssues": [
+    {
+      "reviewKey": "fixture-1|0|wallMetrics|wall-1|0",
+      "id": "wall-1",
+      "detectorKey": "wallMetrics",
+      "detectorLabel": "Wall targets",
+      "fixtureId": "fixture-1",
+      "fixtureName": "Fixture 1",
+      "pageNumber": 1,
+      "bounds": {
+        "x": 20,
+        "y": 30,
+        "width": 100,
+        "height": 4
+      },
+      "originalPageNumber": 1,
+      "originalBounds": {
+        "x": 20,
+        "y": 30,
+        "width": 100,
+        "height": 4
+      },
+      "confidence": null,
+      "decision": "unreviewed",
+      "isAdded": false,
+      "boundsEdited": false,
+      "hasEvidence": false,
+      "sourceLayers": [],
+      "sourcePrimitiveIds": [],
+      "evidence": [],
+      "criteria": "bounds + page",
+      "flags": [
+        "unreviewed",
+        "missing_evidence"
+      ]
+    }
+  ]
+}

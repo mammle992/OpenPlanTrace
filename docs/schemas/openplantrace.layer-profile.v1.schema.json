@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:openplantrace:schema:layer-profile:v1",
+  "title": "OpenPlanTrace Layer Category Profile",
+  "description": "Schema for deterministic layer category override profiles consumed by OpenPlanTrace. Layer profiles let a project or plan set map CAD/PDF layer naming conventions to scanner categories without changing engine code.",
+  "type": "object",
+  "additionalProperties": true,
+  "x-openplantrace-schemaVersion": "openplantrace.layer-profile.v1",
+  "required": [
+    "schemaVersion",
+    "overrides"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "openplantrace.layer-profile.v1"
+    },
+    "name": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "version": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "overrides": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/layerOverride"
+      }
+    }
+  },
+  "$defs": {
+    "layerCategory": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "Wall",
+        "Door",
+        "Window",
+        "Room",
+        "Dimension",
+        "Text",
+        "Grid",
+        "Structural",
+        "Equipment",
+        "Electrical",
+        "HVAC",
+        "Plumbing",
+        "FireSafety"
+      ]
+    },
+    "layerOverride": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "pattern",
+        "category"
+      ],
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Case-insensitive layer name pattern. Supports '*' wildcards."
+        },
+        "category": {
+          "$ref": "#/$defs/layerCategory"
+        },
+        "sourceFormat": {
+          "$ref": "#/$defs/nullableString",
+          "description": "Optional source-format scope such as 'pdf' or 'dxf'."
+        }
+      }
+    },
+    "nullableString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

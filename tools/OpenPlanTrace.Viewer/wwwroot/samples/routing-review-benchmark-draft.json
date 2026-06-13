@@ -1,0 +1,208 @@
+{
+  "schemaVersion": "openplantrace.benchmark-manifest.v1",
+  "name": "Viewer routing aggregate benchmark draft",
+  "fixtures": [
+    {
+      "id": "viewer-routing-review-smoke",
+      "name": "Viewer routing review smoke",
+      "sourcePath": "routing-review-smoke.pdf",
+      "properties": {
+        "difficulty": "smoke",
+        "sourceFormat": "sample",
+        "reviewState": "draft",
+        "scanSchemaVersion": "openplantrace.scan.v44"
+      },
+      "expectations": {
+        "minPages": 1,
+        "minRegions": 2,
+        "minWalls": 4,
+        "minRooms": 1,
+        "minOpenings": 1,
+        "minObjects": 6,
+        "minObjectGroups": 1,
+        "minObjectAggregates": 1,
+        "minRoutingItems": 7,
+        "minRoutingSuppressedObjects": 5,
+        "maxDiagnosticErrors": 0,
+        "minQualityGrade": "Usable",
+        "regionMetrics": {
+          "minRecall": 1.0,
+          "targets": [
+            {
+              "id": "main-plan-region",
+              "pageNumber": 1,
+              "bounds": {
+                "x": 60,
+                "y": 50,
+                "width": 510,
+                "height": 320
+              },
+              "regionKind": "MainFloorPlan",
+              "confidence": 0.92,
+              "evidence": ["sample main floorplan region"]
+            }
+          ]
+        },
+        "objectAggregateMetrics": {
+          "minRecall": 1.0,
+          "minPrecision": 1.0,
+          "targets": [
+            {
+              "id": "car-aggregate",
+              "pageNumber": 1,
+              "label": "car",
+              "bounds": {
+                "x": 205,
+                "y": 232,
+                "width": 112,
+                "height": 56
+              },
+              "objectCategory": "Vehicle",
+              "objectKind": "Vehicle",
+              "minCount": 5,
+              "routingInfluence": "RoomUseEvidenceOnly",
+              "structuralInfluence": "None",
+              "roomUseKind": "Parking",
+              "suppressesChildObjects": true,
+              "confidence": 0.86,
+              "sourcePrimitiveIds": [
+                "car-body",
+                "car-wheel-front-left",
+                "car-wheel-front-right",
+                "car-wheel-back-left",
+                "car-wheel-back-right"
+              ],
+              "sourceLayers": ["A-VEHICLE-CAR"],
+              "evidence": [
+                "compound vehicle should be one semantic aggregate",
+                "child vehicle parts should not become independent loop blockers"
+              ]
+            }
+          ]
+        },
+        "routingBarrierMetrics": {
+          "minRecall": 1.0,
+          "targets": [
+            {
+              "id": "garage-wall-barrier",
+              "pageNumber": 1,
+              "bounds": {
+                "x": 100,
+                "y": 86,
+                "width": 420,
+                "height": 8
+              },
+              "routingSourceKind": "Wall",
+              "confidence": 0.9,
+              "sourceLayers": ["A-WALL"],
+              "evidence": ["top wall is a structural routing barrier"]
+            }
+          ]
+        },
+        "routingPassageMetrics": {
+          "minRecall": 1.0,
+          "targets": [
+            {
+              "id": "garage-door-passage",
+              "pageNumber": 1,
+              "bounds": {
+                "x": 210,
+                "y": 322,
+                "width": 105,
+                "height": 16
+              },
+              "routingSourceKind": "Opening",
+              "openingType": "Door",
+              "openingOperation": "PassThrough",
+              "confidence": 0.82,
+              "sourceLayers": ["A-DOOR"],
+              "evidence": ["garage door remains a passage"]
+            }
+          ]
+        },
+        "routingObstacleMetrics": {
+          "minRecall": 1.0,
+          "targets": [
+            {
+              "id": "pump-hard-obstacle",
+              "pageNumber": 1,
+              "label": "P-101",
+              "bounds": {
+                "x": 430,
+                "y": 178,
+                "width": 48,
+                "height": 38
+              },
+              "routingSourceKind": "ObjectCandidate",
+              "routingObstacleKind": "HardObstacle",
+              "routingInfluence": "HardObstacle",
+              "structuralInfluence": "FixedEquipment",
+              "objectCategory": "Equipment",
+              "objectKind": "Symbol",
+              "suppressesChildObjects": false,
+              "confidence": 0.86,
+              "sourceLayers": ["M-EQUIP"],
+              "evidence": ["equipment remains a hard routing obstacle"]
+            }
+          ]
+        },
+        "routingRoomUseHintMetrics": {
+          "minRecall": 1.0,
+          "targets": [
+            {
+              "id": "car-parking-room-use",
+              "pageNumber": 1,
+              "label": "GARAGE",
+              "bounds": {
+                "x": 205,
+                "y": 232,
+                "width": 112,
+                "height": 56
+              },
+              "routingSourceKind": "ObjectAggregate",
+              "roomUseKind": "Parking",
+              "confidence": 0.86,
+              "sourceLayers": ["A-VEHICLE-CAR"],
+              "evidence": [
+                "vehicle aggregate contributes room-use evidence only"
+              ]
+            }
+          ]
+        },
+        "routingSuppressedObjectMetrics": {
+          "minRecall": 1.0,
+          "targets": [
+            {
+              "id": "car-body-routing-suppression",
+              "pageNumber": 1,
+              "label": "car body",
+              "text": "aggregate-car-1",
+              "bounds": {
+                "x": 205,
+                "y": 238,
+                "width": 112,
+                "height": 44
+              },
+              "objectCategory": "Vehicle",
+              "objectKind": "Vehicle",
+              "routingInfluence": "RoomUseEvidenceOnly",
+              "structuralInfluence": "None",
+              "objectCandidateId": "car-body",
+              "suppressedByAggregateId": "aggregate-car-1",
+              "suppressionReason": "AggregateRoomUseEvidenceOnly",
+              "suppressionAction": "UseAggregateRoomUseHint",
+              "roomUseHintId": "routing-room-use:aggregate-car-1",
+              "confidence": 0.85,
+              "sourcePrimitiveIds": ["car-body"],
+              "sourceLayers": ["A-VEHICLE-CAR"],
+              "evidence": [
+                "car body is represented by aggregate-car-1",
+                "child object contributes room-use evidence and is not an independent loop blocker"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

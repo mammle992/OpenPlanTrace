@@ -1,0 +1,325 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:openplantrace:schema:batch:v5",
+  "title": "OpenPlanTrace Batch Result",
+  "description": "Schema for OpenPlanTrace CLI batch run summaries. Batch results describe per-input scan outputs, downstream placement packets, status, diagnostic/quality counts, source capability metadata for unsupported inputs, and visual-snapshot QA summaries.",
+  "type": "object",
+  "additionalProperties": true,
+  "x-openplantrace-schemaVersion": "openplantrace.batch.v5",
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "outputDirectory",
+    "maxDegreeOfParallelism",
+    "retryCount",
+    "items"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "openplantrace.batch.v5"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "outputDirectory": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "maxDegreeOfParallelism": {
+      "$ref": "#/$defs/positiveInteger"
+    },
+    "retryCount": {
+      "$ref": "#/$defs/nonNegativeInteger"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/batchItem"
+      }
+    }
+  },
+  "$defs": {
+    "nullableString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "positiveInteger": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "nonNegativeNumber": {
+      "type": "number",
+      "minimum": 0
+    },
+    "ratio": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "sourceKind": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "Pdf",
+        "Dxf",
+        "Dwg",
+        "RasterImage",
+        "VectorImage",
+        "Clipboard",
+        "ExtractedPrimitives"
+      ]
+    },
+    "itemStatus": {
+      "type": "string",
+      "enum": [
+        "Succeeded",
+        "CompletedWithErrors",
+        "Missing",
+        "Unsupported",
+        "Failed"
+      ]
+    },
+    "scanCounts": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "pages",
+        "regions",
+        "titleBlocks",
+        "dimensions",
+        "annotations",
+        "gridAxes",
+        "gridBaySpacings",
+        "walls",
+        "wallNodes",
+        "wallEdges",
+        "rooms",
+        "roomAdjacencies",
+        "roomClusters",
+        "openings",
+        "objects",
+        "objectGroups",
+        "objectAggregates",
+        "routingItems",
+        "diagnostics",
+        "diagnosticWarnings",
+        "diagnosticErrors",
+        "qualityGrade",
+        "qualityConfidence",
+        "requiresReview"
+      ],
+      "properties": {
+        "pages": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "regions": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "titleBlocks": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "dimensions": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "annotations": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "gridAxes": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "gridBaySpacings": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "surfacePatterns": {
+          "$ref": "#/$defs/nonNegativeInteger",
+          "description": "Number of dense non-structural surface/detail pattern candidates exported separately from walls."
+        },
+        "walls": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "wallNodes": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "wallEdges": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "rooms": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "roomAdjacencies": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "roomClusters": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "openings": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "objects": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "objectGroups": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "objectAggregates": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "routingItems": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "diagnostics": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "diagnosticWarnings": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "diagnosticErrors": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "qualityGrade": {
+          "type": "string"
+        },
+        "qualityConfidence": {
+          "$ref": "#/$defs/ratio"
+        },
+        "requiresReview": {
+          "type": "boolean"
+        }
+      }
+    },
+    "visualSnapshotSummary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "schemaVersion",
+        "pageCount",
+        "layerCount",
+        "drawableItemCount",
+        "issueCount",
+        "warningIssueCount",
+        "errorIssueCount",
+        "maxDetectionCoverage",
+        "issueCodes"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "type": "string"
+        },
+        "pageCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "layerCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "drawableItemCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "issueCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "warningIssueCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "errorIssueCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "maxDetectionCoverage": {
+          "$ref": "#/$defs/ratio"
+        },
+        "issueCodes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "batchItem": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "itemNumber",
+        "inputPath",
+        "fileName",
+        "sourceKind",
+        "effectiveSourceKind",
+        "status",
+        "attemptCount",
+        "durationMilliseconds",
+        "counts",
+        "scanJsonPath",
+        "geoJsonPath",
+        "overlayDirectory",
+        "visualSnapshotPath",
+        "visualSnapshot",
+        "errorMessage",
+        "sourceCapability"
+      ],
+      "properties": {
+        "itemNumber": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "inputPath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fileName": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "sourceKind": {
+          "$ref": "#/$defs/sourceKind"
+        },
+        "effectiveSourceKind": {
+          "$ref": "#/$defs/sourceKind"
+        },
+        "status": {
+          "$ref": "#/$defs/itemStatus"
+        },
+        "attemptCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "durationMilliseconds": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "counts": {
+          "$ref": "#/$defs/scanCounts"
+        },
+        "scanJsonPath": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "geoJsonPath": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "placementJsonPath": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "overlayDirectory": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "visualSnapshotPath": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "visualSnapshot": {
+          "$ref": "#/$defs/visualSnapshotSummary"
+        },
+        "errorMessage": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "sourceCapability": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}

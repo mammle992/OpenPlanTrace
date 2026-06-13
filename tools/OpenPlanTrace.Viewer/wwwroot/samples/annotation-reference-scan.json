@@ -1,0 +1,516 @@
+{
+  "schemaVersion": "openplantrace.scan.v31",
+  "generatedAt": "2026-06-07T00:00:00Z",
+  "documentId": "viewer-annotation-reference-smoke",
+  "document": {
+    "id": "viewer-annotation-reference-smoke",
+    "sourceName": "annotation-reference-smoke.pdf",
+    "sourcePath": null,
+    "properties": {
+      "sample": "viewer annotation reference smoke"
+    }
+  },
+  "pages": [
+    {
+      "number": 1,
+      "width": 620,
+      "height": 420,
+      "primitiveCount": 9
+    }
+  ],
+  "primitiveSources": [
+    {
+      "pageNumber": 1,
+      "primitiveKind": "Text",
+      "sourceId": "keynote-heading-1",
+      "bounds": {
+        "x": 392,
+        "y": 54,
+        "width": 92,
+        "height": 16
+      },
+      "metadata": {
+        "layer": "A-NOTE",
+        "sourceFormat": "sample"
+      }
+    },
+    {
+      "pageNumber": 1,
+      "primitiveKind": "Text",
+      "sourceId": "keynote-item-1",
+      "bounds": {
+        "x": 392,
+        "y": 82,
+        "width": 154,
+        "height": 16
+      },
+      "metadata": {
+        "layer": "A-NOTE",
+        "sourceFormat": "sample"
+      }
+    },
+    {
+      "pageNumber": 1,
+      "primitiveKind": "Text",
+      "sourceId": "callout-heading-1",
+      "bounds": {
+        "x": 392,
+        "y": 132,
+        "width": 74,
+        "height": 16
+      },
+      "metadata": {
+        "layer": "A-NOTE",
+        "sourceFormat": "sample"
+      }
+    },
+    {
+      "pageNumber": 1,
+      "primitiveKind": "Text",
+      "sourceId": "callout-item-a",
+      "bounds": {
+        "x": 392,
+        "y": 160,
+        "width": 126,
+        "height": 16
+      },
+      "metadata": {
+        "layer": "A-NOTE",
+        "sourceFormat": "sample"
+      }
+    },
+    {
+      "pageNumber": 1,
+      "primitiveKind": "Text",
+      "sourceId": "keynote-marker-text-1",
+      "bounds": {
+        "x": 136,
+        "y": 132,
+        "width": 10,
+        "height": 12
+      },
+      "metadata": {
+        "layer": "A-ANNO",
+        "sourceFormat": "sample"
+      }
+    },
+    {
+      "pageNumber": 1,
+      "primitiveKind": "Rectangle",
+      "sourceId": "keynote-marker-bubble-1",
+      "bounds": {
+        "x": 126,
+        "y": 124,
+        "width": 30,
+        "height": 28
+      },
+      "metadata": {
+        "layer": "A-ANNO",
+        "sourceFormat": "sample"
+      }
+    },
+    {
+      "pageNumber": 1,
+      "primitiveKind": "Text",
+      "sourceId": "callout-marker-text-a",
+      "bounds": {
+        "x": 226,
+        "y": 236,
+        "width": 12,
+        "height": 12
+      },
+      "metadata": {
+        "layer": "A-ANNO",
+        "sourceFormat": "sample"
+      }
+    },
+    {
+      "pageNumber": 1,
+      "primitiveKind": "Rectangle",
+      "sourceId": "callout-marker-bubble-a",
+      "bounds": {
+        "x": 216,
+        "y": 228,
+        "width": 34,
+        "height": 28
+      },
+      "metadata": {
+        "layer": "A-ANNO",
+        "sourceFormat": "sample"
+      }
+    }
+  ],
+  "layerAnalysis": {
+    "layers": [
+      {
+        "name": "A-NOTE",
+        "sourceFormat": "sample",
+        "entityCount": 4,
+        "primitiveKindCounts": {
+          "Text": 4
+        },
+        "totalLineLength": 0,
+        "bounds": {
+          "x": 392,
+          "y": 54,
+          "width": 154,
+          "height": 122
+        },
+        "likelyCategory": "Annotation",
+        "confidence": 0.78,
+        "categoryScores": [
+          {
+            "category": "Annotation",
+            "score": 0.78,
+            "evidence": [
+              "sample keynote/callout text layer"
+            ]
+          }
+        ],
+        "evidence": [
+          "contains annotation headings and numbered entries"
+        ],
+        "pageNumbers": [
+          1
+        ]
+      },
+      {
+        "name": "A-ANNO",
+        "sourceFormat": "sample",
+        "entityCount": 4,
+        "primitiveKindCounts": {
+          "Text": 2,
+          "Rectangle": 2
+        },
+        "totalLineLength": 0,
+        "bounds": {
+          "x": 126,
+          "y": 124,
+          "width": 124,
+          "height": 132
+        },
+        "likelyCategory": "Annotation",
+        "confidence": 0.72,
+        "categoryScores": [
+          {
+            "category": "Annotation",
+            "score": 0.72,
+            "evidence": [
+              "sample plan marker layer"
+            ]
+          }
+        ],
+        "evidence": [
+          "contains marker text and closed marker bubbles"
+        ],
+        "pageNumbers": [
+          1
+        ]
+      }
+    ]
+  },
+  "calibration": null,
+  "measurementConsistency": null,
+  "titleBlocks": [],
+  "dimensions": [],
+  "annotations": [
+    {
+      "id": "page:1:annotation:keynotes",
+      "pageNumber": 1,
+      "kind": "Keynotes",
+      "label": "KEYNOTES",
+      "bounds": {
+        "x": 384,
+        "y": 48,
+        "width": 184,
+        "height": 70
+      },
+      "confidence": 0.82,
+      "sourceRegionId": "page:1:notes",
+      "sourcePrimitiveIds": [
+        "keynote-heading-1",
+        "keynote-item-1"
+      ],
+      "sourceLayers": [
+        "A-NOTE"
+      ],
+      "evidence": [
+        "heading KEYNOTES with numbered entry"
+      ],
+      "items": [
+        {
+          "id": "page:1:annotation:keynotes:item:01",
+          "pageNumber": 1,
+          "kind": "Keynote",
+          "text": "VERIFY ACCESS CLEARANCE",
+          "marker": "1",
+          "bounds": {
+            "x": 392,
+            "y": 82,
+            "width": 154,
+            "height": 16
+          },
+          "confidence": 0.8,
+          "sourcePrimitiveIds": [
+            "keynote-item-1"
+          ],
+          "sourceLayers": [
+            "A-NOTE"
+          ],
+          "references": [
+            {
+              "id": "page:1:annotation:keynotes:item:01:reference:01",
+              "marker": "1",
+              "text": "1",
+              "bounds": {
+                "x": 125,
+                "y": 123,
+                "width": 32,
+                "height": 30
+              },
+              "confidence": 0.74,
+              "sourcePrimitiveIds": [
+                "keynote-marker-text-1",
+                "keynote-marker-bubble-1"
+              ],
+              "sourceLayers": [
+                "A-ANNO"
+              ],
+              "evidence": [
+                "matched plan marker 1",
+                "1 nearby closed marker geometry primitive(s)"
+              ]
+            }
+          ],
+          "evidence": [
+            "parsed numbered keynote item"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "page:1:annotation:callouts",
+      "pageNumber": 1,
+      "kind": "Callouts",
+      "label": "CALL OUTS",
+      "bounds": {
+        "x": 384,
+        "y": 126,
+        "width": 166,
+        "height": 66
+      },
+      "confidence": 0.77,
+      "sourceRegionId": "page:1:notes",
+      "sourcePrimitiveIds": [
+        "callout-heading-1",
+        "callout-item-a"
+      ],
+      "sourceLayers": [
+        "A-NOTE"
+      ],
+      "evidence": [
+        "heading CALL OUTS with keyed entry"
+      ],
+      "items": [
+        {
+          "id": "page:1:annotation:callouts:item:a",
+          "pageNumber": 1,
+          "kind": "Callout",
+          "text": "FIRE DAMPER ACCESS",
+          "marker": "A",
+          "bounds": {
+            "x": 392,
+            "y": 160,
+            "width": 126,
+            "height": 16
+          },
+          "confidence": 0.75,
+          "sourcePrimitiveIds": [
+            "callout-item-a"
+          ],
+          "sourceLayers": [
+            "A-NOTE"
+          ],
+          "references": [
+            {
+              "id": "page:1:annotation:callouts:item:a:reference:01",
+              "marker": "A",
+              "text": "A",
+              "bounds": {
+                "x": 215,
+                "y": 227,
+                "width": 36,
+                "height": 30
+              },
+              "confidence": 0.73,
+              "sourcePrimitiveIds": [
+                "callout-marker-text-a",
+                "callout-marker-bubble-a"
+              ],
+              "sourceLayers": [
+                "A-ANNO"
+              ],
+              "evidence": [
+                "matched plan marker A",
+                "1 nearby closed marker geometry primitive(s)"
+              ]
+            }
+          ],
+          "evidence": [
+            "parsed callout item"
+          ]
+        }
+      ]
+    }
+  ],
+  "gridAxes": [],
+  "gridBaySpacings": [],
+  "regions": [
+    {
+      "id": "page:1:sheet",
+      "pageNumber": 1,
+      "kind": "Sheet",
+      "label": "Sheet",
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "width": 620,
+        "height": 420
+      },
+      "confidence": 1,
+      "sourcePrimitiveIds": [],
+      "sourceLayers": [],
+      "evidence": [
+        "viewer smoke sheet bounds"
+      ]
+    },
+    {
+      "id": "page:1:notes",
+      "pageNumber": 1,
+      "kind": "Notes",
+      "label": "Notes",
+      "bounds": {
+        "x": 372,
+        "y": 36,
+        "width": 212,
+        "height": 170
+      },
+      "confidence": 0.78,
+      "sourcePrimitiveIds": [
+        "keynote-heading-1",
+        "keynote-item-1",
+        "callout-heading-1",
+        "callout-item-a"
+      ],
+      "sourceLayers": [
+        "A-NOTE"
+      ],
+      "evidence": [
+        "contains annotation text"
+      ]
+    },
+    {
+      "id": "page:1:main",
+      "pageNumber": 1,
+      "kind": "MainFloorPlan",
+      "label": "Plan",
+      "bounds": {
+        "x": 42,
+        "y": 52,
+        "width": 290,
+        "height": 270
+      },
+      "confidence": 0.7,
+      "sourcePrimitiveIds": [],
+      "sourceLayers": [],
+      "evidence": [
+        "viewer smoke plan area"
+      ]
+    }
+  ],
+  "walls": [],
+  "wallGraph": {
+    "nodes": [],
+    "edges": []
+  },
+  "rooms": [],
+  "roomAdjacencyGraph": {
+    "edges": [],
+    "clusters": []
+  },
+  "openings": [],
+  "objects": [],
+  "objectGroups": [],
+  "quality": {
+    "overallConfidence": 0.76,
+    "grade": "Usable",
+    "requiresReview": false,
+    "pageCount": 1,
+    "primitiveCount": 9,
+    "detectionCount": 8,
+    "detectorCount": 1,
+    "detectorWithFindingsCount": 1,
+    "hasReliableCalibration": false,
+    "diagnosticInfoCount": 1,
+    "diagnosticWarningCount": 0,
+    "diagnosticErrorCount": 0,
+    "detectors": [
+      {
+        "name": "AnnotationAnalysis",
+        "itemCount": 4,
+        "averageConfidence": 0.77,
+        "minimumConfidence": 0.73,
+        "maximumConfidence": 0.82,
+        "lowConfidenceCount": 0,
+        "reviewRequiredCount": 0,
+        "evidenceBearingCount": 4,
+        "confidence": 0.76,
+        "evidence": [
+          "smoke sample annotation references"
+        ]
+      }
+    ],
+    "issues": [],
+    "evidence": [
+      "viewer smoke sample only"
+    ]
+  },
+  "diagnostics": {
+    "durationMilliseconds": 1,
+    "hasErrors": false,
+    "infoCount": 1,
+    "warningCount": 0,
+    "errorCount": 0,
+    "stages": [
+      {
+        "stage": "AnnotationAnalysis",
+        "durationMilliseconds": 1,
+        "inputCount": 4,
+        "outputCount": 4,
+        "diagnosticCount": 1,
+        "infoCount": 1,
+        "warningCount": 0,
+        "errorCount": 0
+      }
+    ],
+    "messages": [
+      {
+        "code": "annotations.references.detected",
+        "severity": "Info",
+        "stage": "AnnotationAnalysis",
+        "scope": "Page",
+        "message": "Detected 2 plan-side annotation marker references.",
+        "pageNumber": 1,
+        "region": null,
+        "confidence": 0.74,
+        "sourcePrimitiveIds": [
+          "keynote-marker-text-1",
+          "callout-marker-text-a"
+        ],
+        "properties": {
+          "references": "2"
+        }
+      }
+    ]
+  }
+}

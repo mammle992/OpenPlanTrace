@@ -1,0 +1,263 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:openplantrace:schema:object-label-profile:v1",
+  "title": "OpenPlanTrace Object Label Profile",
+  "description": "Schema for deterministic object and symbol label profiles consumed by OpenPlanTrace. Profiles persist human-confirmed object labels and category corrections without running AI or inferring unsupported semantics.",
+  "type": "object",
+  "additionalProperties": true,
+  "x-openplantrace-schemaVersion": "openplantrace.object-label-profile.v1",
+  "required": [
+    "schemaVersion",
+    "rules"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "openplantrace.object-label-profile.v1"
+    },
+    "name": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "version": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/objectLabelRule"
+      }
+    }
+  },
+  "$defs": {
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nullableString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "objectCandidateKind": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "Fixture",
+        "Furniture",
+        "Vehicle",
+        "Symbol",
+        "Stair",
+        "TextLabel"
+      ]
+    },
+    "objectCategory": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "TextLabel",
+        "GenericSymbol",
+        "Fixture",
+        "Furniture",
+        "Stair",
+        "Elevator",
+        "Column",
+        "Shaft",
+        "PlumbingFixture",
+        "ElectricalDevice",
+        "Lighting",
+        "HVACEquipment",
+        "FireSafety",
+        "Equipment",
+        "Vehicle",
+        "Structural"
+      ]
+    },
+    "objectLabelRule": {
+      "type": "object",
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "required": [
+                "signature"
+              ]
+            },
+            {
+              "required": [
+                "symbolNamePattern"
+              ]
+            },
+            {
+              "required": [
+                "labelPattern"
+              ]
+            },
+            {
+              "required": [
+                "layerPattern"
+              ]
+            },
+            {
+              "required": [
+                "detectedTagPattern"
+              ]
+            },
+            {
+              "required": [
+                "sourceFormat"
+              ]
+            },
+            {
+              "required": [
+                "matchCategory"
+              ]
+            },
+            {
+              "required": [
+                "matchKind"
+              ]
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "required": [
+                "category"
+              ]
+            },
+            {
+              "required": [
+                "kind"
+              ]
+            },
+            {
+              "required": [
+                "label"
+              ]
+            },
+            {
+              "required": [
+                "symbolName"
+              ]
+            },
+            {
+              "required": [
+                "requiresReview"
+              ]
+            },
+            {
+              "required": [
+                "confidence"
+              ]
+            },
+            {
+              "required": [
+                "evidence"
+              ]
+            }
+          ]
+        }
+      ],
+      "properties": {
+        "signature": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "symbolNamePattern": {
+          "$ref": "#/$defs/nullableString",
+          "description": "Case-insensitive symbol name pattern. Supports '*' wildcards."
+        },
+        "labelPattern": {
+          "$ref": "#/$defs/nullableString",
+          "description": "Case-insensitive current-label pattern. Supports '*' wildcards."
+        },
+        "layerPattern": {
+          "$ref": "#/$defs/nullableString",
+          "description": "Case-insensitive source-layer pattern. Supports '*' wildcards."
+        },
+        "detectedTagPattern": {
+          "$ref": "#/$defs/nullableString",
+          "description": "Case-insensitive detected object tag pattern, such as 'P-*' or 'HV-*'. Supports '*' wildcards."
+        },
+        "sourceFormat": {
+          "$ref": "#/$defs/nullableString",
+          "description": "Optional source-format selector such as 'pdf', 'dxf', or 'raster'."
+        },
+        "matchCategory": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/objectCategory"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "matchKind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/objectCandidateKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "category": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/objectCategory"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/objectCandidateKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "label": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "symbolName": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "requiresReview": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/confidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        }
+      }
+    }
+  }
+}

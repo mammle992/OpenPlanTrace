@@ -1,0 +1,213 @@
+{
+  "schemaVersion": "openplantrace.benchmark-comparison.v1",
+  "generatedAt": "2026-06-09T12:57:41.5803994+00:00",
+  "baselineName": "OpenPlanTrace golden smoke fixtures",
+  "candidateName": "OpenPlanTrace golden smoke fixtures",
+  "baselineCaseCount": 1,
+  "candidateCaseCount": 1,
+  "matchedCaseCount": 1,
+  "addedCaseCount": 0,
+  "removedCaseCount": 0,
+  "regressionCount": 0,
+  "improvementCount": 0,
+  "cases": [
+    {
+      "fixtureId": "semantic-smoke-dxf",
+      "status": "Matched",
+      "baselineName": "Semantic smoke DXF",
+      "candidateName": "Semantic smoke DXF",
+      "baselinePassed": true,
+      "candidatePassed": true,
+      "baselineDurationMilliseconds": 424.6657,
+      "candidateDurationMilliseconds": 424.6657,
+      "durationDeltaMilliseconds": 0,
+      "baselineQualityGrade": "Strong",
+      "candidateQualityGrade": "Strong",
+      "baselineQualityConfidence": 0.881035647603486,
+      "candidateQualityConfidence": 0.881035647603486,
+      "baselinePassedAssertionCount": 38,
+      "candidatePassedAssertionCount": 38,
+      "baselineFailedAssertionCount": 0,
+      "candidateFailedAssertionCount": 0,
+      "countDeltas": [
+        {
+          "name": "pages",
+          "baseline": 1,
+          "candidate": 1,
+          "delta": 0
+        },
+        {
+          "name": "regions",
+          "baseline": 3,
+          "candidate": 3,
+          "delta": 0
+        },
+        {
+          "name": "dimensions",
+          "baseline": 1,
+          "candidate": 1,
+          "delta": 0
+        },
+        {
+          "name": "annotations",
+          "baseline": 1,
+          "candidate": 1,
+          "delta": 0
+        },
+        {
+          "name": "annotationReferences",
+          "baseline": 0,
+          "candidate": 0,
+          "delta": 0
+        },
+        {
+          "name": "gridAxes",
+          "baseline": 1,
+          "candidate": 1,
+          "delta": 0
+        },
+        {
+          "name": "gridBaySpacings",
+          "baseline": 0,
+          "candidate": 0,
+          "delta": 0
+        },
+        {
+          "name": "surfacePatterns",
+          "baseline": 0,
+          "candidate": 0,
+          "delta": 0
+        },
+        {
+          "name": "walls",
+          "baseline": 6,
+          "candidate": 6,
+          "delta": 0
+        },
+        {
+          "name": "wallNodes",
+          "baseline": 8,
+          "candidate": 8,
+          "delta": 0
+        },
+        {
+          "name": "wallEdges",
+          "baseline": 6,
+          "candidate": 6,
+          "delta": 0
+        },
+        {
+          "name": "rooms",
+          "baseline": 1,
+          "candidate": 1,
+          "delta": 0
+        },
+        {
+          "name": "roomAdjacencies",
+          "baseline": 0,
+          "candidate": 0,
+          "delta": 0
+        },
+        {
+          "name": "roomClusters",
+          "baseline": 1,
+          "candidate": 1,
+          "delta": 0
+        },
+        {
+          "name": "openings",
+          "baseline": 1,
+          "candidate": 1,
+          "delta": 0
+        },
+        {
+          "name": "objects",
+          "baseline": 3,
+          "candidate": 3,
+          "delta": 0
+        },
+        {
+          "name": "objectGroups",
+          "baseline": 1,
+          "candidate": 1,
+          "delta": 0
+        },
+        {
+          "name": "objectAggregates",
+          "baseline": 0,
+          "candidate": 0,
+          "delta": 0
+        },
+        {
+          "name": "routingItems",
+          "baseline": 12,
+          "candidate": 12,
+          "delta": 0
+        },
+        {
+          "name": "routingSuppressedObjects",
+          "baseline": 0,
+          "candidate": 0,
+          "delta": 0
+        },
+        {
+          "name": "diagnostics",
+          "baseline": 11,
+          "candidate": 11,
+          "delta": 0
+        },
+        {
+          "name": "diagnosticWarnings",
+          "baseline": 0,
+          "candidate": 0,
+          "delta": 0
+        },
+        {
+          "name": "diagnosticErrors",
+          "baseline": 0,
+          "candidate": 0,
+          "delta": 0
+        },
+        {
+          "name": "qualityIssues",
+          "baseline": 1,
+          "candidate": 1,
+          "delta": 0
+        },
+        {
+          "name": "measurementChecked",
+          "baseline": 1,
+          "candidate": 1,
+          "delta": 0
+        },
+        {
+          "name": "measurementConsistent",
+          "baseline": 1,
+          "candidate": 1,
+          "delta": 0
+        },
+        {
+          "name": "measurementOutliers",
+          "baseline": 0,
+          "candidate": 0,
+          "delta": 0
+        },
+        {
+          "name": "passedAssertions",
+          "baseline": 38,
+          "candidate": 38,
+          "delta": 0
+        },
+        {
+          "name": "failedAssertions",
+          "baseline": 0,
+          "candidate": 0,
+          "delta": 0
+        }
+      ],
+      "signals": []
+    }
+  ],
+  "signals": [],
+  "passed": true
+}

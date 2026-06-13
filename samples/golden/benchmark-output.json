@@ -1,0 +1,1034 @@
+{
+  "name": "OpenPlanTrace golden smoke fixtures",
+  "generatedAt": "2026-06-09T15:05:54.1676145+00:00",
+  "cases": [
+    {
+      "fixtureId": "semantic-smoke-dxf",
+      "fixtureName": "Semantic smoke DXF",
+      "sourcePath": "semantic-smoke.dxf",
+      "passed": true,
+      "scanSucceeded": true,
+      "durationMilliseconds": 783.6632,
+      "counts": {
+        "pages": 1,
+        "regions": 3,
+        "dimensions": 1,
+        "annotations": 1,
+        "annotationReferences": 0,
+        "gridAxes": 1,
+        "gridBaySpacings": 0,
+        "surfacePatterns": 0,
+        "walls": 6,
+        "wallNodes": 8,
+        "wallEdges": 6,
+        "rooms": 1,
+        "roomAdjacencies": 0,
+        "roomClusters": 1,
+        "openings": 1,
+        "objects": 3,
+        "objectGroups": 1,
+        "objectAggregates": 0,
+        "routingItems": 12,
+        "routingSuppressedObjects": 0,
+        "diagnostics": 11,
+        "diagnosticWarnings": 0,
+        "diagnosticErrors": 0,
+        "qualityGrade": "Strong",
+        "qualityConfidence": 0.881035647603486,
+        "qualityRequiresReview": true,
+        "qualityIssues": 1,
+        "hasReliableCalibration": true,
+        "measurementCheckedCount": 1,
+        "measurementConsistentCount": 1,
+        "measurementOutlierCount": 0,
+        "measurementSelectedMillimetersPerDrawingUnit": 1,
+        "measurementMedianMillimetersPerDrawingUnit": 1,
+        "measurementScaleSpreadRatio": null,
+        "measurementConsistencyConfidence": 0.92
+      },
+      "assertions": [
+        {
+          "name": "scan.completed",
+          "passed": true,
+          "expected": "scan succeeds",
+          "actual": "scan succeeded",
+          "message": "Input was scanned successfully."
+        },
+        {
+          "name": "pages.min",
+          "passed": true,
+          "expected": "\u003E= 1",
+          "actual": "1",
+          "message": "pages.min met minimum."
+        },
+        {
+          "name": "regions.min",
+          "passed": true,
+          "expected": "\u003E= 2",
+          "actual": "3",
+          "message": "regions.min met minimum."
+        },
+        {
+          "name": "dimensions.min",
+          "passed": true,
+          "expected": "\u003E= 1",
+          "actual": "1",
+          "message": "dimensions.min met minimum."
+        },
+        {
+          "name": "annotations.min",
+          "passed": true,
+          "expected": "\u003E= 1",
+          "actual": "1",
+          "message": "annotations.min met minimum."
+        },
+        {
+          "name": "grid_axes.min",
+          "passed": true,
+          "expected": "\u003E= 1",
+          "actual": "1",
+          "message": "grid_axes.min met minimum."
+        },
+        {
+          "name": "walls.min",
+          "passed": true,
+          "expected": "\u003E= 4",
+          "actual": "6",
+          "message": "walls.min met minimum."
+        },
+        {
+          "name": "wall_nodes.min",
+          "passed": true,
+          "expected": "\u003E= 4",
+          "actual": "8",
+          "message": "wall_nodes.min met minimum."
+        },
+        {
+          "name": "wall_edges.min",
+          "passed": true,
+          "expected": "\u003E= 4",
+          "actual": "6",
+          "message": "wall_edges.min met minimum."
+        },
+        {
+          "name": "rooms.min",
+          "passed": true,
+          "expected": "\u003E= 1",
+          "actual": "1",
+          "message": "rooms.min met minimum."
+        },
+        {
+          "name": "room_clusters.min",
+          "passed": true,
+          "expected": "\u003E= 1",
+          "actual": "1",
+          "message": "room_clusters.min met minimum."
+        },
+        {
+          "name": "openings.min",
+          "passed": true,
+          "expected": "\u003E= 1",
+          "actual": "1",
+          "message": "openings.min met minimum."
+        },
+        {
+          "name": "objects.min",
+          "passed": true,
+          "expected": "\u003E= 2",
+          "actual": "3",
+          "message": "objects.min met minimum."
+        },
+        {
+          "name": "object_groups.min",
+          "passed": true,
+          "expected": "\u003E= 1",
+          "actual": "1",
+          "message": "object_groups.min met minimum."
+        },
+        {
+          "name": "diagnostic_errors.max",
+          "passed": true,
+          "expected": "\u003C= 0",
+          "actual": "0",
+          "message": "diagnostic_errors.max met maximum."
+        },
+        {
+          "name": "quality_grade.min",
+          "passed": true,
+          "expected": "\u003E= Usable",
+          "actual": "Strong",
+          "message": "quality_grade.min met minimum."
+        },
+        {
+          "name": "quality_confidence.min",
+          "passed": true,
+          "expected": "\u003E= 0.65",
+          "actual": "0.881",
+          "message": "quality_confidence.min met minimum: quality grade Strong."
+        },
+        {
+          "name": "quality_issues.max",
+          "passed": true,
+          "expected": "\u003C= 4",
+          "actual": "1",
+          "message": "quality_issues.max met maximum."
+        },
+        {
+          "name": "quality_scan_risk_issues.max",
+          "passed": true,
+          "expected": "\u003C= 0",
+          "actual": "0",
+          "message": "quality_scan_risk_issues.max met maximum."
+        },
+        {
+          "name": "quality_issue.forbidden.quality.scan_risk.sheet_contamination",
+          "passed": true,
+          "expected": "absent",
+          "actual": "quality.object_groups_require_review",
+          "message": "Forbidden quality issue code \u0027quality.scan_risk.sheet_contamination\u0027 was absent."
+        },
+        {
+          "name": "region.required.Sheet",
+          "passed": true,
+          "expected": "Sheet",
+          "actual": "Sheet, TitleBlock, MainFloorPlan",
+          "message": "Sheet was found."
+        },
+        {
+          "name": "region.required.MainFloorPlan",
+          "passed": true,
+          "expected": "MainFloorPlan",
+          "actual": "Sheet, TitleBlock, MainFloorPlan",
+          "message": "MainFloorPlan was found."
+        },
+        {
+          "name": "annotation.required.GeneralNotes",
+          "passed": true,
+          "expected": "GeneralNotes",
+          "actual": "GeneralNotes",
+          "message": "GeneralNotes was found."
+        },
+        {
+          "name": "grid_label.required.A",
+          "passed": true,
+          "expected": "A",
+          "actual": "A",
+          "message": "A was found."
+        },
+        {
+          "name": "opening_type.required.Door",
+          "passed": true,
+          "expected": "Door",
+          "actual": "Door",
+          "message": "Door was found."
+        },
+        {
+          "name": "opening_operation.required.Hinged",
+          "passed": true,
+          "expected": "Hinged",
+          "actual": "Hinged",
+          "message": "Hinged was found."
+        },
+        {
+          "name": "object_category.required.HVACEquipment",
+          "passed": true,
+          "expected": "HVACEquipment",
+          "actual": "HVACEquipment, GenericSymbol",
+          "message": "HVACEquipment was found."
+        },
+        {
+          "name": "object_category.required.GenericSymbol",
+          "passed": true,
+          "expected": "GenericSymbol",
+          "actual": "HVACEquipment, GenericSymbol",
+          "message": "GenericSymbol was found."
+        },
+        {
+          "name": "room_label.required.OFFICE",
+          "passed": true,
+          "expected": "OFFICE",
+          "actual": "OFFICE",
+          "message": "OFFICE was found."
+        },
+        {
+          "name": "layer_category.required.Wall",
+          "passed": true,
+          "expected": "Wall",
+          "actual": "Dimension, Door, Grid, Text, Room, Unknown, Wall, HVAC",
+          "message": "Wall was found."
+        },
+        {
+          "name": "layer_category.required.Grid",
+          "passed": true,
+          "expected": "Grid",
+          "actual": "Dimension, Door, Grid, Text, Room, Unknown, Wall, HVAC",
+          "message": "Grid was found."
+        },
+        {
+          "name": "layer_category.required.Dimension",
+          "passed": true,
+          "expected": "Dimension",
+          "actual": "Dimension, Door, Grid, Text, Room, Unknown, Wall, HVAC",
+          "message": "Dimension was found."
+        },
+        {
+          "name": "layer_category.required.Text",
+          "passed": true,
+          "expected": "Text",
+          "actual": "Dimension, Door, Grid, Text, Room, Unknown, Wall, HVAC",
+          "message": "Text was found."
+        },
+        {
+          "name": "layer_category.required.HVAC",
+          "passed": true,
+          "expected": "HVAC",
+          "actual": "Dimension, Door, Grid, Text, Room, Unknown, Wall, HVAC",
+          "message": "HVAC was found."
+        },
+        {
+          "name": "calibration.required",
+          "passed": true,
+          "expected": "reliable calibration",
+          "actual": "reliable calibration",
+          "message": "reliable calibration was found."
+        },
+        {
+          "name": "rooms.target_recall.min",
+          "passed": true,
+          "expected": "\u003E= 1",
+          "actual": "1",
+          "message": "rooms.target_recall.min met minimum: 1/1 expected rooms targets matched."
+        },
+        {
+          "name": "openings.target_recall.min",
+          "passed": true,
+          "expected": "\u003E= 1",
+          "actual": "1",
+          "message": "openings.target_recall.min met minimum: 1/1 expected openings targets matched."
+        },
+        {
+          "name": "object_groups.target_recall.min",
+          "passed": true,
+          "expected": "\u003E= 1",
+          "actual": "1",
+          "message": "object_groups.target_recall.min met minimum: 1/1 expected object_groups targets matched."
+        }
+      ],
+      "errorMessage": null,
+      "properties": {
+        "difficulty": "smoke",
+        "planType": "architectural",
+        "sourceFormat": "dxf"
+      },
+      "metrics": [
+        {
+          "detector": "rooms",
+          "expectedCount": 1,
+          "detectedCount": 1,
+          "matchedCount": 1,
+          "missedCount": 0,
+          "extraCount": 0,
+          "recall": 1,
+          "precision": 1,
+          "f1": 1,
+          "matches": [
+            {
+              "targetIndex": 0,
+              "targetId": "office-room",
+              "matched": true,
+              "detectionId": "page:1:room:1",
+              "score": 1,
+              "evidence": "page 1, label \u0027OFFICE\u0027"
+            }
+          ],
+          "precisionScoringEnabled": true,
+          "scoredDetectionCount": 1,
+          "reviewOnlyDetectionCount": 0,
+          "extraDetections": [],
+          "reviewOnlyDetections": []
+        },
+        {
+          "detector": "openings",
+          "expectedCount": 1,
+          "detectedCount": 1,
+          "matchedCount": 1,
+          "missedCount": 0,
+          "extraCount": 0,
+          "recall": 1,
+          "precision": 1,
+          "f1": 1,
+          "matches": [
+            {
+              "targetIndex": 0,
+              "targetId": "hinged-door",
+              "matched": true,
+              "detectionId": "page:1:opening:1",
+              "score": 1,
+              "evidence": "page 1, opening type Door, opening operation Hinged"
+            }
+          ],
+          "precisionScoringEnabled": true,
+          "scoredDetectionCount": 1,
+          "reviewOnlyDetectionCount": 0,
+          "extraDetections": [],
+          "reviewOnlyDetections": []
+        },
+        {
+          "detector": "object_groups",
+          "expectedCount": 1,
+          "detectedCount": 1,
+          "matchedCount": 1,
+          "missedCount": 0,
+          "extraCount": 0,
+          "recall": 1,
+          "precision": 1,
+          "f1": 1,
+          "matches": [
+            {
+              "targetIndex": 0,
+              "targetId": "unknown-iso-tags",
+              "matched": true,
+              "detectionId": "object-group:2",
+              "score": 1,
+              "evidence": "text \u0027ISO_TAG_71\u0027, count \u003E= 2, requires review True, object category GenericSymbol"
+            }
+          ],
+          "precisionScoringEnabled": true,
+          "scoredDetectionCount": 1,
+          "reviewOnlyDetectionCount": 0,
+          "extraDetections": [],
+          "reviewOnlyDetections": []
+        }
+      ],
+      "qualityIssues": [
+        {
+          "code": "quality.object_groups_require_review",
+          "severity": "Info",
+          "stage": "quality",
+          "scope": "Document",
+          "count": 1,
+          "message": "One or more repeated object/symbol groups still require user review.",
+          "pageNumbers": [],
+          "maxConfidence": 0.9,
+          "sourcePrimitiveCount": 0,
+          "sourcePrimitiveIds": [],
+          "properties": {
+            "objectGroupCount": "1",
+            "reviewGroupCount": "1"
+          }
+        }
+      ],
+      "diagnosticIssues": [
+        {
+          "code": "annotations.detected",
+          "severity": "Info",
+          "stage": "annotations",
+          "scope": "Annotation",
+          "count": 1,
+          "message": "Detected 1 annotation blocks with 2 text items and 0 plan reference(s).",
+          "pageNumbers": [
+            1
+          ],
+          "maxConfidence": 0.74,
+          "sourcePrimitiveCount": 2,
+          "sourcePrimitiveIds": [
+            "dxf:entity:16:TEXT",
+            "dxf:entity:17:TEXT"
+          ],
+          "properties": {
+            "blocks": "1",
+            "items": "2",
+            "kinds": "GeneralNotes",
+            "references": "0"
+          }
+        },
+        {
+          "code": "dimensions.detected",
+          "severity": "Info",
+          "stage": "dimensions",
+          "scope": "Dimension",
+          "count": 1,
+          "message": "Detected 1 dimension annotation(s).",
+          "pageNumbers": [
+            1
+          ],
+          "maxConfidence": 0.9,
+          "sourcePrimitiveCount": 2,
+          "sourcePrimitiveIds": [
+            "dxf:entity:12:TEXT",
+            "dxf:entity:11:LINE"
+          ],
+          "properties": {
+            "alignedCount": "0",
+            "matchedLineCount": "1",
+            "unitHintCount": "0",
+            "witnessLineCount": "0"
+          }
+        },
+        {
+          "code": "grid_axes.detected",
+          "severity": "Info",
+          "stage": "grid-axes",
+          "scope": "Grid",
+          "count": 1,
+          "message": "Detected 1 structural grid axes.",
+          "pageNumbers": [
+            1
+          ],
+          "maxConfidence": 0.9,
+          "sourcePrimitiveCount": 2,
+          "sourcePrimitiveIds": [
+            "dxf:entity:9:LINE",
+            "dxf:entity:10:TEXT"
+          ],
+          "properties": {
+            "axisCount": "1",
+            "candidateLineCount": "1",
+            "candidateRunCount": "1",
+            "horizontalCount": "0",
+            "inferredCount": "0",
+            "labeledCount": "1",
+            "layerBackedCount": "1",
+            "sourceRegionId": "page:1:main-floorplan",
+            "unlabeledCount": "0",
+            "verticalCount": "1"
+          }
+        },
+        {
+          "code": "measurement_consistency.dimensions_consistent",
+          "severity": "Info",
+          "stage": "measurement-consistency",
+          "scope": "Calibration",
+          "count": 1,
+          "message": "Matched dimensions are consistent with the selected calibration.",
+          "pageNumbers": [],
+          "maxConfidence": 0.92,
+          "sourcePrimitiveCount": 2,
+          "sourcePrimitiveIds": [
+            "dxf:entity:12:TEXT",
+            "dxf:entity:11:LINE"
+          ],
+          "properties": {
+            "checkedCount": "1",
+            "medianDimensionMillimetersPerDrawingUnit": "1",
+            "selectedMillimetersPerDrawingUnit": "1",
+            "spreadRatio": ""
+          }
+        },
+        {
+          "code": "object_groups.detected",
+          "severity": "Info",
+          "stage": "object-groups",
+          "scope": "Detection",
+          "count": 1,
+          "message": "Grouped 3 object candidate(s) into 1 deterministic object group(s).",
+          "pageNumbers": [],
+          "maxConfidence": 0.65,
+          "sourcePrimitiveCount": 2,
+          "sourcePrimitiveIds": [
+            "dxf:entity:8:INSERT",
+            "dxf:entity:7:INSERT"
+          ],
+          "properties": {
+            "candidateCount": "3",
+            "groupCount": "1",
+            "profileLabeledGroupCount": "0",
+            "profileRuleCount": "0",
+            "repeatedGroupCount": "1",
+            "reviewGroupCount": "1"
+          }
+        },
+        {
+          "code": "rooms.clusters.detected",
+          "severity": "Info",
+          "stage": "room-adjacency",
+          "scope": "Room",
+          "count": 1,
+          "message": "Detected 1 room cluster(s).",
+          "pageNumbers": [
+            1
+          ],
+          "maxConfidence": 0.65,
+          "sourcePrimitiveCount": 0,
+          "sourcePrimitiveIds": [],
+          "properties": {
+            "clusterCount": "1",
+            "compartmentGroupClusterCount": "0",
+            "connectedSuiteClusterCount": "0",
+            "corridorLikeClusterCount": "0",
+            "largestClusterRoomCount": "1",
+            "openPlanClusterCount": "0",
+            "singleRoomClusterCount": "1",
+            "singletonClusterCount": "1"
+          }
+        },
+        {
+          "code": "rooms.use_semantics.detected",
+          "severity": "Info",
+          "stage": "rooms",
+          "scope": "Room",
+          "count": 1,
+          "message": "Classified room-use hints for 1 of 1 room(s).",
+          "pageNumbers": [
+            1
+          ],
+          "maxConfidence": 0.65,
+          "sourcePrimitiveCount": 1,
+          "sourcePrimitiveIds": [
+            "dxf:entity:5:TEXT"
+          ],
+          "properties": {
+            "knownUseKindCount": "1",
+            "roomCount": "1",
+            "unknownUseKindCount": "0",
+            "useKinds": "Office:1"
+          }
+        },
+        {
+          "code": "rooms.wall_graph_cycles.detected",
+          "severity": "Info",
+          "stage": "rooms",
+          "scope": "Detection",
+          "count": 1,
+          "message": "1 room candidates were extracted from closed wall-graph faces.",
+          "pageNumbers": [
+            1
+          ],
+          "maxConfidence": 0.65,
+          "sourcePrimitiveCount": 4,
+          "sourcePrimitiveIds": [
+            "dxf:entity:3:LINE",
+            "dxf:entity:1:LINE",
+            "dxf:entity:4:LINE",
+            "dxf:entity:2:LINE"
+          ],
+          "properties": {
+            "graphEdgeCount": "6",
+            "gridCellCount": "28",
+            "roomCount": "1"
+          }
+        },
+        {
+          "code": "title_block.fields.detected",
+          "severity": "Info",
+          "stage": "title-block-analysis",
+          "scope": "TitleBlock",
+          "count": 1,
+          "message": "Extracted 3 title-block field(s).",
+          "pageNumbers": [
+            1
+          ],
+          "maxConfidence": 0.819,
+          "sourcePrimitiveCount": 7,
+          "sourcePrimitiveIds": [
+            "dxf:entity:22:TEXT",
+            "dxf:entity:23:TEXT",
+            "dxf:entity:24:TEXT",
+            "dxf:entity:18:LINE",
+            "dxf:entity:19:LINE",
+            "dxf:entity:20:LINE",
+            "dxf:entity:21:LINE"
+          ],
+          "properties": {
+            "fieldKinds": "ProjectName,SheetNumber,Scale",
+            "regionId": "page:1:title-block"
+          }
+        },
+        {
+          "code": "walls.layer_filtered_candidates",
+          "severity": "Info",
+          "stage": "walls",
+          "scope": "Layer",
+          "count": 1,
+          "message": "2 line candidates were skipped by layer-aware wall filtering.",
+          "pageNumbers": [
+            1
+          ],
+          "maxConfidence": 0.65,
+          "sourcePrimitiveCount": 2,
+          "sourcePrimitiveIds": [
+            "dxf:entity:9:LINE",
+            "dxf:entity:11:LINE"
+          ],
+          "properties": {
+            "categories": "Dimension:1,Grid:1",
+            "eligibleLineCount": "6",
+            "eligibleLineCountBeforeLimit": "6",
+            "filteredLineCount": "2",
+            "sourceRegionId": "page:1:main-floorplan"
+          }
+        },
+        {
+          "code": "wall_graph.components.detected",
+          "severity": "Info",
+          "stage": "wall-graph",
+          "scope": "Document",
+          "count": 1,
+          "message": "Wall graph connected components were summarized for topology review.",
+          "pageNumbers": [],
+          "maxConfidence": 0.65,
+          "sourcePrimitiveCount": 0,
+          "sourcePrimitiveIds": [],
+          "properties": {
+            "componentCount": "3",
+            "isolatedFragmentCount": "2",
+            "largestComponentDrawingLength": "1240",
+            "largestComponentId": "page:1:wall-component:1",
+            "largestComponentWallCount": "4",
+            "mainStructuralComponentCount": "1",
+            "objectLikeIslandCount": "0",
+            "secondaryStructuralComponentCount": "0"
+          }
+        }
+      ],
+      "stages": [
+        {
+          "stage": "layer-analysis",
+          "durationMilliseconds": 31.8489,
+          "inputCount": 0,
+          "outputCount": 9,
+          "diagnosticCount": 0,
+          "infoCount": 0,
+          "warningCount": 0,
+          "errorCount": 0
+        },
+        {
+          "stage": "raster-extraction",
+          "durationMilliseconds": 0.7801,
+          "inputCount": 9,
+          "outputCount": 9,
+          "diagnosticCount": 0,
+          "infoCount": 0,
+          "warningCount": 0,
+          "errorCount": 0
+        },
+        {
+          "stage": "pdf-image-analysis",
+          "durationMilliseconds": 0.4568,
+          "inputCount": 9,
+          "outputCount": 9,
+          "diagnosticCount": 0,
+          "infoCount": 0,
+          "warningCount": 0,
+          "errorCount": 0
+        },
+        {
+          "stage": "sheet-regions",
+          "durationMilliseconds": 46.8134,
+          "inputCount": 9,
+          "outputCount": 12,
+          "diagnosticCount": 0,
+          "infoCount": 0,
+          "warningCount": 0,
+          "errorCount": 0
+        },
+        {
+          "stage": "title-block-analysis",
+          "durationMilliseconds": 57.9037,
+          "inputCount": 12,
+          "outputCount": 16,
+          "diagnosticCount": 1,
+          "infoCount": 1,
+          "warningCount": 0,
+          "errorCount": 0
+        },
+        {
+          "stage": "calibration",
+          "durationMilliseconds": 92.5415,
+          "inputCount": 16,
+          "outputCount": 19,
+          "diagnosticCount": 0,
+          "infoCount": 0,
+          "warningCount": 0,
+          "errorCount": 0
+        },
+        {
+          "stage": "dimensions",
+          "durationMilliseconds": 32.0148,
+          "inputCount": 19,
+          "outputCount": 20,
+          "diagnosticCount": 1,
+          "infoCount": 1,
+          "warningCount": 0,
+          "errorCount": 0
+        },
+        {
+          "stage": "annotations",
+          "durationMilliseconds": 19.824,
+          "inputCount": 20,
+          "outputCount": 23,
+          "diagnosticCount": 1,
+          "infoCount": 1,
+          "warningCount": 0,
+          "errorCount": 0
+        },
+        {
+          "stage": "grid-axes",
+          "durationMilliseconds": 20.1798,
+          "inputCount": 23,
+          "outputCount": 24,
+          "diagnosticCount": 1,
+          "infoCount": 1,
+          "warningCount": 0,
+          "errorCount": 0
+        },
+        {
+          "stage": "grid-bays",
+          "durationMilliseconds": 1.7218,
+          "inputCount": 24,
+          "outputCount": 24,
+          "diagnosticCount": 0,
+          "infoCount": 0,
+          "warningCount": 0,
+          "errorCount": 0
+        },
+        {
+          "stage": "measurement-consistency",
+          "durationMilliseconds": 5.8857,
+          "inputCount": 24,
+          "outputCount": 25,
+          "diagnosticCount": 1,
+          "infoCount": 1,
+          "warningCount": 0,
+          "errorCount": 0
+        },
+        {
+          "stage": "dimension-chains",
+          "durationMilliseconds": 5.8272,
+          "inputCount": 25,
+          "outputCount": 25,
+          "diagnosticCount": 0,
+          "infoCount": 0,
+          "warningCount": 0,
+          "errorCount": 0
+        },
+        {
+          "stage": "walls",
+          "durationMilliseconds": 19.7549,
+          "inputCount": 25,
+          "outputCount": 31,
+          "diagnosticCount": 1,
+          "infoCount": 1,
+          "warningCount": 0,
+          "errorCount": 0
+        },
+        {
+          "stage": "wall-graph",
+          "durationMilliseconds": 18.5585,
+          "inputCount": 31,
+          "outputCount": 48,
+          "diagnosticCount": 1,
+          "infoCount": 1,
+          "warningCount": 0,
+          "errorCount": 0
+        },
+        {
+          "stage": "openings",
+          "durationMilliseconds": 20.1592,
+          "inputCount": 48,
+          "outputCount": 49,
+          "diagnosticCount": 0,
+          "infoCount": 0,
+          "warningCount": 0,
+          "errorCount": 0
+        },
+        {
+          "stage": "rooms",
+          "durationMilliseconds": 42.8069,
+          "inputCount": 49,
+          "outputCount": 50,
+          "diagnosticCount": 2,
+          "infoCount": 2,
+          "warningCount": 0,
+          "errorCount": 0
+        },
+        {
+          "stage": "room-adjacency",
+          "durationMilliseconds": 16.3492,
+          "inputCount": 50,
+          "outputCount": 51,
+          "diagnosticCount": 1,
+          "infoCount": 1,
+          "warningCount": 0,
+          "errorCount": 0
+        },
+        {
+          "stage": "measurement-scale-provenance",
+          "durationMilliseconds": 2.1732,
+          "inputCount": 51,
+          "outputCount": 51,
+          "diagnosticCount": 0,
+          "infoCount": 0,
+          "warningCount": 0,
+          "errorCount": 0
+        },
+        {
+          "stage": "object-candidates",
+          "durationMilliseconds": 20.1132,
+          "inputCount": 51,
+          "outputCount": 54,
+          "diagnosticCount": 0,
+          "infoCount": 0,
+          "warningCount": 0,
+          "errorCount": 0
+        },
+        {
+          "stage": "object-groups",
+          "durationMilliseconds": 9.6923,
+          "inputCount": 54,
+          "outputCount": 55,
+          "diagnosticCount": 1,
+          "infoCount": 1,
+          "warningCount": 0,
+          "errorCount": 0
+        },
+        {
+          "stage": "object-aggregates",
+          "durationMilliseconds": 6.3542,
+          "inputCount": 55,
+          "outputCount": 55,
+          "diagnosticCount": 0,
+          "infoCount": 0,
+          "warningCount": 0,
+          "errorCount": 0
+        },
+        {
+          "stage": "visual-ai",
+          "durationMilliseconds": 1.8496,
+          "inputCount": 55,
+          "outputCount": 55,
+          "diagnosticCount": 0,
+          "infoCount": 0,
+          "warningCount": 0,
+          "errorCount": 0
+        },
+        {
+          "stage": "layer-consistency",
+          "durationMilliseconds": 2.5742,
+          "inputCount": 55,
+          "outputCount": 55,
+          "diagnosticCount": 0,
+          "infoCount": 0,
+          "warningCount": 0,
+          "errorCount": 0
+        }
+      ],
+      "passedAssertionCount": 38,
+      "failedAssertionCount": 0
+    }
+  ],
+  "schemaVersion": "openplantrace.benchmark-result.v1",
+  "scoreboard": {
+    "schemaVersion": "openplantrace.benchmark-scoreboard.v1",
+    "generatedAt": "2026-06-09T15:05:54.1817326+00:00",
+    "grade": "Strong",
+    "overallScore": 0.986,
+    "consumerReadinessScore": 0.993,
+    "readyForDownstreamUse": true,
+    "caseCount": 1,
+    "scoredCaseCount": 1,
+    "skippedCaseCount": 0,
+    "failedScanCount": 0,
+    "failedAssertionCount": 0,
+    "expectedTargetCount": 3,
+    "matchedTargetCount": 3,
+    "missedTargetCount": 0,
+    "extraDetectionCount": 0,
+    "cases": [
+      {
+        "fixtureId": "semantic-smoke-dxf",
+        "grade": "Strong",
+        "overallScore": 0.986,
+        "targetF1": 1,
+        "targetRecall": 1,
+        "targetPrecision": 1,
+        "assertionReliability": 1,
+        "scanQualityScore": 0.8003,
+        "measurementScore": 1,
+        "expectedTargetCount": 3,
+        "matchedTargetCount": 3,
+        "missedTargetCount": 0,
+        "extraDetectionCount": 0,
+        "failedAssertionCount": 0,
+        "qualityGrade": "Strong",
+        "qualityConfidence": 0.881035647603486,
+        "requiresReview": true,
+        "skipped": false,
+        "blockingReasons": [
+          "scan quality requires review (Strong)"
+        ]
+      }
+    ],
+    "detectors": [
+      {
+        "detector": "object_groups",
+        "grade": "Strong",
+        "score": 1,
+        "expectedCount": 1,
+        "detectedCount": 1,
+        "matchedCount": 1,
+        "missedCount": 0,
+        "extraCount": 0,
+        "recall": 1,
+        "precision": 1,
+        "f1": 1,
+        "caseCount": 1,
+        "recommendedAction": "Keep object_groups covered with additional real-plan truth targets."
+      },
+      {
+        "detector": "openings",
+        "grade": "Strong",
+        "score": 1,
+        "expectedCount": 1,
+        "detectedCount": 1,
+        "matchedCount": 1,
+        "missedCount": 0,
+        "extraCount": 0,
+        "recall": 1,
+        "precision": 1,
+        "f1": 1,
+        "caseCount": 1,
+        "recommendedAction": "Keep openings covered with additional real-plan truth targets."
+      },
+      {
+        "detector": "rooms",
+        "grade": "Strong",
+        "score": 1,
+        "expectedCount": 1,
+        "detectedCount": 1,
+        "matchedCount": 1,
+        "missedCount": 0,
+        "extraCount": 0,
+        "recall": 1,
+        "precision": 1,
+        "f1": 1,
+        "caseCount": 1,
+        "recommendedAction": "Keep rooms covered with additional real-plan truth targets."
+      }
+    ],
+    "failureBuckets": [
+      {
+        "code": "scan_quality.requires_review",
+        "severity": "Warning",
+        "fixtureId": "semantic-smoke-dxf",
+        "detector": null,
+        "count": 1,
+        "message": "Scan quality is Strong with confidence 0.881.",
+        "evidence": [],
+        "targetIds": []
+      }
+    ],
+    "recommendedNextActions": [
+      "Use the saved scan screenshots to classify quality issues as detector bugs, benchmark-truth gaps, or source-plan ambiguity."
+    ]
+  },
+  "reviewQueue": [],
+  "caseCount": 1,
+  "reviewQueueCount": 0,
+  "passedCaseCount": 1,
+  "failedCaseCount": 0,
+  "skippedCaseCount": 0,
+  "passedAssertionCount": 38,
+  "failedAssertionCount": 0,
+  "passed": true
+}

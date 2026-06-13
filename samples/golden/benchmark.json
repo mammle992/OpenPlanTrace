@@ -1,0 +1,82 @@
+{
+  "schemaVersion": "openplantrace.benchmark-manifest.v1",
+  "name": "OpenPlanTrace golden smoke fixtures",
+  "fixtures": [
+    {
+      "id": "semantic-smoke-dxf",
+      "name": "Semantic smoke DXF",
+      "sourcePath": "semantic-smoke.dxf",
+      "properties": {
+        "difficulty": "smoke",
+        "planType": "architectural",
+        "sourceFormat": "dxf"
+      },
+      "expectations": {
+        "minPages": 1,
+        "minRegions": 2,
+        "minDimensions": 1,
+        "minAnnotations": 1,
+        "minGridAxes": 1,
+        "minWalls": 4,
+        "minWallNodes": 4,
+        "minWallEdges": 4,
+        "minRooms": 1,
+        "minRoomClusters": 1,
+        "minOpenings": 1,
+        "minObjects": 2,
+        "minObjectGroups": 1,
+        "maxDiagnosticErrors": 0,
+        "minQualityGrade": "Usable",
+        "minQualityConfidence": 0.65,
+        "maxQualityIssues": 4,
+        "maxScanRiskIssues": 0,
+        "forbiddenQualityIssueCodes": ["quality.scan_risk.sheet_contamination"],
+        "requiresReliableCalibration": true,
+        "requiredRegionKinds": ["Sheet", "MainFloorPlan"],
+        "requiredAnnotationKinds": ["GeneralNotes"],
+        "requiredGridLabels": ["A"],
+        "requiredOpeningTypes": ["Door"],
+        "requiredOpeningOperations": ["Hinged"],
+        "requiredObjectCategories": ["HVACEquipment", "GenericSymbol"],
+        "requiredRoomLabels": ["OFFICE"],
+        "requiredLayerCategories": ["Wall", "Grid", "Dimension", "Text", "HVAC"],
+        "roomMetrics": {
+          "minRecall": 1.0,
+          "completeTruthSet": true,
+          "targets": [
+            {
+              "id": "office-room",
+              "pageNumber": 1,
+              "label": "OFFICE"
+            }
+          ]
+        },
+        "openingMetrics": {
+          "minRecall": 1.0,
+          "completeTruthSet": true,
+          "targets": [
+            {
+              "id": "hinged-door",
+              "pageNumber": 1,
+              "openingType": "Door",
+              "openingOperation": "Hinged"
+            }
+          ]
+        },
+        "objectGroupMetrics": {
+          "minRecall": 1.0,
+          "completeTruthSet": true,
+          "targets": [
+            {
+              "id": "unknown-iso-tags",
+              "text": "ISO_TAG_71",
+              "objectCategory": "GenericSymbol",
+              "minCount": 2,
+              "requiresReview": true
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

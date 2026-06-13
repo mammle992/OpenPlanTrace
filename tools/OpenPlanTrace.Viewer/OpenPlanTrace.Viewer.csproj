@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>OpenPlanTrace.Viewer</AssemblyName>
+    <RootNamespace>OpenPlanTrace.Viewer</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OpenPlanTrace\OpenPlanTrace.csproj" />
+    <ProjectReference Include="..\..\src\OpenPlanTrace.Export\OpenPlanTrace.Export.csproj" />
+    <ProjectReference Include="..\..\src\OpenPlanTrace.Pdf\OpenPlanTrace.Pdf.csproj" />
+  </ItemGroup>
+</Project>

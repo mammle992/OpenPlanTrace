@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>OpenPlanTrace.Pdf</AssemblyName>
+    <RootNamespace>OpenPlanTrace.Pdf</RootNamespace>
+    <IsPackable>true</IsPackable>
+    <PackageId>OpenPlanTrace.Pdf</PackageId>
+    <Title>OpenPlanTrace PDF adapter</Title>
+    <Description>PdfPig-based PDF extraction adapter for OpenPlanTrace.</Description>
+    <Authors>OpenPlanTrace contributors</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="PdfPig" Version="0.1.14" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\OpenPlanTrace\OpenPlanTrace.csproj" />
+  </ItemGroup>
+</Project>

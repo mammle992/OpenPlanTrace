@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>OpenPlanTrace.Export</AssemblyName>
+    <RootNamespace>OpenPlanTrace.Export</RootNamespace>
+    <IsPackable>true</IsPackable>
+    <PackageId>OpenPlanTrace.Export</PackageId>
+    <Title>OpenPlanTrace export tools</Title>
+    <Description>JSON and SVG exporters for OpenPlanTrace scan results.</Description>
+    <Authors>OpenPlanTrace contributors</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\OpenPlanTrace\OpenPlanTrace.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource
+      Include="..\..\docs\schemas\openplantrace.scan.v44.schema.json"
+      LogicalName="OpenPlanTrace.Export.Schemas.openplantrace.scan.v44.schema.json" />
+    <EmbeddedResource
+      Include="..\..\docs\schemas\openplantrace.visual-snapshot.v2.schema.json"
+      LogicalName="OpenPlanTrace.Export.Schemas.openplantrace.visual-snapshot.v2.schema.json" />
+    <EmbeddedResource
+      Include="..\..\docs\schemas\openplantrace.placement.v1.schema.json"
+      LogicalName="OpenPlanTrace.Export.Schemas.openplantrace.placement.v1.schema.json" />
+  </ItemGroup>
+</Project>

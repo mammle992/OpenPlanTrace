@@ -1,0 +1,406 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:openplantrace:schema:kvemo-crops:v1",
+  "title": "OpenPlanTrace Kvemo Crop Manifest Entry",
+  "description": "JSON Lines entry schema for Kvemo object/symbol crop exports. Each line describes one deterministic crop image, its page-coordinate placement, source provenance, review priority, and optional real model classification. Crop-only entries must not invent labels.",
+  "type": "object",
+  "additionalProperties": true,
+  "x-openplantrace-schemaVersion": "openplantrace.kvemo-crops.v1",
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "engine",
+    "documentId",
+    "detectionId",
+    "detectionKind",
+    "reviewKey",
+    "pageNumber",
+    "pageWidth",
+    "pageHeight",
+    "coordinateSpace",
+    "coordinateOrigin",
+    "coordinateYAxisDirection",
+    "bounds",
+    "cropBounds",
+    "objectToCropAreaRatio",
+    "cropToPageAreaRatio",
+    "candidateKind",
+    "category",
+    "deterministicConfidence",
+    "detectedTags",
+    "nearbyText",
+    "nearbyTextCount",
+    "sourcePrimitiveIds",
+    "sourceEvidence",
+    "evidence",
+    "reviewPriority",
+    "reviewReasons",
+    "suggestedTrainingUse",
+    "visualSimilarityKey",
+    "imageFingerprint",
+    "imagePath",
+    "imageFileName",
+    "imageWidth",
+    "imageHeight",
+    "imageColorSpace",
+    "imageSourceId"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "openplantrace.kvemo-crops.v1"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "engine": {
+      "const": "Kvemo"
+    },
+    "documentId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "detectionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "detectionKind": {
+      "type": "string",
+      "enum": [
+        "object",
+        "object-group"
+      ]
+    },
+    "reviewKey": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable key for human review and correction. Group crops use the object-group signature so one user label can apply to matching occurrences."
+    },
+    "groupSignature": {
+      "$ref": "#/$defs/nullableString",
+      "description": "Object group signature when this crop represents a repeated symbol/object family; null for ungrouped single-object crops."
+    },
+    "pageNumber": {
+      "$ref": "#/$defs/pageNumber"
+    },
+    "pageWidth": {
+      "$ref": "#/$defs/nonNegativeNumber"
+    },
+    "pageHeight": {
+      "$ref": "#/$defs/nonNegativeNumber"
+    },
+    "coordinateSpace": {
+      "const": "page"
+    },
+    "coordinateOrigin": {
+      "const": "top-left"
+    },
+    "coordinateYAxisDirection": {
+      "const": "down"
+    },
+    "bounds": {
+      "$ref": "#/$defs/rect"
+    },
+    "cropBounds": {
+      "$ref": "#/$defs/rect"
+    },
+    "objectToCropAreaRatio": {
+      "$ref": "#/$defs/ratio"
+    },
+    "cropToPageAreaRatio": {
+      "$ref": "#/$defs/ratio"
+    },
+    "candidateKind": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string"
+    },
+    "deterministicConfidence": {
+      "$ref": "#/$defs/ratio"
+    },
+    "label": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "symbolName": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "detectedTags": {
+      "$ref": "#/$defs/stringArray"
+    },
+    "nearbyText": {
+      "$ref": "#/$defs/stringArray"
+    },
+    "nearbyTextCount": {
+      "$ref": "#/$defs/nonNegativeInteger"
+    },
+    "sourcePrimitiveIds": {
+      "$ref": "#/$defs/stringArray"
+    },
+    "sourceEvidence": {
+      "$ref": "#/$defs/sourceEvidence"
+    },
+    "evidence": {
+      "$ref": "#/$defs/stringArray"
+    },
+    "reviewPriority": {
+      "type": "string",
+      "enum": [
+        "High",
+        "Medium",
+        "Low"
+      ]
+    },
+    "reviewReasons": {
+      "$ref": "#/$defs/stringArray"
+    },
+    "suggestedTrainingUse": {
+      "type": "string"
+    },
+    "visualSimilarityKey": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Deterministic coarse visual grouping key computed from the crop image and object aspect ratio. It supports human-in-the-loop grouping and is not a semantic AI label."
+    },
+    "imageFingerprint": {
+      "$ref": "#/$defs/imageFingerprint"
+    },
+    "imagePath": {
+      "type": "string"
+    },
+    "imageFileName": {
+      "type": "string"
+    },
+    "imageWidth": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "imageHeight": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "imageColorSpace": {
+      "const": "RGB"
+    },
+    "imageSourceId": {
+      "type": "string"
+    },
+    "classification": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/classification"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "imageFingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "averageHash64",
+        "differenceHash64",
+        "inkRatio",
+        "objectAspectRatio",
+        "densityBucket",
+        "aspectBucket",
+        "similarityKey"
+      ],
+      "properties": {
+        "averageHash64": {
+          "$ref": "#/$defs/hash64"
+        },
+        "differenceHash64": {
+          "$ref": "#/$defs/hash64"
+        },
+        "inkRatio": {
+          "$ref": "#/$defs/ratio"
+        },
+        "objectAspectRatio": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "densityBucket": {
+          "type": "string",
+          "enum": [
+            "empty",
+            "sparse",
+            "light",
+            "medium",
+            "dense",
+            "very-dense"
+          ]
+        },
+        "aspectBucket": {
+          "type": "string",
+          "enum": [
+            "unknown",
+            "tall",
+            "vertical",
+            "square",
+            "horizontal",
+            "wide"
+          ]
+        },
+        "similarityKey": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "classification": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "label",
+        "category",
+        "confidence",
+        "modelName",
+        "modelVersion",
+        "inferenceEngine",
+        "alternatives",
+        "evidence"
+      ],
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ratio"
+        },
+        "modelName": {
+          "type": "string"
+        },
+        "modelVersion": {
+          "type": "string"
+        },
+        "inferenceEngine": {
+          "type": "string"
+        },
+        "alternatives": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nonNegativeNumber": {
+      "type": "number",
+      "minimum": 0
+    },
+    "hash64": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    },
+    "nullableString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pageNumber": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "ratio": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "rect": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "height": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        }
+      }
+    },
+    "sourceEvidence": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "primitiveCount",
+        "resolvedPrimitiveCount",
+        "primitiveIdsSample",
+        "unresolvedPrimitiveIdsSample",
+        "sourceFormats",
+        "layers",
+        "entityTypes",
+        "blockNames",
+        "colors",
+        "lineTypes",
+        "drawingSpaces"
+      ],
+      "properties": {
+        "primitiveCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "resolvedPrimitiveCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "primitiveIdsSample": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "unresolvedPrimitiveIdsSample": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourceFormats": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "layers": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "entityTypes": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "blockNames": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "colors": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "lineTypes": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "drawingSpaces": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "stringArray": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

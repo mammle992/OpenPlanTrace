@@ -1,0 +1,1035 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:openplantrace:schema:benchmark-manifest:v1",
+  "title": "OpenPlanTrace Benchmark Manifest",
+  "description": "Schema for OpenPlanTrace benchmark manifests used to run deterministic regression fixtures against real PDF, DXF, CAD, and normalized primitive sources. The manifest defines source paths plus count, diagnostics, timing, and detector target expectations. It does not represent AI output.",
+  "type": "object",
+  "additionalProperties": true,
+  "x-openplantrace-schemaVersion": "openplantrace.benchmark-manifest.v1",
+  "required": [
+    "schemaVersion",
+    "fixtures"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "openplantrace.benchmark-manifest.v1"
+    },
+    "name": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "fixtures": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/fixture"
+      }
+    }
+  },
+  "$defs": {
+    "annotationKind": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "GeneralNotes",
+        "Keynotes",
+        "Legend",
+        "Schedule",
+        "Callouts",
+        "TextBlock"
+      ]
+    },
+    "confidenceOrRatio": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "detectionTarget": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "pageNumber": {
+          "$ref": "#/$defs/pageNumber"
+        },
+        "bounds": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/rect"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "minIntersectionOverUnion": {
+          "$ref": "#/$defs/confidenceOrRatio"
+        },
+        "maxCenterDistance": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "label": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "text": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "marker": {
+          "$ref": "#/$defs/nullableString",
+          "description": "Expected marker text for annotation-reference targets, such as a keynote number or callout letter."
+        },
+        "minCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "requiresReview": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "regionKind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/regionKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dimensionKind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/dimensionKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dimensionOrientation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/dimensionOrientation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "annotationKind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/annotationKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "gridAxisOrientation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/gridAxisOrientation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "openingType": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/openingType"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "openingOperation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/openingOperation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "objectCategory": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/objectCategory"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "objectKind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/objectKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "detectedTags": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Optional required object or object-group tag codes, such as P-101 or TK-201. Every listed tag must be present on the matched detection."
+        },
+        "layerCategory": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/layerCategory"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "routingSourceKind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/routingSourceKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "routingObstacleKind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/routingObstacleKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "routingInfluence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/objectRoutingInfluence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "structuralInfluence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/objectStructuralInfluence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "roomUseKind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/roomUseKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "suppressesChildObjects": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Expected aggregate/routing behavior: true when child object detections should not be emitted as separate downstream routing obstacles."
+        },
+        "objectCandidateId": {
+          "$ref": "#/$defs/nullableString",
+          "description": "Expected child object candidate ID for routing-suppressed-object targets."
+        },
+        "suppressedByAggregateId": {
+          "$ref": "#/$defs/nullableString",
+          "description": "Expected aggregate ID that owns or replaces the child object for downstream routing."
+        },
+        "suppressionReason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/routingSuppressionReason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "suppressionAction": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/routingSuppressedObjectAction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "replacementRoutingObstacleId": {
+          "$ref": "#/$defs/nullableString",
+          "description": "Expected replacement routing obstacle ID when a child object is represented by an aggregate obstacle."
+        },
+        "roomUseHintId": {
+          "$ref": "#/$defs/nullableString",
+          "description": "Expected room-use hint ID when a child object is represented by aggregate room-use evidence only."
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidenceOrRatio",
+          "description": "Optional confidence copied from the scan detection that seeded this target. It is provenance for review, not a matching criterion."
+        },
+        "sourcePrimitiveIds": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Optional source primitive IDs copied from the scan detection that seeded this target. They are provenance for review, not matching criteria."
+        },
+        "sourceLayers": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Optional source layer names copied from the scan detection that seeded this target. They are provenance for review, not matching criteria."
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Optional human-readable evidence copied from the scan detection that seeded this target. It is provenance for review, not a matching criterion."
+        }
+      }
+    },
+    "dimensionKind": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "Linear"
+      ]
+    },
+    "dimensionOrientation": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "Horizontal",
+        "Vertical",
+        "Aligned"
+      ]
+    },
+    "expectations": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "minPages": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "minRegions": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "minDimensions": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "minAnnotations": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "minAnnotationReferences": {
+          "$ref": "#/$defs/nonNegativeInteger",
+          "description": "Minimum number of plan-side annotation marker references, such as keynote bubbles or callout tags."
+        },
+        "minGridAxes": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "minGridBaySpacings": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "minSurfacePatterns": {
+          "$ref": "#/$defs/nonNegativeInteger",
+          "description": "Minimum number of dense non-structural surface/detail pattern candidates expected, such as terrace, hatch, tile, or overroof grids excluded from wall topology."
+        },
+        "minWalls": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "minWallNodes": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "minWallEdges": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "minRooms": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "minRoomAdjacencies": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "minRoomClusters": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "minOpenings": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "minObjects": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "minObjectGroups": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "minObjectAggregates": {
+          "$ref": "#/$defs/nonNegativeInteger",
+          "description": "Minimum number of compound object aggregates expected. Useful for detecting grouped objects such as vehicles or repeated equipment assemblies."
+        },
+        "minRoutingItems": {
+          "$ref": "#/$defs/nonNegativeInteger",
+          "description": "Minimum total routing-layer items expected across barriers, passages, obstacles, and room-use hints."
+        },
+        "minRoutingSuppressedObjects": {
+          "$ref": "#/$defs/nonNegativeInteger",
+          "description": "Minimum number of child object detections expected to be suppressed from downstream routing by object aggregates."
+        },
+        "maxWalls": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "maxRooms": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "maxRoomAdjacencies": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "maxRoomClusters": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "maxOpenings": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "maxObjects": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "maxObjectGroups": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "maxObjectAggregates": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "maxRoutingItems": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "maxRoutingSuppressedObjects": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "maxDimensions": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "maxAnnotations": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "maxAnnotationReferences": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "maxGridAxes": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "maxGridBaySpacings": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "maxSurfacePatterns": {
+          "$ref": "#/$defs/nonNegativeInteger",
+          "description": "Maximum number of dense non-structural surface/detail pattern candidates allowed before the scan should be reviewed for over-detection."
+        },
+        "maxDiagnosticWarnings": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "maxDiagnosticErrors": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "maxDurationMilliseconds": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "minQualityGrade": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/scanQualityGrade"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Minimum deterministic scan quality grade required for this fixture. Grade ordering is Unknown, Poor, ReviewRequired, Usable, Strong."
+        },
+        "minQualityConfidence": {
+          "$ref": "#/$defs/confidenceOrRatio",
+          "description": "Minimum overall deterministic scan quality confidence, from 0 to 1."
+        },
+        "maxQualityIssues": {
+          "$ref": "#/$defs/nonNegativeInteger",
+          "description": "Maximum number of deterministic scan quality issues allowed."
+        },
+        "maxScanRiskIssues": {
+          "$ref": "#/$defs/nonNegativeInteger",
+          "description": "Maximum number of professional scan-risk quality issues allowed. Scan-risk issue codes start with quality.scan_risk."
+        },
+        "maxScanReviewQueueItems": {
+          "$ref": "#/$defs/nonNegativeInteger",
+          "description": "Maximum number of scanner-generated review queue items allowed for this fixture."
+        },
+        "maxScanReviewQueueKindCounts": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/nonNegativeInteger"
+          },
+          "description": "Maximum allowed scanner review queue item count per kind, keyed by exported review kind such as OpeningReview or WallGraphGapReview."
+        },
+        "requiredScanReviewQueueKinds": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Scanner review queue kinds that must be present."
+        },
+        "forbiddenScanReviewQueueKinds": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Scanner review queue kinds that must be absent."
+        },
+        "minImportReadinessGrade": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/importReadinessGrade"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Minimum downstream import readiness grade required for this fixture. Grade ordering is Unknown, Blocked, ReviewRequired, Usable, Strong."
+        },
+        "minImportReadinessScore": {
+          "$ref": "#/$defs/confidenceOrRatio",
+          "description": "Minimum downstream import readiness score, from 0 to 1."
+        },
+        "requireGeometryImportReady": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "When true, the scan must be safe enough for downstream geometry-coordinate import."
+        },
+        "requireMetricImportReady": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "When true, the scan must be safe enough for downstream metric-coordinate import."
+        },
+        "requireRoutingImportReady": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "When true, the scan must be safe enough for downstream routing-layer import."
+        },
+        "allowImportReview": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "When false, the fixture fails if import readiness still requires manual review."
+        },
+        "requiresReliableCalibration": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "minMeasurementCheckedCount": {
+          "$ref": "#/$defs/nonNegativeInteger",
+          "description": "Minimum number of matched dimensions that must be checked against selected calibration."
+        },
+        "minMeasurementConsistentCount": {
+          "$ref": "#/$defs/nonNegativeInteger",
+          "description": "Minimum number of matched dimensions that must agree with selected calibration."
+        },
+        "maxMeasurementOutlierCount": {
+          "$ref": "#/$defs/nonNegativeInteger",
+          "description": "Maximum number of matched dimensions allowed to disagree with selected calibration."
+        },
+        "maxMeasurementOutlierRatio": {
+          "$ref": "#/$defs/confidenceOrRatio",
+          "description": "Maximum fraction of checked dimensions allowed to be outliers, from 0 to 1."
+        },
+        "maxMeasurementScaleSpreadRatio": {
+          "$ref": "#/$defs/nonNegativeNumber",
+          "description": "Maximum allowed ratio between the largest and smallest implied matched-dimension drawing scales."
+        },
+        "requiredDiagnosticCodes": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "forbiddenDiagnosticCodes": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "requiredQualityIssueCodes": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Quality issue codes that must be present in the deterministic quality report."
+        },
+        "forbiddenQualityIssueCodes": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Quality issue codes that must be absent from the deterministic quality report. Useful for forbidding scan-risk failures such as sheet contamination."
+        },
+        "requiredImportIssueCodes": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Import readiness issue codes that must be present in the computed import readiness summary."
+        },
+        "forbiddenImportIssueCodes": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Import readiness issue codes that must be absent from the computed import readiness summary."
+        },
+        "stageExpectations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/stageExpectation"
+          }
+        },
+        "requiredRegionKinds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/regionKind"
+          }
+        },
+        "requiredAnnotationKinds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/annotationKind"
+          }
+        },
+        "requiredGridLabels": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "requiredOpeningTypes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/openingType"
+          }
+        },
+        "requiredOpeningOperations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/openingOperation"
+          }
+        },
+        "requiredObjectCategories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/objectCategory"
+          }
+        },
+        "requiredRoomLabels": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "forbiddenRoomLabels": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "requiredLayerCategories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/layerCategory"
+          }
+        },
+        "regionMetrics": {
+          "$ref": "#/$defs/metricExpectations"
+        },
+        "dimensionMetrics": {
+          "$ref": "#/$defs/metricExpectations"
+        },
+        "annotationMetrics": {
+          "$ref": "#/$defs/metricExpectations"
+        },
+        "annotationReferenceMetrics": {
+          "$ref": "#/$defs/metricExpectations",
+          "description": "Target matching for plan-side annotation references. Targets can use marker, text, bounds, pageNumber, and parent annotationKind."
+        },
+        "gridAxisMetrics": {
+          "$ref": "#/$defs/metricExpectations"
+        },
+        "wallMetrics": {
+          "$ref": "#/$defs/metricExpectations"
+        },
+        "roomMetrics": {
+          "$ref": "#/$defs/metricExpectations"
+        },
+        "openingMetrics": {
+          "$ref": "#/$defs/metricExpectations"
+        },
+        "objectMetrics": {
+          "$ref": "#/$defs/metricExpectations"
+        },
+        "objectGroupMetrics": {
+          "$ref": "#/$defs/metricExpectations"
+        },
+        "objectAggregateMetrics": {
+          "$ref": "#/$defs/metricExpectations",
+          "description": "Target matching for compound object aggregates. Targets can use bounds, object category/kind, child-count minimum, review flag, routing influence, structural influence, room-use evidence, and child suppression criteria."
+        },
+        "routingBarrierMetrics": {
+          "$ref": "#/$defs/metricExpectations",
+          "description": "Target matching for downstream routing barriers derived from structural wall evidence."
+        },
+        "routingPassageMetrics": {
+          "$ref": "#/$defs/metricExpectations",
+          "description": "Target matching for downstream routing passages derived from openings, doors, and windows."
+        },
+        "routingObstacleMetrics": {
+          "$ref": "#/$defs/metricExpectations",
+          "description": "Target matching for downstream routing obstacles derived from object candidates or aggregates."
+        },
+        "routingRoomUseHintMetrics": {
+          "$ref": "#/$defs/metricExpectations",
+          "description": "Target matching for semantic routing hints such as parking, mechanical, electrical, or industrial room-use evidence."
+        },
+        "routingSuppressedObjectMetrics": {
+          "$ref": "#/$defs/metricExpectations",
+          "description": "Target matching for child object detections intentionally suppressed from downstream routing. Targets can assert child candidate ID, aggregate ID, suppression reason/action, replacement obstacle, room-use hint, bounds, and aggregate influence."
+        },
+        "layerMetrics": {
+          "$ref": "#/$defs/metricExpectations"
+        }
+      }
+    },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "sourcePath",
+        "expectations"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "sourcePath": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to the fixture source file. Relative paths resolve from the manifest directory; environment variables such as %USERPROFILE% are expanded by the CLI."
+        },
+        "optional": {
+          "type": "boolean",
+          "description": "When true, a missing sourcePath is reported as a skipped case instead of a failed benchmark. Present optional files are scanned normally."
+        },
+        "skipReason": {
+          "$ref": "#/$defs/nullableString",
+          "description": "Optional human-readable reason shown when an optional fixture is skipped because its source file is unavailable."
+        },
+        "expectations": {
+          "$ref": "#/$defs/expectations"
+        },
+        "properties": {
+          "$ref": "#/$defs/stringMap"
+        }
+      }
+    },
+    "gridAxisOrientation": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "Horizontal",
+        "Vertical"
+      ]
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "layerCategory": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "Wall",
+        "Door",
+        "Window",
+        "Room",
+        "Dimension",
+        "Text",
+        "Grid",
+        "Structural",
+        "Equipment",
+        "Electrical",
+        "HVAC",
+        "Plumbing",
+        "FireSafety"
+      ]
+    },
+    "metricExpectations": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "targets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/detectionTarget"
+          }
+        },
+        "minRecall": {
+          "$ref": "#/$defs/confidenceOrRatio"
+        },
+        "minPrecision": {
+          "$ref": "#/$defs/confidenceOrRatio"
+        },
+        "completeTruthSet": {
+          "type": "boolean",
+          "description": "When true, unmatched scored detections are treated as false positives for readiness and comparison. Leave false/omitted for spot-check recall targets whose target list is not exhaustive."
+        }
+      }
+    },
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nonNegativeNumber": {
+      "type": "number",
+      "minimum": 0
+    },
+    "nullableString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "objectCategory": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "TextLabel",
+        "GenericSymbol",
+        "Fixture",
+        "Furniture",
+        "Stair",
+        "Elevator",
+        "Column",
+        "Shaft",
+        "PlumbingFixture",
+        "ElectricalDevice",
+        "Lighting",
+        "HVACEquipment",
+        "FireSafety",
+        "Equipment",
+        "Vehicle",
+        "Structural"
+      ]
+    },
+    "objectKind": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "Fixture",
+        "Furniture",
+        "Vehicle",
+        "Symbol",
+        "Stair",
+        "TextLabel"
+      ]
+    },
+    "objectRoutingInfluence": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "Ignore",
+        "RoomUseEvidenceOnly",
+        "SoftObstacle",
+        "HardObstacle",
+        "StructuralBarrier"
+      ]
+    },
+    "objectStructuralInfluence": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "None",
+        "NonStructural",
+        "FixedEquipment",
+        "Structural"
+      ]
+    },
+    "openingOperation": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "PassThrough",
+        "Hinged",
+        "DoubleSwing",
+        "Sliding",
+        "PocketSliding",
+        "Fixed"
+      ]
+    },
+    "openingType": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "GenericOpening",
+        "Door",
+        "Window"
+      ]
+    },
+    "pageNumber": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "rect": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "height": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        }
+      }
+    },
+    "regionKind": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "Sheet",
+        "MainFloorPlan",
+        "TitleBlock",
+        "Notes",
+        "Dimensions",
+        "KeyPlan",
+        "Legend"
+      ]
+    },
+    "roomUseKind": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "Office",
+        "Meeting",
+        "Corridor",
+        "Lobby",
+        "Restroom",
+        "Bathroom",
+        "Storage",
+        "Mechanical",
+        "Electrical",
+        "Plumbing",
+        "HVAC",
+        "Utility",
+        "Kitchen",
+        "Living",
+        "Bedroom",
+        "Stair",
+        "Elevator",
+        "Shaft",
+        "Laboratory",
+        "Industrial",
+        "Parking",
+        "CommonArea"
+      ]
+    },
+    "routingObstacleKind": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "SoftObstacle",
+        "HardObstacle",
+        "StructuralBarrier"
+      ]
+    },
+    "routingSourceKind": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "Wall",
+        "Opening",
+        "Room",
+        "ObjectCandidate",
+        "ObjectAggregate"
+      ]
+    },
+    "routingSuppressionReason": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "ReplacedByObjectAggregate",
+        "AggregateRoomUseEvidenceOnly"
+      ]
+    },
+    "routingSuppressedObjectAction": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "IgnoreForRouting",
+        "UseAggregateObstacle",
+        "UseAggregateRoomUseHint"
+      ]
+    },
+    "scanQualityGrade": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "Poor",
+        "ReviewRequired",
+        "Usable",
+        "Strong"
+      ]
+    },
+    "importReadinessGrade": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "Blocked",
+        "ReviewRequired",
+        "Usable",
+        "Strong"
+      ]
+    },
+    "stageExpectation": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "stage"
+      ],
+      "properties": {
+        "stage": {
+          "type": "string",
+          "minLength": 1
+        },
+        "maxDurationMilliseconds": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "maxDiagnostics": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "maxWarnings": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "maxErrors": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        }
+      }
+    },
+    "stringArray": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  }
+}

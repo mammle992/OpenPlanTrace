@@ -1,0 +1,225 @@
+{
+  "schemaVersion": "openplantrace.benchmark-manifest.v1",
+  "name": "OpenPlanTrace provided PDF fixture corpus",
+  "fixtures": [
+    {
+      "id": "blyverket-a20-1-plan-1",
+      "name": "Blyverket A20-1 Plan 1. etasje",
+      "sourcePath": "%USERPROFILE%\\Downloads\\Blyverket A20-1 Plan 1. etasje.pdf",
+      "optional": true,
+      "skipReason": "Provided local PDF fixture is unavailable. Place the PDF in Downloads or edit sourcePath.",
+      "properties": {
+        "difficulty": "easy",
+        "planType": "architectural",
+        "sourceFormat": "pdf",
+        "fixtureSet": "provided-pdfs"
+      },
+      "expectations": {
+        "minPages": 1,
+        "minRegions": 1,
+        "minQualityGrade": "Poor",
+        "maxDiagnosticErrors": 0,
+        "minImportReadinessGrade": "ReviewRequired",
+        "minImportReadinessScore": 0.85,
+        "requireGeometryImportReady": true,
+        "requireMetricImportReady": true,
+        "requireRoutingImportReady": true,
+        "allowImportReview": true,
+        "maxScanReviewQueueItems": 60,
+        "maxScanReviewQueueKindCounts": {
+          "ObjectAggregateReview": 5,
+          "ObjectGroupReview": 24,
+          "WallGraphGapReview": 28
+        }
+      }
+    },
+    {
+      "id": "a13-2-plan-2",
+      "name": "A13.2 2. etasje",
+      "sourcePath": "%USERPROFILE%\\Downloads\\A13.2 2. etasje.pdf",
+      "optional": true,
+      "skipReason": "Provided local PDF fixture is unavailable. Place the PDF in Downloads or edit sourcePath.",
+      "properties": {
+        "difficulty": "medium",
+        "planType": "architectural",
+        "sourceFormat": "pdf",
+        "fixtureSet": "provided-pdfs"
+      },
+      "expectations": {
+        "minPages": 1,
+        "minRegions": 1,
+        "minQualityGrade": "Poor",
+        "maxDiagnosticErrors": 0,
+        "minImportReadinessGrade": "ReviewRequired",
+        "minImportReadinessScore": 0.85,
+        "requireGeometryImportReady": true,
+        "requireMetricImportReady": true,
+        "requireRoutingImportReady": true,
+        "allowImportReview": true,
+        "maxScanReviewQueueItems": 70,
+        "maxScanReviewQueueKindCounts": {
+          "ObjectAggregateReview": 15,
+          "ObjectGroupReview": 24,
+          "WallGraphGapReview": 28
+        }
+      }
+    },
+    {
+      "id": "a11-3-plan-1",
+      "name": "A11.3 Plan 1.etasje",
+      "sourcePath": "%USERPROFILE%\\Downloads\\A11.3 Plan 1.etasje.pdf",
+      "optional": true,
+      "skipReason": "Provided local PDF fixture is unavailable. Place the PDF in Downloads or edit sourcePath.",
+      "properties": {
+        "difficulty": "medium",
+        "planType": "architectural",
+        "sourceFormat": "pdf",
+        "fixtureSet": "provided-pdfs"
+      },
+      "expectations": {
+        "minPages": 1,
+        "minRegions": 1,
+        "minQualityGrade": "Poor",
+        "maxDiagnosticErrors": 0,
+        "minImportReadinessGrade": "ReviewRequired",
+        "minImportReadinessScore": 0.85,
+        "requireGeometryImportReady": true,
+        "requireMetricImportReady": true,
+        "requireRoutingImportReady": true,
+        "allowImportReview": true,
+        "requiredImportIssueCodes": [
+          "placement.wall_graph.surface_pattern_wall_overlaps.require_review"
+        ],
+        "maxScanReviewQueueItems": 70,
+        "requiredScanReviewQueueKinds": [
+          "SurfacePatternReview",
+          "SurfacePatternWallOverlapReview"
+        ],
+        "maxScanReviewQueueKindCounts": {
+          "ObjectAggregateReview": 15,
+          "ObjectGroupReview": 24,
+          "SurfacePatternReview": 3,
+          "SurfacePatternWallOverlapReview": 8,
+          "SuppressedWallPatternReview": 5,
+          "WallGraphGapReview": 28
+        }
+      }
+    },
+    {
+      "id": "industrial-plan-1-etasje",
+      "name": "01-A-200-21-001-I Plan 1. Etasje",
+      "sourcePath": "%USERPROFILE%\\Downloads\\01-A-200-21-001-I Plan 1. Etasje.pdf",
+      "optional": true,
+      "skipReason": "Provided local PDF fixture is unavailable. Place the PDF in Downloads or edit sourcePath.",
+      "properties": {
+        "difficulty": "hard",
+        "planType": "industrial",
+        "sourceFormat": "pdf",
+        "fixtureSet": "provided-pdfs"
+      },
+      "expectations": {
+        "minPages": 1,
+        "minRegions": 1,
+        "minQualityGrade": "Usable",
+        "maxDiagnosticErrors": 0,
+        "minImportReadinessGrade": "ReviewRequired",
+        "minImportReadinessScore": 0.85,
+        "requireGeometryImportReady": true,
+        "requireMetricImportReady": true,
+        "requireRoutingImportReady": true,
+        "allowImportReview": true,
+        "requiredImportIssueCodes": [
+          "placement.wall_graph.surface_pattern_wall_overlaps.require_review"
+        ],
+        "minMeasurementCheckedCount": 8,
+        "minMeasurementConsistentCount": 6,
+        "maxMeasurementOutlierCount": 2,
+        "maxMeasurementOutlierRatio": 0.25,
+        "maxMeasurementScaleSpreadRatio": 1.4,
+        "maxScanReviewQueueItems": 70,
+        "requiredScanReviewQueueKinds": [
+          "MeasurementOutlier",
+          "SurfacePatternReview",
+          "SurfacePatternWallOverlapReview"
+        ],
+        "maxScanReviewQueueKindCounts": {
+          "MeasurementOutlier": 3,
+          "ObjectAggregateReview": 8,
+          "ObjectGroupReview": 24,
+          "SurfacePatternReview": 5,
+          "SurfacePatternWallOverlapReview": 12,
+          "SuppressedWallPatternReview": 5,
+          "WallGraphGapReview": 28
+        },
+        "forbiddenRoomLabels": [
+          "6,0",
+          "frostet sidelfelt",
+          "d\u00f8r L\u00d8FTE-",
+          "1.etg",
+          "1.etg BTA"
+        ],
+        "forbiddenQualityIssueCodes": [
+          "quality.dimension_scale_spread_high",
+          "quality.scan_risk.fragmented_wall_graph"
+        ],
+        "forbiddenDiagnosticCodes": [
+          "measurement_consistency.dimension_scale_spread_high",
+          "walls.parallel_pair_thickness_variance",
+          "dimensions.candidate_limit_applied"
+        ],
+        "requiredDiagnosticCodes": [
+          "walls.parallel_pairs.separation_profile",
+          "dimensions.same_line_conflicts_suppressed",
+          "dimensions.text_candidate_pool.pruned"
+        ],
+        "objectGroupMetrics": {
+          "minRecall": 1.0,
+          "completeTruthSet": false,
+          "targets": [
+            {
+              "id": "compact-equipment-tags",
+              "objectCategory": "Equipment",
+              "detectedTags": [
+                "P14",
+                "P26"
+              ],
+              "minCount": 5,
+              "requiresReview": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "a13-4-kjeller",
+      "name": "A13.4 Kjeller",
+      "sourcePath": "%USERPROFILE%\\Downloads\\A13.4 Kjeller.pdf",
+      "optional": true,
+      "skipReason": "Provided local PDF fixture is unavailable. Place the PDF in Downloads or edit sourcePath.",
+      "properties": {
+        "difficulty": "medium",
+        "planType": "architectural",
+        "sourceFormat": "pdf",
+        "fixtureSet": "provided-pdfs"
+      },
+      "expectations": {
+        "minPages": 1,
+        "minRegions": 1,
+        "minQualityGrade": "Poor",
+        "maxDiagnosticErrors": 0,
+        "minImportReadinessGrade": "ReviewRequired",
+        "minImportReadinessScore": 0.85,
+        "requireGeometryImportReady": true,
+        "requireMetricImportReady": true,
+        "requireRoutingImportReady": true,
+        "allowImportReview": true,
+        "maxScanReviewQueueItems": 60,
+        "maxScanReviewQueueKindCounts": {
+          "ObjectAggregateReview": 8,
+          "ObjectGroupReview": 24,
+          "WallGraphGapReview": 28
+        }
+      }
+    }
+  ]
+}

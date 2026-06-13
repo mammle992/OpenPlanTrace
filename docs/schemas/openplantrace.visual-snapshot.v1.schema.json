@@ -1,0 +1,291 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:openplantrace:schema:visual-snapshot:v1",
+  "title": "OpenPlanTrace Visual Snapshot",
+  "description": "Schema for compact visual QA snapshots emitted beside OpenPlanTrace SVG overlays. The snapshot records page-coordinate frames, overlay artifact links, detector layer counts, bounds, confidence summaries, coverage, and visual-review issues for repeatable scanner QA.",
+  "type": "object",
+  "additionalProperties": true,
+  "x-openplantrace-schemaVersion": "openplantrace.visual-snapshot.v1",
+  "required": [
+    "schemaVersion",
+    "documentId",
+    "coordinateSpace",
+    "origin",
+    "xAxisDirection",
+    "yAxisDirection",
+    "unit",
+    "scanSchemaVersion",
+    "qualityGrade",
+    "qualityConfidence",
+    "requiresReview",
+    "pages",
+    "issues"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "openplantrace.visual-snapshot.v1"
+    },
+    "documentId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "coordinateSpace": {
+      "const": "OpenPlanTracePageCoordinates"
+    },
+    "origin": {
+      "const": "TopLeft"
+    },
+    "xAxisDirection": {
+      "const": "Right"
+    },
+    "yAxisDirection": {
+      "const": "Down"
+    },
+    "unit": {
+      "const": "DrawingUnit"
+    },
+    "scanSchemaVersion": {
+      "type": "string",
+      "pattern": "^openplantrace\\.scan\\.v[0-9]+$"
+    },
+    "qualityGrade": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "qualityConfidence": {
+      "$ref": "#/$defs/ratio"
+    },
+    "requiresReview": {
+      "type": "boolean"
+    },
+    "pages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/pageSnapshot"
+      }
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/snapshotIssue"
+      }
+    }
+  },
+  "$defs": {
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nonNegativeNumber": {
+      "type": "number",
+      "minimum": 0
+    },
+    "positiveNumber": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "ratio": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "nullableRatio": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "nullableString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "countBreakdown": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/nonNegativeInteger"
+      }
+    },
+    "rect": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height",
+        "left",
+        "top",
+        "right",
+        "bottom",
+        "centerX",
+        "centerY",
+        "area"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number"
+        },
+        "height": {
+          "type": "number"
+        },
+        "left": {
+          "type": "number"
+        },
+        "top": {
+          "type": "number"
+        },
+        "right": {
+          "type": "number"
+        },
+        "bottom": {
+          "type": "number"
+        },
+        "centerX": {
+          "type": "number"
+        },
+        "centerY": {
+          "type": "number"
+        },
+        "area": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        }
+      }
+    },
+    "layerSnapshot": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "name",
+        "count",
+        "bounds",
+        "averageConfidence",
+        "minimumConfidence",
+        "maximumConfidence",
+        "breakdown"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "count": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "averageConfidence": {
+          "$ref": "#/$defs/nullableRatio"
+        },
+        "minimumConfidence": {
+          "$ref": "#/$defs/nullableRatio"
+        },
+        "maximumConfidence": {
+          "$ref": "#/$defs/nullableRatio"
+        },
+        "breakdown": {
+          "$ref": "#/$defs/countBreakdown"
+        }
+      }
+    },
+    "snapshotIssue": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "code",
+        "severity",
+        "message",
+        "pageNumber"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pageNumber": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        }
+      }
+    },
+    "pageSnapshot": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "pageNumber",
+        "width",
+        "height",
+        "pageBounds",
+        "detectionBounds",
+        "detectionCoverage",
+        "drawableItemCount",
+        "primitiveCount",
+        "svgPath",
+        "layers",
+        "issues"
+      ],
+      "properties": {
+        "pageNumber": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "width": {
+          "$ref": "#/$defs/positiveNumber"
+        },
+        "height": {
+          "$ref": "#/$defs/positiveNumber"
+        },
+        "pageBounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "detectionBounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "detectionCoverage": {
+          "$ref": "#/$defs/ratio"
+        },
+        "drawableItemCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "primitiveCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "svgPath": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "layers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/layerSnapshot"
+          }
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/snapshotIssue"
+          }
+        }
+      }
+    }
+  }
+}

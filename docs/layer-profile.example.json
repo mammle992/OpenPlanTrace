@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "openplantrace.layer-profile.v1",
+  "name": "Example industrial CAD layer profile",
+  "version": "1.0",
+  "overrides": [
+    {
+      "pattern": "A-WALL-*",
+      "category": "Wall",
+      "sourceFormat": "dxf"
+    },
+    {
+      "pattern": "XREF-*-LINEWORK",
+      "category": "Wall"
+    },
+    {
+      "pattern": "E-EQP-*",
+      "category": "Electrical"
+    },
+    {
+      "pattern": "M-HVAC-*",
+      "category": "HVAC"
+    },
+    {
+      "pattern": "P-PIPE-*",
+      "category": "Plumbing"
+    },
+    {
+      "pattern": "F-FIRE-*",
+      "category": "FireSafety"
+    }
+  ]
+}

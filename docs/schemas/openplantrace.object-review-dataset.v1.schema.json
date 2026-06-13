@@ -1,0 +1,399 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:openplantrace:schema:object-review-dataset:v1",
+  "title": "OpenPlanTrace Object Review Dataset",
+  "description": "Schema for deterministic object and symbol review datasets emitted by OpenPlanTrace. This output is intended for human-in-the-loop labeling, local correction capture, and object-label profile drafting. It does not represent AI output.",
+  "type": "object",
+  "additionalProperties": true,
+  "x-openplantrace-schemaVersion": "openplantrace.object-review-dataset.v1",
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "documentId",
+    "groups",
+    "ungroupedCandidates"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "openplantrace.object-review-dataset.v1"
+    },
+    "name": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "version": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "documentId": {
+      "$ref": "#/$defs/id"
+    },
+    "sourceName": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "sourcePath": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/reviewGroup"
+      }
+    },
+    "ungroupedCandidates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/reviewCandidate"
+      }
+    }
+  },
+  "$defs": {
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nonNegativeNumber": {
+      "type": "number",
+      "minimum": 0
+    },
+    "nullableString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pageNumber": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "point": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "x",
+        "y"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      }
+    },
+    "rect": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "height": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        }
+      }
+    },
+    "reviewCandidate": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "candidateId",
+        "pageNumber",
+        "kind",
+        "category",
+        "bounds",
+        "reviewCropBounds",
+        "confidence",
+        "detectedTag",
+        "detectedTagSourcePrimitiveId",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "nearbyText",
+        "evidence"
+      ],
+      "properties": {
+        "candidateId": {
+          "$ref": "#/$defs/id"
+        },
+        "groupId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "pageNumber": {
+          "$ref": "#/$defs/pageNumber"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "reviewCropBounds": {
+          "$ref": "#/$defs/rect",
+          "description": "Padded page-coordinate crop bounds for visual review or local training-data capture."
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "label": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "symbolName": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "detectedTag": {
+          "$ref": "#/$defs/nullableString",
+          "description": "Normalized industrial/equipment tag code recognized for this candidate, when deterministic tag classification found one."
+        },
+        "detectedTagSourcePrimitiveId": {
+          "$ref": "#/$defs/nullableString",
+          "description": "Source primitive ID for the text or symbol evidence that supplied detectedTag."
+        },
+        "roomId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "roomLabel": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "sourcePrimitiveIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourceLayers": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "nearbyText": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/textEvidence"
+          }
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "reviewGroup": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "groupId",
+        "signature",
+        "kind",
+        "category",
+        "count",
+        "representativeBounds",
+        "reviewCropBounds",
+        "pageNumbers",
+        "candidateIds",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "requiresReview",
+        "confidence",
+        "detectedTags",
+        "suggestedRule",
+        "candidates",
+        "nearbyText",
+        "evidence"
+      ],
+      "properties": {
+        "groupId": {
+          "$ref": "#/$defs/id"
+        },
+        "signature": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "count": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "representativeBounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "reviewCropBounds": {
+          "$ref": "#/$defs/rect",
+          "description": "Padded page-coordinate crop bounds for the representative group symbol."
+        },
+        "pageNumbers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pageNumber"
+          }
+        },
+        "candidateIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourcePrimitiveIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourceLayers": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "requiresReview": {
+          "type": "boolean"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "label": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "symbolName": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "detectedTags": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Distinct deterministic tag codes found across the group's reviewed candidate occurrences."
+        },
+        "suggestedRule": {
+          "$ref": "#/$defs/ruleSuggestion"
+        },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reviewCandidate"
+          }
+        },
+        "nearbyText": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/textEvidence"
+          }
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "ruleSuggestion": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "signature",
+        "category",
+        "kind",
+        "requiresReview",
+        "confidence",
+        "evidence"
+      ],
+      "properties": {
+        "signature": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "symbolNamePattern": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "labelPattern": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "layerPattern": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "sourceFormat": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "matchCategory": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "matchKind": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "category": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "kind": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "label": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "symbolName": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "requiresReview": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "confidence": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/confidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "stringArray": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "textEvidence": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "text",
+        "pageNumber",
+        "bounds",
+        "sourcePrimitiveId",
+        "distance"
+      ],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "pageNumber": {
+          "$ref": "#/$defs/pageNumber"
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "sourcePrimitiveId": {
+          "$ref": "#/$defs/id"
+        },
+        "distance": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        }
+      }
+    }
+  }
+}

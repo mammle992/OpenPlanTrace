@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.10.0" />
+    <PackageReference Include="xunit" Version="2.8.1" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.1">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OpenPlanTrace\OpenPlanTrace.csproj" />
+    <ProjectReference Include="..\..\src\OpenPlanTrace.Pdf\OpenPlanTrace.Pdf.csproj" />
+    <ProjectReference Include="..\..\src\OpenPlanTrace.Dxf\OpenPlanTrace.Dxf.csproj" />
+    <ProjectReference Include="..\..\src\OpenPlanTrace.Export\OpenPlanTrace.Export.csproj" />
+    <ProjectReference Include="..\..\tools\OpenPlanTrace.Cli\OpenPlanTrace.Cli.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,279 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:openplantrace:schema:object-correction-dataset:v1",
+  "title": "OpenPlanTrace Object Correction Dataset",
+  "description": "Schema for deterministic human correction actions captured from OpenPlanTrace object and symbol review. This artifact records local user decisions and can be converted into object-label profiles; it does not represent AI output.",
+  "type": "object",
+  "additionalProperties": true,
+  "x-openplantrace-schemaVersion": "openplantrace.object-correction-dataset.v1",
+  "required": [
+    "schemaVersion",
+    "createdAt",
+    "actions"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "openplantrace.object-correction-dataset.v1"
+    },
+    "name": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "version": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sourceReviewDatasetSchemaVersion": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "documentId": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "sourceName": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "sourcePath": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/correctionAction"
+      }
+    }
+  },
+  "$defs": {
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "correctionAction": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "actionId",
+        "targetKind",
+        "decision",
+        "applyScope",
+        "detectedTags",
+        "candidateIds",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "nearbyText",
+        "evidence"
+      ],
+      "properties": {
+        "actionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "targetKind": {
+          "$ref": "#/$defs/targetKind"
+        },
+        "decision": {
+          "$ref": "#/$defs/decision"
+        },
+        "applyScope": {
+          "$ref": "#/$defs/applyScope"
+        },
+        "groupId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "candidateId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "signature": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "originalKind": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "originalCategory": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "originalLabel": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "originalSymbolName": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "correctedKind": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "correctedCategory": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "correctedLabel": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "correctedSymbolName": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "requiresReview": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/confidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reviewCropBounds": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/rect"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional padded page-coordinate crop bounds retained from object review for visual inspection or local training-data capture."
+        },
+        "detectedTags": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Deterministic industrial/equipment tag codes associated with the reviewed target occurrences."
+        },
+        "pageNumbers": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "description": "Pages containing reviewed occurrences affected by this correction action."
+        },
+        "candidateIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourcePrimitiveIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourceLayers": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "nearbyText": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/textEvidence"
+          }
+        },
+        "reviewer": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "reviewedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "applyScope": {
+      "type": "string",
+      "enum": [
+        "TargetOnly",
+        "MatchingSignature",
+        "MatchingSymbolAndLayer",
+        "MatchingDetectedTagPattern"
+      ]
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "Unreviewed",
+        "Confirmed",
+        "Corrected",
+        "Ignored",
+        "Unknown"
+      ]
+    },
+    "nullableString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "rect": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number",
+          "minimum": 0
+        },
+        "height": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "stringArray": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "targetKind": {
+      "type": "string",
+      "enum": [
+        "Group",
+        "Candidate"
+      ]
+    },
+    "textEvidence": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "text",
+        "pageNumber",
+        "bounds",
+        "sourcePrimitiveId",
+        "distance"
+      ],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "pageNumber": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "sourcePrimitiveId": {
+          "type": "string"
+        },
+        "distance": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

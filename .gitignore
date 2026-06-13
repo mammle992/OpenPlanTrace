@@ -1,0 +1,35 @@
+bin/
+obj/
+.vs/
+.vscode/
+TestResults/
+coverage/
+real-pdf-output/
+artifacts/
+viewer*.log
+*.log
+*.tmp
+*.bak
+
+# Local benchmark/review outputs generated from private or user-provided plans
+*.local.json
+*.local.jsonl
+*.local.md
+*.draft.json
+*.draft.jsonl
+*.draft.md
+*.draft-review.md
+
+# Local visual QA captures / screenshots / photos
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.bmp
+*.tif
+*.tiff
+
+*.user
+*.suo
+*.nupkg
+*.snupkg

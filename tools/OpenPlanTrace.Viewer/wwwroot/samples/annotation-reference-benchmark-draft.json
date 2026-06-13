@@ -1,0 +1,207 @@
+{
+  "schemaVersion": "openplantrace.benchmark-manifest.v1",
+  "name": "Viewer annotation reference benchmark draft",
+  "fixtures": [
+    {
+      "id": "viewer-annotation-reference-smoke",
+      "name": "Viewer annotation reference smoke",
+      "sourcePath": "annotation-reference-smoke.pdf",
+      "properties": {
+        "difficulty": "smoke",
+        "sourceFormat": "sample",
+        "reviewState": "draft"
+      },
+      "expectations": {
+        "minPages": 1,
+        "minRegions": 3,
+        "minAnnotations": 2,
+        "maxDiagnosticErrors": 0,
+        "minQualityGrade": "Usable",
+        "regionMetrics": {
+          "minRecall": 1.0,
+          "minPrecision": 0.75,
+          "targets": [
+            {
+              "id": "sheet-region",
+              "pageNumber": 1,
+              "bounds": {
+                "x": 0,
+                "y": 0,
+                "width": 620,
+                "height": 420
+              },
+              "regionKind": "Sheet",
+              "confidence": 1.0,
+              "evidence": [
+                "viewer smoke sheet bounds"
+              ]
+            },
+            {
+              "id": "notes-region",
+              "pageNumber": 1,
+              "bounds": {
+                "x": 372,
+                "y": 36,
+                "width": 212,
+                "height": 170
+              },
+              "regionKind": "Notes",
+              "confidence": 0.78,
+              "sourcePrimitiveIds": [
+                "keynote-heading-1",
+                "keynote-item-1",
+                "callout-heading-1",
+                "callout-item-a"
+              ],
+              "sourceLayers": [
+                "A-NOTE"
+              ],
+              "evidence": [
+                "contains annotation text"
+              ]
+            },
+            {
+              "id": "main-plan-region",
+              "pageNumber": 1,
+              "bounds": {
+                "x": 42,
+                "y": 52,
+                "width": 290,
+                "height": 270
+              },
+              "regionKind": "MainFloorPlan",
+              "confidence": 0.7,
+              "evidence": [
+                "viewer smoke plan area"
+              ]
+            }
+          ]
+        },
+        "annotationMetrics": {
+          "minRecall": 1.0,
+          "minPrecision": 0.75,
+          "targets": [
+            {
+              "id": "keynotes-block",
+              "pageNumber": 1,
+              "bounds": {
+                "x": 384,
+                "y": 48,
+                "width": 184,
+                "height": 70
+              },
+              "annotationKind": "Keynotes",
+              "label": "KEYNOTES",
+              "confidence": 0.82,
+              "sourcePrimitiveIds": [
+                "keynote-heading-1",
+                "keynote-item-1"
+              ],
+              "sourceLayers": [
+                "A-NOTE"
+              ],
+              "evidence": [
+                "heading KEYNOTES with numbered entry"
+              ]
+            },
+            {
+              "id": "callouts-block",
+              "pageNumber": 1,
+              "bounds": {
+                "x": 384,
+                "y": 126,
+                "width": 166,
+                "height": 66
+              },
+              "annotationKind": "Callouts",
+              "label": "CALL OUTS",
+              "confidence": 0.77,
+              "sourcePrimitiveIds": [
+                "callout-heading-1",
+                "callout-item-a"
+              ],
+              "sourceLayers": [
+                "A-NOTE"
+              ],
+              "evidence": [
+                "heading CALL OUTS with keyed entry"
+              ]
+            }
+          ]
+        },
+        "annotationReferenceMetrics": {
+          "minRecall": 1.0,
+          "minPrecision": 0.75,
+          "targets": [
+            {
+              "id": "keynote-marker-1",
+              "pageNumber": 1,
+              "bounds": {
+                "x": 125,
+                "y": 123,
+                "width": 32,
+                "height": 30
+              },
+              "annotationKind": "Keynotes",
+              "marker": "1",
+              "confidence": 0.74,
+              "sourcePrimitiveIds": [
+                "keynote-marker-text-1",
+                "keynote-marker-bubble-1"
+              ],
+              "sourceLayers": [
+                "A-ANNO"
+              ],
+              "evidence": [
+                "matched plan marker 1",
+                "1 nearby closed marker geometry primitive(s)"
+              ]
+            },
+            {
+              "id": "callout-marker-a",
+              "pageNumber": 1,
+              "bounds": {
+                "x": 215,
+                "y": 227,
+                "width": 36,
+                "height": 30
+              },
+              "annotationKind": "Callouts",
+              "marker": "A",
+              "confidence": 0.73,
+              "sourcePrimitiveIds": [
+                "callout-marker-text-a",
+                "callout-marker-bubble-a"
+              ],
+              "sourceLayers": [
+                "A-ANNO"
+              ],
+              "evidence": [
+                "matched plan marker A",
+                "1 nearby closed marker geometry primitive(s)"
+              ]
+            }
+          ]
+        },
+        "layerMetrics": {
+          "minRecall": 1.0,
+          "targets": [
+            {
+              "id": "annotation-note-layer",
+              "label": "A-NOTE",
+              "layerCategory": "Annotation",
+              "minCount": 4,
+              "confidence": 0.78,
+              "sourceLayers": [
+                "A-NOTE"
+              ],
+              "evidence": [
+                "contains annotation headings and numbered entries"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "openplantrace.object-label-profile.v1",
+  "name": "Example industrial object label profile",
+  "version": "1.0",
+  "rules": [
+    {
+      "signature": "symbol:iso_tag_71|category:GenericSymbol|kind:Symbol|layers:x-symbols",
+      "category": "Equipment",
+      "label": "Isolation valve",
+      "symbolName": "VALVE_ISO",
+      "requiresReview": false,
+      "confidence": 0.91,
+      "evidence": [
+        "User confirmed this repeated unknown symbol family as an isolation valve."
+      ]
+    },
+    {
+      "detectedTagPattern": "P-*",
+      "category": "Equipment",
+      "label": "Pump or process equipment tag",
+      "requiresReview": true,
+      "evidence": [
+        "Matches reviewed objects carrying pump/process-style detected tags; keep requiresReview true until your local symbol library confirms the family."
+      ]
+    },
+    {
+      "symbolNamePattern": "PUMP_*",
+      "layerPattern": "I-EQUIP*",
+      "category": "Equipment",
+      "label": "Pump",
+      "requiresReview": false
+    },
+    {
+      "symbolNamePattern": "SOFA*",
+      "category": "Furniture",
+      "label": "Sofa",
+      "requiresReview": false
+    },
+    {
+      "layerPattern": "M-HVAC-*",
+      "matchCategory": "GenericSymbol",
+      "category": "HVACEquipment",
+      "label": "HVAC symbol",
+      "requiresReview": true
+    }
+  ]
+}

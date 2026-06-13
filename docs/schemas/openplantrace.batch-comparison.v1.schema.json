@@ -1,0 +1,385 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:openplantrace:schema:batch-comparison:v1",
+  "title": "OpenPlanTrace Batch Comparison",
+  "description": "Schema for comparing two OpenPlanTrace batch result JSON artifacts. The comparison is intended for scanner regression review across the same PDF/DXF/DWG/raster corpus.",
+  "type": "object",
+  "additionalProperties": true,
+  "x-openplantrace-schemaVersion": "openplantrace.batch-comparison.v1",
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "baselineOutputDirectory",
+    "candidateOutputDirectory",
+    "baselineItemCount",
+    "candidateItemCount",
+    "matchedItemCount",
+    "addedItemCount",
+    "removedItemCount",
+    "statusChangeCount",
+    "regressionCount",
+    "improvementCount",
+    "infoCount",
+    "diagnosticErrorDelta",
+    "diagnosticWarningDelta",
+    "visualIssueDelta",
+    "visualErrorIssueDelta",
+    "qualityConfidenceAverageDelta",
+    "totalDurationDeltaMilliseconds",
+    "items",
+    "signals"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "openplantrace.batch-comparison.v1"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "baselineOutputDirectory": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "candidateOutputDirectory": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "baselineItemCount": {
+      "$ref": "#/$defs/nonNegativeInteger"
+    },
+    "candidateItemCount": {
+      "$ref": "#/$defs/nonNegativeInteger"
+    },
+    "matchedItemCount": {
+      "$ref": "#/$defs/nonNegativeInteger"
+    },
+    "addedItemCount": {
+      "$ref": "#/$defs/nonNegativeInteger"
+    },
+    "removedItemCount": {
+      "$ref": "#/$defs/nonNegativeInteger"
+    },
+    "statusChangeCount": {
+      "$ref": "#/$defs/nonNegativeInteger"
+    },
+    "regressionCount": {
+      "$ref": "#/$defs/nonNegativeInteger"
+    },
+    "improvementCount": {
+      "$ref": "#/$defs/nonNegativeInteger"
+    },
+    "infoCount": {
+      "$ref": "#/$defs/nonNegativeInteger"
+    },
+    "diagnosticErrorDelta": {
+      "type": "integer"
+    },
+    "diagnosticWarningDelta": {
+      "type": "integer"
+    },
+    "visualIssueDelta": {
+      "type": "integer"
+    },
+    "visualErrorIssueDelta": {
+      "type": "integer"
+    },
+    "qualityConfidenceAverageDelta": {
+      "type": "number"
+    },
+    "totalDurationDeltaMilliseconds": {
+      "type": "number"
+    },
+    "passed": {
+      "type": "boolean"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/itemComparison"
+      }
+    },
+    "signals": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/signal"
+      }
+    }
+  },
+  "$defs": {
+    "nullableString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nullableNumber": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "nullableInteger": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "batchItemStatus": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "Succeeded",
+        "CompletedWithErrors",
+        "Missing",
+        "Unsupported",
+        "Failed",
+        null
+      ]
+    },
+    "comparisonItemStatus": {
+      "type": "string",
+      "enum": [
+        "Matched",
+        "Added",
+        "Removed"
+      ]
+    },
+    "signalSeverity": {
+      "type": "string",
+      "enum": [
+        "Info",
+        "Improvement",
+        "Regression"
+      ]
+    },
+    "stringArray": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "metricDelta": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "name",
+        "baseline",
+        "candidate",
+        "delta",
+        "unit"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "baseline": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "candidate": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "delta": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "signal": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "key",
+        "code",
+        "severity",
+        "message",
+        "baseline",
+        "candidate"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "$ref": "#/$defs/signalSeverity"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "baseline": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "candidate": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    },
+    "itemComparison": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "key",
+        "status",
+        "baselineInputPath",
+        "candidateInputPath",
+        "baselineFileName",
+        "candidateFileName",
+        "baselineScanJsonPath",
+        "candidateScanJsonPath",
+        "baselineVisualSnapshotPath",
+        "candidateVisualSnapshotPath",
+        "baselineGeoJsonPath",
+        "candidateGeoJsonPath",
+        "baselineOverlayDirectory",
+        "candidateOverlayDirectory",
+        "baselineStatus",
+        "candidateStatus",
+        "baselineDurationMilliseconds",
+        "candidateDurationMilliseconds",
+        "durationDeltaMilliseconds",
+        "baselineQualityGrade",
+        "candidateQualityGrade",
+        "baselineQualityConfidence",
+        "candidateQualityConfidence",
+        "baselineDiagnosticErrors",
+        "candidateDiagnosticErrors",
+        "baselineVisualIssueCount",
+        "candidateVisualIssueCount",
+        "baselineVisualErrorIssueCount",
+        "candidateVisualErrorIssueCount",
+        "deltas",
+        "addedVisualIssueCodes",
+        "removedVisualIssueCodes",
+        "signals"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "$ref": "#/$defs/comparisonItemStatus"
+        },
+        "baselineInputPath": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "candidateInputPath": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "baselineFileName": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "candidateFileName": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "baselineScanJsonPath": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "candidateScanJsonPath": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "baselineVisualSnapshotPath": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "candidateVisualSnapshotPath": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "baselineGeoJsonPath": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "candidateGeoJsonPath": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "baselinePlacementJsonPath": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "candidatePlacementJsonPath": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "baselineOverlayDirectory": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "candidateOverlayDirectory": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "baselineStatus": {
+          "$ref": "#/$defs/batchItemStatus"
+        },
+        "candidateStatus": {
+          "$ref": "#/$defs/batchItemStatus"
+        },
+        "baselineDurationMilliseconds": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "candidateDurationMilliseconds": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "durationDeltaMilliseconds": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "baselineQualityGrade": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "candidateQualityGrade": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "baselineQualityConfidence": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "candidateQualityConfidence": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "baselineDiagnosticErrors": {
+          "$ref": "#/$defs/nullableInteger"
+        },
+        "candidateDiagnosticErrors": {
+          "$ref": "#/$defs/nullableInteger"
+        },
+        "baselineVisualIssueCount": {
+          "$ref": "#/$defs/nullableInteger"
+        },
+        "candidateVisualIssueCount": {
+          "$ref": "#/$defs/nullableInteger"
+        },
+        "baselineVisualErrorIssueCount": {
+          "$ref": "#/$defs/nullableInteger"
+        },
+        "candidateVisualErrorIssueCount": {
+          "$ref": "#/$defs/nullableInteger"
+        },
+        "deltas": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/metricDelta"
+          }
+        },
+        "addedVisualIssueCodes": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "removedVisualIssueCodes": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "signals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/signal"
+          }
+        }
+      }
+    }
+  }
+}

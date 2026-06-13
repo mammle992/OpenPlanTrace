@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenPlanTrace Viewer</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <aside class="sidebar">
+      <header class="brand">
+        <div class="mark">OPT</div>
+        <div>
+          <h1>OpenPlanTrace</h1>
+          <p>PDF, placement, scan, benchmark, and comparison viewer</p>
+        </div>
+      </header>
+
+      <label class="drop-zone" for="pdfInput" id="dropZone">
+        <input id="pdfInput" type="file" accept="application/pdf,application/json,.pdf,.json,.jsonl,image/png,image/jpeg,image/webp" multiple>
+        <span class="drop-icon">+</span>
+        <span class="drop-title">Drop PDF, placement JSON, scan JSON, benchmark/comparison JSON, or Kvemo JSONL</span>
+        <span class="drop-meta" id="fileMeta">No file selected</span>
+      </label>
+
+      <section class="panel">
+        <h2>Overlay Layers</h2>
+        <label><input type="checkbox" data-layer="regions" checked> Regions</label>
+        <label><input type="checkbox" data-layer="dimensions" checked> Dimensions</label>
+        <label><input type="checkbox" data-layer="gridAxes" checked> Grid axes</label>
+        <label><input type="checkbox" data-layer="gridBays"> Grid bays</label>
+        <label><input type="checkbox" data-layer="annotations" checked> Annotations</label>
+        <label><input type="checkbox" data-layer="wallComponents"> Wall components</label>
+        <label><input type="checkbox" data-layer="walls" checked> Walls</label>
+        <label><input type="checkbox" data-layer="nodes"> Nodes</label>
+        <label><input type="checkbox" data-layer="rooms" checked> Rooms</label>
+        <label><input type="checkbox" data-layer="roomClusters"> Room clusters</label>
+        <label><input type="checkbox" data-layer="roomAdjacency"> Room links</label>
+        <label><input type="checkbox" data-layer="openings" checked> Openings</label>
+        <label><input type="checkbox" data-layer="objectAggregates" checked> Object aggregates</label>
+        <label><input type="checkbox" data-layer="surfacePatterns" checked> Surface patterns</label>
+        <label><input type="checkbox" data-layer="placementIssues" checked> Placement issues</label>
+        <label><input type="checkbox" data-layer="suppressedDetails"> Suppressed details</label>
+        <label><input type="checkbox" data-layer="wallGraphGaps"> Wall graph gaps</label>
+        <label><input type="checkbox" data-layer="wallGraphRepairs"> Wall repairs</label>
+        <label><input type="checkbox" data-layer="reviewQueue"> Scan review queue</label>
+        <label><input type="checkbox" data-layer="routingLayer"> Routing layer</label>
+        <label><input type="checkbox" data-layer="objects"> Objects</label>
+        <label><input type="checkbox" data-layer="benchmarkTargets"> Benchmark targets</label>
+        <label><input type="checkbox" data-layer="compare"> Compare deltas</label>
+      </section>
+
+      <section class="panel source-layers">
+        <h2>Source Layers</h2>
+        <div id="sourceLayerList" class="source-layer-list">No source layers</div>
+      </section>
+
+      <section class="panel calibration">
+        <h2>Scale & QA</h2>
+        <div id="calibrationDetails" class="calibration-details">No calibration</div>
+      </section>
+
+      <section class="panel quality">
+        <h2>Quality</h2>
+        <div id="qualityDetails" class="quality-details">No quality report</div>
+      </section>
+
+      <section class="panel title-block">
+        <h2>Title Block</h2>
+        <div id="titleBlockDetails" class="title-block-details">No title metadata</div>
+      </section>
+
+      <section class="panel">
+        <h2>Counts</h2>
+        <dl class="counts" id="counts"></dl>
+      </section>
+
+      <section class="panel compare">
+        <h2>Compare</h2>
+        <div id="compareDetails" class="compare-details">No comparison</div>
+      </section>
+
+      <section class="panel benchmark">
+        <h2>Benchmark Review</h2>
+        <div id="benchmarkDetails" class="benchmark-details">No benchmark draft</div>
+      </section>
+
+      <section class="panel object-groups">
+        <h2>Object Aggregates & Groups</h2>
+        <div id="objectGroupList" class="object-group-list">No object groups</div>
+      </section>
+
+      <section class="panel selection">
+        <h2>Selection</h2>
+        <div id="selectionDetails" class="selection-details">Nothing selected</div>
+      </section>
+
+      <section class="panel diagnostics">
+        <h2>Diagnostics</h2>
+        <div id="diagnosticsList" class="diagnostics-list"></div>
+      </section>
+    </aside>
+
+    <section class="viewer">
+      <nav class="toolbar">
+        <div class="page-controls">
+          <button id="prevPage" type="button" title="Previous page" aria-label="Previous page">&lt;</button>
+          <output id="pageLabel">Page 0 / 0</output>
+          <button id="nextPage" type="button" title="Next page" aria-label="Next page">&gt;</button>
+        </div>
+        <div class="export-controls">
+          <button id="downloadJson" type="button" title="Download current JSON" disabled>JSON</button>
+          <button id="downloadLayers" type="button" title="Download layer summary JSON" disabled>LAYERS</button>
+          <button id="downloadCalibration" type="button" title="Download calibration JSON" disabled>SCALE</button>
+          <button id="downloadTitleBlocks" type="button" title="Download title block JSON" disabled>TITLE</button>
+          <button id="downloadDimensions" type="button" title="Download dimension JSON" disabled>DIMS</button>
+          <button id="downloadGridAxes" type="button" title="Download grid axis JSON" disabled>GRID</button>
+          <button id="downloadGridBays" type="button" title="Download grid bay spacing JSON" disabled>BAYS</button>
+          <button id="downloadAnnotations" type="button" title="Download annotation JSON" disabled>TEXT</button>
+          <button id="downloadObjectGroups" type="button" title="Download object group JSON" disabled>GROUPS</button>
+          <button id="downloadObjectLabelProfile" type="button" title="Download editable object label profile JSON" disabled>LABELS</button>
+          <button id="downloadObjectReviewDataset" type="button" title="Download object review dataset JSON" disabled>REVIEW</button>
+          <button id="downloadObjectCorrectionDataset" type="button" title="Download editable object correction dataset JSON" disabled>CORRECT</button>
+          <button id="downloadBenchmark" type="button" title="Download reviewed benchmark manifest JSON" disabled>BMK</button>
+          <button id="downloadSvg" type="button" title="Download current SVG overlay" disabled>SVG</button>
+        </div>
+        <div class="status" id="status">Ready</div>
+      </nav>
+
+      <div class="workspace-tabs" role="tablist" aria-label="Viewer sections">
+        <button class="active" type="button" role="tab" aria-selected="true" aria-controls="tabVisualizer" data-workspace-tab="visualizer">Visualizer</button>
+        <button type="button" role="tab" aria-selected="false" aria-controls="tabAi" data-workspace-tab="ai">AI</button>
+        <button type="button" role="tab" aria-selected="false" aria-controls="tabGeneral" data-workspace-tab="general">General</button>
+        <button type="button" role="tab" aria-selected="false" aria-controls="tabAdvanced" data-workspace-tab="advanced">Advanced</button>
+      </div>
+
+      <div class="workspace-panels">
+        <section class="workspace-panel visualizer-panel active" id="tabVisualizer" role="tabpanel">
+          <div class="canvas-stage" id="stage">
+            <div class="empty-state" id="emptyState">
+              <strong>Select a PDF, placement JSON, or scan JSON</strong>
+              <span>The scan overlay will appear here.</span>
+            </div>
+            <div class="page-frame" id="pageFrame">
+              <canvas id="pdfCanvas"></canvas>
+              <svg id="overlay" aria-hidden="true"></svg>
+            </div>
+            <div class="kvemo-review" id="kvemoReview" hidden></div>
+          </div>
+        </section>
+
+        <div class="workspace-panel" id="tabAi" role="tabpanel" hidden>
+          <div id="aiTabDetails" class="tab-dashboard"></div>
+        </div>
+
+        <div class="workspace-panel" id="tabGeneral" role="tabpanel" hidden>
+          <div id="generalTabDetails" class="tab-dashboard"></div>
+        </div>
+
+        <div class="workspace-panel" id="tabAdvanced" role="tabpanel" hidden>
+          <div id="advancedTabDetails" class="tab-dashboard"></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="analysis-rail">
+      <section class="rail-panel">
+        <h2>Coordinate System</h2>
+        <div id="coordinateDetails" class="coordinate-details">No page loaded</div>
+      </section>
+
+      <section class="rail-panel">
+        <h2>Overlay Legend</h2>
+        <div id="legendList" class="legend-list">No scan loaded</div>
+      </section>
+
+      <section class="rail-panel">
+        <h2>Cursor</h2>
+        <div id="cursorCoordinates" class="coordinate-readout">x -, y -</div>
+      </section>
+
+      <section class="rail-panel">
+        <h2>Selection Coordinates</h2>
+        <div id="selectionCoordinates" class="selection-coordinate-details">Nothing selected</div>
+      </section>
+
+      <section class="rail-panel">
+        <h2>Visible Data</h2>
+        <dl class="analysis-counts" id="analysisCounts"></dl>
+      </section>
+    </aside>
+  </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

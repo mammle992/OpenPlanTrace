@@ -1,0 +1,181 @@
+{
+  "schemaVersion": "openplantrace.scan.v30",
+  "documentId": "viewer-object-correction-smoke",
+  "pages": [
+    {
+      "number": 1,
+      "width": 420,
+      "height": 300
+    }
+  ],
+  "regions": [
+    {
+      "id": "page:1:sheet",
+      "pageNumber": 1,
+      "kind": "Sheet",
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "width": 420,
+        "height": 300
+      },
+      "confidence": 1
+    },
+    {
+      "id": "page:1:main",
+      "pageNumber": 1,
+      "kind": "MainFloorPlan",
+      "bounds": {
+        "x": 40,
+        "y": 40,
+        "width": 260,
+        "height": 180
+      },
+      "confidence": 0.8
+    }
+  ],
+  "walls": [],
+  "nodes": [],
+  "edges": [],
+  "rooms": [],
+  "openings": [],
+  "objects": [
+    {
+      "id": "page:1:object:1",
+      "pageNumber": 1,
+      "kind": "Symbol",
+      "category": "GenericSymbol",
+      "bounds": {
+        "x": 100,
+        "y": 110,
+        "width": 24,
+        "height": 24
+      },
+      "confidence": 0.62,
+      "label": "ISO_TAG_71",
+      "symbolName": "ISO_TAG_71",
+      "sourcePrimitiveIds": [
+        "symbol-1"
+      ],
+      "sourceLayers": [
+        "X-SYMBOLS"
+      ],
+      "nearbyText": [
+        {
+          "text": "P-101",
+          "pageNumber": 1,
+          "bounds": {
+            "x": 132,
+            "y": 112,
+            "width": 34,
+            "height": 12
+          },
+          "sourcePrimitiveId": "tag-1",
+          "distance": 12
+        }
+      ],
+      "evidence": [
+        "Viewer smoke sample repeated symbol candidate."
+      ]
+    },
+    {
+      "id": "page:1:object:2",
+      "pageNumber": 1,
+      "kind": "Symbol",
+      "category": "GenericSymbol",
+      "bounds": {
+        "x": 200,
+        "y": 136,
+        "width": 24,
+        "height": 24
+      },
+      "confidence": 0.61,
+      "label": "ISO_TAG_71",
+      "symbolName": "ISO_TAG_71",
+      "sourcePrimitiveIds": [
+        "symbol-2"
+      ],
+      "sourceLayers": [
+        "X-SYMBOLS"
+      ],
+      "nearbyText": [
+        {
+          "text": "P-102",
+          "pageNumber": 1,
+          "bounds": {
+            "x": 232,
+            "y": 138,
+            "width": 34,
+            "height": 12
+          },
+          "sourcePrimitiveId": "tag-2",
+          "distance": 12
+        }
+      ],
+      "evidence": [
+        "Viewer smoke sample repeated symbol candidate."
+      ]
+    }
+  ],
+  "objectGroups": [
+    {
+      "id": "object-group:iso-tag-71",
+      "signature": "symbol:iso_tag_71|category:GenericSymbol|kind:Symbol|layers:x-symbols",
+      "kind": "Symbol",
+      "category": "GenericSymbol",
+      "count": 2,
+      "representativeBounds": {
+        "x": 100,
+        "y": 110,
+        "width": 24,
+        "height": 24
+      },
+      "pageNumbers": [
+        1
+      ],
+      "candidateIds": [
+        "page:1:object:1",
+        "page:1:object:2"
+      ],
+      "sourcePrimitiveIds": [
+        "symbol-1",
+        "symbol-2"
+      ],
+      "sourceLayers": [
+        "X-SYMBOLS"
+      ],
+      "requiresReview": true,
+      "confidence": 0.62,
+      "label": "ISO_TAG_71",
+      "symbolName": "ISO_TAG_71",
+      "nearbyText": [
+        {
+          "text": "P-101",
+          "pageNumber": 1,
+          "bounds": {
+            "x": 132,
+            "y": 112,
+            "width": 34,
+            "height": 12
+          },
+          "sourcePrimitiveId": "tag-1",
+          "distance": 12
+        }
+      ],
+      "evidence": [
+        "Two repeated ISO_TAG_71 symbols require human review before reuse."
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "name": "X-SYMBOLS",
+      "category": "Unknown",
+      "confidence": 0.35,
+      "primitiveCount": 2
+    }
+  ],
+  "diagnostics": {
+    "messages": []
+  }
+}

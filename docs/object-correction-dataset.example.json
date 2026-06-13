@@ -1,0 +1,71 @@
+{
+  "schemaVersion": "openplantrace.object-correction-dataset.v1",
+  "name": "Industrial symbol corrections",
+  "version": "draft",
+  "createdAt": "2026-06-06T00:00:00Z",
+  "sourceReviewDatasetSchemaVersion": "openplantrace.object-review-dataset.v2",
+  "documentId": "plant-level-01",
+  "sourceName": "plant-level-01.dxf",
+  "actions": [
+    {
+      "actionId": "group:object-group-1",
+      "targetKind": "Group",
+      "decision": "Corrected",
+      "applyScope": "MatchingDetectedTagPattern",
+      "groupId": "object-group-1",
+      "signature": "symbol:iso_tag_71|category:GenericSymbol|kind:Symbol|layers:x-symbols",
+      "originalKind": "Symbol",
+      "originalCategory": "GenericSymbol",
+      "originalSymbolName": "ISO_TAG_71",
+      "correctedKind": "Symbol",
+      "correctedCategory": "Equipment",
+      "correctedLabel": "Pump",
+      "correctedSymbolName": "PUMP_TAGGED",
+      "requiresReview": false,
+      "confidence": 0.91,
+      "reviewCropBounds": {
+        "x": 202,
+        "y": 202,
+        "width": 64,
+        "height": 64
+      },
+      "detectedTags": [
+        "P-101",
+        "P-102"
+      ],
+      "pageNumbers": [
+        1
+      ],
+      "candidateIds": [
+        "page:1:object:1",
+        "page:1:object:2"
+      ],
+      "sourcePrimitiveIds": [
+        "pump-1",
+        "pump-2"
+      ],
+      "sourceLayers": [
+        "X-SYMBOLS"
+      ],
+      "nearbyText": [
+        {
+          "text": "P-101",
+          "pageNumber": 1,
+          "bounds": {
+            "x": 254,
+            "y": 224,
+            "width": 38,
+            "height": 12
+          },
+          "sourcePrimitiveId": "tag-1",
+          "distance": 22.4
+        }
+      ],
+      "reviewer": "local-user",
+      "reviewedAt": "2026-06-06T00:00:00Z",
+      "evidence": [
+        "User confirmed repeated ISO_TAG_71 symbol family as pumps by shared P-* equipment tags."
+      ]
+    }
+  ]
+}

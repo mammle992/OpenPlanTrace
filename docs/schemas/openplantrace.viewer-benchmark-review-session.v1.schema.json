@@ -1,0 +1,660 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:openplantrace:schema:viewer-benchmark-review-session:v1",
+  "title": "OpenPlanTrace Viewer Benchmark Review Session",
+  "description": "Schema for OpenPlanTrace Viewer benchmark review-session merge artifacts. Review sessions preserve human decisions, target bounds edits, deleted targets, added targets, active filters, scan snapshots, and review diagnostics so a benchmark draft can be restored and continued. They are not benchmark manifests, do not represent AI output, and do not invent detections.",
+  "type": "object",
+  "additionalProperties": true,
+  "x-openplantrace-schemaVersion": "openplantrace.viewer-benchmark-review-session.v1",
+  "required": [
+    "schemaVersion",
+    "tool",
+    "exportedAt",
+    "manifest",
+    "scan",
+    "summary",
+    "decisions",
+    "boundsEdits",
+    "addedTargets",
+    "deletedTargets",
+    "reviewIssues"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "openplantrace.viewer-benchmark-review-session.v1"
+    },
+    "tool": {
+      "type": "string",
+      "minLength": 1
+    },
+    "exportedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "manifest": {
+      "$ref": "#/$defs/manifestSnapshot"
+    },
+    "scan": {
+      "$ref": "#/$defs/scanSnapshot"
+    },
+    "summary": {
+      "$ref": "#/$defs/sessionSummary"
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/decisionTarget"
+      }
+    },
+    "boundsEdits": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/boundsEdit"
+      }
+    },
+    "addedTargets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/addedTarget"
+      }
+    },
+    "deletedTargets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/targetSummary"
+      }
+    },
+    "reviewIssues": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/reviewIssue"
+      }
+    }
+  },
+  "$defs": {
+    "addedTarget": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/targetSummary"
+        },
+        {
+          "type": "object",
+          "required": [
+            "manifestTarget"
+          ],
+          "properties": {
+            "isAdded": {
+              "const": true
+            },
+            "manifestTarget": {
+              "$ref": "#/$defs/manifestTarget"
+            }
+          }
+        }
+      ]
+    },
+    "boundsEdit": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "reviewKey",
+        "pageNumber",
+        "bounds",
+        "editedAt"
+      ],
+      "properties": {
+        "reviewKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/targetSummary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pageNumber": {
+          "$ref": "#/$defs/nullablePageNumber"
+        },
+        "bounds": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/rect"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "editedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "accepted",
+        "rejected",
+        "needsReview",
+        "unreviewed"
+      ]
+    },
+    "decisionTarget": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/targetSummary"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "enum": [
+                "accepted",
+                "rejected",
+                "needsReview"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "detectorKey": {
+      "type": "string",
+      "enum": [
+        "regionMetrics",
+        "dimensionMetrics",
+        "annotationMetrics",
+        "annotationReferenceMetrics",
+        "gridAxisMetrics",
+        "wallMetrics",
+        "roomMetrics",
+        "openingMetrics",
+        "objectMetrics",
+        "objectGroupMetrics",
+        "objectAggregateMetrics",
+        "routingBarrierMetrics",
+        "routingPassageMetrics",
+        "routingObstacleMetrics",
+        "routingRoomUseHintMetrics",
+        "routingSuppressedObjectMetrics",
+        "layerMetrics"
+      ]
+    },
+    "diagnosticsSnapshot": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "infoCount",
+        "warningCount",
+        "errorCount",
+        "stageCount",
+        "durationMilliseconds"
+      ],
+      "properties": {
+        "infoCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "warningCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "errorCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "stageCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "durationMilliseconds": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/nonNegativeNumber"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "filters": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "query",
+        "detector",
+        "status",
+        "issue",
+        "page"
+      ],
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "detector": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "all",
+            "unreviewed",
+            "accepted",
+            "rejected",
+            "needsReview"
+          ]
+        },
+        "issue": {
+          "type": "string",
+          "enum": [
+            "all",
+            "missingBounds",
+            "lowConfidence",
+            "missingEvidence",
+            "boundsEdited",
+            "added"
+          ]
+        },
+        "page": {
+          "type": "string"
+        }
+      }
+    },
+    "manifestSnapshot": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "schemaVersion",
+        "fixtureCount",
+        "targetCount"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "name": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "label": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "fixtureCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "targetCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        }
+      }
+    },
+    "manifestTarget": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "pageNumber": {
+          "$ref": "#/$defs/nullablePageNumber"
+        },
+        "bounds": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/rect"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "minIntersectionOverUnion": {
+          "$ref": "#/$defs/nullableConfidence"
+        },
+        "maxCenterDistance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/nonNegativeNumber"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "label": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "text": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "marker": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "minCount": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/nonNegativeInteger"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requiresReview": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/nullableConfidence"
+        },
+        "detectedTags": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourcePrimitiveIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourceLayers": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nonNegativeNumber": {
+      "type": "number",
+      "minimum": 0
+    },
+    "nullableConfidence": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "nullableNumber": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "nullablePageNumber": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "nullableString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "rect": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number",
+          "minimum": 0
+        },
+        "height": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "reviewFlag": {
+      "type": "string",
+      "enum": [
+        "missing_bounds",
+        "low_confidence",
+        "missing_evidence",
+        "unreviewed",
+        "rejected",
+        "needs_review",
+        "added",
+        "bounds_edited"
+      ]
+    },
+    "reviewIssue": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/targetSummary"
+        },
+        {
+          "type": "object",
+          "required": [
+            "flags"
+          ],
+          "properties": {
+            "flags": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/reviewFlag"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "scanSnapshot": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "documentId",
+        "pageCount",
+        "qualityGrade",
+        "qualityConfidence",
+        "diagnostics"
+      ],
+      "properties": {
+        "documentId": {
+          "type": "string"
+        },
+        "pageCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "qualityGrade": {
+          "type": "string"
+        },
+        "qualityConfidence": {
+          "$ref": "#/$defs/nullableConfidence"
+        },
+        "diagnostics": {
+          "$ref": "#/$defs/diagnosticsSnapshot"
+        }
+      }
+    },
+    "sessionSummary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "activeTargetCount",
+        "filteredTargetCount",
+        "acceptedCount",
+        "rejectedCount",
+        "needsReviewCount",
+        "unreviewedCount",
+        "addedTargetCount",
+        "deletedTargetCount",
+        "boundsEditedCount",
+        "missingBoundsCount",
+        "lowConfidenceCount",
+        "missingEvidenceCount",
+        "filters"
+      ],
+      "properties": {
+        "activeTargetCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "filteredTargetCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "acceptedCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "rejectedCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "needsReviewCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "unreviewedCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "addedTargetCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "deletedTargetCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "boundsEditedCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "missingBoundsCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "lowConfidenceCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "missingEvidenceCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "filters": {
+          "$ref": "#/$defs/filters"
+        }
+      }
+    },
+    "stringArray": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "targetSummary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "reviewKey",
+        "id",
+        "detectorKey",
+        "detectorLabel",
+        "fixtureId",
+        "fixtureName",
+        "pageNumber",
+        "bounds",
+        "originalPageNumber",
+        "originalBounds",
+        "confidence",
+        "decision",
+        "isAdded",
+        "boundsEdited",
+        "hasEvidence",
+        "sourceLayers",
+        "sourcePrimitiveIds",
+        "evidence",
+        "criteria"
+      ],
+      "properties": {
+        "reviewKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "id": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "detectorKey": {
+          "$ref": "#/$defs/detectorKey"
+        },
+        "detectorLabel": {
+          "type": "string"
+        },
+        "fixtureId": {
+          "type": "string"
+        },
+        "fixtureName": {
+          "type": "string"
+        },
+        "pageNumber": {
+          "$ref": "#/$defs/nullablePageNumber"
+        },
+        "bounds": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/rect"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "originalPageNumber": {
+          "$ref": "#/$defs/nullablePageNumber"
+        },
+        "originalBounds": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/rect"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/nullableConfidence"
+        },
+        "decision": {
+          "$ref": "#/$defs/decision"
+        },
+        "isAdded": {
+          "type": "boolean"
+        },
+        "boundsEdited": {
+          "type": "boolean"
+        },
+        "hasEvidence": {
+          "type": "boolean"
+        },
+        "sourceLayers": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourcePrimitiveIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "detectedTags": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "criteria": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    }
+  }
+}

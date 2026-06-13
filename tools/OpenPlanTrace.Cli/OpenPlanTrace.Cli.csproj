@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>OpenPlanTrace.Cli</AssemblyName>
+    <RootNamespace>OpenPlanTrace.Cli</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OpenPlanTrace\OpenPlanTrace.csproj" />
+    <ProjectReference Include="..\..\src\OpenPlanTrace.Pdf\OpenPlanTrace.Pdf.csproj" />
+    <ProjectReference Include="..\..\src\OpenPlanTrace.Dxf\OpenPlanTrace.Dxf.csproj" />
+    <ProjectReference Include="..\..\src\OpenPlanTrace.Export\OpenPlanTrace.Export.csproj" />
+    <ProjectReference Include="..\..\src\OpenPlanTrace.Ai\OpenPlanTrace.Ai.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>OpenPlanTrace.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource
+      Include="..\..\docs\schemas\openplantrace.batch.v5.schema.json"
+      LogicalName="OpenPlanTrace.Cli.Schemas.openplantrace.batch.v5.schema.json" />
+    <EmbeddedResource
+      Include="..\..\docs\schemas\openplantrace.batch-comparison.v1.schema.json"
+      LogicalName="OpenPlanTrace.Cli.Schemas.openplantrace.batch-comparison.v1.schema.json" />
+  </ItemGroup>
+</Project>

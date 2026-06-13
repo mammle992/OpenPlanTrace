@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "openplantrace.batch-manifest.v1",
+  "name": "Golden smoke plan set",
+  "outputDirectory": "../batch-output/golden-smoke",
+  "summaryJsonPath": "../batch-output/golden-smoke/batch.json",
+  "inputs": [
+    "../samples/golden/semantic-smoke.dxf"
+  ],
+  "recursive": false,
+  "writeSvg": true,
+  "writeGeoJson": true,
+  "maxDegreeOfParallelism": 2,
+  "retryCount": 1,
+  "layerProfiles": [
+    "layer-profile.example.json"
+  ],
+  "objectLabelProfiles": [
+    "object-label-profile.example.json"
+  ],
+  "layerCategoryOverrides": [
+    {
+      "pattern": "A-WALL-*",
+      "category": "Wall",
+      "sourceFormat": "dxf"
+    }
+  ],
+  "scannerOptions": {
+    "minWallLength": 20,
+    "minWallFragmentLength": 4,
+    "maxWallFragmentGap": 6,
+    "maxWallCandidateSeedsPerPage": 15000,
+    "wallSnapTolerance": 3,
+    "wallMergeTolerance": 2.5,
+    "wallThickness": 4,
+    "minOpeningGap": 8,
+    "maxOpeningGap": 70,
+    "objectNearbyTextSearchRadius": 90,
+    "maxNearbyTextPerObject": 5,
+    "sheetMargin": 12
+  }
+}

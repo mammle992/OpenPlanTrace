@@ -1,0 +1,407 @@
+{
+  "schemaVersion": "openplantrace.scan.v31",
+  "generatedAt": "2026-06-07T00:00:00Z",
+  "documentId": "viewer-measurement-qa-smoke",
+  "document": {
+    "id": "viewer-measurement-qa-smoke",
+    "sourceName": "measurement-qa-smoke.pdf",
+    "sourcePath": null,
+    "properties": {
+      "sample": "viewer measurement QA smoke"
+    }
+  },
+  "pages": [
+    {
+      "number": 1,
+      "width": 600,
+      "height": 380,
+      "primitiveCount": 6
+    }
+  ],
+  "primitiveSources": [
+    {
+      "pageNumber": 1,
+      "primitiveKind": "Line",
+      "sourceId": "dim-line-1",
+      "bounds": {
+        "x": 80,
+        "y": 280,
+        "width": 200,
+        "height": 1
+      },
+      "metadata": {
+        "layer": "A-DIMS",
+        "sourceFormat": "sample"
+      }
+    },
+    {
+      "pageNumber": 1,
+      "primitiveKind": "Text",
+      "sourceId": "dim-text-1",
+      "bounds": {
+        "x": 85,
+        "y": 292,
+        "width": 78,
+        "height": 18
+      },
+      "metadata": {
+        "layer": "A-DIMS",
+        "sourceFormat": "sample"
+      }
+    },
+    {
+      "pageNumber": 1,
+      "primitiveKind": "Line",
+      "sourceId": "dim-line-2",
+      "bounds": {
+        "x": 320,
+        "y": 280,
+        "width": 200,
+        "height": 1
+      },
+      "metadata": {
+        "layer": "A-DIMS",
+        "sourceFormat": "sample"
+      }
+    },
+    {
+      "pageNumber": 1,
+      "primitiveKind": "Text",
+      "sourceId": "dim-text-2",
+      "bounds": {
+        "x": 330,
+        "y": 292,
+        "width": 78,
+        "height": 18
+      },
+      "metadata": {
+        "layer": "A-DIMS",
+        "sourceFormat": "sample"
+      }
+    }
+  ],
+  "layerAnalysis": {
+    "layers": [
+      {
+        "name": "A-DIMS",
+        "sourceFormat": "sample",
+        "entityCount": 6,
+        "primitiveKindCounts": {
+          "Line": 2,
+          "Text": 2
+        },
+        "totalLineLength": 400,
+        "bounds": {
+          "x": 80,
+          "y": 270,
+          "width": 440,
+          "height": 40
+        },
+        "likelyCategory": "Dimension",
+        "confidence": 0.92,
+        "categoryScores": [],
+        "evidence": [
+          "Synthetic viewer sample dimension layer."
+        ],
+        "pageNumbers": [
+          1
+        ]
+      }
+    ],
+    "diagnostics": []
+  },
+  "layers": [
+    {
+      "name": "A-DIMS",
+      "sourceFormat": "sample",
+      "entityCount": 6,
+      "primitiveKindCounts": {
+        "Line": 2,
+        "Text": 2
+      },
+      "totalLineLength": 400,
+      "bounds": {
+        "x": 80,
+        "y": 270,
+        "width": 440,
+        "height": 40
+      },
+      "likelyCategory": "Dimension",
+      "confidence": 0.92,
+      "categoryScores": [],
+      "evidence": [
+        "Synthetic viewer sample dimension layer."
+      ],
+      "pageNumbers": [
+        1
+      ]
+    }
+  ],
+  "calibration": {
+    "drawingUnit": "PdfPoint",
+    "realWorldUnit": "Millimeter",
+    "scaleRatio": 28.35,
+    "millimetersPerDrawingUnit": 10,
+    "confidence": 0.82,
+    "hasReliableMeasurementScale": true,
+    "scaleGroups": [
+      {
+        "id": "document:scale-group:1",
+        "pageNumber": 1,
+        "scope": "MainFloorPlan",
+        "drawingUnit": "PdfPoint",
+        "evidenceUnit": "Millimeter",
+        "scaleRatio": 28.35,
+        "millimetersPerDrawingUnit": 10,
+        "evidenceCount": 1,
+        "confidence": 0.82,
+        "sourcePrimitiveIds": [
+          "dim-line-1",
+          "dim-text-1"
+        ],
+        "sourceRegionIds": [
+          "page:1:main"
+        ],
+        "bounds": {
+          "x": 40,
+          "y": 40,
+          "width": 420,
+          "height": 260
+        },
+        "evidence": [
+          "Dimension text and nearby line established 10 mm/unit."
+        ]
+      }
+    ],
+    "evidence": [
+      {
+        "kind": "DimensionText",
+        "pageNumber": 1,
+        "sourcePrimitiveId": "dim-text-1",
+        "text": "2000 mm",
+        "unit": "Millimeter",
+        "scaleRatio": 28.35,
+        "millimetersPerDrawingUnit": 10,
+        "confidence": 0.82,
+        "description": "Dimension text and nearby line established 10 mm/unit."
+      }
+    ]
+  },
+  "measurementConsistency": {
+    "hasReliableCalibration": true,
+    "selectedMillimetersPerDrawingUnit": 10,
+    "medianDimensionMillimetersPerDrawingUnit": 14,
+    "dimensionScaleSpreadRatio": 2.5,
+    "confidence": 0.58,
+    "checkedCount": 2,
+    "consistentCount": 1,
+    "outlierCount": 1,
+    "checks": [
+      {
+        "dimensionId": "page:1:dimension:1",
+        "pageNumber": 1,
+        "status": "Consistent",
+        "dimensionMillimeters": 2000,
+        "drawingLength": 200,
+        "impliedMillimetersPerDrawingUnit": 10,
+        "selectedMillimetersPerDrawingUnit": 10,
+        "expectedMillimeters": 2000,
+        "deltaMillimeters": 0,
+        "relativeError": 0,
+        "confidence": 0.84,
+        "sourcePrimitiveIds": [
+          "dim-line-1",
+          "dim-text-1"
+        ],
+        "sourceLayers": [
+          "A-DIMS"
+        ],
+        "evidence": [
+          "2000 mm matches 200 drawing units at 10 mm/unit."
+        ]
+      },
+      {
+        "dimensionId": "page:1:dimension:2",
+        "pageNumber": 1,
+        "status": "Outlier",
+        "dimensionMillimeters": 5000,
+        "drawingLength": 200,
+        "impliedMillimetersPerDrawingUnit": 25,
+        "selectedMillimetersPerDrawingUnit": 10,
+        "expectedMillimeters": 2000,
+        "deltaMillimeters": 3000,
+        "relativeError": 1.5,
+        "confidence": 0.42,
+        "sourcePrimitiveIds": [
+          "dim-line-2",
+          "dim-text-2"
+        ],
+        "sourceLayers": [
+          "A-DIMS"
+        ],
+        "evidence": [
+          "5000 mm conflicts with selected calibration; likely wrong dimension-line match or detail scale."
+        ]
+      }
+    ]
+  },
+  "titleBlocks": [],
+  "dimensions": [
+    {
+      "id": "page:1:dimension:1",
+      "pageNumber": 1,
+      "kind": "Linear",
+      "orientation": "Horizontal",
+      "text": "2000 mm",
+      "normalizedText": "2000 mm",
+      "bounds": {
+        "x": 85,
+        "y": 292,
+        "width": 78,
+        "height": 18
+      },
+      "unit": "Millimeter",
+      "measuredMillimeters": 2000,
+      "dimensionLine": {
+        "start": {
+          "x": 80,
+          "y": 280
+        },
+        "end": {
+          "x": 280,
+          "y": 280
+        }
+      },
+      "drawingLength": 200,
+      "millimetersPerDrawingUnit": 10,
+      "confidence": 0.84,
+      "sourceRegionId": "page:1:main",
+      "sourcePrimitiveIds": [
+        "dim-line-1",
+        "dim-text-1"
+      ],
+      "sourceLayers": [
+        "A-DIMS"
+      ],
+      "evidence": [
+        "Matched dimension text to nearby horizontal line."
+      ]
+    },
+    {
+      "id": "page:1:dimension:2",
+      "pageNumber": 1,
+      "kind": "Linear",
+      "orientation": "Horizontal",
+      "text": "5000 mm",
+      "normalizedText": "5000 mm",
+      "bounds": {
+        "x": 330,
+        "y": 292,
+        "width": 78,
+        "height": 18
+      },
+      "unit": "Millimeter",
+      "measuredMillimeters": 5000,
+      "dimensionLine": {
+        "start": {
+          "x": 320,
+          "y": 280
+        },
+        "end": {
+          "x": 520,
+          "y": 280
+        }
+      },
+      "drawingLength": 200,
+      "millimetersPerDrawingUnit": 25,
+      "confidence": 0.42,
+      "sourceRegionId": "page:1:main",
+      "sourcePrimitiveIds": [
+        "dim-line-2",
+        "dim-text-2"
+      ],
+      "sourceLayers": [
+        "A-DIMS"
+      ],
+      "evidence": [
+        "Matched dimension text to nearby horizontal line."
+      ]
+    }
+  ],
+  "annotations": [],
+  "gridAxes": [],
+  "gridBaySpacings": [],
+  "regions": [
+    {
+      "id": "page:1:main",
+      "pageNumber": 1,
+      "kind": "MainFloorPlan",
+      "bounds": {
+        "x": 40,
+        "y": 40,
+        "width": 520,
+        "height": 260
+      },
+      "confidence": 0.9,
+      "label": "Main floorplan",
+      "sourcePrimitiveIds": [],
+      "sourceLayers": []
+    }
+  ],
+  "walls": [],
+  "wallGraph": {
+    "nodes": [],
+    "edges": []
+  },
+  "nodes": [],
+  "edges": [],
+  "rooms": [],
+  "roomAdjacencyGraph": {
+    "edges": [],
+    "clusters": []
+  },
+  "openings": [],
+  "objects": [],
+  "objectGroups": [],
+  "quality": {
+    "overallConfidence": 0.7,
+    "grade": "ReviewRequired",
+    "requiresReview": true,
+    "pageCount": 1,
+    "primitiveCount": 6,
+    "detectionCount": 2,
+    "detectorCount": 1,
+    "detectorWithFindingsCount": 1,
+    "hasReliableCalibration": true,
+    "diagnosticInfoCount": 1,
+    "diagnosticWarningCount": 1,
+    "diagnosticErrorCount": 0,
+    "detectors": [],
+    "issues": [],
+    "evidence": []
+  },
+  "diagnostics": {
+    "durationMilliseconds": 12,
+    "hasErrors": false,
+    "infoCount": 1,
+    "warningCount": 1,
+    "errorCount": 0,
+    "stages": [],
+    "messages": [
+      {
+        "code": "measurement_consistency.dimension_scale_spread_high",
+        "severity": "Warning",
+        "stage": "measurement",
+        "scope": "Detection",
+        "message": "Dimension scale spread is high.",
+        "pageNumber": 1,
+        "region": null,
+        "confidence": 0.58,
+        "sourcePrimitiveIds": [
+          "dim-line-2"
+        ],
+        "properties": {}
+      }
+    ]
+  }
+}

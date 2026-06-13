@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>OpenPlanTrace</AssemblyName>
+    <RootNamespace>OpenPlanTrace</RootNamespace>
+    <PackageId>OpenPlanTrace</PackageId>
+    <Title>OpenPlanTrace</Title>
+    <Description>Open-source PDF and architectural floorplan tracing engine.</Description>
+    <Authors>OpenPlanTrace contributors</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource
+      Include="..\..\docs\schemas\openplantrace.layer-profile.v1.schema.json"
+      LogicalName="OpenPlanTrace.Schemas.openplantrace.layer-profile.v1.schema.json" />
+    <EmbeddedResource
+      Include="..\..\docs\schemas\openplantrace.object-label-profile.v1.schema.json"
+      LogicalName="OpenPlanTrace.Schemas.openplantrace.object-label-profile.v1.schema.json" />
+    <EmbeddedResource
+      Include="..\..\docs\schemas\openplantrace.benchmark-manifest.v1.schema.json"
+      LogicalName="OpenPlanTrace.Schemas.openplantrace.benchmark-manifest.v1.schema.json" />
+    <EmbeddedResource
+      Include="..\..\docs\schemas\openplantrace.benchmark-result.v1.schema.json"
+      LogicalName="OpenPlanTrace.Schemas.openplantrace.benchmark-result.v1.schema.json" />
+    <EmbeddedResource
+      Include="..\..\docs\schemas\openplantrace.benchmark-comparison.v1.schema.json"
+      LogicalName="OpenPlanTrace.Schemas.openplantrace.benchmark-comparison.v1.schema.json" />
+    <EmbeddedResource
+      Include="..\..\docs\schemas\openplantrace.viewer-benchmark-review-session.v1.schema.json"
+      LogicalName="OpenPlanTrace.Schemas.openplantrace.viewer-benchmark-review-session.v1.schema.json" />
+    <EmbeddedResource
+      Include="..\..\docs\schemas\openplantrace.batch-manifest.v1.schema.json"
+      LogicalName="OpenPlanTrace.Schemas.openplantrace.batch-manifest.v1.schema.json" />
+    <EmbeddedResource
+      Include="..\..\docs\schemas\openplantrace.object-review-dataset.v2.schema.json"
+      LogicalName="OpenPlanTrace.Schemas.openplantrace.object-review-dataset.v2.schema.json" />
+    <EmbeddedResource
+      Include="..\..\docs\schemas\openplantrace.object-correction-dataset.v1.schema.json"
+      LogicalName="OpenPlanTrace.Schemas.openplantrace.object-correction-dataset.v1.schema.json" />
+    <EmbeddedResource
+      Include="..\..\docs\schemas\openplantrace.kvemo-crops.v2.schema.json"
+      LogicalName="OpenPlanTrace.Schemas.openplantrace.kvemo-crops.v2.schema.json" />
+  </ItemGroup>
+</Project>

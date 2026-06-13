@@ -1,0 +1,782 @@
+{
+  "schemaVersion": "openplantrace.scan.v44",
+  "generatedAt": "2026-06-09T12:00:00Z",
+  "document": {
+    "id": "viewer-routing-review-smoke",
+    "sourceName": "routing-review-smoke.pdf",
+    "sourcePath": null,
+    "properties": {
+      "sample": "compound-object-routing"
+    }
+  },
+  "pages": [
+    {
+      "number": 1,
+      "width": 640,
+      "height": 420,
+      "primitiveCount": 28
+    }
+  ],
+  "coordinateSystem": {
+    "coordinateSpace": "OpenPlanTracePageCoordinates",
+    "unit": "drawing-unit",
+    "origin": "TopLeft",
+    "xAxisDirection": "Right",
+    "yAxisDirection": "Down",
+    "geometryBasis": "viewer smoke sample",
+    "coordinateOrder": "x,y",
+    "boundsKind": "page",
+    "precision": "double",
+    "realWorldUnit": "millimeter",
+    "millimetersPerDrawingUnit": 50,
+    "note": "Sample coordinates are page drawing units.",
+    "pageFrames": [
+      {
+        "pageNumber": 1,
+        "width": 640,
+        "height": 420,
+        "bounds": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 420
+        },
+        "pageToNormalizedTransform": [0.0015625, 0, 0, 0.0023809524, 0, 0],
+        "normalizedToPageTransform": [640, 0, 0, 420, 0, 0]
+      }
+    ]
+  },
+  "primitiveSources": [
+    {
+      "id": "car-body",
+      "pageNumber": 1,
+      "kind": "Symbol",
+      "bounds": {
+        "x": 205,
+        "y": 238,
+        "width": 112,
+        "height": 44
+      },
+      "metadata": {
+        "sourceFormat": "sample",
+        "sourceDocumentId": "viewer-routing-review-smoke",
+        "sourceName": "routing-review-smoke.pdf",
+        "sourcePath": null,
+        "sourceId": "car-body",
+        "entityType": "INSERT",
+        "layer": "A-VEHICLE-CAR",
+        "color": null,
+        "lineType": null,
+        "lineWeight": null,
+        "drawingSpace": "Model",
+        "blockName": "CAR_BODY",
+        "properties": {}
+      }
+    },
+    {
+      "id": "pump-symbol",
+      "pageNumber": 1,
+      "kind": "Symbol",
+      "bounds": {
+        "x": 430,
+        "y": 178,
+        "width": 48,
+        "height": 38
+      },
+      "metadata": {
+        "sourceFormat": "sample",
+        "sourceDocumentId": "viewer-routing-review-smoke",
+        "sourceName": "routing-review-smoke.pdf",
+        "sourcePath": null,
+        "sourceId": "pump-symbol",
+        "entityType": "INSERT",
+        "layer": "M-EQUIP",
+        "color": null,
+        "lineType": null,
+        "lineWeight": null,
+        "drawingSpace": "Model",
+        "blockName": "PROCESS_PUMP",
+        "properties": {}
+      }
+    }
+  ],
+  "layerAnalysis": {
+    "layers": [
+      {
+        "name": "A-WALL",
+        "likelyCategory": "Wall",
+        "confidence": 0.92,
+        "primitiveCount": 4,
+        "bounds": {
+          "x": 80,
+          "y": 70,
+          "width": 460,
+          "height": 280
+        },
+        "categoryScores": [],
+        "pageNumbers": [1],
+        "evidence": ["sample wall layer"]
+      },
+      {
+        "name": "A-VEHICLE-CAR",
+        "likelyCategory": "Object",
+        "confidence": 0.86,
+        "primitiveCount": 5,
+        "bounds": {
+          "x": 205,
+          "y": 232,
+          "width": 112,
+          "height": 56
+        },
+        "categoryScores": [],
+        "pageNumbers": [1],
+        "evidence": ["sample vehicle block layer"]
+      },
+      {
+        "name": "M-EQUIP",
+        "likelyCategory": "HVAC",
+        "confidence": 0.83,
+        "primitiveCount": 1,
+        "bounds": {
+          "x": 430,
+          "y": 178,
+          "width": 48,
+          "height": 38
+        },
+        "categoryScores": [],
+        "pageNumbers": [1],
+        "evidence": ["sample equipment layer"]
+      }
+    ],
+    "evidence": ["viewer smoke layer analysis"]
+  },
+  "calibration": {
+    "drawingUnit": "DrawingUnit",
+    "realWorldUnit": "Millimeter",
+    "scaleRatio": null,
+    "millimetersPerDrawingUnit": 50,
+    "confidence": 0.8,
+    "hasReliableMeasurementScale": true,
+    "scaleGroups": [],
+    "evidence": []
+  },
+  "measurementConsistency": {
+    "hasReliableCalibration": true,
+    "selectedMillimetersPerDrawingUnit": 50,
+    "medianDimensionMillimetersPerDrawingUnit": 50,
+    "dimensionScaleSpreadRatio": 0,
+    "confidence": 0.8,
+    "checkedCount": 0,
+    "consistentCount": 0,
+    "outlierCount": 0,
+    "outlierRatio": 0,
+    "hasBlockingOutliers": false,
+    "hasTolerableOutliers": false,
+    "nonBlockingOutlierCountMaximum": 2,
+    "nonBlockingOutlierRatioMaximum": 0.25,
+    "blockingScaleSpreadRatioThreshold": 1.5,
+    "metricImportImpact": "None",
+    "checks": []
+  },
+  "titleBlocks": [],
+  "dimensions": [],
+  "annotations": [],
+  "gridAxes": [],
+  "gridBaySpacings": [],
+  "regions": [
+    {
+      "id": "sheet",
+      "pageNumber": 1,
+      "kind": "Sheet",
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "width": 640,
+        "height": 420
+      },
+      "confidence": 1,
+      "label": "Sheet",
+      "sourcePrimitiveIds": [],
+      "sourceLayers": []
+    },
+    {
+      "id": "main-plan",
+      "pageNumber": 1,
+      "kind": "MainFloorPlan",
+      "bounds": {
+        "x": 60,
+        "y": 50,
+        "width": 510,
+        "height": 320
+      },
+      "confidence": 0.92,
+      "label": "Main floorplan area",
+      "sourcePrimitiveIds": [],
+      "sourceLayers": []
+    }
+  ],
+  "surfacePatterns": [],
+  "walls": [
+    {
+      "id": "wall-top",
+      "pageNumber": 1,
+      "centerLine": {
+        "start": { "x": 100, "y": 90 },
+        "end": { "x": 520, "y": 90 }
+      },
+      "bounds": {
+        "x": 100,
+        "y": 86,
+        "width": 420,
+        "height": 8
+      },
+      "thickness": 8,
+      "detectionKind": "Line",
+      "wallComponentId": "wall-component-main",
+      "wallComponentKind": "MainStructural",
+      "excludedFromStructuralTopology": false,
+      "drawingLength": 420,
+      "lengthMeters": 21,
+      "thicknessMillimeters": 400,
+      "measurementScaleGroupId": "scale:sample",
+      "confidence": 0.9,
+      "sourceRegionId": "main-plan",
+      "sourcePrimitiveIds": ["wall-top"],
+      "pairEvidence": null,
+      "evidence": ["sample structural wall"],
+      "sourceLayers": ["A-WALL"]
+    },
+    {
+      "id": "wall-right",
+      "pageNumber": 1,
+      "centerLine": {
+        "start": { "x": 520, "y": 90 },
+        "end": { "x": 520, "y": 330 }
+      },
+      "bounds": {
+        "x": 516,
+        "y": 90,
+        "width": 8,
+        "height": 240
+      },
+      "thickness": 8,
+      "detectionKind": "Line",
+      "wallComponentId": "wall-component-main",
+      "wallComponentKind": "MainStructural",
+      "excludedFromStructuralTopology": false,
+      "drawingLength": 240,
+      "lengthMeters": 12,
+      "thicknessMillimeters": 400,
+      "measurementScaleGroupId": "scale:sample",
+      "confidence": 0.9,
+      "sourceRegionId": "main-plan",
+      "sourcePrimitiveIds": ["wall-right"],
+      "pairEvidence": null,
+      "evidence": ["sample structural wall"],
+      "sourceLayers": ["A-WALL"]
+    },
+    {
+      "id": "wall-bottom",
+      "pageNumber": 1,
+      "centerLine": {
+        "start": { "x": 520, "y": 330 },
+        "end": { "x": 100, "y": 330 }
+      },
+      "bounds": {
+        "x": 100,
+        "y": 326,
+        "width": 420,
+        "height": 8
+      },
+      "thickness": 8,
+      "detectionKind": "Line",
+      "wallComponentId": "wall-component-main",
+      "wallComponentKind": "MainStructural",
+      "excludedFromStructuralTopology": false,
+      "drawingLength": 420,
+      "lengthMeters": 21,
+      "thicknessMillimeters": 400,
+      "measurementScaleGroupId": "scale:sample",
+      "confidence": 0.9,
+      "sourceRegionId": "main-plan",
+      "sourcePrimitiveIds": ["wall-bottom"],
+      "pairEvidence": null,
+      "evidence": ["sample structural wall"],
+      "sourceLayers": ["A-WALL"]
+    },
+    {
+      "id": "wall-left",
+      "pageNumber": 1,
+      "centerLine": {
+        "start": { "x": 100, "y": 330 },
+        "end": { "x": 100, "y": 90 }
+      },
+      "bounds": {
+        "x": 96,
+        "y": 90,
+        "width": 8,
+        "height": 240
+      },
+      "thickness": 8,
+      "detectionKind": "Line",
+      "wallComponentId": "wall-component-main",
+      "wallComponentKind": "MainStructural",
+      "excludedFromStructuralTopology": false,
+      "drawingLength": 240,
+      "lengthMeters": 12,
+      "thicknessMillimeters": 400,
+      "measurementScaleGroupId": "scale:sample",
+      "confidence": 0.9,
+      "sourceRegionId": "main-plan",
+      "sourcePrimitiveIds": ["wall-left"],
+      "pairEvidence": null,
+      "evidence": ["sample structural wall"],
+      "sourceLayers": ["A-WALL"]
+    }
+  ],
+  "wallGraph": {
+    "nodes": [
+      { "id": "node-a", "pageNumber": 1, "position": { "x": 100, "y": 90 }, "kind": "Corner", "degree": 2, "directions": ["Right", "Down"], "confidence": 0.88, "evidence": ["sample corner"] },
+      { "id": "node-b", "pageNumber": 1, "position": { "x": 520, "y": 90 }, "kind": "Corner", "degree": 2, "directions": ["Left", "Down"], "confidence": 0.88, "evidence": ["sample corner"] }
+    ],
+    "edges": [],
+    "components": [
+      {
+        "id": "wall-component-main",
+        "pageNumber": 1,
+        "kind": "MainStructural",
+        "bounds": { "x": 96, "y": 86, "width": 428, "height": 248 },
+        "wallIds": ["wall-top", "wall-right", "wall-bottom", "wall-left"],
+        "nodeIds": ["node-a", "node-b"],
+        "edgeIds": [],
+        "sourcePrimitiveIds": ["wall-top", "wall-right", "wall-bottom", "wall-left"],
+        "sourceLayers": ["A-WALL"],
+        "wallCount": 4,
+        "nodeCount": 2,
+        "edgeCount": 0,
+        "drawingLength": 1320,
+        "confidence": 0.9,
+        "excludedFromStructuralTopology": false,
+        "evidence": ["sample main wall component"]
+      }
+    ]
+  },
+  "rooms": [
+    {
+      "id": "room-garage",
+      "pageNumber": 1,
+      "bounds": {
+        "x": 112,
+        "y": 102,
+        "width": 396,
+        "height": 216
+      },
+      "boundary": [
+        { "x": 112, "y": 102 },
+        { "x": 508, "y": 102 },
+        { "x": 508, "y": 318 },
+        { "x": 112, "y": 318 }
+      ],
+      "wallIds": ["wall-top", "wall-right", "wall-bottom", "wall-left"],
+      "drawingArea": 85536,
+      "areaSquareMeters": 213.84,
+      "measurementScaleGroupId": "scale:sample",
+      "confidence": 0.78,
+      "label": "GARAGE",
+      "useKind": "Parking",
+      "labelSourcePrimitiveIds": ["room-label-garage"],
+      "evidence": ["vehicle aggregate supports parking room use"]
+    }
+  ],
+  "roomAdjacencyGraph": {
+    "edges": [],
+    "clusters": []
+  },
+  "openings": [
+    {
+      "id": "door-garage",
+      "pageNumber": 1,
+      "type": "Door",
+      "operation": "Overhead",
+      "orientation": "Horizontal",
+      "centerLine": {
+        "start": { "x": 210, "y": 330 },
+        "end": { "x": 315, "y": 330 }
+      },
+      "bounds": {
+        "x": 210,
+        "y": 322,
+        "width": 105,
+        "height": 16
+      },
+      "wallId": "wall-bottom",
+      "adjacentWallIds": [],
+      "hostWallIds": ["wall-bottom"],
+      "connectedRoomIds": ["room-garage"],
+      "connectedRoomLabels": ["GARAGE"],
+      "connectedRoomLinks": [],
+      "roomAdjacencyIds": [],
+      "drawingWidth": 105,
+      "widthMillimeters": 5250,
+      "measurementScaleGroupId": "scale:sample",
+      "placement": null,
+      "confidence": 0.82,
+      "sourcePrimitiveIds": ["door-garage"],
+      "sourceLayers": ["A-DOOR"],
+      "evidence": ["sample garage door passage"]
+    }
+  ],
+  "objects": [
+    {
+      "id": "car-body",
+      "pageNumber": 1,
+      "kind": "Vehicle",
+      "category": "Vehicle",
+      "sourceKind": "CadSymbol",
+      "sourceWallComponentId": null,
+      "sourceWallComponentKind": null,
+      "bounds": { "x": 205, "y": 238, "width": 112, "height": 44 },
+      "confidence": 0.84,
+      "label": "car body",
+      "symbolName": "CAR_BODY",
+      "detectedTag": null,
+      "detectedTagSourcePrimitiveId": null,
+      "roomId": "room-garage",
+      "roomLabel": "GARAGE",
+      "sourcePrimitiveIds": ["car-body"],
+      "sourceLayers": ["A-VEHICLE-CAR"],
+      "nearbyText": [],
+      "visualAi": null,
+      "evidence": ["vehicle child object retained for review"]
+    },
+    {
+      "id": "car-wheel-front-left",
+      "pageNumber": 1,
+      "kind": "Vehicle",
+      "category": "Vehicle",
+      "sourceKind": "CadSymbol",
+      "sourceWallComponentId": null,
+      "sourceWallComponentKind": null,
+      "bounds": { "x": 214, "y": 232, "width": 18, "height": 18 },
+      "confidence": 0.78,
+      "label": "car wheel",
+      "symbolName": "CAR_WHEEL",
+      "detectedTag": null,
+      "detectedTagSourcePrimitiveId": null,
+      "roomId": "room-garage",
+      "roomLabel": "GARAGE",
+      "sourcePrimitiveIds": ["car-wheel-front-left"],
+      "sourceLayers": ["A-VEHICLE-CAR"],
+      "nearbyText": [],
+      "visualAi": null,
+      "evidence": ["vehicle child object retained for review"]
+    },
+    {
+      "id": "car-wheel-front-right",
+      "pageNumber": 1,
+      "kind": "Vehicle",
+      "category": "Vehicle",
+      "sourceKind": "CadSymbol",
+      "sourceWallComponentId": null,
+      "sourceWallComponentKind": null,
+      "bounds": { "x": 290, "y": 232, "width": 18, "height": 18 },
+      "confidence": 0.78,
+      "label": "car wheel",
+      "symbolName": "CAR_WHEEL",
+      "detectedTag": null,
+      "detectedTagSourcePrimitiveId": null,
+      "roomId": "room-garage",
+      "roomLabel": "GARAGE",
+      "sourcePrimitiveIds": ["car-wheel-front-right"],
+      "sourceLayers": ["A-VEHICLE-CAR"],
+      "nearbyText": [],
+      "visualAi": null,
+      "evidence": ["vehicle child object retained for review"]
+    },
+    {
+      "id": "car-wheel-back-left",
+      "pageNumber": 1,
+      "kind": "Vehicle",
+      "category": "Vehicle",
+      "sourceKind": "CadSymbol",
+      "sourceWallComponentId": null,
+      "sourceWallComponentKind": null,
+      "bounds": { "x": 214, "y": 270, "width": 18, "height": 18 },
+      "confidence": 0.78,
+      "label": "car wheel",
+      "symbolName": "CAR_WHEEL",
+      "detectedTag": null,
+      "detectedTagSourcePrimitiveId": null,
+      "roomId": "room-garage",
+      "roomLabel": "GARAGE",
+      "sourcePrimitiveIds": ["car-wheel-back-left"],
+      "sourceLayers": ["A-VEHICLE-CAR"],
+      "nearbyText": [],
+      "visualAi": null,
+      "evidence": ["vehicle child object retained for review"]
+    },
+    {
+      "id": "car-wheel-back-right",
+      "pageNumber": 1,
+      "kind": "Vehicle",
+      "category": "Vehicle",
+      "sourceKind": "CadSymbol",
+      "sourceWallComponentId": null,
+      "sourceWallComponentKind": null,
+      "bounds": { "x": 290, "y": 270, "width": 18, "height": 18 },
+      "confidence": 0.78,
+      "label": "car wheel",
+      "symbolName": "CAR_WHEEL",
+      "detectedTag": null,
+      "detectedTagSourcePrimitiveId": null,
+      "roomId": "room-garage",
+      "roomLabel": "GARAGE",
+      "sourcePrimitiveIds": ["car-wheel-back-right"],
+      "sourceLayers": ["A-VEHICLE-CAR"],
+      "nearbyText": [],
+      "visualAi": null,
+      "evidence": ["vehicle child object retained for review"]
+    },
+    {
+      "id": "pump-1",
+      "pageNumber": 1,
+      "kind": "Symbol",
+      "category": "Equipment",
+      "sourceKind": "CadSymbol",
+      "sourceWallComponentId": null,
+      "sourceWallComponentKind": null,
+      "bounds": { "x": 430, "y": 178, "width": 48, "height": 38 },
+      "confidence": 0.86,
+      "label": "P-101",
+      "symbolName": "PROCESS_PUMP",
+      "detectedTag": "P-101",
+      "detectedTagSourcePrimitiveId": "pump-tag",
+      "roomId": "room-garage",
+      "roomLabel": "GARAGE",
+      "sourcePrimitiveIds": ["pump-symbol"],
+      "sourceLayers": ["M-EQUIP"],
+      "nearbyText": [],
+      "visualAi": null,
+      "evidence": ["equipment remains a hard routing obstacle"]
+    }
+  ],
+  "objectGroups": [
+    {
+      "id": "object-group-car-parts",
+      "signature": "vehicle:car|layers:a-vehicle-car",
+      "kind": "Vehicle",
+      "category": "Vehicle",
+      "count": 5,
+      "representativeBounds": { "x": 205, "y": 232, "width": 112, "height": 56 },
+      "pageNumbers": [1],
+      "candidateIds": ["car-body", "car-wheel-front-left", "car-wheel-front-right", "car-wheel-back-left", "car-wheel-back-right"],
+      "sourcePrimitiveIds": ["car-body", "car-wheel-front-left", "car-wheel-front-right", "car-wheel-back-left", "car-wheel-back-right"],
+      "sourceLayers": ["A-VEHICLE-CAR"],
+      "requiresReview": false,
+      "confidence": 0.82,
+      "label": "car parts",
+      "symbolName": "CAR",
+      "detectedTags": [],
+      "nearbyText": [],
+      "visualAi": null,
+      "evidence": ["sample repeated vehicle child symbols"]
+    }
+  ],
+  "objectAggregates": [
+    {
+      "id": "aggregate-car-1",
+      "pageNumber": 1,
+      "bounds": { "x": 205, "y": 232, "width": 112, "height": 56 },
+      "category": "Vehicle",
+      "kind": "Vehicle",
+      "childObjectCount": 5,
+      "childObjectIds": ["car-body", "car-wheel-front-left", "car-wheel-front-right", "car-wheel-back-left", "car-wheel-back-right"],
+      "objectGroupIds": ["object-group-car-parts"],
+      "composition": {
+        "categoryCounts": [{ "value": "Vehicle", "count": 5 }],
+        "kindCounts": [{ "value": "Vehicle", "count": 5 }],
+        "sourceKindCounts": [{ "value": "CadSymbol", "count": 5 }],
+        "sourceWallComponentKindCounts": [],
+        "sourceWallComponentIds": [],
+        "children": [
+          { "objectId": "car-body", "bounds": { "x": 205, "y": 238, "width": 112, "height": 44 }, "category": "Vehicle", "kind": "Vehicle", "sourceKind": "CadSymbol", "sourceWallComponentId": null, "sourceWallComponentKind": null, "label": "car body", "symbolName": "CAR_BODY", "detectedTag": null, "confidence": 0.84, "sourcePrimitiveIds": ["car-body"] },
+          { "objectId": "car-wheel-front-left", "bounds": { "x": 214, "y": 232, "width": 18, "height": 18 }, "category": "Vehicle", "kind": "Vehicle", "sourceKind": "CadSymbol", "sourceWallComponentId": null, "sourceWallComponentKind": null, "label": "car wheel", "symbolName": "CAR_WHEEL", "detectedTag": null, "confidence": 0.78, "sourcePrimitiveIds": ["car-wheel-front-left"] },
+          { "objectId": "car-wheel-front-right", "bounds": { "x": 290, "y": 232, "width": 18, "height": 18 }, "category": "Vehicle", "kind": "Vehicle", "sourceKind": "CadSymbol", "sourceWallComponentId": null, "sourceWallComponentKind": null, "label": "car wheel", "symbolName": "CAR_WHEEL", "detectedTag": null, "confidence": 0.78, "sourcePrimitiveIds": ["car-wheel-front-right"] },
+          { "objectId": "car-wheel-back-left", "bounds": { "x": 214, "y": 270, "width": 18, "height": 18 }, "category": "Vehicle", "kind": "Vehicle", "sourceKind": "CadSymbol", "sourceWallComponentId": null, "sourceWallComponentKind": null, "label": "car wheel", "symbolName": "CAR_WHEEL", "detectedTag": null, "confidence": 0.78, "sourcePrimitiveIds": ["car-wheel-back-left"] },
+          { "objectId": "car-wheel-back-right", "bounds": { "x": 290, "y": 270, "width": 18, "height": 18 }, "category": "Vehicle", "kind": "Vehicle", "sourceKind": "CadSymbol", "sourceWallComponentId": null, "sourceWallComponentKind": null, "label": "car wheel", "symbolName": "CAR_WHEEL", "detectedTag": null, "confidence": 0.78, "sourcePrimitiveIds": ["car-wheel-back-right"] }
+        ]
+      },
+      "sourcePrimitiveIds": ["car-body", "car-wheel-front-left", "car-wheel-front-right", "car-wheel-back-left", "car-wheel-back-right"],
+      "sourceLayers": ["A-VEHICLE-CAR"],
+      "routingInfluence": "RoomUseEvidenceOnly",
+      "structuralInfluence": "None",
+      "suppressChildObjectsForRouting": true,
+      "roomUseEvidence": "Parking",
+      "confidence": 0.86,
+      "label": "car",
+      "roomId": "room-garage",
+      "roomLabel": "GARAGE",
+      "requiresReview": false,
+      "nearbyText": ["GARAGE"],
+      "evidence": [
+        "aggregated 5 nearby vehicle child detections into one compound object",
+        "aggregate is semantic room-use evidence only and should not block loop generation",
+        "room-use evidence Parking"
+      ]
+    }
+  ],
+  "routingLayer": {
+    "barriers": [
+      { "id": "routing-barrier:wall-top", "pageNumber": 1, "sourceId": "wall-top", "sourceKind": "Wall", "centerLine": { "start": { "x": 100, "y": 90 }, "end": { "x": 520, "y": 90 } }, "bounds": { "x": 100, "y": 86, "width": 420, "height": 8 }, "thickness": 8, "drawingLength": 420, "lengthMeters": 21, "thicknessMillimeters": 400, "measurementScaleGroupId": "scale:sample", "wallComponentId": "wall-component-main", "wallComponentKind": "MainStructural", "excludedFromStructuralTopology": false, "confidence": 0.9, "sourcePrimitiveIds": ["wall-top"], "sourceLayers": ["A-WALL"], "evidence": ["wall is a routing barrier"] },
+      { "id": "routing-barrier:wall-right", "pageNumber": 1, "sourceId": "wall-right", "sourceKind": "Wall", "centerLine": { "start": { "x": 520, "y": 90 }, "end": { "x": 520, "y": 330 } }, "bounds": { "x": 516, "y": 90, "width": 8, "height": 240 }, "thickness": 8, "drawingLength": 240, "lengthMeters": 12, "thicknessMillimeters": 400, "measurementScaleGroupId": "scale:sample", "wallComponentId": "wall-component-main", "wallComponentKind": "MainStructural", "excludedFromStructuralTopology": false, "confidence": 0.9, "sourcePrimitiveIds": ["wall-right"], "sourceLayers": ["A-WALL"], "evidence": ["wall is a routing barrier"] },
+      { "id": "routing-barrier:wall-bottom", "pageNumber": 1, "sourceId": "wall-bottom", "sourceKind": "Wall", "centerLine": { "start": { "x": 520, "y": 330 }, "end": { "x": 100, "y": 330 } }, "bounds": { "x": 100, "y": 326, "width": 420, "height": 8 }, "thickness": 8, "drawingLength": 420, "lengthMeters": 21, "thicknessMillimeters": 400, "measurementScaleGroupId": "scale:sample", "wallComponentId": "wall-component-main", "wallComponentKind": "MainStructural", "excludedFromStructuralTopology": false, "confidence": 0.9, "sourcePrimitiveIds": ["wall-bottom"], "sourceLayers": ["A-WALL"], "evidence": ["wall is a routing barrier"] },
+      { "id": "routing-barrier:wall-left", "pageNumber": 1, "sourceId": "wall-left", "sourceKind": "Wall", "centerLine": { "start": { "x": 100, "y": 330 }, "end": { "x": 100, "y": 90 } }, "bounds": { "x": 96, "y": 90, "width": 8, "height": 240 }, "thickness": 8, "drawingLength": 240, "lengthMeters": 12, "thicknessMillimeters": 400, "measurementScaleGroupId": "scale:sample", "wallComponentId": "wall-component-main", "wallComponentKind": "MainStructural", "excludedFromStructuralTopology": false, "confidence": 0.9, "sourcePrimitiveIds": ["wall-left"], "sourceLayers": ["A-WALL"], "evidence": ["wall is a routing barrier"] }
+    ],
+    "passages": [
+      {
+        "id": "routing-passage:door-garage",
+        "pageNumber": 1,
+        "sourceId": "door-garage",
+        "sourceKind": "Opening",
+        "type": "Door",
+        "operation": "Overhead",
+        "orientation": "Horizontal",
+        "centerLine": { "start": { "x": 210, "y": 330 }, "end": { "x": 315, "y": 330 } },
+        "bounds": { "x": 210, "y": 322, "width": 105, "height": 16 },
+        "drawingWidth": 105,
+        "widthMillimeters": 5250,
+        "measurementScaleGroupId": "scale:sample",
+        "hostWallIds": ["wall-bottom"],
+        "connectedRoomIds": ["room-garage"],
+        "connectedRoomLabels": ["GARAGE"],
+        "placement": null,
+        "confidence": 0.82,
+        "sourcePrimitiveIds": ["door-garage"],
+        "sourceLayers": ["A-DOOR"],
+        "evidence": ["garage door is a routing passage"]
+      }
+    ],
+    "obstacles": [
+      {
+        "id": "routing-obstacle:pump-1",
+        "pageNumber": 1,
+        "sourceId": "pump-1",
+        "sourceKind": "ObjectCandidate",
+        "obstacleKind": "HardObstacle",
+        "routingInfluence": "HardObstacle",
+        "structuralInfluence": "FixedEquipment",
+        "category": "Equipment",
+        "objectKind": "Symbol",
+        "bounds": { "x": 430, "y": 178, "width": 48, "height": 38 },
+        "label": "P-101",
+        "roomId": "room-garage",
+        "roomLabel": "GARAGE",
+        "suppressesChildObjects": false,
+        "childObjectIds": [],
+        "confidence": 0.86,
+        "sourcePrimitiveIds": ["pump-symbol"],
+        "sourceLayers": ["M-EQUIP"],
+        "evidence": ["equipment remains a hard routing obstacle"]
+      }
+    ],
+    "roomUseHints": [
+      {
+        "id": "routing-room-use:aggregate-car-1",
+        "pageNumber": 1,
+        "sourceId": "aggregate-car-1",
+        "sourceKind": "ObjectAggregate",
+        "roomUseKind": "Parking",
+        "bounds": { "x": 205, "y": 232, "width": 112, "height": 56 },
+        "roomId": "room-garage",
+        "roomLabel": "GARAGE",
+        "confidence": 0.86,
+        "sourcePrimitiveIds": ["car-body", "car-wheel-front-left", "car-wheel-front-right", "car-wheel-back-left", "car-wheel-back-right"],
+        "sourceLayers": ["A-VEHICLE-CAR"],
+        "evidence": ["car aggregate implies parking room-use evidence"]
+      }
+    ],
+    "suppressedObjects": [
+      { "id": "routing-suppression:car-body", "pageNumber": 1, "objectCandidateId": "car-body", "suppressedByAggregateId": "aggregate-car-1", "reason": "AggregateRoomUseEvidenceOnly", "action": "UseAggregateRoomUseHint", "replacementRoutingObstacleId": null, "roomUseHintId": "routing-room-use:aggregate-car-1", "aggregateRoutingInfluence": "RoomUseEvidenceOnly", "aggregateStructuralInfluence": "None", "candidateCategory": "Vehicle", "candidateKind": "Vehicle", "candidateBounds": { "x": 205, "y": 238, "width": 112, "height": 44 }, "candidateLabel": "car body", "roomId": "room-garage", "roomLabel": "GARAGE", "confidence": 0.85, "sourcePrimitiveIds": ["car-body"], "sourceLayers": ["A-VEHICLE-CAR"], "evidence": ["child object is represented by aggregate-car-1", "use aggregate room-use hint routing-room-use:aggregate-car-1 instead of treating this child object as an obstacle"] },
+      { "id": "routing-suppression:car-wheel-front-left", "pageNumber": 1, "objectCandidateId": "car-wheel-front-left", "suppressedByAggregateId": "aggregate-car-1", "reason": "AggregateRoomUseEvidenceOnly", "action": "UseAggregateRoomUseHint", "replacementRoutingObstacleId": null, "roomUseHintId": "routing-room-use:aggregate-car-1", "aggregateRoutingInfluence": "RoomUseEvidenceOnly", "aggregateStructuralInfluence": "None", "candidateCategory": "Vehicle", "candidateKind": "Vehicle", "candidateBounds": { "x": 214, "y": 232, "width": 18, "height": 18 }, "candidateLabel": "car wheel", "roomId": "room-garage", "roomLabel": "GARAGE", "confidence": 0.82, "sourcePrimitiveIds": ["car-wheel-front-left"], "sourceLayers": ["A-VEHICLE-CAR"], "evidence": ["child object is represented by aggregate-car-1", "use aggregate room-use hint routing-room-use:aggregate-car-1 instead of treating this child object as an obstacle"] },
+      { "id": "routing-suppression:car-wheel-front-right", "pageNumber": 1, "objectCandidateId": "car-wheel-front-right", "suppressedByAggregateId": "aggregate-car-1", "reason": "AggregateRoomUseEvidenceOnly", "action": "UseAggregateRoomUseHint", "replacementRoutingObstacleId": null, "roomUseHintId": "routing-room-use:aggregate-car-1", "aggregateRoutingInfluence": "RoomUseEvidenceOnly", "aggregateStructuralInfluence": "None", "candidateCategory": "Vehicle", "candidateKind": "Vehicle", "candidateBounds": { "x": 290, "y": 232, "width": 18, "height": 18 }, "candidateLabel": "car wheel", "roomId": "room-garage", "roomLabel": "GARAGE", "confidence": 0.82, "sourcePrimitiveIds": ["car-wheel-front-right"], "sourceLayers": ["A-VEHICLE-CAR"], "evidence": ["child object is represented by aggregate-car-1", "use aggregate room-use hint routing-room-use:aggregate-car-1 instead of treating this child object as an obstacle"] },
+      { "id": "routing-suppression:car-wheel-back-left", "pageNumber": 1, "objectCandidateId": "car-wheel-back-left", "suppressedByAggregateId": "aggregate-car-1", "reason": "AggregateRoomUseEvidenceOnly", "action": "UseAggregateRoomUseHint", "replacementRoutingObstacleId": null, "roomUseHintId": "routing-room-use:aggregate-car-1", "aggregateRoutingInfluence": "RoomUseEvidenceOnly", "aggregateStructuralInfluence": "None", "candidateCategory": "Vehicle", "candidateKind": "Vehicle", "candidateBounds": { "x": 214, "y": 270, "width": 18, "height": 18 }, "candidateLabel": "car wheel", "roomId": "room-garage", "roomLabel": "GARAGE", "confidence": 0.82, "sourcePrimitiveIds": ["car-wheel-back-left"], "sourceLayers": ["A-VEHICLE-CAR"], "evidence": ["child object is represented by aggregate-car-1", "use aggregate room-use hint routing-room-use:aggregate-car-1 instead of treating this child object as an obstacle"] },
+      { "id": "routing-suppression:car-wheel-back-right", "pageNumber": 1, "objectCandidateId": "car-wheel-back-right", "suppressedByAggregateId": "aggregate-car-1", "reason": "AggregateRoomUseEvidenceOnly", "action": "UseAggregateRoomUseHint", "replacementRoutingObstacleId": null, "roomUseHintId": "routing-room-use:aggregate-car-1", "aggregateRoutingInfluence": "RoomUseEvidenceOnly", "aggregateStructuralInfluence": "None", "candidateCategory": "Vehicle", "candidateKind": "Vehicle", "candidateBounds": { "x": 290, "y": 270, "width": 18, "height": 18 }, "candidateLabel": "car wheel", "roomId": "room-garage", "roomLabel": "GARAGE", "confidence": 0.82, "sourcePrimitiveIds": ["car-wheel-back-right"], "sourceLayers": ["A-VEHICLE-CAR"], "evidence": ["child object is represented by aggregate-car-1", "use aggregate room-use hint routing-room-use:aggregate-car-1 instead of treating this child object as an obstacle"] }
+    ],
+    "ignoredObjects": [
+      { "id": "routing-ignored:car-body", "pageNumber": 1, "objectCandidateId": "car-body", "reason": "SuppressedByAggregate", "routingInfluence": "RoomUseEvidenceOnly", "structuralInfluence": "None", "candidateCategory": "Vehicle", "candidateKind": "Vehicle", "candidateSourceKind": "CadSymbol", "sourceWallComponentId": null, "sourceWallComponentKind": null, "candidateBounds": { "x": 205, "y": 238, "width": 112, "height": 44 }, "candidateLabel": "car body", "roomId": "room-garage", "roomLabel": "GARAGE", "suppressedObjectId": "routing-suppression:car-body", "suppressedByAggregateId": "aggregate-car-1", "roomUseHintId": "routing-room-use:aggregate-car-1", "confidence": 0.85, "sourcePrimitiveIds": ["car-body"], "sourceLayers": ["A-VEHICLE-CAR"], "evidence": ["object candidate car-body is ignored as a standalone routing item because aggregate aggregate-car-1 represents it"] },
+      { "id": "routing-ignored:car-wheel-front-left", "pageNumber": 1, "objectCandidateId": "car-wheel-front-left", "reason": "SuppressedByAggregate", "routingInfluence": "RoomUseEvidenceOnly", "structuralInfluence": "None", "candidateCategory": "Vehicle", "candidateKind": "Vehicle", "candidateSourceKind": "CadSymbol", "sourceWallComponentId": null, "sourceWallComponentKind": null, "candidateBounds": { "x": 214, "y": 232, "width": 18, "height": 18 }, "candidateLabel": "car wheel", "roomId": "room-garage", "roomLabel": "GARAGE", "suppressedObjectId": "routing-suppression:car-wheel-front-left", "suppressedByAggregateId": "aggregate-car-1", "roomUseHintId": "routing-room-use:aggregate-car-1", "confidence": 0.82, "sourcePrimitiveIds": ["car-wheel-front-left"], "sourceLayers": ["A-VEHICLE-CAR"], "evidence": ["object candidate car-wheel-front-left is ignored as a standalone routing item because aggregate aggregate-car-1 represents it"] },
+      { "id": "routing-ignored:car-wheel-front-right", "pageNumber": 1, "objectCandidateId": "car-wheel-front-right", "reason": "SuppressedByAggregate", "routingInfluence": "RoomUseEvidenceOnly", "structuralInfluence": "None", "candidateCategory": "Vehicle", "candidateKind": "Vehicle", "candidateSourceKind": "CadSymbol", "sourceWallComponentId": null, "sourceWallComponentKind": null, "candidateBounds": { "x": 290, "y": 232, "width": 18, "height": 18 }, "candidateLabel": "car wheel", "roomId": "room-garage", "roomLabel": "GARAGE", "suppressedObjectId": "routing-suppression:car-wheel-front-right", "suppressedByAggregateId": "aggregate-car-1", "roomUseHintId": "routing-room-use:aggregate-car-1", "confidence": 0.82, "sourcePrimitiveIds": ["car-wheel-front-right"], "sourceLayers": ["A-VEHICLE-CAR"], "evidence": ["object candidate car-wheel-front-right is ignored as a standalone routing item because aggregate aggregate-car-1 represents it"] },
+      { "id": "routing-ignored:car-wheel-back-left", "pageNumber": 1, "objectCandidateId": "car-wheel-back-left", "reason": "SuppressedByAggregate", "routingInfluence": "RoomUseEvidenceOnly", "structuralInfluence": "None", "candidateCategory": "Vehicle", "candidateKind": "Vehicle", "candidateSourceKind": "CadSymbol", "sourceWallComponentId": null, "sourceWallComponentKind": null, "candidateBounds": { "x": 214, "y": 270, "width": 18, "height": 18 }, "candidateLabel": "car wheel", "roomId": "room-garage", "roomLabel": "GARAGE", "suppressedObjectId": "routing-suppression:car-wheel-back-left", "suppressedByAggregateId": "aggregate-car-1", "roomUseHintId": "routing-room-use:aggregate-car-1", "confidence": 0.82, "sourcePrimitiveIds": ["car-wheel-back-left"], "sourceLayers": ["A-VEHICLE-CAR"], "evidence": ["object candidate car-wheel-back-left is ignored as a standalone routing item because aggregate aggregate-car-1 represents it"] },
+      { "id": "routing-ignored:car-wheel-back-right", "pageNumber": 1, "objectCandidateId": "car-wheel-back-right", "reason": "SuppressedByAggregate", "routingInfluence": "RoomUseEvidenceOnly", "structuralInfluence": "None", "candidateCategory": "Vehicle", "candidateKind": "Vehicle", "candidateSourceKind": "CadSymbol", "sourceWallComponentId": null, "sourceWallComponentKind": null, "candidateBounds": { "x": 290, "y": 270, "width": 18, "height": 18 }, "candidateLabel": "car wheel", "roomId": "room-garage", "roomLabel": "GARAGE", "suppressedObjectId": "routing-suppression:car-wheel-back-right", "suppressedByAggregateId": "aggregate-car-1", "roomUseHintId": "routing-room-use:aggregate-car-1", "confidence": 0.82, "sourcePrimitiveIds": ["car-wheel-back-right"], "sourceLayers": ["A-VEHICLE-CAR"], "evidence": ["object candidate car-wheel-back-right is ignored as a standalone routing item because aggregate aggregate-car-1 represents it"] }
+    ],
+    "suppressedObjectCandidateIds": ["car-body", "car-wheel-front-left", "car-wheel-front-right", "car-wheel-back-left", "car-wheel-back-right"],
+    "ignoredObjectCandidateIds": ["car-body", "car-wheel-front-left", "car-wheel-front-right", "car-wheel-back-left", "car-wheel-back-right"],
+    "evidence": [
+      "routing obstacles after aggregate suppression: 1",
+      "suppressed child object candidates: 5",
+      "suppression records with downstream actions: 5",
+      "ignored object routing records: 5",
+      "room-use hints: 1"
+    ]
+  },
+  "importReadiness": {
+    "grade": "Strong",
+    "score": 0.93,
+    "readyForGeometryImport": true,
+    "readyForMetricImport": true,
+    "readyForRoutingImport": true,
+    "requiresReview": false,
+    "blockingIssueCodes": [],
+    "reviewIssueCodes": [],
+    "recommendedActions": ["Routing review sample is ready for downstream import."],
+    "evidence": [
+      "geometry import ready: True",
+      "metric import ready: True",
+      "routing import ready: True",
+      "compound vehicle child objects are suppressed for routing"
+    ]
+  },
+  "reviewQueue": [],
+  "quality": {
+    "overallConfidence": 0.86,
+    "grade": "Usable",
+    "requiresReview": false,
+    "pageCount": 1,
+    "primitiveCount": 28,
+    "detectionCount": 23,
+    "detectorCount": 9,
+    "detectorWithFindingsCount": 8,
+    "hasReliableCalibration": true,
+    "diagnosticInfoCount": 1,
+    "diagnosticWarningCount": 0,
+    "diagnosticErrorCount": 0,
+    "detectors": [],
+    "issues": [],
+    "evidence": ["routing review smoke sample"]
+  },
+  "diagnostics": {
+    "durationMilliseconds": 12,
+    "hasErrors": false,
+    "infoCount": 1,
+    "warningCount": 0,
+    "errorCount": 0,
+    "stages": [],
+    "messages": [
+      {
+        "code": "routing.suppression.sample",
+        "severity": "Info",
+        "stage": "routing",
+        "scope": "Detection",
+        "message": "Vehicle child objects are suppressed by a room-use aggregate for loop-generation safety.",
+        "pageNumber": 1,
+        "region": { "x": 205, "y": 232, "width": 112, "height": 56 },
+        "confidence": 0.86,
+        "sourcePrimitiveIds": ["car-body"],
+        "properties": {
+          "aggregateId": "aggregate-car-1",
+          "suppressedChildCount": "5"
+        }
+      }
+    ]
+  }
+}

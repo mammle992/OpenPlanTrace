@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:openplantrace:schema:batch-manifest:v1",
+  "title": "OpenPlanTrace Batch Manifest",
+  "description": "Schema for reusable OpenPlanTrace batch scan manifests. The manifest defines a named plan set, inputs, output behavior, deterministic layer/object profiles, and scanner threshold overrides. It does not represent AI output and does not claim unsupported adapters are available.",
+  "type": "object",
+  "additionalProperties": true,
+  "x-openplantrace-schemaVersion": "openplantrace.batch-manifest.v1",
+  "required": [
+    "schemaVersion",
+    "inputs"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "openplantrace.batch-manifest.v1"
+    },
+    "name": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "outputDirectory": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "summaryJsonPath": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "inputs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "recursive": {
+      "type": "boolean"
+    },
+    "writeSvg": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "When false, skips per-page SVG overlays. When absent, the CLI default is used."
+    },
+    "writeGeoJson": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "When true, writes scan.geojson beside each per-file scan.json."
+    },
+    "maxDegreeOfParallelism": {
+      "$ref": "#/$defs/positiveInteger",
+      "description": "Maximum number of batch items scanned concurrently. When absent, the CLI default is used."
+    },
+    "retryCount": {
+      "$ref": "#/$defs/nonNegativeInteger",
+      "description": "Number of additional scan/load attempts for failed supported inputs. Missing and unsupported inputs are not retried."
+    },
+    "layerProfiles": {
+      "$ref": "#/$defs/stringArray"
+    },
+    "layerCategoryOverrides": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/layerCategoryOverride"
+      }
+    },
+    "objectLabelProfiles": {
+      "$ref": "#/$defs/stringArray"
+    },
+    "scannerOptions": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/scannerOptions"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "layerCategory": {
+      "type": "string",
+      "enum": [
+        "Unknown",
+        "Wall",
+        "Door",
+        "Window",
+        "Room",
+        "Dimension",
+        "Text",
+        "Grid",
+        "Structural",
+        "Equipment",
+        "Electrical",
+        "HVAC",
+        "Plumbing",
+        "FireSafety"
+      ]
+    },
+    "layerCategoryOverride": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "pattern",
+        "category"
+      ],
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "minLength": 1
+        },
+        "category": {
+          "$ref": "#/$defs/layerCategory"
+        },
+        "sourceFormat": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    },
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nonNegativeNumber": {
+      "type": "number",
+      "minimum": 0
+    },
+    "positiveInteger": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "nullableString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "scannerOptions": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "sheetMargin": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "minWallLength": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "minWallFragmentLength": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "maxWallFragmentGap": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "maxWallCandidateSeedsPerPage": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "wallMergeTolerance": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "wallSnapTolerance": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "wallThickness": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "minOpeningGap": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "maxOpeningGap": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "objectNearbyTextSearchRadius": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "maxNearbyTextPerObject": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        }
+      }
+    },
+    "stringArray": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}
