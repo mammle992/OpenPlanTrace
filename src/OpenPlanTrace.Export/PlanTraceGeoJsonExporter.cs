@@ -43,6 +43,7 @@ public static class PlanTraceGeoJsonExporter
             .Where(source => !string.IsNullOrWhiteSpace(source.SourceId))
             .ToDictionary(source => source.SourceId, StringComparer.Ordinal);
         var wallComponentLookup = BuildWallComponentLookup(result.WallGraph.Components);
+        var wallEvidenceAssessments = WallEvidenceExportHelpers.BuildAssessmentLookup(result.WallEvidenceMap);
         var features = new List<Dictionary<string, object?>>();
 
         features.AddRange(result.Document.Pages.Select(PageFeature));
@@ -54,7 +55,11 @@ public static class PlanTraceGeoJsonExporter
         features.AddRange(result.Annotations.Select(annotation => AnnotationFeature(annotation, sourceLookup)));
         features.AddRange(result.Annotations.SelectMany(annotation => AnnotationReferenceFeatures(annotation, sourceLookup)));
         features.AddRange(result.SurfacePatterns.Select(pattern => SurfacePatternFeature(pattern, sourceLookup)));
-        features.AddRange(result.Walls.Select(wall => WallFeature(wall, sourceLookup, wallComponentLookup)));
+        features.AddRange(result.Walls.Select(wall => WallFeature(
+            wall,
+            sourceLookup,
+            wallComponentLookup,
+            wallEvidenceAssessments.TryGetValue(wall.Id, out var assessment) ? assessment : null)));
         features.AddRange(result.WallGraph.Nodes.Select(WallNodeFeature));
         features.AddRange(result.WallGraph.Components.Select(component => WallGraphComponentFeature(component, sourceLookup)));
         features.AddRange(result.WallGraph.RepairCandidates.Select(candidate => WallGraphRepairCandidateFeature(candidate, sourceLookup)));
@@ -229,7 +234,8 @@ public static class PlanTraceGeoJsonExporter
     private static Dictionary<string, object?> WallFeature(
         WallSegment wall,
         IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup,
-        IReadOnlyDictionary<string, WallGraphComponent> wallComponentLookup)
+        IReadOnlyDictionary<string, WallGraphComponent> wallComponentLookup,
+        WallEvidenceWallAssessment? evidenceAssessment)
     {
         wallComponentLookup.TryGetValue(wall.Id, out var component);
         return
@@ -239,6 +245,7 @@ public static class PlanTraceGeoJsonExporter
             Properties("wall", wall.PageNumber, wall.Confidence)
                 .AddValue("openPlanTraceId", wall.Id)
                 .AddValue("detectionKind", wall.DetectionKind.ToString())
+                .AddValue("wallType", wall.WallType.ToString())
                 .AddValue("wallComponentId", component?.Id)
                 .AddValue("wallComponentKind", component?.Kind.ToString())
                 .AddValue("excludedFromStructuralTopology", component?.ExcludedFromStructuralTopology ?? false)
@@ -250,6 +257,15 @@ public static class PlanTraceGeoJsonExporter
                 .AddValue("pairFaceSeparation", wall.PairEvidence?.FaceSeparation)
                 .AddValue("pairOverlapRatio", wall.PairEvidence?.OverlapRatio)
                 .AddValue("pairScore", wall.PairEvidence?.Score)
+                .AddValue("fragmentCount", wall.FragmentEvidence?.FragmentCount)
+                .AddValue("fragmentGapRatio", wall.FragmentEvidence?.GapRatio)
+                .AddValue("fragmentGeometryRequiresReview", wall.FragmentEvidence?.RequiresGeometryReview)
+                .AddValue("wallEvidenceCategory", evidenceAssessment?.Category.ToString())
+                .AddValue("wallEvidenceConfidence", evidenceAssessment?.Confidence.Value)
+                .AddValue("wallEvidencePlacementReady", evidenceAssessment?.PlacementReady)
+                .AddValue("wallEvidenceRequiresReview", evidenceAssessment?.RequiresReview)
+                .AddValue("wallEvidenceRejectedAsNoise", evidenceAssessment?.RejectedAsNoise)
+                .AddValue("wallEvidence", evidenceAssessment?.Evidence)
                 .AddValue("sourceRegionId", wall.SourceRegionId)
                 .AddValue("evidence", wall.Evidence)
                 .AddSource(wall.SourcePrimitiveIds, sourceLookup));

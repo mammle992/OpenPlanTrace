@@ -148,6 +148,7 @@ public sealed class ExportTests
 
         var firstWall = document.RootElement.GetProperty("walls")[0];
         Assert.Equal("SingleLine", firstWall.GetProperty("detectionKind").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(firstWall.GetProperty("wallType").GetString()));
         Assert.False(firstWall.GetProperty("wallComponentId").ValueKind == JsonValueKind.Null);
         Assert.Equal("MainStructural", firstWall.GetProperty("wallComponentKind").GetString());
         Assert.False(firstWall.GetProperty("excludedFromStructuralTopology").GetBoolean());
@@ -165,6 +166,14 @@ public sealed class ExportTests
         Assert.True(firstWallTopologySpan.GetProperty("sourceWallStartProjectionDistanceDrawingUnits").GetDouble() <= 0.001);
         Assert.True(firstWallTopologySpan.GetProperty("sourceWallEndProjectionDistanceDrawingUnits").GetDouble() <= 0.001);
         Assert.True(firstWall.GetProperty("sourcePrimitiveIds").GetArrayLength() > 0);
+        var firstWallEvidenceAssessment = firstWall.GetProperty("evidenceAssessment");
+        Assert.False(string.IsNullOrWhiteSpace(firstWallEvidenceAssessment.GetProperty("category").GetString()));
+        Assert.InRange(firstWallEvidenceAssessment.GetProperty("confidence").GetDouble(), 0, 1);
+        Assert.True(firstWallEvidenceAssessment.GetProperty("placementReady").ValueKind is JsonValueKind.True or JsonValueKind.False);
+        Assert.True(firstWallEvidenceAssessment.GetProperty("requiresReview").ValueKind is JsonValueKind.True or JsonValueKind.False);
+        Assert.True(firstWallEvidenceAssessment.GetProperty("rejectedAsNoise").ValueKind is JsonValueKind.True or JsonValueKind.False);
+        Assert.True(firstWallEvidenceAssessment.GetProperty("sourcePrimitiveIds").GetArrayLength() > 0);
+        Assert.True(firstWallEvidenceAssessment.GetProperty("evidence").GetArrayLength() > 0);
         Assert.True(firstWall.GetProperty("evidence").GetArrayLength() > 0);
         Assert.Contains("Wall", firstWall.GetProperty("sourceLayers").EnumerateArray().Select(layer => layer.GetString()));
 
@@ -557,7 +566,13 @@ public sealed class ExportTests
         Assert.Contains(annotationReference.GetProperty("properties").GetProperty("sourcePrimitiveIds").EnumerateArray(), id => id.GetString() == "keynote-marker-1");
         var wall = features.First(feature => FeatureType(feature) == "wall");
         Assert.Equal("MainStructural", wall.GetProperty("properties").GetProperty("wallComponentKind").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(wall.GetProperty("properties").GetProperty("wallType").GetString()));
         Assert.False(wall.GetProperty("properties").GetProperty("excludedFromStructuralTopology").GetBoolean());
+        Assert.False(string.IsNullOrWhiteSpace(wall.GetProperty("properties").GetProperty("wallEvidenceCategory").GetString()));
+        Assert.InRange(wall.GetProperty("properties").GetProperty("wallEvidenceConfidence").GetDouble(), 0, 1);
+        Assert.True(wall.GetProperty("properties").GetProperty("wallEvidencePlacementReady").ValueKind is JsonValueKind.True or JsonValueKind.False);
+        Assert.True(wall.GetProperty("properties").GetProperty("wallEvidenceRequiresReview").ValueKind is JsonValueKind.True or JsonValueKind.False);
+        Assert.True(wall.GetProperty("properties").GetProperty("wallEvidenceRejectedAsNoise").ValueKind is JsonValueKind.True or JsonValueKind.False);
         Assert.Equal("LineString", wall.GetProperty("geometry").GetProperty("type").GetString());
         Assert.Equal("Wall", wall.GetProperty("properties").GetProperty("sourceLayers")[0].GetString());
         Assert.True(wall.GetProperty("properties").GetProperty("sourcePrimitiveIds").GetArrayLength() > 0);
@@ -642,7 +657,13 @@ public sealed class ExportTests
         Assert.Equal("page:1:wall:1", wall.GetProperty("id").GetString());
         Assert.Equal("Wall", wall.GetProperty("sourceLayers")[0].GetString());
         Assert.Equal("MainStructural", wall.GetProperty("wallComponentKind").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(wall.GetProperty("wallType").GetString()));
         Assert.True(wall.GetProperty("centerLine").GetProperty("start").GetProperty("x").GetDouble() > 0);
+        var evidenceAssessment = wall.GetProperty("evidenceAssessment");
+        Assert.False(string.IsNullOrWhiteSpace(evidenceAssessment.GetProperty("category").GetString()));
+        Assert.True(evidenceAssessment.GetProperty("placementReady").GetBoolean());
+        Assert.False(evidenceAssessment.GetProperty("rejectedAsNoise").GetBoolean());
+        Assert.True(evidenceAssessment.GetProperty("evidence").GetArrayLength() > 0);
         var topologySpan = Assert.Single(wall.GetProperty("topologySpans").EnumerateArray());
         Assert.Equal(wall.GetProperty("id").GetString(), topologySpan.GetProperty("wallId").GetString());
         Assert.True(topologySpan.GetProperty("drawingLength").GetDouble() > 0);
@@ -685,6 +706,54 @@ public sealed class ExportTests
 
         Assert.True(root.GetProperty("routingLayer").TryGetProperty("barriers", out _));
         Assert.True(root.GetProperty("issues").ValueKind == JsonValueKind.Array);
+    }
+
+    [Fact]
+    public async Task PlacementExporter_UsesWallEvidenceAssessmentForReviewReadiness()
+    {
+        var result = await CreateScanResultAsync();
+        var firstWall = result.Walls[0];
+        result = result with
+        {
+            WallEvidenceMap = new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                new[]
+                {
+                    new WallEvidenceWallAssessment(
+                        firstWall.Id,
+                        firstWall.PageNumber,
+                        firstWall.Bounds,
+                        WallEvidenceCategory.WeakSingleLine,
+                        new Confidence(0.44),
+                        PlacementReady: false,
+                        RequiresReview: true,
+                        RejectedAsNoise: false,
+                        SourcePrimitiveIds: firstWall.SourcePrimitiveIds,
+                        Evidence: new[] { "test evidence: weak wall candidate should not be coordinate-ready" })
+                })
+        };
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var wall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == firstWall.Id);
+
+        var evidenceAssessment = wall.GetProperty("evidenceAssessment");
+        Assert.Equal("WeakSingleLine", evidenceAssessment.GetProperty("category").GetString());
+        Assert.False(evidenceAssessment.GetProperty("placementReady").GetBoolean());
+        Assert.True(evidenceAssessment.GetProperty("requiresReview").GetBoolean());
+
+        var reliability = wall.GetProperty("reliability");
+        Assert.False(reliability.GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.True(reliability.GetProperty("requiresReview").GetBoolean());
+        Assert.Contains(
+            reliability.GetProperty("reasons").EnumerateArray(),
+            reason => reason.GetString()?.Contains("wall evidence not placement-ready", StringComparison.OrdinalIgnoreCase) == true);
     }
 
     [Fact]

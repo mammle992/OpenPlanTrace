@@ -139,6 +139,7 @@ public sealed class ScannerPipelineTests
 
         Assert.Contains(progress.Events, item => item.Kind == PipelineStageProgressKind.Started && item.StageName == "wall-graph");
         Assert.Contains(progress.Events, item => item.Kind == PipelineStageProgressKind.Completed && item.StageName == "wall-graph");
+        Assert.Contains(progress.Events, item => item.Kind == PipelineStageProgressKind.Completed && item.StageName == "wall-type-refinement");
         Assert.All(
             progress.Events.Where(item => item.Kind == PipelineStageProgressKind.Completed),
             item => Assert.True(item.OutputDetectionCount >= item.InputDetectionCount));
@@ -171,6 +172,7 @@ public sealed class ScannerPipelineTests
         Assert.True(result.Diagnostics.ExecutionPlan.IsDependencyReady);
         Assert.Empty(result.Diagnostics.ExecutionPlan.Issues);
         Assert.Equal("fixed-stage-chain", result.Diagnostics.ExecutionPlan.ExecutionModel);
+        Assert.Contains(result.Diagnostics.StageReports, report => report.Stage == "wall-type-refinement");
         Assert.Contains(PlanArtifactKind.Primitives, result.Diagnostics.ExecutionPlan.SourceArtifacts);
         Assert.NotEmpty(result.Diagnostics.ExecutionPlan.ExecutionWaves);
         Assert.Equal(
@@ -214,7 +216,7 @@ public sealed class ScannerPipelineTests
         var wallImpact = Assert.Single(result.Diagnostics.ExecutionPlan.RerunImpacts, impact => impact.Artifact == PlanArtifactKind.Walls);
         Assert.True(wallImpact.HasImpact);
         Assert.Equal("DerivedArtifact", wallImpact.ImpactScope);
-        Assert.Contains("walls", wallImpact.ProducerStages);
+        Assert.Contains("wall-evidence", wallImpact.ProducerStages);
         Assert.Contains("wall-graph", wallImpact.DirectConsumerStages);
         Assert.Contains("routing-layer", wallImpact.AffectedStages);
         Assert.Contains(PlanArtifactKind.WallGraph, wallImpact.AffectedArtifacts);
@@ -427,10 +429,18 @@ public sealed class ScannerPipelineTests
         var issue = Assert.Single(plan.Issues, issue => issue.Code == "pipeline.stage.required_artifacts_missing");
         Assert.Equal("wall-graph", issue.Stage);
         Assert.Contains(PlanArtifactKind.Walls, issue.Artifacts);
-        var artifactIssue = Assert.Single(plan.Issues, issue => issue.Code == "pipeline.artifact.producer_missing");
-        Assert.Equal("wall-graph", artifactIssue.Stage);
-        Assert.Equal(DiagnosticSeverity.Error, artifactIssue.Severity);
-        Assert.Contains(PlanArtifactKind.Walls, artifactIssue.Artifacts);
+        Assert.Contains(
+            plan.Issues,
+            issue => issue.Code == "pipeline.artifact.producer_missing"
+                && issue.Stage == "wall-graph"
+                && issue.Severity == DiagnosticSeverity.Error
+                && issue.Artifacts.Contains(PlanArtifactKind.Walls));
+        Assert.Contains(
+            plan.Issues,
+            issue => issue.Code == "pipeline.artifact.producer_missing"
+                && issue.Stage == "wall-graph"
+                && issue.Severity == DiagnosticSeverity.Error
+                && issue.Artifacts.Contains(PlanArtifactKind.WallEvidence));
         var stage = Assert.Single(plan.Stages);
         Assert.Equal(1, stage.DependencyLevel);
         Assert.Equal(1, stage.ExecutionWave);

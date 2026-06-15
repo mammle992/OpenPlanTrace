@@ -22,6 +22,8 @@ public sealed record PlanScanResult(
     IReadOnlyList<ObjectAggregate> ObjectAggregates,
     PipelineDiagnostics Diagnostics)
 {
+    public WallEvidenceMap WallEvidenceMap { get; init; } = WallEvidenceMap.Empty;
+
     public PlanScanQualityReport Quality { get; init; } = PlanScanQualityReport.Empty;
 
     public IEnumerable<SheetRegion> MainFloorPlanRegions =>

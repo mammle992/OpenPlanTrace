@@ -94,14 +94,22 @@ public static class PipelineStageMetadataCatalog
             "Wall detection",
             PipelineStageKind.Geometry,
             Reads(PlanArtifactKind.Primitives, PlanArtifactKind.Layers, PlanArtifactKind.SheetRegions, PlanArtifactKind.GridAxes, PlanArtifactKind.Calibration),
-            Writes(PlanArtifactKind.Walls, PlanArtifactKind.SurfacePatterns, PlanArtifactKind.Diagnostics),
+            Writes(PlanArtifactKind.WallCandidates, PlanArtifactKind.SurfacePatterns, PlanArtifactKind.Diagnostics),
             Capabilities("wall-candidates", "wall-pair-reconstruction", "dense-pattern-filtering"),
+            OptionalReads(PlanArtifactKind.Dimensions)),
+        Create(
+            "wall-evidence",
+            "Wall evidence refinement",
+            PipelineStageKind.Geometry,
+            Reads(PlanArtifactKind.Primitives, PlanArtifactKind.WallCandidates, PlanArtifactKind.SurfacePatterns, PlanArtifactKind.Layers, PlanArtifactKind.SheetRegions),
+            Writes(PlanArtifactKind.WallEvidence, PlanArtifactKind.Walls, PlanArtifactKind.Diagnostics),
+            Capabilities("wall-evidence-map", "missing-wall-band-recovery", "wall-noise-rejection"),
             OptionalReads(PlanArtifactKind.Dimensions)),
         Create(
             "wall-graph",
             "Wall graph topology",
             PipelineStageKind.Topology,
-            Reads(PlanArtifactKind.Walls),
+            Reads(PlanArtifactKind.Walls, PlanArtifactKind.WallEvidence),
             Writes(PlanArtifactKind.WallGraph, PlanArtifactKind.TopologySpans, PlanArtifactKind.Diagnostics),
             Capabilities("wall-node-snapping", "wall-edge-graph", "repair-candidates")),
         Create(
@@ -127,6 +135,13 @@ public static class PipelineStageMetadataCatalog
             Reads(PlanArtifactKind.Rooms, PlanArtifactKind.Openings, PlanArtifactKind.WallGraph),
             Writes(PlanArtifactKind.RoomAdjacency, PlanArtifactKind.Diagnostics),
             Capabilities("room-connectivity", "room-clustering")),
+        Create(
+            "wall-type-refinement",
+            "Wall type refinement",
+            PipelineStageKind.Topology,
+            Reads(PlanArtifactKind.Walls, PlanArtifactKind.WallGraph, PlanArtifactKind.Rooms, PlanArtifactKind.RoomAdjacency),
+            Writes(PlanArtifactKind.Diagnostics),
+            Capabilities("room-side-wall-classification", "shared-wall-refinement", "exterior-boundary-refinement")),
         Create(
             "measurement-scale-provenance",
             "Measurement scale provenance",

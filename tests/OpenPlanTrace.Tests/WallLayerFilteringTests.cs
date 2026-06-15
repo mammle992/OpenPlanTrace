@@ -788,6 +788,170 @@ public sealed class WallLayerFilteringTests
     }
 
     [Fact]
+    public async Task ScanAsync_FiltersDimensionLikeFragmentRunsFromWallsByDefault()
+    {
+        var dimensionFragments = Enumerable.Range(0, 24)
+            .Select(index => UnlayeredLine(
+                $"dimension-fragment-{index}",
+                new PlanPoint(180 + (index * 8), 225),
+                new PlanPoint(184.5 + (index * 8), 225)))
+            .Cast<PlanPrimitive>()
+            .ToArray();
+        var primitives = new List<PlanPrimitive>
+        {
+            UnlayeredLine("wall-top", new PlanPoint(100, 100), new PlanPoint(560, 100)),
+            UnlayeredLine("wall-right", new PlanPoint(560, 100), new PlanPoint(560, 360)),
+            UnlayeredLine("wall-bottom", new PlanPoint(560, 360), new PlanPoint(100, 360)),
+            UnlayeredLine("wall-left", new PlanPoint(100, 360), new PlanPoint(100, 100)),
+            UnlayeredText("dim-text-a", "4000 mm", new PlanRect(220, 390, 72, 16)),
+            UnlayeredText("dim-text-b", "2600 mm", new PlanRect(580, 210, 72, 16))
+        };
+        primitives.AddRange(dimensionFragments);
+
+        var document = new PlanDocument(
+            "dimension-fragment-noise-not-walls",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(700, 500),
+                    primitives)
+            });
+
+        var result = await new OpenPlanTraceScanner().ScanAsync(document);
+
+        Assert.Equal(4, result.Walls.Count);
+        Assert.All(result.Walls, wall => Assert.DoesNotContain(
+            wall.SourcePrimitiveIds,
+            sourceId => sourceId.StartsWith("dimension-fragment-", StringComparison.Ordinal)));
+
+        var diagnostic = Assert.Single(result.Diagnostics.Messages.Where(message => message.Code == "walls.dimension_fragment_noise_filtered"));
+        Assert.Equal("1", diagnostic.Properties["filteredRunCount"]);
+        Assert.Contains("dimension-fragment-0", diagnostic.SourcePrimitiveIds);
+        Assert.Contains("dimension-fragment-23", diagnostic.SourcePrimitiveIds);
+    }
+
+    [Fact]
+    public async Task ScanAsync_KeepsDimensionLikeFragmentRunsWhenTheyFormParallelWallBody()
+    {
+        var primitives = new List<PlanPrimitive>
+        {
+            UnlayeredText("dim-text-a", "4000 mm", new PlanRect(210, 210, 72, 16)),
+            UnlayeredText("dim-text-b", "2600 mm", new PlanRect(310, 230, 72, 16))
+        };
+        for (var index = 0; index < 18; index++)
+        {
+            var x = 80 + (index * 9);
+            primitives.Add(UnlayeredLine(
+                $"wall-face-a-{index}",
+                new PlanPoint(x, 120),
+                new PlanPoint(x + 6, 120)));
+            primitives.Add(UnlayeredLine(
+                $"wall-face-b-{index}",
+                new PlanPoint(x, 128),
+                new PlanPoint(x + 6, 128)));
+        }
+
+        var document = new PlanDocument(
+            "dimension-like-fragmented-wall-body",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(360, 240),
+                    primitives)
+            });
+
+        var result = await new OpenPlanTraceScanner().ScanAsync(document);
+
+        var wall = Assert.Single(result.Walls);
+        Assert.Equal(WallDetectionKind.ParallelLinePair, wall.DetectionKind);
+        Assert.Contains("wall-face-a-0", wall.SourcePrimitiveIds);
+        Assert.Contains("wall-face-b-17", wall.SourcePrimitiveIds);
+        Assert.DoesNotContain(result.Diagnostics.Messages, message => message.Code == "walls.dimension_fragment_noise_filtered");
+    }
+
+    [Fact]
+    public async Task ScanAsync_FiltersDoorSymbolLineworkBeforeWallSeeds()
+    {
+        var document = new PlanDocument(
+            "door-symbol-linework-not-walls",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(500, 360),
+                    new PlanPrimitive[]
+                    {
+                        UnlayeredLine("wall-top", new PlanPoint(80, 80), new PlanPoint(420, 80)),
+                        UnlayeredLine("wall-right", new PlanPoint(420, 80), new PlanPoint(420, 280)),
+                        UnlayeredLine("wall-bottom", new PlanPoint(420, 280), new PlanPoint(80, 280)),
+                        UnlayeredLine("wall-left", new PlanPoint(80, 280), new PlanPoint(80, 80)),
+                        UnlayeredLine("door-leaf-a", new PlanPoint(180, 170), new PlanPoint(220, 170)),
+                        UnlayeredLine("door-leaf-b", new PlanPoint(180, 174), new PlanPoint(220, 174)),
+                        UnlayeredLine("door-return", new PlanPoint(180, 170), new PlanPoint(180, 190)),
+                        UnlayeredText("dim-text", "900 mm", new PlanRect(220, 300, 58, 14))
+                    })
+            });
+
+        var result = await new OpenPlanTraceScanner().ScanAsync(document);
+
+        Assert.All(result.Walls, wall => Assert.DoesNotContain(
+            wall.SourcePrimitiveIds,
+            sourceId => sourceId.StartsWith("door-", StringComparison.Ordinal)));
+        var diagnostic = Assert.Single(result.Diagnostics.Messages.Where(message => message.Code == "walls.door_symbol_linework_filtered"));
+        Assert.Contains("door-leaf-a", diagnostic.SourcePrimitiveIds);
+        Assert.Contains("door-return", diagnostic.SourcePrimitiveIds);
+    }
+
+    [Fact]
+    public async Task ScanAsync_FiltersShortFragmentMergedDoorDetailWalls()
+    {
+        var primitives = new List<PlanPrimitive>
+        {
+            UnlayeredLine("wall-top", new PlanPoint(80, 80), new PlanPoint(420, 80)),
+            UnlayeredLine("wall-right", new PlanPoint(420, 80), new PlanPoint(420, 280)),
+            UnlayeredLine("wall-bottom", new PlanPoint(420, 280), new PlanPoint(80, 280)),
+            UnlayeredLine("wall-left", new PlanPoint(80, 280), new PlanPoint(80, 80)),
+            UnlayeredText("dim-text-a", "900 mm", new PlanRect(220, 300, 58, 14)),
+            UnlayeredText("dim-text-b", "1200 mm", new PlanRect(120, 42, 64, 14))
+        };
+
+        for (var index = 0; index < 10; index++)
+        {
+            var x = 190 + (index * 1.2);
+            primitives.Add(UnlayeredLine(
+                $"door-fragment-{index}",
+                new PlanPoint(x, 175),
+                new PlanPoint(x + 1.2, 175)));
+        }
+
+        var document = new PlanDocument(
+            "short-fragment-door-detail-not-wall",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(500, 360),
+                    primitives)
+            });
+
+        var result = await new OpenPlanTraceScanner().ScanAsync(
+            document,
+            new ScannerOptions
+            {
+                MinWallLength = 12,
+                MinWallFragmentLength = 1
+            });
+
+        Assert.All(result.Walls, wall => Assert.DoesNotContain(
+            wall.SourcePrimitiveIds,
+            sourceId => sourceId.StartsWith("door-fragment-", StringComparison.Ordinal)));
+        var diagnostic = Assert.Single(result.Diagnostics.Messages.Where(message => message.Code == "walls.door_detail_symbol_walls_filtered"));
+        Assert.Equal("1", diagnostic.Properties["filteredWallCount"]);
+    }
+
+    [Fact]
     public async Task ScanAsync_UsesLayerCategoryOverrideForWallFiltering()
     {
         var document = new PlanDocument(

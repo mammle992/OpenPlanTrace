@@ -66,7 +66,7 @@ public sealed record PlanPlacementExport(
     PlacementRoutingLayerExport RoutingLayer,
     IReadOnlyList<PlacementIssueExport> Issues)
 {
-    public const string CurrentSchemaVersion = "openplantrace.placement.v4";
+    public const string CurrentSchemaVersion = "openplantrace.placement.v6";
 
     public static PlanPlacementExport From(PlanScanResult result)
     {
@@ -83,6 +83,7 @@ public sealed record PlanPlacementExport(
         var wallTopologySpansByWallId = wallTopologySpans
             .GroupBy(span => span.WallId, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+        var wallEvidenceAssessments = WallEvidenceExportHelpers.BuildAssessmentLookup(result.WallEvidenceMap);
         var pages = result.Document.Pages.Select(PlacementPageExport.From).ToArray();
         var surfacePatterns = result.SurfacePatterns
             .Select(pattern => PlacementSurfacePatternExport.From(pattern, result.Calibration, sourceLookup))
@@ -93,6 +94,7 @@ public sealed record PlanPlacementExport(
                 result.Calibration,
                 sourceLookup,
                 wallComponentLookup,
+                wallEvidenceAssessments.TryGetValue(wall.Id, out var assessment) ? assessment : null,
                 wallTopologySpansByWallId.TryGetValue(wall.Id, out var spans) ? spans : Array.Empty<WallGraphTopologySpan>(),
                 wallReviewReasons.TryGetValue(wall.Id, out var reasons) ? reasons : Array.Empty<string>()))
             .ToArray();
@@ -1021,12 +1023,15 @@ public sealed record PlacementWallExport(
     double ThicknessDrawingUnits,
     double? ThicknessMillimeters,
     string DetectionKind,
+    string WallType,
     string? WallComponentId,
     string? WallComponentKind,
     bool ExcludedFromStructuralTopology,
     string? MeasurementScaleGroupId,
     double? MillimetersPerDrawingUnit,
     double Confidence,
+    WallFragmentEvidenceExport? FragmentEvidence,
+    WallEvidenceAssessmentExport? EvidenceAssessment,
     PlacementReliabilityExport Reliability,
     IReadOnlyList<string> SourcePrimitiveIds,
     IReadOnlyList<string> SourceLayers,
@@ -1037,6 +1042,7 @@ public sealed record PlacementWallExport(
         PlanCalibration calibration,
         IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup,
         IReadOnlyDictionary<string, WallGraphComponent> wallComponentLookup,
+        WallEvidenceWallAssessment? evidenceAssessment,
         IReadOnlyList<WallGraphTopologySpan> topologySpans,
         IReadOnlyList<string> reviewReasons)
     {
@@ -1058,13 +1064,16 @@ public sealed record PlacementWallExport(
             wall.Thickness,
             wall.ThicknessMillimeters,
             wall.DetectionKind.ToString(),
+            wall.WallType.ToString(),
             component?.Id,
             component?.Kind.ToString(),
             component?.ExcludedFromStructuralTopology ?? false,
             wall.MeasurementScaleGroupId,
             scale,
             wall.Confidence.Value,
-            PlacementReliability.ForWall(wall, calibration, component, reviewReasons),
+            wall.FragmentEvidence is null ? null : WallFragmentEvidenceExport.From(wall.FragmentEvidence),
+            evidenceAssessment is null ? null : WallEvidenceAssessmentExport.From(evidenceAssessment),
+            PlacementReliability.ForWall(wall, calibration, component, evidenceAssessment, reviewReasons),
             wall.SourcePrimitiveIds,
             ExportSourceHelpers.SourceLayers(wall.SourcePrimitiveIds, sourceLookup),
             wall.Evidence);
@@ -2484,44 +2493,22 @@ internal static class PlacementReliability
         WallSegment wall,
         PlanCalibration calibration,
         WallGraphComponent? component,
+        WallEvidenceWallAssessment? evidenceAssessment,
         IReadOnlyList<string> reviewReasons)
     {
-        var reasons = new List<string>();
-        if (wall.Confidence.Value < 0.5)
-        {
-            reasons.Add("wall confidence below 0.5");
-        }
-
-        if (!calibration.HasReliableMeasurementScale)
-        {
-            reasons.Add("metric scale unavailable");
-        }
-
-        if (component is not null)
-        {
-            if (component.ExcludedFromStructuralTopology)
-            {
-                reasons.Add("wall component excluded from structural topology");
-            }
-
-            if (component.Kind == WallGraphComponentKind.ObjectLikeIsland)
-            {
-                reasons.Add("wall belongs to compact object-like linework component");
-            }
-            else if (component.Kind == WallGraphComponentKind.IsolatedFragment)
-            {
-                reasons.Add("wall belongs to isolated wall graph fragment");
-            }
-        }
-
-        reasons.AddRange(reviewReasons);
+        var readiness = WallPlacementReadinessEvaluator.Evaluate(
+            wall,
+            calibration,
+            component,
+            evidenceAssessment,
+            reviewReasons);
 
         return Create(
-            wall.Confidence.Value,
-            !reasons.Any(reason => reason.Contains("confidence", StringComparison.OrdinalIgnoreCase)),
-            calibration.HasReliableMeasurementScale,
-            reviewReasons.Count > 0,
-            reasons);
+            readiness.Confidence.Value,
+            readiness.ReadyForCoordinatePlacement,
+            readiness.ReadyForMetricPlacement,
+            readiness.RequiresReview,
+            readiness.Reasons);
     }
 
     public static PlacementReliabilityExport ForRoom(RoomRegion room, PlanCalibration calibration)

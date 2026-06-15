@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "openplantrace.scan.v60",
+  "schemaVersion": "openplantrace.scan.v62",
   "generatedAt": "2026-06-09T12:00:00Z",
   "document": {
     "id": "viewer-routing-review-smoke",
@@ -263,6 +263,7 @@
       },
       "thickness": 8,
       "detectionKind": "Line",
+      "wallType": "Exterior",
       "wallComponentId": "wall-component-main",
       "wallComponentKind": "MainStructural",
       "excludedFromStructuralTopology": false,
@@ -274,6 +275,7 @@
       "sourceRegionId": "main-plan",
       "sourcePrimitiveIds": ["wall-top"],
       "pairEvidence": null,
+      "fragmentEvidence": null,
       "evidence": ["sample structural wall"],
       "sourceLayers": ["A-WALL"]
     },
@@ -292,6 +294,7 @@
       },
       "thickness": 8,
       "detectionKind": "Line",
+      "wallType": "Exterior",
       "wallComponentId": "wall-component-main",
       "wallComponentKind": "MainStructural",
       "excludedFromStructuralTopology": false,
@@ -303,6 +306,7 @@
       "sourceRegionId": "main-plan",
       "sourcePrimitiveIds": ["wall-right"],
       "pairEvidence": null,
+      "fragmentEvidence": null,
       "evidence": ["sample structural wall"],
       "sourceLayers": ["A-WALL"]
     },
@@ -321,6 +325,7 @@
       },
       "thickness": 8,
       "detectionKind": "Line",
+      "wallType": "Exterior",
       "wallComponentId": "wall-component-main",
       "wallComponentKind": "MainStructural",
       "excludedFromStructuralTopology": false,
@@ -332,6 +337,7 @@
       "sourceRegionId": "main-plan",
       "sourcePrimitiveIds": ["wall-bottom"],
       "pairEvidence": null,
+      "fragmentEvidence": null,
       "evidence": ["sample structural wall"],
       "sourceLayers": ["A-WALL"]
     },
@@ -350,6 +356,7 @@
       },
       "thickness": 8,
       "detectionKind": "Line",
+      "wallType": "Exterior",
       "wallComponentId": "wall-component-main",
       "wallComponentKind": "MainStructural",
       "excludedFromStructuralTopology": false,
@@ -361,6 +368,7 @@
       "sourceRegionId": "main-plan",
       "sourcePrimitiveIds": ["wall-left"],
       "pairEvidence": null,
+      "fragmentEvidence": null,
       "evidence": ["sample structural wall"],
       "sourceLayers": ["A-WALL"]
     }

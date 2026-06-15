@@ -31,11 +31,16 @@ public sealed class WallPairReconstructionTests
 
         Assert.Equal(4, result.Walls.Count);
         Assert.All(result.Walls, wall => Assert.Equal(WallDetectionKind.ParallelLinePair, wall.DetectionKind));
+        Assert.All(result.Walls, wall => Assert.Equal(WallType.Exterior, wall.WallType));
         Assert.All(result.Walls, wall => Assert.Equal(10, wall.Thickness));
         Assert.Contains(result.Walls, wall => wall.CenterLine.IsHorizontal() && Math.Abs(wall.CenterLine.Start.Y - 105) < 0.01);
         Assert.Contains(result.Walls, wall => wall.CenterLine.IsVertical() && Math.Abs(wall.CenterLine.Start.X - 495) < 0.01);
         Assert.Contains(result.Rooms, room => room.Bounds.Width > 380 && room.Bounds.Height > 280);
         Assert.Contains(result.Diagnostics.Messages, diagnostic => diagnostic.Code == "walls.parallel_pairs.reconstructed");
+        Assert.NotEmpty(result.WallEvidenceMap.Bands);
+        Assert.Equal(4, result.WallEvidenceMap.StrongWallBodyCount);
+        Assert.Equal(4, result.WallEvidenceMap.PlacementReadyWallCount);
+        Assert.Contains(result.Diagnostics.Messages, diagnostic => diagnostic.Code == "wall_evidence.map_built");
     }
 
     [Fact]
@@ -61,6 +66,280 @@ public sealed class WallPairReconstructionTests
 
         Assert.Equal(4, result.Walls.Count);
         Assert.All(result.Walls, wall => Assert.Equal(WallDetectionKind.SingleLine, wall.DetectionKind));
+        Assert.All(result.Walls, wall => Assert.Equal(WallType.Exterior, wall.WallType));
+    }
+
+    [Fact]
+    public async Task ScanAsync_SuppressesUnsupportedSingleLineDetailInsideWallBodyContext()
+    {
+        var document = new PlanDocument(
+            "double-line-room-with-furniture-detail",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(700, 600),
+                    new PlanPrimitive[]
+                    {
+                        WallFace("top-outer", new PlanPoint(100, 100), new PlanPoint(500, 100)),
+                        WallFace("top-inner", new PlanPoint(100, 110), new PlanPoint(500, 110)),
+                        WallFace("right-outer", new PlanPoint(500, 100), new PlanPoint(500, 400)),
+                        WallFace("right-inner", new PlanPoint(490, 100), new PlanPoint(490, 400)),
+                        WallFace("bottom-outer", new PlanPoint(500, 400), new PlanPoint(100, 400)),
+                        WallFace("bottom-inner", new PlanPoint(500, 390), new PlanPoint(100, 390)),
+                        WallFace("left-outer", new PlanPoint(100, 400), new PlanPoint(100, 100)),
+                        WallFace("left-inner", new PlanPoint(110, 400), new PlanPoint(110, 100)),
+                        DetailLine("bed-edge", new PlanPoint(190, 240), new PlanPoint(330, 240))
+                    })
+            });
+
+        var result = await new OpenPlanTraceScanner().ScanAsync(document);
+
+        Assert.Equal(4, result.Walls.Count);
+        Assert.All(result.Walls, wall => Assert.Equal(WallDetectionKind.ParallelLinePair, wall.DetectionKind));
+        Assert.DoesNotContain(result.Walls, wall => wall.SourcePrimitiveIds.Contains("bed-edge"));
+        var diagnostic = Assert.Single(result.Diagnostics.Messages.Where(
+            message => message.Code == "walls.unsupported_wall_body_linework_filtered"));
+        Assert.Equal("1", diagnostic.Properties["filteredWallCount"]);
+        Assert.Contains("bed-edge", diagnostic.SourcePrimitiveIds);
+    }
+
+    [Fact]
+    public async Task ScanAsync_KeepsSupportedSingleLinePartitionInsideWallBodyContext()
+    {
+        var document = new PlanDocument(
+            "double-line-room-with-centerline-partition",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(700, 600),
+                    new PlanPrimitive[]
+                    {
+                        WallFace("top-outer", new PlanPoint(100, 100), new PlanPoint(500, 100)),
+                        WallFace("top-inner", new PlanPoint(100, 110), new PlanPoint(500, 110)),
+                        WallFace("right-outer", new PlanPoint(500, 100), new PlanPoint(500, 400)),
+                        WallFace("right-inner", new PlanPoint(490, 100), new PlanPoint(490, 400)),
+                        WallFace("bottom-outer", new PlanPoint(500, 400), new PlanPoint(100, 400)),
+                        WallFace("bottom-inner", new PlanPoint(500, 390), new PlanPoint(100, 390)),
+                        WallFace("left-outer", new PlanPoint(100, 400), new PlanPoint(100, 100)),
+                        WallFace("left-inner", new PlanPoint(110, 400), new PlanPoint(110, 100)),
+                        DetailLine("interior-partition", new PlanPoint(300, 105), new PlanPoint(300, 395))
+                    })
+            });
+
+        var result = await new OpenPlanTraceScanner().ScanAsync(document);
+
+        Assert.Equal(5, result.Walls.Count);
+        Assert.Contains(result.Walls, wall =>
+            wall.SourcePrimitiveIds.Contains("interior-partition")
+            && wall.DetectionKind == WallDetectionKind.SingleLine
+            && wall.WallType == WallType.Interior
+            && wall.Evidence.Any(item => item.Contains("room", StringComparison.OrdinalIgnoreCase)));
+        Assert.Equal(4, result.Walls.Count(wall => wall.WallType == WallType.Exterior));
+        Assert.Contains(result.Diagnostics.Messages, message =>
+            message.Code == "walls.architectural_type_refined"
+            && message.Properties["wallCount"] == "5");
+        Assert.DoesNotContain(result.Diagnostics.Messages, message =>
+            message.Code == "walls.unsupported_wall_body_linework_filtered"
+            && message.SourcePrimitiveIds.Contains("interior-partition"));
+    }
+
+    [Fact]
+    public async Task ScanAsync_SuppressesConnectedSymbolLineworkInsideWallBodyContext()
+    {
+        var document = new PlanDocument(
+            "double-line-room-with-connected-symbol-detail",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(700, 600),
+                    new PlanPrimitive[]
+                    {
+                        WallFace("top-outer", new PlanPoint(100, 100), new PlanPoint(500, 100)),
+                        WallFace("top-inner", new PlanPoint(100, 110), new PlanPoint(500, 110)),
+                        WallFace("right-outer", new PlanPoint(500, 100), new PlanPoint(500, 400)),
+                        WallFace("right-inner", new PlanPoint(490, 100), new PlanPoint(490, 400)),
+                        WallFace("bottom-outer", new PlanPoint(500, 400), new PlanPoint(100, 400)),
+                        WallFace("bottom-inner", new PlanPoint(500, 390), new PlanPoint(100, 390)),
+                        WallFace("left-outer", new PlanPoint(100, 400), new PlanPoint(100, 100)),
+                        WallFace("left-inner", new PlanPoint(110, 400), new PlanPoint(110, 100)),
+                        DetailLine("symbol-diagonal-a", new PlanPoint(190, 210), new PlanPoint(260, 280)),
+                        DetailLine("symbol-diagonal-b", new PlanPoint(260, 210), new PlanPoint(190, 280)),
+                        DetailLine("symbol-crossbar-h", new PlanPoint(185, 245), new PlanPoint(265, 245)),
+                        DetailLine("symbol-crossbar-v", new PlanPoint(225, 205), new PlanPoint(225, 285))
+                    })
+            });
+
+        var result = await new OpenPlanTraceScanner().ScanAsync(
+            document,
+            new ScannerOptions
+            {
+                FilterCompactObjectLineworkFromWalls = false,
+                FilterDenseOrthogonalPatternsFromWalls = false
+            });
+
+        Assert.Equal(4, result.Walls.Count);
+        Assert.All(result.Walls, wall => Assert.Equal(WallDetectionKind.ParallelLinePair, wall.DetectionKind));
+        Assert.DoesNotContain(result.Walls, wall => wall.SourcePrimitiveIds.Any(id => id.StartsWith("symbol-", StringComparison.Ordinal)));
+        var diagnostic = Assert.Single(result.Diagnostics.Messages.Where(
+            message => message.Code == "walls.unsupported_wall_body_linework_filtered"));
+        Assert.Equal("4", diagnostic.Properties["filteredWallCount"]);
+        Assert.Contains("symbol-diagonal-a", diagnostic.SourcePrimitiveIds);
+        Assert.Contains("symbol-crossbar-v", diagnostic.SourcePrimitiveIds);
+    }
+
+    [Fact]
+    public async Task ScanAsync_SuppressesDenseThinPairedSurfaceBandsInsideWallBodyContext()
+    {
+        var primitives = new List<PlanPrimitive>
+        {
+            WallFace("top-outer", new PlanPoint(100, 100), new PlanPoint(500, 100)),
+            WallFace("top-inner", new PlanPoint(100, 110), new PlanPoint(500, 110)),
+            WallFace("right-outer", new PlanPoint(500, 100), new PlanPoint(500, 400)),
+            WallFace("right-inner", new PlanPoint(490, 100), new PlanPoint(490, 400)),
+            WallFace("bottom-outer", new PlanPoint(500, 400), new PlanPoint(100, 400)),
+            WallFace("bottom-inner", new PlanPoint(500, 390), new PlanPoint(100, 390)),
+            WallFace("left-outer", new PlanPoint(100, 400), new PlanPoint(100, 100)),
+            WallFace("left-inner", new PlanPoint(110, 400), new PlanPoint(110, 100))
+        };
+
+        for (var index = 0; index < 5; index++)
+        {
+            var y = 185 + (index * 8);
+            primitives.Add(DetailLine($"surface-band-{index}-a", new PlanPoint(180, y), new PlanPoint(330, y)));
+            primitives.Add(DetailLine($"surface-band-{index}-b", new PlanPoint(180, y + 2.6), new PlanPoint(330, y + 2.6)));
+        }
+
+        var document = new PlanDocument(
+            "double-line-room-with-dense-thin-paired-surface-bands",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(700, 600),
+                    primitives)
+            });
+
+        var result = await new OpenPlanTraceScanner().ScanAsync(
+            document,
+            new ScannerOptions
+            {
+                FilterCompactObjectLineworkFromWalls = false,
+                FilterDenseOrthogonalPatternsFromWalls = false
+            });
+
+        Assert.Equal(4, result.Walls.Count);
+        Assert.All(result.Walls, wall => Assert.Equal(WallDetectionKind.ParallelLinePair, wall.DetectionKind));
+        Assert.DoesNotContain(result.Walls, wall => wall.SourcePrimitiveIds.Any(id => id.StartsWith("surface-band-", StringComparison.Ordinal)));
+        var diagnostic = Assert.Single(result.Diagnostics.Messages.Where(
+            message => message.Code == "walls.unsupported_wall_body_linework_filtered"));
+        Assert.Equal("5", diagnostic.Properties["filteredWallCount"]);
+        Assert.Contains("surface-band-0-a", diagnostic.SourcePrimitiveIds);
+        Assert.Contains("surface-band-4-b", diagnostic.SourcePrimitiveIds);
+    }
+
+    [Fact]
+    public async Task ScanAsync_SuppressesShortRepeatedPairedDetailSlotsInsideWallBodyContext()
+    {
+        var primitives = new List<PlanPrimitive>
+        {
+            WallFace("top-outer", new PlanPoint(100, 100), new PlanPoint(500, 100)),
+            WallFace("top-inner", new PlanPoint(100, 110), new PlanPoint(500, 110)),
+            WallFace("right-outer", new PlanPoint(500, 100), new PlanPoint(500, 400)),
+            WallFace("right-inner", new PlanPoint(490, 100), new PlanPoint(490, 400)),
+            WallFace("bottom-outer", new PlanPoint(500, 400), new PlanPoint(100, 400)),
+            WallFace("bottom-inner", new PlanPoint(500, 390), new PlanPoint(100, 390)),
+            WallFace("left-outer", new PlanPoint(100, 400), new PlanPoint(100, 100)),
+            WallFace("left-inner", new PlanPoint(110, 400), new PlanPoint(110, 100))
+        };
+
+        for (var index = 0; index < 6; index++)
+        {
+            var x = 180 + (index * 14.8);
+            primitives.Add(DetailLine($"detail-slot-{index}-a", new PlanPoint(x, 150), new PlanPoint(x, 176)));
+            primitives.Add(DetailLine($"detail-slot-{index}-b", new PlanPoint(x + 7.4, 150), new PlanPoint(x + 7.4, 176)));
+        }
+
+        var document = new PlanDocument(
+            "double-line-room-with-short-repeated-paired-detail-slots",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(700, 600),
+                    primitives)
+            });
+
+        var result = await new OpenPlanTraceScanner().ScanAsync(
+            document,
+            new ScannerOptions
+            {
+                FilterCompactObjectLineworkFromWalls = false,
+                FilterDenseOrthogonalPatternsFromWalls = false
+            });
+
+        Assert.Equal(4, result.Walls.Count);
+        Assert.All(result.Walls, wall => Assert.Equal(WallDetectionKind.ParallelLinePair, wall.DetectionKind));
+        Assert.DoesNotContain(result.Walls, wall => wall.SourcePrimitiveIds.Any(id => id.StartsWith("detail-slot-", StringComparison.Ordinal)));
+        var diagnostic = Assert.Single(result.Diagnostics.Messages.Where(
+            message => message.Code == "walls.unsupported_wall_body_linework_filtered"));
+        Assert.Equal("6", diagnostic.Properties["filteredWallCount"]);
+        Assert.Contains("detail-slot-0-a", diagnostic.SourcePrimitiveIds);
+        Assert.Contains("detail-slot-5-b", diagnostic.SourcePrimitiveIds);
+    }
+
+    [Fact]
+    public async Task ScanAsync_SuppressesDetailRailsSupportedOnlyByRejectedSlots()
+    {
+        var primitives = new List<PlanPrimitive>
+        {
+            WallFace("top-outer", new PlanPoint(100, 100), new PlanPoint(500, 100)),
+            WallFace("top-inner", new PlanPoint(100, 110), new PlanPoint(500, 110)),
+            WallFace("right-outer", new PlanPoint(500, 100), new PlanPoint(500, 400)),
+            WallFace("right-inner", new PlanPoint(490, 100), new PlanPoint(490, 400)),
+            WallFace("bottom-outer", new PlanPoint(500, 400), new PlanPoint(100, 400)),
+            WallFace("bottom-inner", new PlanPoint(500, 390), new PlanPoint(100, 390)),
+            WallFace("left-outer", new PlanPoint(100, 400), new PlanPoint(100, 100)),
+            WallFace("left-inner", new PlanPoint(110, 400), new PlanPoint(110, 100)),
+            DetailLine("detail-slot-rail", new PlanPoint(176, 176), new PlanPoint(270, 176))
+        };
+
+        for (var index = 0; index < 6; index++)
+        {
+            var x = 180 + (index * 14.8);
+            primitives.Add(DetailLine($"detail-slot-{index}-a", new PlanPoint(x, 150), new PlanPoint(x, 176)));
+            primitives.Add(DetailLine($"detail-slot-{index}-b", new PlanPoint(x + 7.4, 150), new PlanPoint(x + 7.4, 176)));
+        }
+
+        var document = new PlanDocument(
+            "double-line-room-with-detail-rail-supported-by-rejected-slots",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(700, 600),
+                    primitives)
+            });
+
+        var result = await new OpenPlanTraceScanner().ScanAsync(
+            document,
+            new ScannerOptions
+            {
+                FilterCompactObjectLineworkFromWalls = false,
+                FilterDenseOrthogonalPatternsFromWalls = false
+            });
+
+        Assert.Equal(4, result.Walls.Count);
+        Assert.All(result.Walls, wall => Assert.Equal(WallDetectionKind.ParallelLinePair, wall.DetectionKind));
+        Assert.DoesNotContain(result.Walls, wall => wall.SourcePrimitiveIds.Contains("detail-slot-rail"));
+        Assert.DoesNotContain(result.Walls, wall => wall.SourcePrimitiveIds.Any(id => id.StartsWith("detail-slot-", StringComparison.Ordinal)));
+        var diagnostic = Assert.Single(result.Diagnostics.Messages.Where(
+            message => message.Code == "walls.unsupported_wall_body_linework_filtered"));
+        Assert.Equal("7", diagnostic.Properties["filteredWallCount"]);
+        Assert.Contains("detail-slot-rail", diagnostic.SourcePrimitiveIds);
+        Assert.Contains("detail-slot-5-b", diagnostic.SourcePrimitiveIds);
     }
 
     [Fact]
@@ -95,6 +374,65 @@ public sealed class WallPairReconstructionTests
         Assert.Contains(mergedWall.Evidence, item => item.Contains("healed 12", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(result.Diagnostics.Messages, diagnostic => diagnostic.Code == "walls.fragments.merged");
         Assert.Contains(result.Rooms, room => room.Boundary.Count >= 4);
+    }
+
+    [Fact]
+    public async Task ScanAsync_FlagsHeavyUnlayeredFragmentMergeForGeometryReview()
+    {
+        var primitives = new List<PlanPrimitive>();
+        for (var index = 0; index < 20; index++)
+        {
+            var x = 80 + (index * 8);
+            primitives.Add(UnlayeredLine(
+                $"uncertain-fragment-{index}",
+                new PlanPoint(x, 120),
+                new PlanPoint(x + 4.5, 120)));
+        }
+
+        var document = new PlanDocument(
+            "uncertain-heavy-fragment-wall",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(360, 240),
+                    primitives)
+            });
+
+        var result = await new OpenPlanTraceScanner().ScanAsync(document);
+
+        var wall = Assert.Single(result.Walls);
+        Assert.Equal(WallDetectionKind.FragmentMerged, wall.DetectionKind);
+        Assert.Equal(WallType.Unknown, wall.WallType);
+        var fragmentEvidence = Assert.IsType<WallFragmentEvidence>(wall.FragmentEvidence);
+        Assert.Equal(20, fragmentEvidence.FragmentCount);
+        Assert.True(fragmentEvidence.RequiresGeometryReview);
+        Assert.True(fragmentEvidence.GapRatio > 0.08);
+        Assert.True(wall.Confidence.Value <= 0.54);
+        Assert.Contains(
+            wall.Evidence,
+            item => item.Contains("requires review", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            result.Diagnostics.Messages,
+            diagnostic => diagnostic.Code == "walls.fragment_merged_geometry.review"
+                && diagnostic.Properties["wallCount"] == "1");
+
+        using var scanDocument = JsonDocument.Parse(PlanTraceJsonExporter.Serialize(result));
+        var scanWall = scanDocument.RootElement.GetProperty("walls")[0];
+        var scanFragmentEvidence = scanWall.GetProperty("fragmentEvidence");
+        Assert.Equal(20, scanFragmentEvidence.GetProperty("fragmentCount").GetInt32());
+        Assert.True(scanFragmentEvidence.GetProperty("requiresGeometryReview").GetBoolean());
+
+        using var placementDocument = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(result));
+        var placementWall = placementDocument.RootElement.GetProperty("walls")[0];
+        var placementFragmentEvidence = placementWall.GetProperty("fragmentEvidence");
+        Assert.Equal(20, placementFragmentEvidence.GetProperty("fragmentCount").GetInt32());
+        Assert.True(placementFragmentEvidence.GetProperty("requiresGeometryReview").GetBoolean());
+        var reliability = placementWall.GetProperty("reliability");
+        Assert.True(reliability.GetProperty("requiresReview").GetBoolean());
+        Assert.Contains(
+            reliability.GetProperty("reasons").EnumerateArray().Select(item => item.GetString()),
+            item => item is not null && item.Contains("fragment geometry requires review", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -458,6 +796,34 @@ public sealed class WallPairReconstructionTests
                 SourceId = sourceId,
                 EntityType = "LINE",
                 Layer = "A-WALL",
+                DrawingSpace = SourceDrawingSpace.Model
+            }
+        };
+
+    private static LinePrimitive DetailLine(string sourceId, PlanPoint start, PlanPoint end) =>
+        new(new PlanLineSegment(start, end))
+        {
+            SourceId = sourceId,
+            Layer = "A-FURN",
+            Source = new PrimitiveSourceMetadata
+            {
+                SourceFormat = "test",
+                SourceId = sourceId,
+                EntityType = "LINE",
+                Layer = "A-FURN",
+                DrawingSpace = SourceDrawingSpace.Model
+            }
+        };
+
+    private static LinePrimitive UnlayeredLine(string sourceId, PlanPoint start, PlanPoint end) =>
+        new(new PlanLineSegment(start, end))
+        {
+            SourceId = sourceId,
+            Source = new PrimitiveSourceMetadata
+            {
+                SourceFormat = "test",
+                SourceId = sourceId,
+                EntityType = "LINE",
                 DrawingSpace = SourceDrawingSpace.Model
             }
         };

@@ -19,7 +19,13 @@ public static class PlanRoutingLayerBuilder
         var denseMinorRoutingDetailWallIds = denseMinorRoutingDetailPatterns
             .SelectMany(pattern => pattern.WallIds)
             .ToHashSet(StringComparer.Ordinal);
+        var fragmentReviewWallIds = result.Walls
+            .Where(wall => wall.FragmentEvidence?.RequiresGeometryReview == true)
+            .Select(wall => wall.Id)
+            .ToHashSet(StringComparer.Ordinal);
         var allBarriers = BuildRoutingBarriers(result, wallComponentLookup);
+        var suppressedFragmentReviewBarrierCount = allBarriers.Count(barrier =>
+            fragmentReviewWallIds.Contains(barrier.SourceId));
         var suppressedIsolatedBarrierCount = allBarriers.Count(barrier =>
             IsUnusedIsolatedRoutingBarrier(barrier, protectedRoutingWallIds, structuralComponentPages));
         var suppressedShortUnreferencedBarrierCount = allBarriers.Count(barrier =>
@@ -27,6 +33,7 @@ public static class PlanRoutingLayerBuilder
         var suppressedDenseMinorDetailBarrierCount = allBarriers.Count(barrier =>
             IsDenseMinorRoutingDetailBarrier(barrier, denseMinorRoutingDetailWallIds));
         var barriers = allBarriers
+            .Where(barrier => !fragmentReviewWallIds.Contains(barrier.SourceId))
             .Where(barrier => !barrier.ExcludedFromStructuralTopology)
             .Where(barrier => !IsUnusedIsolatedRoutingBarrier(barrier, protectedRoutingWallIds, structuralComponentPages))
             .Where(barrier => !IsUnusedShortStructuralRoutingBarrier(barrier, protectedRoutingWallIds, roomSolvedPages))
@@ -101,6 +108,7 @@ public static class PlanRoutingLayerBuilder
             $"unused isolated wall fragments suppressed as routing barriers: {suppressedIsolatedBarrierCount}",
             $"short unreferenced wall fragments suppressed as routing barriers: {suppressedShortUnreferencedBarrierCount}",
             $"dense minor-detail routing barriers suppressed: {suppressedDenseMinorDetailBarrierCount}",
+            $"fragment-review wall barriers suppressed: {suppressedFragmentReviewBarrierCount}",
             $"routing passages from opening evidence: {passages.Length}",
             $"routing obstacles after aggregate suppression: {obstacles.Count}",
             $"suppressed child object candidates: {suppressedObjectIds.Length}",

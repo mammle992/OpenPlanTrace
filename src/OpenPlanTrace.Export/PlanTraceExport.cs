@@ -33,7 +33,7 @@ public sealed record PlanTraceExport(
     QualityExport Quality,
     DiagnosticsExport Diagnostics)
 {
-    public const string CurrentSchemaVersion = "openplantrace.scan.v60";
+    public const string CurrentSchemaVersion = "openplantrace.scan.v62";
 
     public static PlanTraceExport From(PlanScanResult result) =>
         Create(result);
@@ -49,6 +49,7 @@ public sealed record PlanTraceExport(
         var wallTopologySpansByWallId = wallTopologySpans
             .GroupBy(span => span.WallId, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+        var wallEvidenceAssessments = WallEvidenceExportHelpers.BuildAssessmentLookup(result.WallEvidenceMap);
 
         return new PlanTraceExport(
             CurrentSchemaVersion,
@@ -71,6 +72,7 @@ public sealed record PlanTraceExport(
                 wall,
                 sourceLookup,
                 wallComponentLookup,
+                wallEvidenceAssessments.TryGetValue(wall.Id, out var assessment) ? assessment : null,
                 wallTopologySpansByWallId.TryGetValue(wall.Id, out var spans) ? spans : Array.Empty<WallGraphTopologySpan>())).ToArray(),
             WallGraphExport.From(result.WallGraph, wallTopologySpans, sourceLookup),
             result.Rooms.Select(RoomExport.From).ToArray(),
@@ -1000,6 +1002,7 @@ public sealed record WallExport(
     RectExport Bounds,
     double Thickness,
     string DetectionKind,
+    string WallType,
     string? WallComponentId,
     string? WallComponentKind,
     bool ExcludedFromStructuralTopology,
@@ -1011,6 +1014,8 @@ public sealed record WallExport(
     string? SourceRegionId,
     IReadOnlyList<string> SourcePrimitiveIds,
     WallPairEvidenceExport? PairEvidence,
+    WallFragmentEvidenceExport? FragmentEvidence,
+    WallEvidenceAssessmentExport? EvidenceAssessment,
     IReadOnlyList<string> Evidence,
     IReadOnlyList<string> SourceLayers)
 {
@@ -1018,6 +1023,7 @@ public sealed record WallExport(
         WallSegment wall,
         IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup,
         IReadOnlyDictionary<string, WallGraphComponent> wallComponentLookup,
+        WallEvidenceWallAssessment? evidenceAssessment,
         IReadOnlyList<WallGraphTopologySpan> topologySpans)
     {
         wallComponentLookup.TryGetValue(wall.Id, out var component);
@@ -1030,6 +1036,7 @@ public sealed record WallExport(
             RectExport.From(wall.Bounds),
             wall.Thickness,
             wall.DetectionKind.ToString(),
+            wall.WallType.ToString(),
             component?.Id,
             component?.Kind.ToString(),
             component?.ExcludedFromStructuralTopology ?? false,
@@ -1041,9 +1048,46 @@ public sealed record WallExport(
             wall.SourceRegionId,
             wall.SourcePrimitiveIds,
             wall.PairEvidence is null ? null : WallPairEvidenceExport.From(wall.PairEvidence),
+            wall.FragmentEvidence is null ? null : WallFragmentEvidenceExport.From(wall.FragmentEvidence),
+            evidenceAssessment is null ? null : WallEvidenceAssessmentExport.From(evidenceAssessment),
             wall.Evidence,
             ExportSourceHelpers.SourceLayers(wall.SourcePrimitiveIds, sourceLookup));
     }
+}
+
+public sealed record WallEvidenceAssessmentExport(
+    string Category,
+    double Confidence,
+    bool PlacementReady,
+    bool RequiresReview,
+    bool RejectedAsNoise,
+    IReadOnlyList<string> SourcePrimitiveIds,
+    IReadOnlyList<string> Evidence)
+{
+    public static WallEvidenceAssessmentExport From(WallEvidenceWallAssessment assessment) =>
+        new(
+            assessment.Category.ToString(),
+            assessment.Confidence.Value,
+            assessment.PlacementReady,
+            assessment.RequiresReview,
+            assessment.RejectedAsNoise,
+            assessment.SourcePrimitiveIds,
+            assessment.Evidence);
+}
+
+internal static class WallEvidenceExportHelpers
+{
+    public static IReadOnlyDictionary<string, WallEvidenceWallAssessment> BuildAssessmentLookup(
+        WallEvidenceMap evidenceMap) =>
+        evidenceMap.WallAssessments
+            .Where(assessment => !string.IsNullOrWhiteSpace(assessment.WallId))
+            .GroupBy(assessment => assessment.WallId, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .OrderByDescending(assessment => assessment.Confidence.Value)
+                    .First(),
+                StringComparer.Ordinal);
 }
 
 public sealed record WallTopologySpanExport(
@@ -1120,6 +1164,26 @@ public sealed record WallPairEvidenceExport(
             evidence.SecondFaceFragmentCount,
             evidence.FirstFaceSourcePrimitiveIds,
             evidence.SecondFaceSourcePrimitiveIds);
+}
+
+public sealed record WallFragmentEvidenceExport(
+    int FragmentCount,
+    double TotalHealedGap,
+    double MaxHealedGap,
+    int DuplicatePrimitiveCount,
+    double GapRatio,
+    bool RequiresGeometryReview,
+    IReadOnlyList<string> Evidence)
+{
+    public static WallFragmentEvidenceExport From(WallFragmentEvidence evidence) =>
+        new(
+            evidence.FragmentCount,
+            evidence.TotalHealedGap,
+            evidence.MaxHealedGap,
+            evidence.DuplicatePrimitiveCount,
+            evidence.GapRatio,
+            evidence.RequiresGeometryReview,
+            evidence.Evidence);
 }
 
 public sealed record WallGraphExport(

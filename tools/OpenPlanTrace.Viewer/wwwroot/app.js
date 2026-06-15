@@ -2817,6 +2817,9 @@ function drawOverlay() {
       if (!visibleBySourceLayer(wall)) {
         return;
       }
+      if (!shouldDrawWallInStructuralLayer(wall)) {
+        return;
+      }
       const component = wall.wallComponentKind
         ? `${wall.wallComponentKind}${wall.excludedFromStructuralTopology ? ", topology excluded" : ""}`
         : "no component";
@@ -2915,6 +2918,14 @@ function drawOverlay() {
   drawCompareOverlay(page);
   drawBenchmarkTargets(page);
   drawManualBenchmarkTargetDraft(page);
+}
+
+function shouldDrawWallInStructuralLayer(wall) {
+  if (wall?.excludedFromStructuralTopology) {
+    return false;
+  }
+
+  return wall?.wallComponentKind !== "ObjectLikeIsland";
 }
 
 function drawScanReviewQueue(page, options = {}) {
@@ -4091,16 +4102,30 @@ function wallDrawOpacity(wall) {
 }
 
 function wallRequiresReliabilityReview(wall) {
-  return Boolean(wall?.reliability?.requiresReview ?? wall?.requiresReview);
+  return Boolean(wall?.reliability?.requiresReview ?? wall?.evidenceAssessment?.requiresReview ?? wall?.requiresReview);
 }
 
 function wallCoordinateBlocked(wall) {
-  return wall?.reliability && wall.reliability.readyForCoordinatePlacement === false;
+  if (wall?.reliability) {
+    return wall.reliability.readyForCoordinatePlacement === false;
+  }
+
+  return wall?.evidenceAssessment && wall.evidenceAssessment.placementReady === false;
 }
 
 function wallReliabilitySummary(wall) {
-  if (!wall?.reliability) {
+  if (!wall?.reliability && !wall?.evidenceAssessment) {
     return "";
+  }
+
+  if (!wall?.reliability) {
+    const assessment = wall.evidenceAssessment;
+    return [
+      assessment.placementReady === false ? "coordinate blocked" : "coordinate ready",
+      assessment.requiresReview ? "review required" : "review clear",
+      assessment.category ? `evidence ${assessment.category}` : "",
+      assessment.confidence == null ? "" : `rel ${formatNumber(assessment.confidence)}`
+    ].filter(Boolean).join(" / ");
   }
 
   const reliability = wall.reliability;
@@ -4113,10 +4138,30 @@ function wallReliabilitySummary(wall) {
 }
 
 function wallReliabilityReasons(wall) {
-  return normalizeStringArray(wall?.reliability?.reasons);
+  const reasons = normalizeStringArray(wall?.reliability?.reasons);
+  if (reasons.length) {
+    return reasons;
+  }
+
+  return normalizeStringArray(wall?.evidenceAssessment?.evidence);
 }
 
 function wallVisualDrawLines(wall) {
+  const topologySpans = Array.isArray(wall?.topologySpans)
+    ? wall.topologySpans
+      .filter((span) => span?.centerLine?.start && span?.centerLine?.end)
+      .map((span, index) => ({
+        id: span.id || `${wall.id}:topology-span:${index + 1}`,
+        centerLine: span.centerLine,
+        confidence: span.confidence ?? wall.confidence,
+        wallGraphEdgeId: span.wallGraphEdgeId || null,
+        isTopologySpan: true
+      }))
+    : [];
+  if (topologySpans.length) {
+    return topologySpans;
+  }
+
   return wall?.centerLine?.start && wall?.centerLine?.end
     ? [{
       id: wall.id,
@@ -7933,7 +7978,6 @@ function pipelineStageLifecycleItems(scan) {
       const contract = stage.contract ?? {};
       const contractIssues = arrayCount(contract.undeclaredChangedArtifacts);
       const readiness = stageRuntimeReadiness(stage);
-      const outputReadiness = stageOutputReadiness(stage);
       const emptyRequired = arrayCount(readiness?.emptyRequiredReads);
       const emptyOptional = arrayCount(readiness?.emptyOptionalReads);
       const emptyOutputs = arrayCount(outputReadiness?.emptyDeclaredOutputs);

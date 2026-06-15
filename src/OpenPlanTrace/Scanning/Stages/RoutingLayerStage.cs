@@ -12,6 +12,18 @@ internal sealed class RoutingLayerStage : IPipelineStage
         context.RoutingLayer = routingLayer;
         context.HasRoutingLayer = true;
 
+        foreach (var group in context.WallGraph.Components
+            .Where(component => component.ExcludedFromStructuralTopology && component.WallIds.Count > 0)
+            .GroupBy(component => component.PageNumber)
+            .OrderBy(group => group.Key))
+        {
+            WallTopologyFilter.AddStructuralTopologyExclusionDiagnostic(
+                context,
+                "routing",
+                group.Key,
+                group.ToArray());
+        }
+
         if (routingLayer.Barriers.Count == 0
             && routingLayer.Passages.Count == 0
             && routingLayer.Obstacles.Count == 0

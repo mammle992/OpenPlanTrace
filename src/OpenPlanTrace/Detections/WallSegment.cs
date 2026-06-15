@@ -11,11 +11,15 @@ public sealed record WallSegment(
 
     public WallDetectionKind DetectionKind { get; init; } = WallDetectionKind.SingleLine;
 
+    public WallType WallType { get; init; } = WallType.Unknown;
+
     public IReadOnlyList<string> SourcePrimitiveIds { get; init; } = Array.Empty<string>();
 
     public IReadOnlyList<string> Evidence { get; init; } = Array.Empty<string>();
 
     public WallPairEvidence? PairEvidence { get; init; }
+
+    public WallFragmentEvidence? FragmentEvidence { get; init; }
 
     public double DrawingLength => CenterLine.Length;
 

@@ -49,6 +49,10 @@ internal sealed class WallDetectionStage : IPipelineStage
             var compactLineworkSourceIds = compactLineworkClusters
                 .SelectMany(cluster => cluster.SourcePrimitiveIds)
                 .ToHashSet(StringComparer.Ordinal);
+            var doorSymbolLineworkClusters = DetectDoorSymbolLineworkWallNoise(classifiedCandidates, mainRegion.Bounds, context.Options);
+            var doorSymbolLineworkSourceIds = doorSymbolLineworkClusters
+                .SelectMany(cluster => cluster.SourcePrimitiveIds)
+                .ToHashSet(StringComparer.Ordinal);
             var densePatternClusters = DetectDenseOrthogonalPatternWallNoise(classifiedCandidates, mainRegion.Bounds, context.Options);
             densePatternClusters = ExpandDenseOrthogonalPatternCandidateClusterPerimeters(
                 densePatternClusters,
@@ -64,6 +68,14 @@ internal sealed class WallDetectionStage : IPipelineStage
                         UseForWallDetection = false,
                         LayerEvidence = candidate.LayerEvidence
                             .Append("suppressed from wall detection as compact object-like linework")
+                            .ToArray()
+                    }
+                    : doorSymbolLineworkSourceIds.Contains(candidate.PrimitiveId)
+                    ? candidate with
+                    {
+                        UseForWallDetection = false,
+                        LayerEvidence = candidate.LayerEvidence
+                            .Append("suppressed from wall detection as door/detail symbol linework")
                             .ToArray()
                     }
                     : densePatternSourceIds.Contains(candidate.PrimitiveId)
@@ -85,7 +97,7 @@ internal sealed class WallDetectionStage : IPipelineStage
                 .ToArray();
             var seeds = LimitWallSeeds(uncappedSeeds, context, page.Number, mainRegion.Bounds, mainRegion.Id);
 
-            var wallStartCount = context.Walls.Count;
+            var wallStartCount = context.WallCandidates.Count;
 
             var horizontalRuns = MergeAxisRuns(seeds.Where(seed => seed.Orientation == WallOrientation.Horizontal), context.Options).ToArray();
             var verticalRuns = MergeAxisRuns(seeds.Where(seed => seed.Orientation == WallOrientation.Vertical), context.Options).ToArray();
@@ -121,6 +133,23 @@ internal sealed class WallDetectionStage : IPipelineStage
                 context.Options,
                 context.SurfacePatterns.Count);
             context.SurfacePatterns.AddRange(surfacePatternCandidates);
+
+            var axisDimensionLikeFragmentNoiseRuns = context.Options.FilterDimensionLikeFragmentLineworkFromWalls
+                ? DetectDimensionLikeFragmentNoiseRuns(
+                    horizontalRuns.Concat(verticalRuns).ToArray(),
+                    context.Options)
+                : new HashSet<AxisRun>();
+            var nonAxisDimensionLikeFragmentNoiseRuns = context.Options.FilterDimensionLikeFragmentLineworkFromWalls
+                ? DetectDimensionLikeFragmentNoiseRuns(
+                    nonAxisRuns,
+                    context.Options)
+                : new HashSet<NonAxisRun>();
+            if (axisDimensionLikeFragmentNoiseRuns.Count > 0 || nonAxisDimensionLikeFragmentNoiseRuns.Count > 0)
+            {
+                horizontalRuns = horizontalRuns.Where(run => !axisDimensionLikeFragmentNoiseRuns.Contains(run)).ToArray();
+                verticalRuns = verticalRuns.Where(run => !axisDimensionLikeFragmentNoiseRuns.Contains(run)).ToArray();
+                nonAxisRuns = nonAxisRuns.Where(run => !nonAxisDimensionLikeFragmentNoiseRuns.Contains(run)).ToArray();
+            }
 
             var axisFragmentNoiseRuns = context.Options.FilterDenseFragmentLineworkFromWalls
                 ? horizontalRuns
@@ -214,6 +243,28 @@ internal sealed class WallDetectionStage : IPipelineStage
                     });
             }
 
+            if (doorSymbolLineworkClusters.Count > 0)
+            {
+                context.AddDiagnostic(
+                    "walls.door_symbol_linework_filtered",
+                    DiagnosticSeverity.Info,
+                    Name,
+                    $"{doorSymbolLineworkSourceIds.Count} door/detail symbol line primitive(s) were kept out of wall detection.",
+                    page.Number,
+                    PlanRect.Union(doorSymbolLineworkClusters.Select(cluster => cluster.Bounds)).ClampTo(page.Bounds),
+                    Confidence.Medium,
+                    scope: DiagnosticScope.Detection,
+                    sourcePrimitiveIds: doorSymbolLineworkSourceIds,
+                    properties: new Dictionary<string, string>
+                    {
+                        ["clusterCount"] = doorSymbolLineworkClusters.Count.ToString(),
+                        ["filteredLineCount"] = doorSymbolLineworkSourceIds.Count.ToString(),
+                        ["eligibleLineCount"] = seeds.Length.ToString(),
+                        ["eligibleLineCountBeforeLimit"] = uncappedSeeds.Length.ToString(),
+                        ["sourceRegionId"] = mainRegion.Id
+                    });
+            }
+
             if (densePatternClusters.Count > 0 || densePatternRunClusters.Count > 0 || denseParallelRunClusters.Count > 0)
             {
                 var densePatternFilteredSourceIds = densePatternSourceIds
@@ -283,6 +334,33 @@ internal sealed class WallDetectionStage : IPipelineStage
                     });
             }
 
+            if (axisDimensionLikeFragmentNoiseRuns.Count > 0 || nonAxisDimensionLikeFragmentNoiseRuns.Count > 0)
+            {
+                var filteredDimensionFragmentSourceIds = axisDimensionLikeFragmentNoiseRuns
+                    .SelectMany(run => run.SourcePrimitiveIds)
+                    .Concat(nonAxisDimensionLikeFragmentNoiseRuns.SelectMany(run => run.SourcePrimitiveIds))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray();
+                context.AddDiagnostic(
+                    "walls.dimension_fragment_noise_filtered",
+                    DiagnosticSeverity.Info,
+                    Name,
+                    $"{axisDimensionLikeFragmentNoiseRuns.Count + nonAxisDimensionLikeFragmentNoiseRuns.Count} dimension-like fragmented line run(s) were kept out of wall reconstruction.",
+                    page.Number,
+                    mainRegion.Bounds,
+                    Confidence.Medium,
+                    scope: DiagnosticScope.Detection,
+                    sourcePrimitiveIds: filteredDimensionFragmentSourceIds,
+                    properties: new Dictionary<string, string>
+                    {
+                        ["filteredRunCount"] = (axisDimensionLikeFragmentNoiseRuns.Count + nonAxisDimensionLikeFragmentNoiseRuns.Count).ToString(),
+                        ["axisRunCount"] = axisDimensionLikeFragmentNoiseRuns.Count.ToString(),
+                        ["nonOrthogonalRunCount"] = nonAxisDimensionLikeFragmentNoiseRuns.Count.ToString(),
+                        ["filteredSourcePrimitiveIdCount"] = filteredDimensionFragmentSourceIds.Length.ToString(),
+                        ["sourceRegionId"] = mainRegion.Id
+                    });
+            }
+
             var duplicateRunCount = duplicateAxisRuns.Length + duplicateNonAxisRuns.Length;
             if (duplicateRunCount > 0)
             {
@@ -341,7 +419,7 @@ internal sealed class WallDetectionStage : IPipelineStage
 
             if (reconstructedPairs > 0)
             {
-                var reconstructedWalls = context.Walls
+                var reconstructedWalls = context.WallCandidates
                     .Skip(wallStartCount)
                     .Where(wall => wall.DetectionKind == WallDetectionKind.ParallelLinePair)
                     .ToArray();
@@ -375,8 +453,94 @@ internal sealed class WallDetectionStage : IPipelineStage
                     context);
             }
 
-            var added = context.Walls.Count - wallStartCount;
-            var lowConfidenceWalls = context.Walls
+            var unsupportedWallBodyLinework = FilterUnsupportedWallBodyLinework(
+                context,
+                page.Number,
+                mainRegion,
+                wallStartCount);
+            if (unsupportedWallBodyLinework.Length > 0)
+            {
+                context.AddDiagnostic(
+                    "walls.unsupported_wall_body_linework_filtered",
+                    DiagnosticSeverity.Info,
+                    Name,
+                    $"{unsupportedWallBodyLinework.Length} weak unpaired wall-like line run(s) were removed because they were not supported by reconstructed wall bodies.",
+                    page.Number,
+                    PlanRect.Union(unsupportedWallBodyLinework.Select(wall => wall.Bounds)).ClampTo(page.Bounds),
+                    Confidence.Medium,
+                    scope: DiagnosticScope.Detection,
+                    sourcePrimitiveIds: unsupportedWallBodyLinework.SelectMany(wall => wall.SourcePrimitiveIds),
+                    properties: new Dictionary<string, string>
+                    {
+                        ["filteredWallCount"] = unsupportedWallBodyLinework.Length.ToString(),
+                        ["filteredSourcePrimitiveIdCount"] = unsupportedWallBodyLinework
+                            .SelectMany(wall => wall.SourcePrimitiveIds)
+                            .Distinct(StringComparer.Ordinal)
+                            .Count()
+                            .ToString(),
+                        ["minimumWallBodyPairCount"] = context.Options.MinWallBodyPairsBeforeSingleLineFiltering.ToString(),
+                        ["sourceRegionId"] = mainRegion.Id
+                    });
+            }
+
+            var doorDetailSymbolWalls = FilterDoorDetailSymbolWalls(
+                context,
+                page.Number,
+                mainRegion,
+                wallStartCount);
+            if (doorDetailSymbolWalls.Length > 0)
+            {
+                context.AddDiagnostic(
+                    "walls.door_detail_symbol_walls_filtered",
+                    DiagnosticSeverity.Info,
+                    Name,
+                    $"{doorDetailSymbolWalls.Length} short door/detail symbol wall candidate(s) were removed after fragment merging.",
+                    page.Number,
+                    PlanRect.Union(doorDetailSymbolWalls.Select(wall => wall.Bounds)).ClampTo(page.Bounds),
+                    Confidence.Medium,
+                    scope: DiagnosticScope.Detection,
+                    sourcePrimitiveIds: doorDetailSymbolWalls.SelectMany(wall => wall.SourcePrimitiveIds),
+                    properties: new Dictionary<string, string>
+                    {
+                        ["filteredWallCount"] = doorDetailSymbolWalls.Length.ToString(),
+                        ["filteredSourcePrimitiveIdCount"] = doorDetailSymbolWalls
+                            .SelectMany(wall => wall.SourcePrimitiveIds)
+                            .Distinct(StringComparer.Ordinal)
+                            .Count()
+                            .ToString(),
+                        ["sourceRegionId"] = mainRegion.Id
+                    });
+            }
+
+            ClassifyArchitecturalWallTypes(context, page.Number, mainRegion, wallStartCount);
+
+            var added = context.WallCandidates.Count - wallStartCount;
+            var fragmentGeometryReviewWalls = context.WallCandidates
+                .Skip(wallStartCount)
+                .Where(wall => wall.FragmentEvidence?.RequiresGeometryReview == true)
+                .ToArray();
+            if (fragmentGeometryReviewWalls.Length > 0)
+            {
+                context.AddDiagnostic(
+                    "walls.fragment_merged_geometry.review",
+                    DiagnosticSeverity.Info,
+                    Name,
+                    $"{fragmentGeometryReviewWalls.Length} unpaired fragment-merged wall candidate(s) require geometry review before exact placement use.",
+                    page.Number,
+                    PlanRect.Union(fragmentGeometryReviewWalls.Select(wall => wall.Bounds)).ClampTo(page.Bounds),
+                    Confidence.Medium,
+                    scope: DiagnosticScope.Detection,
+                    sourcePrimitiveIds: fragmentGeometryReviewWalls.SelectMany(wall => wall.SourcePrimitiveIds),
+                    properties: new Dictionary<string, string>
+                    {
+                        ["wallCount"] = fragmentGeometryReviewWalls.Length.ToString(),
+                        ["maxFragmentCount"] = fragmentGeometryReviewWalls.Max(wall => wall.FragmentEvidence?.FragmentCount ?? 0).ToString(),
+                        ["maxGapRatio"] = fragmentGeometryReviewWalls.Max(wall => wall.FragmentEvidence?.GapRatio ?? 0).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
+                        ["sourceRegionId"] = mainRegion.Id
+                    });
+            }
+
+            var lowConfidenceWalls = context.WallCandidates
                 .Skip(wallStartCount)
                 .Where(wall => wall.Confidence.Value < 0.55)
                 .ToArray();
@@ -422,6 +586,807 @@ internal sealed class WallDetectionStage : IPipelineStage
         }
 
         return ValueTask.CompletedTask;
+    }
+
+    private static void ClassifyArchitecturalWallTypes(
+        ScanContext context,
+        int pageNumber,
+        SheetRegion mainRegion,
+        int wallStartCount)
+    {
+        var pageWallIndexes = Enumerable
+            .Range(wallStartCount, context.WallCandidates.Count - wallStartCount)
+            .Where(index => context.WallCandidates[index].PageNumber == pageNumber)
+            .ToArray();
+        if (pageWallIndexes.Length == 0)
+        {
+            return;
+        }
+
+        var pageWalls = pageWallIndexes
+            .Select(index => context.WallCandidates[index])
+            .ToArray();
+        var structuralEnvelope = PlanRect.Union(pageWalls.Select(wall => wall.Bounds)).ClampTo(mainRegion.Bounds);
+        var tolerance = Math.Max(WallBodySupportTolerance(context.Options), MedianWallThickness(pageWalls) * 1.5);
+        var exteriorCount = 0;
+        var interiorCount = 0;
+        var unknownCount = 0;
+
+        foreach (var index in pageWallIndexes)
+        {
+            var wall = context.WallCandidates[index];
+            var (wallType, evidence) = ClassifyArchitecturalWallType(
+                wall,
+                pageWalls,
+                mainRegion,
+                structuralEnvelope,
+                tolerance,
+                context.Options);
+            context.WallCandidates[index] = wall with
+            {
+                WallType = wallType,
+                Evidence = wall.Evidence
+                    .Append(evidence)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray()
+            };
+
+            switch (wallType)
+            {
+                case WallType.Exterior:
+                    exteriorCount++;
+                    break;
+                case WallType.Interior:
+                    interiorCount++;
+                    break;
+                default:
+                    unknownCount++;
+                    break;
+            }
+        }
+
+        context.AddDiagnostic(
+            "walls.architectural_type_classified",
+            DiagnosticSeverity.Info,
+            "walls",
+            $"Classified {pageWallIndexes.Length} wall(s) as exterior/interior/unknown from wall-envelope geometry.",
+            pageNumber,
+            mainRegion.Bounds,
+            Confidence.Medium,
+            scope: DiagnosticScope.Detection,
+            sourcePrimitiveIds: pageWalls.SelectMany(wall => wall.SourcePrimitiveIds),
+            properties: new Dictionary<string, string>
+            {
+                ["wallCount"] = pageWallIndexes.Length.ToString(),
+                ["exteriorWallCount"] = exteriorCount.ToString(),
+                ["interiorWallCount"] = interiorCount.ToString(),
+                ["unknownWallCount"] = unknownCount.ToString(),
+                ["sourceRegionId"] = mainRegion.Id
+            });
+    }
+
+    private static (WallType WallType, string Evidence) ClassifyArchitecturalWallType(
+        WallSegment wall,
+        IReadOnlyList<WallSegment> pageWalls,
+        SheetRegion mainRegion,
+        PlanRect structuralEnvelope,
+        double tolerance,
+        ScannerOptions options)
+    {
+        if (wall.DrawingLength <= 0 || wall.Confidence.Value < 0.45)
+        {
+            return (WallType.Unknown, "wall type unknown: weak or degenerate wall evidence");
+        }
+
+        if (IsNearEnvelopeBoundary(wall, structuralEnvelope, tolerance, options)
+            || IsNearEnvelopeBoundary(wall, mainRegion.Bounds, tolerance, options))
+        {
+            return (WallType.Exterior, "wall type exterior: near detected floorplan/wall envelope boundary");
+        }
+
+        var supportContacts = CountTopologyContacts(wall, pageWalls, WallBodySupportTolerance(options));
+        if (wall.Confidence.Value >= 0.58
+            && (wall.DetectionKind == WallDetectionKind.ParallelLinePair
+                || supportContacts > 0
+                || HasStrongWallLayerEvidence(wall.Evidence)))
+        {
+            return (WallType.Interior, "wall type interior: supported wall evidence inside exterior envelope");
+        }
+
+        return (WallType.Unknown, "wall type unknown: insufficient envelope or topology evidence");
+    }
+
+    private static bool IsNearEnvelopeBoundary(
+        WallSegment wall,
+        PlanRect envelope,
+        double tolerance,
+        ScannerOptions options)
+    {
+        if (envelope.IsEmpty)
+        {
+            return false;
+        }
+
+        var bounds = wall.Bounds;
+        var orientation = ResolveWallOrientation(wall.CenterLine, options);
+        return orientation switch
+        {
+            WallOrientation.Horizontal =>
+                Math.Abs(bounds.Top - envelope.Top) <= tolerance
+                || Math.Abs(bounds.Bottom - envelope.Bottom) <= tolerance,
+            WallOrientation.Vertical =>
+                Math.Abs(bounds.Left - envelope.Left) <= tolerance
+                || Math.Abs(bounds.Right - envelope.Right) <= tolerance,
+            _ =>
+                Math.Abs(bounds.Left - envelope.Left) <= tolerance
+                || Math.Abs(bounds.Right - envelope.Right) <= tolerance
+                || Math.Abs(bounds.Top - envelope.Top) <= tolerance
+                || Math.Abs(bounds.Bottom - envelope.Bottom) <= tolerance
+        };
+    }
+
+    private static double MedianWallThickness(IReadOnlyList<WallSegment> walls)
+    {
+        var thicknesses = walls
+            .Select(wall => wall.Thickness)
+            .Where(thickness => thickness > 0)
+            .Order()
+            .ToArray();
+        return thicknesses.Length == 0 ? 0 : Median(thicknesses);
+    }
+
+    private static WallSegment[] FilterUnsupportedWallBodyLinework(
+        ScanContext context,
+        int pageNumber,
+        SheetRegion mainRegion,
+        int wallStartCount)
+    {
+        if (!context.Options.FilterUnsupportedWallBodyLinework)
+        {
+            return Array.Empty<WallSegment>();
+        }
+
+        var pageWalls = context.WallCandidates
+            .Skip(wallStartCount)
+            .Where(wall => wall.PageNumber == pageNumber)
+            .ToArray();
+        var wallBodyCount = pageWalls.Count(IsCredibleWallBody);
+        if (wallBodyCount < Math.Max(1, context.Options.MinWallBodyPairsBeforeSingleLineFiltering))
+        {
+            return Array.Empty<WallSegment>();
+        }
+
+        var unsupportedWallBodies = pageWalls
+            .Where(wall => IsUnsupportedDenseParallelWallBodyPattern(wall, pageWalls, mainRegion, context.Options))
+            .ToArray();
+        var unsupportedWallBodyIds = unsupportedWallBodies
+            .Select(wall => wall.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var wallBodies = pageWalls
+            .Where(IsCredibleWallBody)
+            .Where(wall => !unsupportedWallBodyIds.Contains(wall.Id))
+            .ToArray();
+        var unsupportedIds = new HashSet<string>(unsupportedWallBodyIds, StringComparer.Ordinal);
+        var unsupportedUnpairedLinework = new List<WallSegment>();
+        while (true)
+        {
+            var newlyUnsupported = pageWalls
+                .Where(wall => !unsupportedIds.Contains(wall.Id))
+                .Where(wall => IsUnsupportedUnpairedWallBodyLinework(
+                    wall,
+                    pageWalls,
+                    wallBodies,
+                    mainRegion,
+                    context.Options,
+                    unsupportedIds))
+                .ToArray();
+            if (newlyUnsupported.Length == 0)
+            {
+                break;
+            }
+
+            unsupportedUnpairedLinework.AddRange(newlyUnsupported);
+            foreach (var wall in newlyUnsupported)
+            {
+                unsupportedIds.Add(wall.Id);
+            }
+        }
+
+        var unsupported = unsupportedWallBodies
+            .Concat(unsupportedUnpairedLinework)
+            .DistinctBy(wall => wall.Id)
+            .ToArray();
+        if (unsupported.Length == 0)
+        {
+            return Array.Empty<WallSegment>();
+        }
+
+        var finalUnsupportedIds = unsupported
+            .Select(wall => wall.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        for (var index = context.WallCandidates.Count - 1; index >= wallStartCount; index--)
+        {
+            if (finalUnsupportedIds.Contains(context.WallCandidates[index].Id))
+            {
+                context.WallCandidates.RemoveAt(index);
+            }
+        }
+
+        return unsupported;
+    }
+
+    private static bool IsCredibleWallBody(WallSegment wall) =>
+        wall.DetectionKind == WallDetectionKind.ParallelLinePair
+        && wall.DrawingLength > 0
+        && wall.PairEvidence is { Score: >= 0.62, OverlapRatio: >= 0.55 };
+
+    private static WallSegment[] FilterDoorDetailSymbolWalls(
+        ScanContext context,
+        int pageNumber,
+        SheetRegion mainRegion,
+        int wallStartCount)
+    {
+        if (!context.Options.FilterDoorSymbolLineworkFromWalls)
+        {
+            return Array.Empty<WallSegment>();
+        }
+
+        var pageWalls = context.WallCandidates
+            .Skip(wallStartCount)
+            .Where(wall => wall.PageNumber == pageNumber)
+            .ToArray();
+        var symbolWalls = pageWalls
+            .Where(wall => IsLikelyDoorDetailSymbolWall(wall, pageWalls, mainRegion, context.Options))
+            .ToArray();
+        if (symbolWalls.Length == 0)
+        {
+            return Array.Empty<WallSegment>();
+        }
+
+        var symbolWallIds = symbolWalls
+            .Select(wall => wall.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        for (var index = context.WallCandidates.Count - 1; index >= wallStartCount; index--)
+        {
+            if (symbolWallIds.Contains(context.WallCandidates[index].Id))
+            {
+                context.WallCandidates.RemoveAt(index);
+            }
+        }
+
+        return symbolWalls;
+    }
+
+    private static bool IsLikelyDoorDetailSymbolWall(
+        WallSegment wall,
+        IReadOnlyList<WallSegment> pageWalls,
+        SheetRegion mainRegion,
+        ScannerOptions options)
+    {
+        if (wall.DetectionKind == WallDetectionKind.ParallelLinePair
+            || HasStrongWallLayerEvidence(wall.Evidence)
+            || IsNearMainRegionBoundary(wall, mainRegion, WallBodySupportTolerance(options)))
+        {
+            return false;
+        }
+
+        if (wall.FragmentEvidence is not { FragmentCount: >= 10 } fragmentEvidence
+            || !HasDimensionLikeLayerEvidence(wall.Evidence))
+        {
+            return false;
+        }
+
+        var maxSymbolLength = Math.Max(options.MinWallLength * 1.15, options.MaxOpeningGap * 0.46);
+        if (wall.DrawingLength <= 0
+            || wall.DrawingLength > maxSymbolLength
+            || wall.Confidence.Value > 0.62)
+        {
+            return false;
+        }
+
+        if (fragmentEvidence.GapRatio > 0.08)
+        {
+            return false;
+        }
+
+        var orientation = ResolveWallOrientation(wall.CenterLine, options);
+        if (orientation == WallOrientation.Other)
+        {
+            return false;
+        }
+
+        var wallBodyContacts = CountPerpendicularWallBodyContacts(
+            wall,
+            pageWalls,
+            WallBodySupportTolerance(options),
+            options);
+        if (wallBodyContacts >= 2 && wall.Confidence.Value >= 0.68)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsUnsupportedDenseParallelWallBodyPattern(
+        WallSegment wall,
+        IReadOnlyList<WallSegment> pageWalls,
+        SheetRegion mainRegion,
+        ScannerOptions options)
+    {
+        if (!IsThinDensePatternWallBodyCandidate(wall, mainRegion, options))
+        {
+            return false;
+        }
+
+        var isShortRepeatedSlotCandidate = IsShortRepeatedSlotWallBodyCandidate(wall, options);
+        var orientation = ResolveWallOrientation(wall.CenterLine, options);
+        var wallCoordinate = AxisCoordinate(wall.CenterLine, orientation);
+        var wallSpan = AxisSpan(wall.CenterLine, orientation);
+        var compatibleCoordinates = pageWalls
+            .Where(candidate => IsThinDensePatternWallBodyCandidate(candidate, mainRegion, options))
+            .Where(candidate => ResolveWallOrientation(candidate.CenterLine, options) == orientation)
+            .Where(candidate =>
+            {
+                var candidateSpan = AxisSpan(candidate.CenterLine, orientation);
+                return SpanOverlapRatio(wallSpan.Start, wallSpan.End, candidateSpan.Start, candidateSpan.End) >= 0.58;
+            })
+            .Select(candidate => AxisCoordinate(candidate.CenterLine, orientation))
+            .Order()
+            .ToArray();
+
+        if (compatibleCoordinates.Length < 4)
+        {
+            return false;
+        }
+
+        var coordinateBuckets = CoordinateBuckets(compatibleCoordinates, options.WallSnapTolerance * 0.5);
+        var targetIndex = Array.FindIndex(
+            coordinateBuckets.ToArray(),
+            coordinate => Math.Abs(coordinate - wallCoordinate) <= Math.Max(options.WallSnapTolerance, options.DefaultWallThickness));
+        if (targetIndex < 0)
+        {
+            return false;
+        }
+
+        var maxSpacing = MaxDenseParallelPatternSpacing(options) * 1.5;
+        var first = targetIndex;
+        while (first > 0 && coordinateBuckets[first] - coordinateBuckets[first - 1] <= maxSpacing)
+        {
+            first--;
+        }
+
+        var last = targetIndex;
+        while (last < coordinateBuckets.Count - 1 && coordinateBuckets[last + 1] - coordinateBuckets[last] <= maxSpacing)
+        {
+            last++;
+        }
+
+        var clusterCount = last - first + 1;
+        var minClusterCount = isShortRepeatedSlotCandidate ? 5 : 4;
+        if (clusterCount < minClusterCount)
+        {
+            return false;
+        }
+
+        var clusterCoordinates = coordinateBuckets.Skip(first).Take(clusterCount).ToArray();
+        var spacings = AdjacentSpacings(clusterCoordinates, options.WallSnapTolerance * 0.25).Order().ToArray();
+        if (spacings.Length < 3)
+        {
+            return false;
+        }
+
+        var medianSpacing = Median(spacings);
+        var maxMedianSpacing = MaxDenseParallelPatternSpacing(options)
+            * (isShortRepeatedSlotCandidate ? 1.38 : 1.2);
+        var minimumRegularity = isShortRepeatedSlotCandidate ? 0.36 : 0.42;
+        if (medianSpacing <= 0
+            || medianSpacing > maxMedianSpacing
+            || SpacingRegularity(spacings, medianSpacing) < minimumRegularity)
+        {
+            return false;
+        }
+
+        var supportTolerance = WallBodySupportTolerance(options);
+        return isShortRepeatedSlotCandidate
+            || CountPerpendicularWallBodyContacts(wall, pageWalls, supportTolerance, options) < 2;
+    }
+
+    private static bool IsThinDensePatternWallBodyCandidate(
+        WallSegment wall,
+        SheetRegion mainRegion,
+        ScannerOptions options)
+    {
+        if (wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || HasStrongWallLayerEvidence(wall.Evidence))
+        {
+            return false;
+        }
+
+        if (wall.PairEvidence is not { FaceSeparation: > 0, OverlapRatio: >= 0.7 } pairEvidence)
+        {
+            return false;
+        }
+
+        var maxPatternSpan = Math.Max(options.MaxCompositeObjectPrimitiveLength * 1.15, options.MinWallLength * 5.5);
+        var maxThinSeparation = Math.Max(options.DefaultWallThickness * 0.95, options.MinWallPairSeparation * 1.75);
+        var maxShortSlotLength = Math.Max(options.MinWallLength * 1.45, options.DefaultWallThickness * 8.0);
+        var maxShortSlotSeparation = Math.Max(options.DefaultWallThickness * 3.5, options.MinWallPairSeparation * 4.0);
+
+        var isThinSurfacePair = pairEvidence.FaceSeparation <= maxThinSeparation;
+        var isShortRepeatedSlotPair = wall.DrawingLength <= maxShortSlotLength
+            && pairEvidence.FaceSeparation <= maxShortSlotSeparation;
+        var orientation = ResolveWallOrientation(wall.CenterLine, options);
+        if (orientation == WallOrientation.Other
+            || (IsNearMainRegionBoundary(wall, mainRegion, WallBodySupportTolerance(options)) && !isShortRepeatedSlotPair))
+        {
+            return false;
+        }
+
+        return wall.DrawingLength <= maxPatternSpan
+            && (isThinSurfacePair || isShortRepeatedSlotPair);
+    }
+
+    private static bool IsShortRepeatedSlotWallBodyCandidate(
+        WallSegment wall,
+        ScannerOptions options)
+    {
+        if (wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || HasStrongWallLayerEvidence(wall.Evidence))
+        {
+            return false;
+        }
+
+        if (wall.PairEvidence is not { FaceSeparation: > 0, OverlapRatio: >= 0.7 } pairEvidence)
+        {
+            return false;
+        }
+
+        var orientation = ResolveWallOrientation(wall.CenterLine, options);
+        if (orientation == WallOrientation.Other)
+        {
+            return false;
+        }
+
+        var maxShortSlotLength = Math.Max(options.MinWallLength * 1.45, options.DefaultWallThickness * 8.0);
+        var maxShortSlotSeparation = Math.Max(options.DefaultWallThickness * 3.5, options.MinWallPairSeparation * 4.0);
+        return wall.DrawingLength <= maxShortSlotLength
+            && pairEvidence.FaceSeparation <= maxShortSlotSeparation;
+    }
+
+    private static int CountPerpendicularWallBodyContacts(
+        WallSegment wall,
+        IReadOnlyList<WallSegment> pageWalls,
+        double tolerance,
+        ScannerOptions options)
+    {
+        var orientation = ResolveWallOrientation(wall.CenterLine, options);
+        var count = 0;
+        foreach (var candidate in pageWalls)
+        {
+            if (candidate.Id == wall.Id
+                || !IsCredibleWallBody(candidate)
+                || ResolveWallOrientation(candidate.CenterLine, options) == orientation)
+            {
+                continue;
+            }
+
+            if (TouchesWallBody(wall.CenterLine, candidate.CenterLine, tolerance))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private static bool IsUnsupportedUnpairedWallBodyLinework(
+        WallSegment wall,
+        IReadOnlyList<WallSegment> pageWalls,
+        IReadOnlyList<WallSegment> wallBodies,
+        SheetRegion mainRegion,
+        ScannerOptions options,
+        IReadOnlySet<string> ignoredTopologyWallIds)
+    {
+        if (wall.DetectionKind == WallDetectionKind.ParallelLinePair
+            || HasStrongWallLayerEvidence(wall.Evidence))
+        {
+            return false;
+        }
+
+        var supportTolerance = WallBodySupportTolerance(options);
+        var bodyContactCount = CountWallBodyContacts(wall, wallBodies, supportTolerance);
+        if (bodyContactCount >= 2)
+        {
+            return false;
+        }
+
+        if (bodyContactCount == 0
+            && IsUnsupportedNonAxisSymbolLinework(wall, mainRegion, supportTolerance, options))
+        {
+            return true;
+        }
+
+        if (bodyContactCount == 0
+            && IsUnsupportedMixedOrientationSymbolLinework(wall, pageWalls, mainRegion, supportTolerance, options))
+        {
+            return true;
+        }
+
+        if (bodyContactCount == 0
+            && IsUnsupportedDenseParallelDetailLinework(wall, pageWalls, wallBodies, mainRegion, supportTolerance, options))
+        {
+            return true;
+        }
+
+        var topologyContactCount = CountTopologyContacts(wall, pageWalls, supportTolerance, ignoredTopologyWallIds);
+        if (bodyContactCount >= 1 && topologyContactCount >= 2)
+        {
+            return false;
+        }
+
+        if (bodyContactCount >= 1
+            && wall.DrawingLength >= options.MinWallLength * 2.5
+            && IsNearMainRegionBoundary(wall, mainRegion, supportTolerance))
+        {
+            return false;
+        }
+
+        var compactLineworkLength = Math.Max(options.MaxCompositeObjectPrimitiveLength, options.MinWallLength * 4);
+        if (bodyContactCount == 0)
+        {
+            if (topologyContactCount >= 3)
+            {
+                return false;
+            }
+
+            if (topologyContactCount >= 2 && wall.DrawingLength >= compactLineworkLength * 0.85)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        return topologyContactCount <= 1
+            || (wall.DrawingLength <= options.MinWallLength * 1.25 && topologyContactCount < 3);
+    }
+
+    private static bool IsUnsupportedNonAxisSymbolLinework(
+        WallSegment wall,
+        SheetRegion mainRegion,
+        double supportTolerance,
+        ScannerOptions options)
+    {
+        var orientation = ResolveWallOrientation(wall.CenterLine, options);
+        if (orientation != WallOrientation.Other)
+        {
+            return false;
+        }
+
+        if (IsNearMainRegionBoundary(wall, mainRegion, supportTolerance))
+        {
+            return false;
+        }
+
+        var maxSymbolLength = Math.Max(
+            options.MaxCompositeObjectPrimitiveLength * 1.35,
+            options.MinWallLength * 5.0);
+        return wall.DrawingLength <= maxSymbolLength;
+    }
+
+    private static bool IsUnsupportedMixedOrientationSymbolLinework(
+        WallSegment wall,
+        IReadOnlyList<WallSegment> pageWalls,
+        SheetRegion mainRegion,
+        double supportTolerance,
+        ScannerOptions options)
+    {
+        if (IsNearMainRegionBoundary(wall, mainRegion, supportTolerance))
+        {
+            return false;
+        }
+
+        var maxSymbolLength = Math.Max(
+            options.MaxCompositeObjectPrimitiveLength * 1.2,
+            options.MinWallLength * 4.5);
+        if (wall.DrawingLength > maxSymbolLength)
+        {
+            return false;
+        }
+
+        var mixedContacts = 0;
+        var wallOrientation = ResolveWallOrientation(wall.CenterLine, options);
+        foreach (var other in pageWalls)
+        {
+            if (other.Id == wall.Id
+                || other.DetectionKind == WallDetectionKind.ParallelLinePair
+                || HasStrongWallLayerEvidence(other.Evidence)
+                || other.DrawingLength > maxSymbolLength)
+            {
+                continue;
+            }
+
+            var otherOrientation = ResolveWallOrientation(other.CenterLine, options);
+            if (otherOrientation == wallOrientation)
+            {
+                continue;
+            }
+
+            if (!TouchesWallBody(wall.CenterLine, other.CenterLine, supportTolerance))
+            {
+                continue;
+            }
+
+            mixedContacts++;
+            if (mixedContacts >= 2)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsUnsupportedDenseParallelDetailLinework(
+        WallSegment wall,
+        IReadOnlyList<WallSegment> pageWalls,
+        IReadOnlyList<WallSegment> wallBodies,
+        SheetRegion mainRegion,
+        double supportTolerance,
+        ScannerOptions options)
+    {
+        var orientation = ResolveWallOrientation(wall.CenterLine, options);
+        if (orientation == WallOrientation.Other
+            || IsNearMainRegionBoundary(wall, mainRegion, supportTolerance))
+        {
+            return false;
+        }
+
+        var nearbyParallelCount = 0;
+        var maxSpacing = Math.Max(options.DefaultWallThickness * 4.5, options.WallSnapTolerance * 6.0);
+        var wallCoordinate = AxisCoordinate(wall.CenterLine, orientation);
+        var wallSpan = AxisSpan(wall.CenterLine, orientation);
+
+        foreach (var other in pageWalls)
+        {
+            if (other.Id == wall.Id
+                || other.DetectionKind == WallDetectionKind.ParallelLinePair
+                || HasStrongWallLayerEvidence(other.Evidence)
+                || ResolveWallOrientation(other.CenterLine, options) != orientation
+                || CountWallBodyContacts(other, wallBodies, supportTolerance) > 0
+                || IsNearMainRegionBoundary(other, mainRegion, supportTolerance))
+            {
+                continue;
+            }
+
+            var spacing = Math.Abs(AxisCoordinate(other.CenterLine, orientation) - wallCoordinate);
+            if (spacing <= supportTolerance || spacing > maxSpacing)
+            {
+                continue;
+            }
+
+            var otherSpan = AxisSpan(other.CenterLine, orientation);
+            if (SpanOverlapRatio(wallSpan.Start, wallSpan.End, otherSpan.Start, otherSpan.End) < 0.42)
+            {
+                continue;
+            }
+
+            nearbyParallelCount++;
+            if (nearbyParallelCount >= 3)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static double AxisCoordinate(PlanLineSegment line, WallOrientation orientation) =>
+        orientation == WallOrientation.Horizontal
+            ? (line.Start.Y + line.End.Y) / 2.0
+            : (line.Start.X + line.End.X) / 2.0;
+
+    private static (double Start, double End) AxisSpan(PlanLineSegment line, WallOrientation orientation)
+    {
+        var first = orientation == WallOrientation.Horizontal ? line.Start.X : line.Start.Y;
+        var second = orientation == WallOrientation.Horizontal ? line.End.X : line.End.Y;
+        return first <= second ? (first, second) : (second, first);
+    }
+
+    private static double WallBodySupportTolerance(ScannerOptions options) =>
+        Math.Max(options.WallSnapTolerance * 2.5, options.DefaultWallThickness * 1.5);
+
+    private static int CountWallBodyContacts(
+        WallSegment wall,
+        IReadOnlyList<WallSegment> wallBodies,
+        double tolerance)
+    {
+        var count = 0;
+        foreach (var body in wallBodies)
+        {
+            if (body.Id == wall.Id)
+            {
+                continue;
+            }
+
+            if (TouchesWallBody(wall.CenterLine, body.CenterLine, tolerance))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private static int CountTopologyContacts(
+        WallSegment wall,
+        IReadOnlyList<WallSegment> pageWalls,
+        double tolerance,
+        IReadOnlySet<string>? ignoredWallIds = null)
+    {
+        var count = 0;
+        foreach (var other in pageWalls)
+        {
+            if (other.Id == wall.Id)
+            {
+                continue;
+            }
+
+            if (ignoredWallIds is not null && ignoredWallIds.Contains(other.Id))
+            {
+                continue;
+            }
+
+            if (TouchesWallBody(wall.CenterLine, other.CenterLine, tolerance))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private static bool TouchesWallBody(
+        PlanLineSegment candidate,
+        PlanLineSegment support,
+        double tolerance)
+    {
+        if (GeometryOperations.TryIntersect(candidate, support, tolerance, out _))
+        {
+            return true;
+        }
+
+        return EndpointTouchesSegment(candidate.Start, support, tolerance)
+            || EndpointTouchesSegment(candidate.End, support, tolerance)
+            || EndpointTouchesSegment(support.Start, candidate, tolerance)
+            || EndpointTouchesSegment(support.End, candidate, tolerance);
+    }
+
+    private static bool EndpointTouchesSegment(
+        PlanPoint endpoint,
+        PlanLineSegment segment,
+        double tolerance)
+    {
+        if (segment.DistanceToPoint(endpoint) > tolerance)
+        {
+            return false;
+        }
+
+        var parameter = segment.ProjectParameter(endpoint);
+        return parameter >= -0.04 && parameter <= 1.04;
+    }
+
+    private static bool IsNearMainRegionBoundary(
+        WallSegment wall,
+        SheetRegion mainRegion,
+        double tolerance)
+    {
+        var bounds = wall.Bounds;
+        return Math.Abs(bounds.Left - mainRegion.Bounds.Left) <= tolerance
+            || Math.Abs(bounds.Right - mainRegion.Bounds.Right) <= tolerance
+            || Math.Abs(bounds.Top - mainRegion.Bounds.Top) <= tolerance
+            || Math.Abs(bounds.Bottom - mainRegion.Bounds.Bottom) <= tolerance;
     }
 
     private WallSeed[] LimitWallSeeds(
@@ -638,6 +1603,184 @@ internal sealed class WallDetectionStage : IPipelineStage
         var perimeter = Math.Max(1, (bounds.Width * 2) + (bounds.Height * 2));
         var totalLength = cluster.Sum(item => item.Length);
         return totalLength >= perimeter * 1.08 || cluster.Count >= Math.Max(8, options.MinCompositeObjectPrimitiveCount + 5);
+    }
+
+    private static IReadOnlyList<DoorSymbolLineworkWallNoiseCluster> DetectDoorSymbolLineworkWallNoise(
+        IReadOnlyList<WallLineCandidate> candidates,
+        PlanRect mainRegionBounds,
+        ScannerOptions options)
+    {
+        if (!options.FilterDoorSymbolLineworkFromWalls)
+        {
+            return Array.Empty<DoorSymbolLineworkWallNoiseCluster>();
+        }
+
+        var items = candidates
+            .Where(candidate => IsDoorSymbolLineworkWallNoiseCandidate(candidate, options))
+            .Select(candidate => new CompactLineworkWallNoiseItem(
+                candidate.PrimitiveId,
+                candidate.Line.Segment,
+                candidate.Line.Segment.Bounds,
+                candidate.Line.Segment.Length,
+                ResolveWallOrientation(candidate.Line.Segment, options)))
+            .ToArray();
+        if (items.Length < 2)
+        {
+            return Array.Empty<DoorSymbolLineworkWallNoiseCluster>();
+        }
+
+        var clusterTolerance = Math.Max(
+            options.CompositeObjectClusterTolerance,
+            Math.Max(6, options.WallSnapTolerance * 3));
+
+        return BuildCompactLineworkClusters(items, clusterTolerance)
+            .Where(cluster => QualifiesDoorSymbolLineworkWallNoise(cluster, candidates, mainRegionBounds, options))
+            .Select(cluster => new DoorSymbolLineworkWallNoiseCluster(
+                PlanRect.Union(cluster.Select(item => item.Bounds)),
+                cluster.Select(item => item.PrimitiveId).Distinct(StringComparer.Ordinal).ToArray()))
+            .ToArray();
+    }
+
+    private static bool IsDoorSymbolLineworkWallNoiseCandidate(
+        WallLineCandidate candidate,
+        ScannerOptions options)
+    {
+        if (!candidate.UseForWallDetection
+            || !HasWeakOrAmbiguousLayerForWallNoise(candidate))
+        {
+            return false;
+        }
+
+        var length = candidate.Line.Segment.Length;
+        return length >= Math.Max(1, options.MinOpeningGap * 0.4)
+            && length <= Math.Max(options.MinWallLength * 1.8, options.MaxOpeningGap * 1.25);
+    }
+
+    private static bool QualifiesDoorSymbolLineworkWallNoise(
+        IReadOnlyList<CompactLineworkWallNoiseItem> cluster,
+        IReadOnlyList<WallLineCandidate> allCandidates,
+        PlanRect mainRegionBounds,
+        ScannerOptions options)
+    {
+        if (cluster.Count < 2)
+        {
+            return false;
+        }
+
+        var bounds = PlanRect.Union(cluster.Select(item => item.Bounds));
+        if (bounds.IsEmpty || bounds.Width <= 0 || bounds.Height <= 0)
+        {
+            return false;
+        }
+
+        var maximumSpan = Math.Min(
+            Math.Min(mainRegionBounds.Width, mainRegionBounds.Height) * 0.22,
+            Math.Max(options.MaxOpeningGap * 2.0, options.MinWallLength * 4.0));
+        if (bounds.Width > maximumSpan || bounds.Height > maximumSpan)
+        {
+            return false;
+        }
+
+        var hasHorizontal = cluster.Any(item => item.Orientation == WallOrientation.Horizontal);
+        var hasVertical = cluster.Any(item => item.Orientation == WallOrientation.Vertical);
+        var hasOther = cluster.Any(item => item.Orientation == WallOrientation.Other);
+        var hasCloseParallelPair = HasCloseParallelDoorLeafPair(cluster, options);
+        if (!hasOther && !(hasHorizontal && hasVertical) && !hasCloseParallelPair)
+        {
+            return false;
+        }
+
+        var externalContacts = CountExternalStructuralEndpointContacts(cluster, allCandidates, options);
+        if (!hasOther && externalContacts >= 2 && cluster.Count <= 3)
+        {
+            return false;
+        }
+
+        var totalLength = cluster.Sum(item => item.Length);
+        var perimeter = Math.Max(1, (bounds.Width * 2) + (bounds.Height * 2));
+        var compactEnough = totalLength <= perimeter * 1.75
+            || cluster.Count <= 5
+            || hasCloseParallelPair;
+        return compactEnough;
+    }
+
+    private static bool HasCloseParallelDoorLeafPair(
+        IReadOnlyList<CompactLineworkWallNoiseItem> cluster,
+        ScannerOptions options)
+    {
+        var tolerance = Math.Max(options.WallSnapTolerance, 1);
+        var maxSeparation = Math.Max(options.DefaultWallThickness * 2.25, options.MinWallPairSeparation * 2.5);
+        for (var firstIndex = 0; firstIndex < cluster.Count; firstIndex++)
+        {
+            var first = cluster[firstIndex];
+            if (first.Orientation == WallOrientation.Other)
+            {
+                continue;
+            }
+
+            for (var secondIndex = firstIndex + 1; secondIndex < cluster.Count; secondIndex++)
+            {
+                var second = cluster[secondIndex];
+                if (first.Orientation != second.Orientation)
+                {
+                    continue;
+                }
+
+                var firstCoordinate = AxisCoordinate(first.Segment, first.Orientation);
+                var secondCoordinate = AxisCoordinate(second.Segment, second.Orientation);
+                var separation = Math.Abs(firstCoordinate - secondCoordinate);
+                if (separation < tolerance || separation > maxSeparation)
+                {
+                    continue;
+                }
+
+                var firstSpan = AxisSpan(first.Segment, first.Orientation);
+                var secondSpan = AxisSpan(second.Segment, second.Orientation);
+                if (SpanOverlapRatio(firstSpan.Start, firstSpan.End, secondSpan.Start, secondSpan.End) >= 0.65)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static int CountExternalStructuralEndpointContacts(
+        IReadOnlyList<CompactLineworkWallNoiseItem> cluster,
+        IReadOnlyList<WallLineCandidate> allCandidates,
+        ScannerOptions options)
+    {
+        var clusterSourceIds = cluster
+            .Select(item => item.PrimitiveId)
+            .ToHashSet(StringComparer.Ordinal);
+        var contactTolerance = Math.Max(3, options.WallSnapTolerance * 1.75);
+        var longSupportLength = Math.Max(options.MaxOpeningGap * 1.15, options.MinWallLength * 2.25);
+        var contacts = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var item in cluster)
+        {
+            CountEndpoint(item.Segment.Start, "a");
+            CountEndpoint(item.Segment.End, "b");
+
+            void CountEndpoint(PlanPoint endpoint, string suffix)
+            {
+                foreach (var candidate in allCandidates)
+                {
+                    if (!candidate.UseForWallDetection
+                        || clusterSourceIds.Contains(candidate.PrimitiveId)
+                        || candidate.Line.Segment.Length < longSupportLength
+                        || candidate.Line.Segment.DistanceToPoint(endpoint) > contactTolerance)
+                    {
+                        continue;
+                    }
+
+                    contacts.Add($"{item.PrimitiveId}:{suffix}");
+                    return;
+                }
+            }
+        }
+
+        return contacts.Count;
     }
 
     private static IReadOnlyList<DenseOrthogonalPatternWallNoiseCluster> DetectDenseOrthogonalPatternWallNoise(
@@ -1930,6 +3073,145 @@ internal sealed class WallDetectionStage : IPipelineStage
         return count;
     }
 
+    private static HashSet<AxisRun> DetectDimensionLikeFragmentNoiseRuns(
+        IReadOnlyList<AxisRun> runs,
+        ScannerOptions options) =>
+        runs
+            .Where(run => IsLikelyDimensionLikeFragmentNoiseRun(run, runs, options))
+            .ToHashSet();
+
+    private static HashSet<NonAxisRun> DetectDimensionLikeFragmentNoiseRuns(
+        IReadOnlyList<NonAxisRun> runs,
+        ScannerOptions options) =>
+        runs
+            .Where(run => IsLikelyDimensionLikeFragmentNoiseRun(run, runs, options))
+            .ToHashSet();
+
+    private static bool IsLikelyDimensionLikeFragmentNoiseRun(
+        AxisRun run,
+        IReadOnlyList<AxisRun> allRuns,
+        ScannerOptions options)
+    {
+        if (HasStrongWallLayerEvidence(run.LayerEvidence)
+            || !HasDimensionLikeLayerEvidence(run.LayerEvidence)
+            || run.FragmentCount < 8
+            || run.Length <= 0)
+        {
+            return false;
+        }
+
+        var gapRatio = run.TotalGapLength / Math.Max(1, run.Length);
+        if (HasCredibleParallelWallFaceCandidate(run, allRuns, options))
+        {
+            return false;
+        }
+
+        return run.FragmentCount >= 16 && gapRatio >= 0.2;
+    }
+
+    private static bool IsLikelyDimensionLikeFragmentNoiseRun(
+        NonAxisRun run,
+        IReadOnlyList<NonAxisRun> allRuns,
+        ScannerOptions options)
+    {
+        if (HasStrongWallLayerEvidence(run.LayerEvidence)
+            || !HasDimensionLikeLayerEvidence(run.LayerEvidence)
+            || run.FragmentCount < 8
+            || run.Length <= 0)
+        {
+            return false;
+        }
+
+        var gapRatio = run.TotalGapLength / Math.Max(1, run.Length);
+        if (HasCredibleParallelWallFaceCandidate(run, allRuns, options))
+        {
+            return false;
+        }
+
+        return run.FragmentCount >= 12 && gapRatio >= 0.18;
+    }
+
+    private static bool HasCredibleParallelWallFaceCandidate(
+        AxisRun run,
+        IReadOnlyList<AxisRun> allRuns,
+        ScannerOptions options)
+    {
+        foreach (var other in allRuns)
+        {
+            if (ReferenceEquals(run, other)
+                || run.Orientation != other.Orientation)
+            {
+                continue;
+            }
+
+            var separation = Math.Abs(run.Coordinate - other.Coordinate);
+            if (separation < options.MinWallPairSeparation
+                || separation > options.MaxWallPairSeparation)
+            {
+                continue;
+            }
+
+            var overlap = Math.Min(run.End, other.End) - Math.Max(run.Start, other.Start);
+            if (overlap <= 0)
+            {
+                continue;
+            }
+
+            var overlapRatio = overlap / Math.Max(1, Math.Min(run.Length, other.Length));
+            if (overlapRatio < options.MinWallPairOverlapRatio)
+            {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool HasCredibleParallelWallFaceCandidate(
+        NonAxisRun run,
+        IReadOnlyList<NonAxisRun> allRuns,
+        ScannerOptions options)
+    {
+        foreach (var other in allRuns)
+        {
+            if (ReferenceEquals(run, other))
+            {
+                continue;
+            }
+
+            var angleDelta = Math.Min(
+                DirectionAngleDelta(run.Direction, other.Direction),
+                DirectionAngleDelta(run.Direction, new PlanVector(-other.Direction.X, -other.Direction.Y)));
+            if (angleDelta > options.GeometryTolerance.AngleRadians * 2)
+            {
+                continue;
+            }
+
+            var separation = Math.Abs(run.NormalCoordinate - other.NormalCoordinate);
+            if (separation < options.MinWallPairSeparation
+                || separation > options.MaxWallPairSeparation)
+            {
+                continue;
+            }
+
+            var overlap = Math.Min(run.End, other.End) - Math.Max(run.Start, other.Start);
+            if (overlap <= 0)
+            {
+                continue;
+            }
+
+            var overlapRatio = overlap / Math.Max(1, Math.Min(run.Length, other.Length));
+            if (overlapRatio >= options.MinWallPairOverlapRatio)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static bool IsLikelyFragmentNoiseRun(AxisRun run, ScannerOptions options)
     {
         if (HasStrongWallLayerEvidence(run.LayerEvidence) || run.FragmentCount < 7)
@@ -1972,6 +3254,12 @@ internal sealed class WallDetectionStage : IPipelineStage
             || item.Contains("classified Structural", StringComparison.OrdinalIgnoreCase)
             || item.Contains("override", StringComparison.OrdinalIgnoreCase));
 
+    private static bool HasDimensionLikeLayerEvidence(IEnumerable<string> layerEvidence) =>
+        layerEvidence.Any(item =>
+            item.Contains("classified Dimension", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("classified Text", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("contains dimension-like text", StringComparison.OrdinalIgnoreCase));
+
     private static WallOrientation ResolveWallOrientation(PlanLineSegment segment, ScannerOptions options)
     {
         var tolerance = options.GeometryTolerance.Distance;
@@ -1996,19 +3284,19 @@ internal sealed class WallDetectionStage : IPipelineStage
 
         foreach (var pair in pairs)
         {
-            context.Walls.Add(
+            context.WallCandidates.Add(
                 CreatePairedAxisWall(
                     pageNumber,
                     sourceRegionId,
                     pair,
-                    context.Walls.Count + 1,
+                    context.WallCandidates.Count + 1,
                     context.Options,
                     context.Calibration));
         }
 
         foreach (var run in runs.Where(run => !consumed.Contains(run)))
         {
-            context.Walls.Add(CreateAxisWall(pageNumber, sourceRegionId, run, context.Walls.Count + 1, context.Options, context.Calibration));
+            context.WallCandidates.Add(CreateAxisWall(pageNumber, sourceRegionId, run, context.WallCandidates.Count + 1, context.Options, context.Calibration));
         }
 
         return pairs.Length;
@@ -2030,19 +3318,19 @@ internal sealed class WallDetectionStage : IPipelineStage
 
         foreach (var pair in pairs)
         {
-            context.Walls.Add(
+            context.WallCandidates.Add(
                 CreatePairedNonAxisWall(
                     pageNumber,
                     sourceRegionId,
                     pair,
-                    context.Walls.Count + 1,
+                    context.WallCandidates.Count + 1,
                     context.Options,
                     context.Calibration));
         }
 
         foreach (var run in runs.Where(run => !consumed.Contains(run)))
         {
-            context.Walls.Add(CreateNonAxisWall(pageNumber, sourceRegionId, run, context.Walls.Count + 1, context.Options, context.Calibration));
+            context.WallCandidates.Add(CreateNonAxisWall(pageNumber, sourceRegionId, run, context.WallCandidates.Count + 1, context.Options, context.Calibration));
         }
 
         AddWallPairSeparationProfileDiagnostic(pageNumber, sourceRegionId, "nonOrthogonal", profile, pairs.Length, context);
@@ -2061,7 +3349,10 @@ internal sealed class WallDetectionStage : IPipelineStage
             ? new PlanLineSegment(new PlanPoint(run.Start, run.Coordinate), new PlanPoint(run.End, run.Coordinate))
             : new PlanLineSegment(new PlanPoint(run.Coordinate, run.Start), new PlanPoint(run.Coordinate, run.End));
 
-        var confidence = AxisRunConfidence(run, centerLine.Length, options);
+        var fragmentEvidence = CreateFragmentEvidence(run, centerLine.Length, options);
+        var confidence = AdjustConfidenceForFragmentEvidence(
+            AxisRunConfidence(run, centerLine.Length, options),
+            fragmentEvidence);
 
         var thickness = ResolveThickness(run.StrokeWidth, options);
         var scaleGroup = calibration.SelectMeasurementScaleGroup(
@@ -2078,7 +3369,8 @@ internal sealed class WallDetectionStage : IPipelineStage
             SourceRegionId = sourceRegionId,
             DetectionKind = run.FragmentCount > 1 ? WallDetectionKind.FragmentMerged : WallDetectionKind.SingleLine,
             SourcePrimitiveIds = run.SourcePrimitiveIds.Distinct(StringComparer.Ordinal).ToArray(),
-            Evidence = AxisRunEvidence(run),
+            Evidence = AppendFragmentEvidence(AxisRunEvidence(run), fragmentEvidence),
+            FragmentEvidence = fragmentEvidence,
             LengthMeters = calibration.ToMeters(centerLine.Length, scaleGroup),
             ThicknessMillimeters = calibration.ToMillimeters(thickness, scaleGroup),
             MeasurementScaleGroupId = scaleGroup?.Id
@@ -2174,7 +3466,10 @@ internal sealed class WallDetectionStage : IPipelineStage
     {
         var centerLine = run.ToLineSegment();
         var thickness = ResolveThickness(run.StrokeWidth, options);
-        var confidence = RunConfidence(run.FragmentCount, run.TotalGapLength, centerLine.Length, options, 0.82);
+        var fragmentEvidence = CreateFragmentEvidence(run, centerLine.Length, options);
+        var confidence = AdjustConfidenceForFragmentEvidence(
+            RunConfidence(run.FragmentCount, run.TotalGapLength, centerLine.Length, options, 0.82),
+            fragmentEvidence);
         var evidence = new List<string>
         {
             run.FragmentCount > 1 ? "merged non-orthogonal collinear wall fragments" : "non-orthogonal wall-length vector",
@@ -2183,6 +3478,7 @@ internal sealed class WallDetectionStage : IPipelineStage
         AddFragmentEvidence(evidence, "run", run);
         AddDuplicateEvidence(evidence, "run", run);
         AddLayerEvidence(evidence, run);
+        evidence = AppendFragmentEvidence(evidence, fragmentEvidence).ToList();
         var scaleGroup = calibration.SelectMeasurementScaleGroup(
             pageNumber,
             centerLine.Bounds.Inflate(Math.Max(thickness / 2.0, 0.5)),
@@ -2199,6 +3495,7 @@ internal sealed class WallDetectionStage : IPipelineStage
             DetectionKind = run.FragmentCount > 1 ? WallDetectionKind.FragmentMerged : WallDetectionKind.SingleLine,
             SourcePrimitiveIds = run.SourcePrimitiveIds.Distinct(StringComparer.Ordinal).ToArray(),
             Evidence = evidence,
+            FragmentEvidence = fragmentEvidence,
             LengthMeters = calibration.ToMeters(centerLine.Length, scaleGroup),
             ThicknessMillimeters = calibration.ToMillimeters(thickness, scaleGroup),
             MeasurementScaleGroupId = scaleGroup?.Id
@@ -2614,6 +3911,150 @@ internal sealed class WallDetectionStage : IPipelineStage
         return new Confidence(Math.Clamp(value, 0.35, maximum));
     }
 
+    private static Confidence AdjustConfidenceForFragmentEvidence(
+        Confidence confidence,
+        WallFragmentEvidence? fragmentEvidence)
+    {
+        if (fragmentEvidence?.RequiresGeometryReview != true)
+        {
+            return confidence;
+        }
+
+        return new Confidence(Math.Min(confidence.Value, 0.54));
+    }
+
+    private static WallFragmentEvidence? CreateFragmentEvidence(
+        AxisRun run,
+        double length,
+        ScannerOptions options)
+    {
+        if (run.FragmentCount <= 1
+            && run.TotalGapLength <= 0
+            && run.MaxGapLength <= 0
+            && run.DuplicatePrimitiveCount <= 0)
+        {
+            return null;
+        }
+
+        var review = RequiresFragmentGeometryReview(
+            run.FragmentCount,
+            run.TotalGapLength,
+            run.MaxGapLength,
+            length,
+            run.LayerEvidence,
+            options);
+        return CreateFragmentEvidence(
+            run.FragmentCount,
+            run.TotalGapLength,
+            run.MaxGapLength,
+            run.DuplicatePrimitiveCount,
+            length,
+            review);
+    }
+
+    private static WallFragmentEvidence? CreateFragmentEvidence(
+        NonAxisRun run,
+        double length,
+        ScannerOptions options)
+    {
+        if (run.FragmentCount <= 1
+            && run.TotalGapLength <= 0
+            && run.MaxGapLength <= 0
+            && run.DuplicatePrimitiveCount <= 0)
+        {
+            return null;
+        }
+
+        var review = RequiresFragmentGeometryReview(
+            run.FragmentCount,
+            run.TotalGapLength,
+            run.MaxGapLength,
+            length,
+            run.LayerEvidence,
+            options);
+        return CreateFragmentEvidence(
+            run.FragmentCount,
+            run.TotalGapLength,
+            run.MaxGapLength,
+            run.DuplicatePrimitiveCount,
+            length,
+            review);
+    }
+
+    private static WallFragmentEvidence CreateFragmentEvidence(
+        int fragmentCount,
+        double totalGapLength,
+        double maxGapLength,
+        int duplicatePrimitiveCount,
+        double length,
+        bool requiresGeometryReview)
+    {
+        var gapRatio = totalGapLength / Math.Max(1, length);
+        var evidence = new List<string>
+        {
+            $"fragment geometry: {fragmentCount} fragment(s)",
+            $"fragment geometry healed gap ratio {Math.Round(gapRatio, 3)}"
+        };
+        if (totalGapLength > 0)
+        {
+            evidence.Add($"fragment geometry healed {Math.Round(totalGapLength, 3)} drawing units; max gap {Math.Round(maxGapLength, 3)}");
+        }
+
+        if (duplicatePrimitiveCount > 0)
+        {
+            evidence.Add($"fragment geometry collapsed {duplicatePrimitiveCount} duplicate primitive(s)");
+        }
+
+        if (requiresGeometryReview)
+        {
+            evidence.Add("fragment geometry requires review before exact wall placement");
+        }
+
+        return new WallFragmentEvidence(
+            fragmentCount,
+            Math.Round(totalGapLength, 6),
+            Math.Round(maxGapLength, 6),
+            duplicatePrimitiveCount,
+            Math.Round(gapRatio, 6),
+            requiresGeometryReview,
+            evidence);
+    }
+
+    private static bool RequiresFragmentGeometryReview(
+        int fragmentCount,
+        double totalGapLength,
+        double maxGapLength,
+        double length,
+        IEnumerable<string> layerEvidence,
+        ScannerOptions options)
+    {
+        if (HasStrongWallLayerEvidence(layerEvidence))
+        {
+            return false;
+        }
+
+        var gapRatio = totalGapLength / Math.Max(1, length);
+        return fragmentCount >= 80
+            || (fragmentCount >= 40 && totalGapLength > options.WallMergeTolerance)
+            || (fragmentCount >= 16 && gapRatio >= 0.08)
+            || (fragmentCount >= 24 && maxGapLength >= Math.Max(options.WallSnapTolerance, options.MaxWallFragmentGap * 0.8));
+    }
+
+    private static IReadOnlyList<string> AppendFragmentEvidence(
+        IReadOnlyList<string> evidence,
+        WallFragmentEvidence? fragmentEvidence)
+    {
+        if (fragmentEvidence is null)
+        {
+            return evidence;
+        }
+
+        return evidence
+            .Concat(fragmentEvidence.Evidence)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    }
+
     private static IReadOnlyList<string> AxisRunEvidence(AxisRun run)
     {
         var evidence = new List<string>
@@ -2813,6 +4254,8 @@ internal sealed class WallDetectionStage : IPipelineStage
     }
 
     private sealed record CompactLineworkWallNoiseCluster(PlanRect Bounds, string[] SourcePrimitiveIds);
+
+    private sealed record DoorSymbolLineworkWallNoiseCluster(PlanRect Bounds, string[] SourcePrimitiveIds);
 
     private sealed record DenseOrthogonalPatternWallNoiseCluster(
         PlanRect Bounds,
@@ -3783,3 +5226,4 @@ internal sealed class WallDetectionStage : IPipelineStage
         }
     }
 }
+

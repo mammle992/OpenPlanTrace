@@ -38,13 +38,27 @@ public sealed record ScannerOptions
 
     public bool FilterCompactObjectLineworkFromWalls { get; init; } = true;
 
+    public bool FilterDoorSymbolLineworkFromWalls { get; init; } = true;
+
     public bool FilterDenseOrthogonalPatternsFromWalls { get; init; } = true;
+
+    public bool FilterUnsupportedWallBodyLinework { get; init; } = true;
+
+    public int MinWallBodyPairsBeforeSingleLineFiltering { get; init; } = 4;
 
     public bool FilterDenseFragmentLineworkFromWalls { get; init; }
 
+    public bool FilterDimensionLikeFragmentLineworkFromWalls { get; init; } = true;
+
+    public bool EnableWallEvidenceRecovery { get; init; }
+
+    public bool EnableWallEvidenceNoiseRejection { get; init; }
+
+    public int MaxWallEvidenceRecoveredWallsPerPage { get; init; } = 60;
+
     public bool ExcludeObjectLikeWallComponentsFromStructuralTopology { get; init; } = true;
 
-    public bool ExcludeWeakWallFragmentsFromStructuralTopology { get; init; }
+    public bool ExcludeWeakWallFragmentsFromStructuralTopology { get; init; } = true;
 
     public double MinWallPairSeparation { get; init; } = 2;
 

@@ -36,7 +36,11 @@ internal sealed class ScanContext
 
     public List<SurfacePatternCandidate> SurfacePatterns { get; } = new();
 
+    public List<WallSegment> WallCandidates { get; } = new();
+
     public List<WallSegment> Walls { get; } = new();
+
+    public WallEvidenceMap WallEvidenceMap { get; set; } = WallEvidenceMap.Empty;
 
     public WallGraph WallGraph { get; set; } = WallGraph.Empty;
 
@@ -70,7 +74,11 @@ internal sealed class ScanContext
         + GridBaySpacings.Count
         + SheetRegions.Count
         + SurfacePatterns.Count
+        + WallCandidates.Count
         + Walls.Count
+        + WallEvidenceMap.Segments.Count
+        + WallEvidenceMap.Bands.Count
+        + WallEvidenceMap.WallAssessments.Count
         + WallGraph.Nodes.Count
         + WallGraph.Edges.Count
         + WallGraph.Components.Count
@@ -124,7 +132,12 @@ internal sealed class ScanContext
             [PlanArtifactKind.DimensionChains] = Diagnostics.MessagesSince(0)
                 .Count(message => string.Equals(message.Stage, "dimension-chains", StringComparison.Ordinal)),
             [PlanArtifactKind.SurfacePatterns] = SurfacePatterns.Count,
+            [PlanArtifactKind.WallCandidates] = WallCandidates.Count,
             [PlanArtifactKind.Walls] = Walls.Count,
+            [PlanArtifactKind.WallEvidence] =
+                WallEvidenceMap.Segments.Count
+                + WallEvidenceMap.Bands.Count
+                + WallEvidenceMap.WallAssessments.Count,
             [PlanArtifactKind.WallGraph] =
                 WallGraph.Nodes.Count
                 + WallGraph.Edges.Count
@@ -234,6 +247,8 @@ internal sealed class ScanContext
             ObjectAggregates.ToArray(),
             Diagnostics.Build());
 
+        result = result with { WallEvidenceMap = WallEvidenceMap };
+
         if (HasRoutingLayer)
         {
             result = result with { RoutingLayerSnapshot = RoutingLayer };
@@ -266,7 +281,7 @@ internal sealed class ScanContext
             ObjectAggregates.ToArray(),
             Diagnostics.Build());
 
-        return result;
+        return result with { WallEvidenceMap = WallEvidenceMap };
     }
 
     private bool IsFormat(string format) =>

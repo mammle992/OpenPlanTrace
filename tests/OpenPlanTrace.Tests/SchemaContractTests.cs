@@ -38,7 +38,7 @@ public sealed class SchemaContractTests
         using var document = JsonDocument.Parse(schema);
 
         Assert.Equal("https://json-schema.org/draft/2020-12/schema", document.RootElement.GetProperty("$schema").GetString());
-        Assert.Equal("urn:openplantrace:schema:scan:v60", document.RootElement.GetProperty("$id").GetString());
+        Assert.Equal("urn:openplantrace:schema:scan:v62", document.RootElement.GetProperty("$id").GetString());
         Assert.Equal(
             PlanTraceExport.CurrentSchemaVersion,
             document.RootElement.GetProperty("x-openplantrace-schemaVersion").GetString());
@@ -391,7 +391,7 @@ public sealed class SchemaContractTests
         using var document = JsonDocument.Parse(schema);
 
         Assert.Equal("https://json-schema.org/draft/2020-12/schema", document.RootElement.GetProperty("$schema").GetString());
-        Assert.Equal("urn:openplantrace:schema:placement:v4", document.RootElement.GetProperty("$id").GetString());
+        Assert.Equal("urn:openplantrace:schema:placement:v6", document.RootElement.GetProperty("$id").GetString());
         Assert.Equal(
             PlanPlacementExport.CurrentSchemaVersion,
             document.RootElement.GetProperty("x-openplantrace-schemaVersion").GetString());
@@ -499,7 +499,8 @@ public sealed class SchemaContractTests
         AssertDefinitionRequires(schemaDocument, "calibration", "drawingUnit", "realWorldUnit", "millimetersPerDrawingUnit", "hasReliableMeasurementScale", "metricCoordinateStatus", "measurementCheckedCount", "measurementOutlierCount", "scaleGroups", "evidence");
         AssertDefinitionRequires(schemaDocument, "qualityGate", "coordinateTrust", "metricTrust", "readyForCoordinatePlacement", "readyForMetricPlacement", "qualityGrade", "qualityConfidence", "requiresReview", "hasReliableCalibration", "evidence");
         AssertDefinitionRequires(schemaDocument, "surfacePattern", "id", "pageNumber", "kind", "orientation", "bounds", "boundsMillimeters", "center", "centerMillimeters", "millimetersPerDrawingUnit", "sourceRegionId", "lineCount", "horizontalLineCount", "verticalLineCount", "intersectionCount", "horizontalMedianSpacing", "verticalMedianSpacing", "medianSpacing", "excludedFromWallDetection", "excludedFromStructuralTopology", "confidence", "requiresReview", "recommendedAction", "sourcePrimitiveIds", "sourceLayers", "evidence");
-        AssertDefinitionRequires(schemaDocument, "wall", "id", "pageNumber", "centerLine", "bounds", "drawingLength", "thicknessDrawingUnits", "confidence", "reliability", "sourcePrimitiveIds", "sourceLayers", "evidence");
+        AssertDefinitionRequires(schemaDocument, "wall", "id", "pageNumber", "centerLine", "bounds", "drawingLength", "thicknessDrawingUnits", "wallType", "confidence", "fragmentEvidence", "reliability", "sourcePrimitiveIds", "sourceLayers", "evidence");
+        AssertDefinitionRequires(schemaDocument, "wallFragmentEvidence", "fragmentCount", "totalHealedGap", "maxHealedGap", "duplicatePrimitiveCount", "gapRatio", "requiresGeometryReview", "evidence");
         AssertDefinitionRequires(schemaDocument, "room", "id", "pageNumber", "bounds", "center", "boundary", "wallIds", "drawingArea", "confidence", "reliability", "evidence");
         AssertDefinitionRequires(schemaDocument, "opening", "id", "pageNumber", "type", "operation", "orientation", "centerLine", "bounds", "drawingWidth", "placementStatus", "placement", "hostWallIds", "connectedRoomIds", "connectedRoomLabels", "connectedRoomLinks", "roomAdjacencyIds", "confidence", "reliability", "sourcePrimitiveIds", "sourceLayers", "evidence");
         AssertDefinitionRequires(schemaDocument, "openingRoomConnection", "roomId", "roomLabel", "roomUseKind", "roomAdjacencyIds", "side", "roomSidePoint", "nearestBoundaryPoint", "signedDistanceFromOpening", "distanceToOpening", "sharesHostWall", "confidence", "evidence");
@@ -578,9 +579,10 @@ public sealed class SchemaContractTests
         AssertDefinitionRequires(schemaDocument, "pageCoordinateFrame", "pageNumber", "width", "height", "bounds", "pageToNormalizedTransform", "normalizedToPageTransform");
         AssertDefinitionRequires(schemaDocument, "visualAiClassification", "label", "category", "confidence", "modelName", "modelVersion", "inferenceEngine", "pageNumber", "cropBounds", "cropSourceId", "alternatives", "evidence");
         AssertDefinitionRequires(schemaDocument, "visualAiAlternative", "label", "category", "confidence", "evidence");
-        AssertDefinitionRequires(schemaDocument, "wall", "id", "centerLine", "bounds", "detectionKind", "wallComponentId", "wallComponentKind", "excludedFromStructuralTopology", "lengthMeters", "thicknessMillimeters", "measurementScaleGroupId", "confidence", "sourcePrimitiveIds", "sourceLayers", "pairEvidence", "evidence");
+        AssertDefinitionRequires(schemaDocument, "wall", "id", "centerLine", "bounds", "detectionKind", "wallType", "wallComponentId", "wallComponentKind", "excludedFromStructuralTopology", "lengthMeters", "thicknessMillimeters", "measurementScaleGroupId", "confidence", "sourcePrimitiveIds", "sourceLayers", "pairEvidence", "fragmentEvidence", "evidence");
         AssertDefinitionRequires(schemaDocument, "surfacePattern", "id", "pageNumber", "kind", "orientation", "bounds", "sourceRegionId", "lineCount", "horizontalLineCount", "verticalLineCount", "intersectionCount", "horizontalMedianSpacing", "verticalMedianSpacing", "medianSpacing", "excludedFromWallDetection", "excludedFromStructuralTopology", "confidence", "requiresReview", "sourcePrimitiveIds", "sourceLayers", "evidence");
         AssertDefinitionRequires(schemaDocument, "wallPairEvidence", "firstFaceLine", "secondFaceLine", "faceSeparation", "overlapRatio", "score", "firstFaceFragmentCount", "secondFaceFragmentCount", "firstFaceSourcePrimitiveIds", "secondFaceSourcePrimitiveIds");
+        AssertDefinitionRequires(schemaDocument, "wallFragmentEvidence", "fragmentCount", "totalHealedGap", "maxHealedGap", "duplicatePrimitiveCount", "gapRatio", "requiresGeometryReview", "evidence");
         AssertDefinitionRequires(schemaDocument, "wallGraphComponent", "id", "pageNumber", "kind", "bounds", "wallIds", "nodeIds", "edgeIds", "sourcePrimitiveIds", "sourceLayers", "wallCount", "nodeCount", "edgeCount", "drawingLength", "confidence", "excludedFromStructuralTopology", "evidence");
         AssertDefinitionRequires(schemaDocument, "wallGraphRepairCandidate", "id", "pageNumber", "kind", "suggestedAction", "severity", "importImpact", "applicability", "sourceNodeId", "sourcePoint", "targetPoint", "targetNodeId", "hostWallId", "gapDistance", "safeSnapDistance", "reviewDistanceLimit", "excessDistanceBeyondSafeSnap", "repairLine", "bounds", "wallIds", "sourcePrimitiveIds", "sourceLayers", "confidence", "requiresReview", "evidence");
         AssertDefinitionRequires(schemaDocument, "opening", "id", "type", "operation", "centerLine", "hostWallIds", "connectedRoomIds", "connectedRoomLabels", "connectedRoomLinks", "roomAdjacencyIds", "drawingWidth", "widthMillimeters", "measurementScaleGroupId", "placement", "confidence", "sourcePrimitiveIds", "sourceLayers", "evidence");

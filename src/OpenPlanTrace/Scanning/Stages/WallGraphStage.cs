@@ -313,7 +313,7 @@ internal sealed class WallGraphStage : IPipelineStage
                     rawComponent,
                     kind,
                     mainComponent,
-                    context.Options);
+                    context);
                 var excludedFromStructuralTopology = !string.IsNullOrWhiteSpace(exclusionReason);
                 components.Add(
                     new WallGraphComponent(
@@ -413,17 +413,19 @@ internal sealed class WallGraphStage : IPipelineStage
         RawWallGraphComponent component,
         WallGraphComponentKind kind,
         RawWallGraphComponent? mainComponent,
-        ScannerOptions options)
+        ScanContext context)
     {
         if (kind == WallGraphComponentKind.ObjectLikeIsland
-            && options.ExcludeObjectLikeWallComponentsFromStructuralTopology)
+            && context.Options.ExcludeObjectLikeWallComponentsFromStructuralTopology)
         {
             return "compact disconnected object-like linework";
         }
 
         if (kind == WallGraphComponentKind.IsolatedFragment
-            && options.ExcludeWeakWallFragmentsFromStructuralTopology
-            && IsDetachedWeakWallFragment(component, mainComponent, options))
+            && context.Options.ExcludeWeakWallFragmentsFromStructuralTopology
+            && IsDetachedWeakWallFragment(component, mainComponent, context.Options)
+            && !HasNearbyOpeningEvidence(component, context)
+            && !OverlapsSurfacePatternRequiringReview(component, context))
         {
             return "isolated wall fragment with weak topology";
         }
@@ -446,6 +448,66 @@ internal sealed class WallGraphStage : IPipelineStage
 
         var structuralNeighborhood = mainComponent.Bounds.Inflate(UnresolvedEndpointGapReviewTolerance(options));
         return !structuralNeighborhood.Intersects(component.Bounds);
+    }
+
+    private static bool HasNearbyOpeningEvidence(
+        RawWallGraphComponent component,
+        ScanContext context)
+    {
+        var page = context.Document.Pages.FirstOrDefault(page => page.Number == component.PageNumber);
+        if (page is null)
+        {
+            return false;
+        }
+
+        var searchBounds = component.Bounds.Inflate(Math.Max(
+            context.Options.MaxOpeningGap * 1.5,
+            context.Options.WallSnapTolerance * 8.0));
+
+        return page.Primitives
+            .Where(primitive => !component.SourcePrimitiveIds.Contains(primitive.SourceId ?? string.Empty, StringComparer.Ordinal))
+            .Where(primitive => primitive.Bounds.Intersects(searchBounds))
+            .Any(IsOpeningEvidencePrimitive);
+    }
+
+    private static bool OverlapsSurfacePatternRequiringReview(
+        RawWallGraphComponent component,
+        ScanContext context)
+    {
+        var tolerance = Math.Max(context.Options.WallSnapTolerance * 3.0, context.Options.DefaultWallThickness * 2.0);
+        var componentBounds = component.Bounds.Inflate(tolerance);
+        return context.SurfacePatterns
+            .Where(pattern => pattern.PageNumber == component.PageNumber)
+            .Where(pattern => pattern.RequiresReview || pattern.ExcludedFromStructuralTopology)
+            .Any(pattern => pattern.Bounds.Intersects(componentBounds));
+    }
+
+    private static bool IsOpeningEvidencePrimitive(PlanPrimitive primitive)
+    {
+        if (primitive is not ArcPrimitive && primitive is not SymbolPrimitive)
+        {
+            return false;
+        }
+
+        return ContainsOpeningKeyword(primitive.Layer)
+            || ContainsOpeningKeyword(primitive.Source.Layer)
+            || ContainsOpeningKeyword(primitive.Source.SourceId)
+            || ContainsOpeningKeyword(primitive.Source.BlockName)
+            || (primitive is SymbolPrimitive symbol && ContainsOpeningKeyword(symbol.Name));
+    }
+
+    private static bool ContainsOpeningKeyword(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        return value.Contains("DOOR", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("OPENING", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("WINDOW", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("WIND", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("VINDU", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool LooksLikeObjectIsland(RawWallGraphComponent component, PlanRect mainBounds)
@@ -602,6 +664,7 @@ internal sealed class WallGraphStage : IPipelineStage
                         .Take(20))
                 });
         }
+
     }
 
     private void AddSurfacePatternWallOverlapDiagnostics(
