@@ -2827,7 +2827,7 @@ function drawOverlay() {
         `confidence ${wall.confidence.toFixed(2)}`,
         reliability
       ].filter(Boolean).join(" - ");
-      wallTopologyDrawSpans(wall).forEach((span) => {
+      wallVisualDrawLines(wall).forEach((span) => {
         const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
         line.setAttribute("x1", span.centerLine.start.x);
         line.setAttribute("y1", span.centerLine.start.y);
@@ -2835,7 +2835,7 @@ function drawOverlay() {
         line.setAttribute("y2", span.centerLine.end.y);
         line.setAttribute("class", wallClassName(wall));
         line.setAttribute("opacity", wallDrawOpacity({ ...wall, confidence: span.confidence ?? wall.confidence }));
-        addTitle(line, span.isFallback ? title : `${title} - topology span ${span.id}`);
+        addTitle(line, title);
         attachInspection(line, inspection);
         elements.overlay.appendChild(line);
       });
@@ -3111,7 +3111,7 @@ function addLine(line, className, title, opacity, item = null) {
 }
 
 function addWallHitTarget(wall, title, item) {
-  const spans = wallTopologyDrawSpans(wall);
+  const spans = wallVisualDrawLines(wall);
   if (!spans.length) {
     return;
   }
@@ -3127,7 +3127,7 @@ function addWallHitTarget(wall, title, item) {
       wallRequiresReliabilityReview(wall) ? "wall-review-hit-target" : "",
       wallCoordinateBlocked(wall) ? "wall-blocked-hit-target" : ""
     ].filter(Boolean).join(" "));
-    addTitle(element, span.isFallback ? title : `${title} - topology span ${span.id}`);
+    addTitle(element, title);
     attachInspection(element, item);
     elements.overlay.appendChild(element);
   });
@@ -4116,19 +4116,13 @@ function wallReliabilityReasons(wall) {
   return normalizeStringArray(wall?.reliability?.reasons);
 }
 
-function wallTopologyDrawSpans(wall) {
-  const spans = (Array.isArray(wall?.topologySpans) ? wall.topologySpans : [])
-    .filter((span) => span?.centerLine?.start && span?.centerLine?.end);
-  if (spans.length) {
-    return spans;
-  }
-
+function wallVisualDrawLines(wall) {
   return wall?.centerLine?.start && wall?.centerLine?.end
     ? [{
       id: wall.id,
       centerLine: wall.centerLine,
       confidence: wall.confidence,
-      isFallback: true
+      isRawWall: true
     }]
     : [];
 }

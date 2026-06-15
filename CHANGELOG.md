@@ -6,6 +6,20 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.004] - 2026-06-15
+
+### Fixed
+- Changed the default SVG and viewer wall overlays to draw raw detected wall
+  centerlines instead of wall-graph topology spans, so review-required snapped
+  topology does not make walls appear bent or shifted in the visualizer.
+- Updated visual snapshot wall-layer bounds to match the raw wall overlay.
+
+### Verified
+- Focused export tests passed.
+- Full solution test suite passed with `442` tests.
+- Hard industrial PDF scan/export validation passed for scan, placement, and
+  visual snapshot artifacts.
+
 ## [0.02.003] - 2026-06-15
 
 ### Changed

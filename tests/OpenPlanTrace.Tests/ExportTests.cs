@@ -262,15 +262,15 @@ public sealed class ExportTests
     }
 
     [Fact]
-    public void SvgRenderer_DrawsWallGraphTopologySpansInsteadOfWholeRawWallLines()
+    public void SvgRenderer_DrawsRawWallLinesInsteadOfTopologySpans()
     {
         var result = CreateDenseMinorRoutingDetailResult();
 
         var svg = PlanOverlaySvgRenderer.RenderPage(result, 1);
 
-        Assert.Contains("detail-host span edge-host-1", svg);
-        Assert.Contains("x1=\"100\" y1=\"100\" x2=\"140\" y2=\"100\"", svg);
-        Assert.DoesNotContain("x1=\"100\" y1=\"100\" x2=\"300\" y2=\"100\"", svg);
+        Assert.Contains("detail-host", svg);
+        Assert.Contains("x1=\"100\" y1=\"100\" x2=\"300\" y2=\"100\"", svg);
+        Assert.DoesNotContain("detail-host span edge-host-1", svg);
     }
 
     [Fact]

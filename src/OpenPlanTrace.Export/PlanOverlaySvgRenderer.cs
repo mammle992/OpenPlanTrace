@@ -330,32 +330,13 @@ public static class PlanOverlaySvgRenderer
         {
             builder.AppendLine("""<g id="walls">""");
             var componentByWallId = BuildWallComponentLookup(result.WallGraph.Components);
-            var topologySpans = WallGraphTopologySpanBuilder.Build(result.WallGraph, result.Walls)
-                .Where(span => span.PageNumber == page.Number)
-                .OrderBy(span => span.WallId, StringComparer.Ordinal)
-                .ThenBy(span => span.Id, StringComparer.Ordinal)
-                .ToArray();
-            if (topologySpans.Length > 0)
+            foreach (var wall in result.Walls.Where(wall => wall.PageNumber == page.Number))
             {
-                foreach (var span in topologySpans)
-                {
-                    componentByWallId.TryGetValue(span.WallId, out var component);
-                    var title = component is null
-                        ? $"{span.WallId} span {span.Id}"
-                        : $"{span.WallId} span {span.Id} ({component.Kind}; component {component.Id}; topology excluded {component.ExcludedFromStructuralTopology})";
-                    builder.AppendLine($"""<line class="{WallCssClass(component)}" x1="{N(span.CenterLine.Start.X)}" y1="{N(span.CenterLine.Start.Y)}" x2="{N(span.CenterLine.End.X)}" y2="{N(span.CenterLine.End.Y)}" opacity="{N(WallOpacity(span.Confidence, component))}"><title>{Esc(title)}</title></line>""");
-                }
-            }
-            else
-            {
-                foreach (var wall in result.Walls.Where(wall => wall.PageNumber == page.Number))
-                {
-                    componentByWallId.TryGetValue(wall.Id, out var component);
-                    var title = component is null
-                        ? wall.Id
-                        : $"{wall.Id} ({component.Kind}; component {component.Id}; topology excluded {component.ExcludedFromStructuralTopology})";
-                    builder.AppendLine($"""<line class="{WallCssClass(component)}" x1="{N(wall.CenterLine.Start.X)}" y1="{N(wall.CenterLine.Start.Y)}" x2="{N(wall.CenterLine.End.X)}" y2="{N(wall.CenterLine.End.Y)}" opacity="{N(WallOpacity(wall.Confidence, component))}"><title>{Esc(title)}</title></line>""");
-                }
+                componentByWallId.TryGetValue(wall.Id, out var component);
+                var title = component is null
+                    ? wall.Id
+                    : $"{wall.Id} ({component.Kind}; component {component.Id}; topology excluded {component.ExcludedFromStructuralTopology})";
+                builder.AppendLine($"""<line class="{WallCssClass(component)}" x1="{N(wall.CenterLine.Start.X)}" y1="{N(wall.CenterLine.Start.Y)}" x2="{N(wall.CenterLine.End.X)}" y2="{N(wall.CenterLine.End.Y)}" opacity="{N(WallOpacity(wall.Confidence, component))}"><title>{Esc(title)}</title></line>""");
             }
             builder.AppendLine("</g>");
         }

@@ -278,25 +278,11 @@ public sealed record PlanOverlayPageSnapshot(
                 .GroupBy(item => item.Kind.ToString())
                 .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal));
 
-        var wallTopologySpans = WallGraphTopologySpanBuilder.Build(result.WallGraph, result.Walls)
-            .Where(item => item.PageNumber == pageNumber)
-            .ToArray();
-        if (wallTopologySpans.Length > 0)
-        {
-            yield return Layer(
-                "walls",
-                wallTopologySpans,
-                item => item.Bounds,
-                item => item.Confidence);
-        }
-        else
-        {
-            yield return Layer(
-                "walls",
-                result.Walls.Where(item => item.PageNumber == pageNumber),
-                item => item.Bounds,
-                item => item.Confidence);
-        }
+        yield return Layer(
+            "walls",
+            result.Walls.Where(item => item.PageNumber == pageNumber),
+            item => item.Bounds,
+            item => item.Confidence);
 
         yield return Layer(
             "wallNodes",
