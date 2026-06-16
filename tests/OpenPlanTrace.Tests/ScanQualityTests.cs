@@ -526,6 +526,82 @@ public sealed class ScanQualityTests
     }
 
     [Fact]
+    public void ImportReadiness_RequiresReviewForReviewRequiredWallEvidence()
+    {
+        var regions = new[]
+        {
+            new SheetRegion("sheet", 1, RegionKind.Sheet, new PlanRect(0, 0, 600, 400), Confidence.High),
+            new SheetRegion("main", 1, RegionKind.MainFloorPlan, new PlanRect(0, 0, 600, 400), Confidence.High)
+        };
+        var walls = new[]
+        {
+            SyntheticWall("w1", 100, 100, 250, 100),
+            SyntheticWall("w2", 250, 100, 250, 250),
+            SyntheticWall("w3", 250, 250, 100, 250),
+            SyntheticWall("w4", 100, 250, 100, 100)
+        };
+        var wallGraph = new WallGraph(
+            [
+                SyntheticNode("n1", 100, 100),
+                SyntheticNode("n2", 250, 100),
+                SyntheticNode("n3", 250, 250),
+                SyntheticNode("n4", 100, 250)
+            ],
+            [
+                SyntheticEdge("e1", "n1", "n2", "w1"),
+                SyntheticEdge("e2", "n2", "n3", "w2"),
+                SyntheticEdge("e3", "n3", "n4", "w3"),
+                SyntheticEdge("e4", "n4", "n1", "w4")
+            ]);
+        var rooms = new[]
+        {
+            SyntheticRoom("r1", new PlanRect(105, 105, 140, 140), ["w1", "w2", "w3", "w4"])
+        };
+        var result = CreateSyntheticResult(
+            regions: regions,
+            walls: walls,
+            wallGraph: wallGraph,
+            rooms: rooms) with
+        {
+            Quality = UsableQuality(),
+            WallEvidenceMap = new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                new[]
+                {
+                    new WallEvidenceWallAssessment(
+                        "w1",
+                        1,
+                        walls[0].Bounds,
+                        WallEvidenceCategory.WeakSingleLine,
+                        new Confidence(0.42),
+                        PlacementReady: false,
+                        RequiresReview: true,
+                        RejectedAsNoise: false,
+                        SourcePrimitiveIds: ["w1"],
+                        Evidence: ["synthetic wall evidence requires review before placement"])
+                    {
+                        Decision = WallEvidenceDecision.Review
+                    }
+                })
+        };
+
+        var readiness = PlanImportReadiness.FromScanResult(result);
+
+        Assert.True(readiness.ReadyForGeometryImport);
+        Assert.True(readiness.ReadyForMetricImport);
+        Assert.True(readiness.RequiresReview);
+        Assert.Equal("ReviewRequired", readiness.Grade);
+        Assert.Contains("placement.wall_evidence.requires_review", readiness.ReviewIssueCodes);
+        Assert.Contains(
+            readiness.RecommendedActions,
+            action => action.Contains("Wall Evidence V2", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            readiness.Evidence,
+            evidence => evidence.Contains("wall/room/opening/evidence entities 1", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void PlacementExporter_DoesNotTreatExcludedWallComponentsAsImportReviewEntities()
     {
         var regions = new[]

@@ -989,6 +989,24 @@ public sealed class ExportTests
         Assert.Contains(
             reliability.GetProperty("reasons").EnumerateArray(),
             reason => reason.GetString()?.Contains("wall evidence not placement-ready", StringComparison.OrdinalIgnoreCase) == true);
+
+        var issue = Assert.Single(document.RootElement.GetProperty("issues").EnumerateArray(), item =>
+            item.GetProperty("code").GetString() == "placement.review.wall_evidence_requires_review");
+        Assert.Equal(firstWall.Id, issue.GetProperty("itemId").GetString());
+        Assert.Equal("Warning", issue.GetProperty("severity").GetString());
+        Assert.Equal("WeakSingleLine", issue.GetProperty("properties").GetProperty("category").GetString());
+        Assert.Equal("Review", issue.GetProperty("properties").GetProperty("decision").GetString());
+        Assert.Contains(
+            issue.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("weak wall candidate", StringComparison.OrdinalIgnoreCase) == true);
+
+        var importReadiness = document.RootElement.GetProperty("summary").GetProperty("importReadiness");
+        Assert.Contains(
+            "placement.wall_evidence.requires_review",
+            JsonStrings(importReadiness.GetProperty("reviewIssueCodes")));
+        Assert.DoesNotContain(
+            "placement.review.wall_evidence_requires_review",
+            JsonStrings(importReadiness.GetProperty("reviewIssueCodes")));
     }
 
     [Fact]
@@ -1433,8 +1451,41 @@ public sealed class ExportTests
     public async Task JsonExporter_WritesEvidenceBackedScanReviewQueue()
     {
         var result = await CreateScanResultAsync();
+        var reviewWall = result.Walls[0];
         result = result with
         {
+            WallEvidenceMap = new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                new[]
+                {
+                    new WallEvidenceWallAssessment(
+                        "wall-evidence-review",
+                        reviewWall.PageNumber,
+                        new PlanRect(100, 100, 200, 14),
+                        WallEvidenceCategory.WeakSingleLine,
+                        new Confidence(0.42),
+                        PlacementReady: false,
+                        RequiresReview: true,
+                        RejectedAsNoise: false,
+                        SourcePrimitiveIds: new[] { "wall-top", "wall-right" },
+                        Evidence: new[] { "synthetic weak wall candidate requires review" })
+                    {
+                        Decision = WallEvidenceDecision.Review,
+                        ScoreBreakdown = new WallEvidenceScoreBreakdown(
+                            PositiveScore: 0.25,
+                            NegativeScore: 0.68,
+                            DecisionScore: -0.43,
+                            PairSupportScore: 0,
+                            LayerSupportScore: 0.2,
+                            StructuralSupportScore: 0.1,
+                            RecoverySupportScore: 0,
+                            NoisePenalty: 0.35,
+                            FragmentReviewPenalty: 0.55,
+                            PositiveEvidence: new[] { "nearby structural wall endpoint support" },
+                            NegativeEvidence: new[] { "short weak single-line fragment" })
+                    }
+                }),
             Dimensions = new[]
             {
                 new DimensionAnnotation(
@@ -1646,12 +1697,30 @@ public sealed class ExportTests
         var json = PlanTraceJsonExporter.Serialize(result);
         using var document = JsonDocument.Parse(json);
         var queue = document.RootElement.GetProperty("reviewQueue").EnumerateArray().ToArray();
+        var importReadiness = document.RootElement.GetProperty("importReadiness");
+
+        Assert.Contains(
+            "placement.wall_evidence.requires_review",
+            JsonStrings(importReadiness.GetProperty("reviewIssueCodes")));
 
         Assert.Contains(queue, item =>
             item.GetProperty("kind").GetString() == "MeasurementOutlier"
             && item.GetProperty("itemId").GetString() == "dimension-outlier"
             && item.GetProperty("bounds").ValueKind == JsonValueKind.Object
             && item.GetProperty("properties").GetProperty("metricImportImpact").GetString() == "ReviewOnly");
+        Assert.Contains(queue, item =>
+            item.GetProperty("kind").GetString() == "WallEvidenceReview"
+            && item.GetProperty("itemId").GetString() == "wall-evidence-review"
+            && item.GetProperty("severity").GetString() == "Warning"
+            && item.GetProperty("bounds").GetProperty("x").GetDouble() == 100
+            && item.GetProperty("properties").GetProperty("category").GetString() == "WeakSingleLine"
+            && item.GetProperty("properties").GetProperty("decision").GetString() == "Review"
+            && item.GetProperty("properties").GetProperty("placementReady").GetString() == "False"
+            && item.GetProperty("properties").GetProperty("reviewQueueRank").GetString() == "1"
+            && item.GetProperty("properties").GetProperty("reviewQueueReason").GetString()!.Contains("not placement-ready", StringComparison.Ordinal)
+            && item.GetProperty("recommendedAction").GetString()?.Contains("coordinate-ready structural geometry", StringComparison.Ordinal) == true
+            && item.GetProperty("evidence").EnumerateArray().Any(evidence =>
+                evidence.GetString()?.Contains("short weak single-line fragment", StringComparison.Ordinal) == true));
         Assert.Contains(queue, item =>
             item.GetProperty("kind").GetString() == "ObjectGroupReview"
             && item.GetProperty("itemId").GetString() == "object-group-review"

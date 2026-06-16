@@ -29,6 +29,7 @@ public sealed record PlanImportReadiness(
     private const string OpeningRoomSideLinksIncompleteIssueCode = "quality.scan_risk.opening_room_side_links_incomplete";
     private const string RoutingPassageRoomSideLinksIncompleteIssueCode = "quality.scan_risk.routing_passage_room_side_links_incomplete";
     private const string OpeningPlacementInconsistentIssueCode = "placement.opening.placement_inconsistent";
+    private const string WallEvidenceRequiresReviewIssueCode = "placement.wall_evidence.requires_review";
 
     public static PlanImportReadiness Empty { get; } =
         new(
@@ -86,6 +87,7 @@ public sealed record PlanImportReadiness(
             opening.Confidence.Value >= 0.5
             && ScanReviewQueueSummary.OpeningPlacementIsCoordinateReady(opening));
         var openingReview = result.Openings.Count(ScanReviewQueueSummary.NeedsOpeningReview);
+        var wallEvidenceReview = ScanReviewQueueSummary.QueuedWallEvidenceReviews(result.WallEvidenceMap).Count;
         var aggregateReady = result.ObjectAggregates.Count(aggregate => aggregate.Confidence.Value >= 0.5);
         var coordinateReadyEntityCount = wallReady + roomReady + openingReady + aggregateReady;
         var reliabilityTrackedEntityCount =
@@ -94,6 +96,7 @@ public sealed record PlanImportReadiness(
             ? coordinateReadyEntityCount
             : 0;
         var reviewRequiredEntityCount = wallReview + roomReview + openingReview;
+        reviewRequiredEntityCount += wallEvidenceReview;
 
         return FromCounts(
             result,
@@ -260,6 +263,13 @@ public sealed record PlanImportReadiness(
                 DiagnosticSeverity.Warning);
         }
 
+        if (ScanReviewQueueSummary.QueuedWallEvidenceReviews(result.WallEvidenceMap).Count > 0)
+        {
+            yield return new PlanImportReadinessIssue(
+                WallEvidenceRequiresReviewIssueCode,
+                DiagnosticSeverity.Warning);
+        }
+
         if (!result.Calibration.HasReliableMeasurementScale)
         {
             yield return new PlanImportReadinessIssue(
@@ -382,6 +392,11 @@ public sealed record PlanImportReadiness(
             yield return "Review walls that overlap dense surface/detail patterns before using structural topology or room generation.";
         }
 
+        if (reviewIssueCodes.Contains(WallEvidenceRequiresReviewIssueCode, StringComparer.Ordinal))
+        {
+            yield return "Review Wall Evidence V2 wall candidates before importing weak or recovered walls as exact structural geometry.";
+        }
+
         if (reviewIssueCodes.Contains(OpeningRoomSideLinksIncompleteIssueCode, StringComparer.Ordinal)
             || reviewIssueCodes.Contains(RoutingPassageRoomSideLinksIncompleteIssueCode, StringComparer.Ordinal))
         {
@@ -432,7 +447,7 @@ public sealed record PlanImportReadiness(
         yield return $"routing import ready: {readyForRoutingImport}";
         yield return $"coordinate readiness ratio {coordinateReadyRatio:0.###}";
         yield return $"metric readiness ratio {metricReadyRatio:0.###}";
-        yield return $"review-required wall/room/opening entities {reviewRequiredEntityCount}";
+        yield return $"review-required wall/room/opening/evidence entities {reviewRequiredEntityCount}";
         yield return qualitySummary;
         yield return measurementOutlierSummary;
     }
@@ -474,6 +489,7 @@ public sealed record PlanImportReadiness(
         !string.Equals(code, "placement.measurement_outliers.require_review", StringComparison.Ordinal)
         && !string.Equals(code, "placement.wall_graph.endpoint_gaps.require_review", StringComparison.Ordinal)
         && !string.Equals(code, "placement.wall_graph.surface_pattern_wall_overlaps.require_review", StringComparison.Ordinal)
+        && !string.Equals(code, WallEvidenceRequiresReviewIssueCode, StringComparison.Ordinal)
         && !string.Equals(code, PdfRasterOcrRequiredIssueCode, StringComparison.Ordinal)
         && !string.Equals(code, RasterNoExtractedPrimitivesIssueCode, StringComparison.Ordinal)
         && !string.Equals(code, RasterLowExtractionConfidenceIssueCode, StringComparison.Ordinal)

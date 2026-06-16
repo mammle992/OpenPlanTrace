@@ -618,6 +618,8 @@ public sealed record PlacementImportReadinessExport(
             ? "placement.wall_graph.endpoint_gaps.require_review"
             : string.Equals(code, "placement.review.surface_pattern_wall_overlap", StringComparison.Ordinal)
                 ? "placement.wall_graph.surface_pattern_wall_overlaps.require_review"
+            : string.Equals(code, "placement.review.wall_evidence_requires_review", StringComparison.Ordinal)
+                ? "placement.wall_evidence.requires_review"
             : code;
 
     private static bool ShouldKeepPlacementIssueInformationalForReadiness(string code) =>
@@ -2611,6 +2613,11 @@ public sealed record PlacementIssueExport(
         PlanScanResult result,
         IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup)
     {
+        var wallsById = result.Walls
+            .Where(wall => !string.IsNullOrWhiteSpace(wall.Id))
+            .GroupBy(wall => wall.Id, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+
         foreach (var issue in result.Quality.Issues)
         {
             yield return new PlacementIssueExport(
@@ -2734,6 +2741,63 @@ public sealed record PlacementIssueExport(
                 ExportSourceHelpers.SourceLayers(sourcePrimitiveIds, sourceLookup),
                 BuildIssueEvidence(new[] { diagnostic.Message }.Concat(patternEvidence).Concat(countEvidence)),
                 properties);
+        }
+
+        foreach (var entry in ScanReviewQueueSummary.QueuedWallEvidenceReviews(result.WallEvidenceMap)
+                     .Select((assessment, index) => new { Assessment = assessment, Index = index }))
+        {
+            var assessment = entry.Assessment;
+            var sourcePrimitiveIds = assessment.SourcePrimitiveIds
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            wallsById.TryGetValue(assessment.WallId, out var wall);
+            var scale = ResolveMillimetersPerDrawingUnit(result.Calibration, wall?.MeasurementScaleGroupId);
+            var severity = ScanReviewQueueSummary.WallEvidenceReviewSeverity(assessment);
+            var reviewReason = ScanReviewQueueSummary.WallEvidenceReviewReason(assessment);
+            var score = assessment.ScoreBreakdown;
+
+            yield return new PlacementIssueExport(
+                "placement.review.wall_evidence_requires_review",
+                severity.ToString(),
+                "Wall Evidence V2 marked a wall candidate as requiring review before exact placement use.",
+                assessment.PageNumber,
+                new[] { assessment.PageNumber },
+                assessment.WallId,
+                RectExport.From(assessment.Bounds),
+                ScaleRect(assessment.Bounds, scale),
+                ClampRatio(assessment.Confidence.Value),
+                "Review this wall candidate before importing it as coordinate-ready structural geometry.",
+                sourcePrimitiveIds,
+                ExportSourceHelpers.SourceLayers(sourcePrimitiveIds, sourceLookup),
+                BuildIssueEvidence(
+                    assessment.Evidence
+                        .Concat(score.PositiveEvidence.Select(evidence => $"positive: {evidence}"))
+                        .Concat(score.NegativeEvidence.Select(evidence => $"negative: {evidence}"))
+                        .Concat(new[] { reviewReason })),
+                new Dictionary<string, string>
+                {
+                    ["detector"] = "wallEvidence",
+                    ["wallId"] = assessment.WallId,
+                    ["category"] = assessment.Category.ToString(),
+                    ["decision"] = assessment.Decision.ToString(),
+                    ["placementReady"] = assessment.PlacementReady.ToString(CultureInfo.InvariantCulture),
+                    ["requiresReview"] = assessment.RequiresReview.ToString(CultureInfo.InvariantCulture),
+                    ["rejectedAsNoise"] = assessment.RejectedAsNoise.ToString(CultureInfo.InvariantCulture),
+                    ["reviewQueueRank"] = (entry.Index + 1).ToString(CultureInfo.InvariantCulture),
+                    ["reviewQueueLimit"] = ScanReviewQueueSummary.WallEvidenceReviewQueueLimit.ToString(CultureInfo.InvariantCulture),
+                    ["reviewQueueReason"] = reviewReason,
+                    ["reviewQueuePriorityScore"] = ScanReviewQueueSummary.WallEvidenceReviewPriorityScore(assessment).ToString("0.###", CultureInfo.InvariantCulture),
+                    ["positiveScore"] = score.PositiveScore.ToString("0.###", CultureInfo.InvariantCulture),
+                    ["negativeScore"] = score.NegativeScore.ToString("0.###", CultureInfo.InvariantCulture),
+                    ["decisionScore"] = score.DecisionScore.ToString("0.###", CultureInfo.InvariantCulture),
+                    ["pairSupportScore"] = score.PairSupportScore.ToString("0.###", CultureInfo.InvariantCulture),
+                    ["layerSupportScore"] = score.LayerSupportScore.ToString("0.###", CultureInfo.InvariantCulture),
+                    ["structuralSupportScore"] = score.StructuralSupportScore.ToString("0.###", CultureInfo.InvariantCulture),
+                    ["recoverySupportScore"] = score.RecoverySupportScore.ToString("0.###", CultureInfo.InvariantCulture),
+                    ["noisePenalty"] = score.NoisePenalty.ToString("0.###", CultureInfo.InvariantCulture),
+                    ["fragmentReviewPenalty"] = score.FragmentReviewPenalty.ToString("0.###", CultureInfo.InvariantCulture)
+                });
         }
 
         foreach (var pattern in PlanRoutingLayerBuilder.DetectDenseMinorRoutingDetailPatterns(result)

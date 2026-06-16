@@ -6,6 +6,38 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.060] - 2026-06-16
+
+### Added
+- Scan-level import readiness now treats Wall Evidence V2 review-required wall
+  assessments as downstream review issues via
+  `placement.wall_evidence.requires_review`.
+- Placement import readiness now maps
+  `placement.review.wall_evidence_requires_review` into the same normalized
+  wall-evidence issue code, keeping scan JSON, placement JSON, and benchmark
+  gates aligned.
+
+### Verified
+- Focused scan quality/import readiness tests passed with `19` tests.
+- Focused export tests passed with `22` tests.
+- Full solution test suite passed with `494` tests.
+
+## [0.02.059] - 2026-06-16
+
+### Added
+- Wall Evidence V2 review-required wall candidates are now first-class scan
+  review queue items with ranked priority, source primitive IDs/layers, score
+  breakdown values, bounds, evidence, and recommended actions.
+- Placement export now emits `placement.review.wall_evidence_requires_review`
+  issues for review-required wall evidence, giving downstream engines a direct
+  stoplight before importing uncertain walls as coordinate-ready structural
+  geometry.
+
+### Verified
+- Focused scan review queue tests passed with `6` tests.
+- Focused export tests passed with `22` tests.
+- Full solution test suite passed with `493` tests.
+
 ## [0.02.058] - 2026-06-16
 
 ### Fixed

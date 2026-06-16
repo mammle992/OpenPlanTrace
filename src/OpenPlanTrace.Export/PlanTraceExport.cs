@@ -2654,6 +2654,66 @@ public sealed record ScanReviewQueueItemExport(
                 properties));
         }
 
+        foreach (var entry in ScanReviewQueueSummary.QueuedWallEvidenceReviews(result.WallEvidenceMap)
+                     .Select((assessment, index) => new { Assessment = assessment, Index = index }))
+        {
+            var assessment = entry.Assessment;
+            var sourcePrimitiveIds = assessment.SourcePrimitiveIds
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            var severity = ScanReviewQueueSummary.WallEvidenceReviewSeverity(assessment);
+            var reviewReason = ScanReviewQueueSummary.WallEvidenceReviewReason(assessment);
+            var priorityScore = ScanReviewQueueSummary.WallEvidenceReviewPriorityScore(assessment);
+            var score = assessment.ScoreBreakdown;
+
+            items.Add(new ScanReviewQueueItemExport(
+                $"review:wall-evidence:{assessment.WallId}",
+                ScanReviewQueueKinds.WallEvidenceReview,
+                "wallEvidence",
+                assessment.WallId,
+                12 + entry.Index,
+                severity.ToString(),
+                assessment.PageNumber,
+                new[] { assessment.PageNumber },
+                RectExport.From(assessment.Bounds),
+                assessment.Confidence.Value,
+                "Review this wall candidate before importing it as coordinate-ready structural geometry.",
+                sourcePrimitiveIds,
+                ExportSourceHelpers.SourceLayers(sourcePrimitiveIds, sourceLookup),
+                assessment.Evidence
+                    .Concat(score.PositiveEvidence.Select(evidence => $"positive: {evidence}"))
+                    .Concat(score.NegativeEvidence.Select(evidence => $"negative: {evidence}"))
+                    .Concat(new[]
+                    {
+                        $"review queue rank {entry.Index + 1} of {ScanReviewQueueSummary.WallEvidenceReviewQueueLimit}",
+                        reviewReason
+                    })
+                    .ToArray(),
+                new Dictionary<string, string>
+                {
+                    ["wallId"] = assessment.WallId,
+                    ["category"] = assessment.Category.ToString(),
+                    ["decision"] = assessment.Decision.ToString(),
+                    ["placementReady"] = assessment.PlacementReady.ToString(CultureInfo.InvariantCulture),
+                    ["requiresReview"] = assessment.RequiresReview.ToString(CultureInfo.InvariantCulture),
+                    ["rejectedAsNoise"] = assessment.RejectedAsNoise.ToString(CultureInfo.InvariantCulture),
+                    ["reviewQueueRank"] = (entry.Index + 1).ToString(CultureInfo.InvariantCulture),
+                    ["reviewQueueLimit"] = ScanReviewQueueSummary.WallEvidenceReviewQueueLimit.ToString(CultureInfo.InvariantCulture),
+                    ["reviewQueueReason"] = reviewReason,
+                    ["reviewQueuePriorityScore"] = priorityScore.ToString("0.###", CultureInfo.InvariantCulture),
+                    ["positiveScore"] = score.PositiveScore.ToString("0.###", CultureInfo.InvariantCulture),
+                    ["negativeScore"] = score.NegativeScore.ToString("0.###", CultureInfo.InvariantCulture),
+                    ["decisionScore"] = score.DecisionScore.ToString("0.###", CultureInfo.InvariantCulture),
+                    ["pairSupportScore"] = score.PairSupportScore.ToString("0.###", CultureInfo.InvariantCulture),
+                    ["layerSupportScore"] = score.LayerSupportScore.ToString("0.###", CultureInfo.InvariantCulture),
+                    ["structuralSupportScore"] = score.StructuralSupportScore.ToString("0.###", CultureInfo.InvariantCulture),
+                    ["recoverySupportScore"] = score.RecoverySupportScore.ToString("0.###", CultureInfo.InvariantCulture),
+                    ["noisePenalty"] = score.NoisePenalty.ToString("0.###", CultureInfo.InvariantCulture),
+                    ["fragmentReviewPenalty"] = score.FragmentReviewPenalty.ToString("0.###", CultureInfo.InvariantCulture)
+                }));
+        }
+
         foreach (var entry in result.SurfacePatterns
                      .Where(pattern => pattern.RequiresReview)
                      .OrderBy(pattern => pattern.PageNumber)

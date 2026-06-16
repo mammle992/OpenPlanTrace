@@ -5,6 +5,7 @@ namespace OpenPlanTrace;
 public static class ScanReviewQueueKinds
 {
     public const string MeasurementOutlier = "MeasurementOutlier";
+    public const string WallEvidenceReview = "WallEvidenceReview";
     public const string SurfacePatternReview = "SurfacePatternReview";
     public const string SurfacePatternWallOverlapReview = "SurfacePatternWallOverlapReview";
     public const string SuppressedWallPatternReview = "SuppressedWallPatternReview";
@@ -19,6 +20,8 @@ public sealed record ScanReviewQueueSummary(
     IReadOnlyDictionary<string, int> KindCounts,
     IReadOnlyDictionary<string, int> SeverityCounts)
 {
+    public const int WallEvidenceReviewQueueLimit = 32;
+
     public const int WallGraphGapReviewQueueLimit = 24;
 
     public const int SurfacePatternWallOverlapReviewQueueLimit = 12;
@@ -48,6 +51,11 @@ public sealed record ScanReviewQueueSummary(
         foreach (var diagnostic in result.Diagnostics.Messages.Where(diagnostic => IsSuppressedWallPatternDiagnostic(diagnostic.Code)))
         {
             builder.Add(ScanReviewQueueKinds.SuppressedWallPatternReview, diagnostic.Severity);
+        }
+
+        foreach (var assessment in QueuedWallEvidenceReviews(result.WallEvidenceMap))
+        {
+            builder.Add(ScanReviewQueueKinds.WallEvidenceReview, WallEvidenceReviewSeverity(assessment));
         }
 
         foreach (var pattern in result.SurfacePatterns.Where(pattern => pattern.RequiresReview))
@@ -163,6 +171,106 @@ public sealed record ScanReviewQueueSummary(
 
     private static bool IsFinite(double value) =>
         !double.IsNaN(value) && !double.IsInfinity(value);
+
+    public static IReadOnlyList<WallEvidenceWallAssessment> QueuedWallEvidenceReviews(WallEvidenceMap evidenceMap)
+    {
+        ArgumentNullException.ThrowIfNull(evidenceMap);
+
+        return evidenceMap.WallAssessments
+            .Where(IsActionableWallEvidenceReview)
+            .OrderBy(assessment => assessment.PageNumber)
+            .ThenByDescending(WallEvidenceReviewPriorityScore)
+            .ThenBy(assessment => assessment.Bounds.Top)
+            .ThenBy(assessment => assessment.Bounds.Left)
+            .ThenBy(assessment => assessment.WallId, StringComparer.Ordinal)
+            .Take(WallEvidenceReviewQueueLimit)
+            .ToArray();
+    }
+
+    public static bool IsActionableWallEvidenceReview(WallEvidenceWallAssessment assessment)
+    {
+        ArgumentNullException.ThrowIfNull(assessment);
+
+        return assessment.Decision == WallEvidenceDecision.Review
+            && assessment.RequiresReview
+            && !assessment.RejectedAsNoise
+            && !string.IsNullOrWhiteSpace(assessment.WallId);
+    }
+
+    public static DiagnosticSeverity WallEvidenceReviewSeverity(WallEvidenceWallAssessment assessment)
+    {
+        ArgumentNullException.ThrowIfNull(assessment);
+
+        return !assessment.PlacementReady || assessment.Confidence.Value < 0.5
+            ? DiagnosticSeverity.Warning
+            : DiagnosticSeverity.Info;
+    }
+
+    public static double WallEvidenceReviewPriorityScore(WallEvidenceWallAssessment assessment)
+    {
+        ArgumentNullException.ThrowIfNull(assessment);
+
+        var score = 0.0;
+        if (!assessment.PlacementReady)
+        {
+            score += 120;
+        }
+
+        score += assessment.Category switch
+        {
+            WallEvidenceCategory.WeakSingleLine => 100,
+            WallEvidenceCategory.RecoveredWallBody => 75,
+            WallEvidenceCategory.Unknown => 60,
+            WallEvidenceCategory.MediumWallBody => 35,
+            _ => 15
+        };
+
+        score += Math.Clamp(1 - assessment.Confidence.Value, 0, 1) * 60;
+        score += Math.Min(assessment.SourcePrimitiveIds.Count, 20) * 2;
+        score += Math.Clamp(assessment.ScoreBreakdown.FragmentReviewPenalty, 0, 1) * 60;
+        score += Math.Clamp(assessment.ScoreBreakdown.NoisePenalty, 0, 1) * 40;
+        score -= Math.Clamp(assessment.ScoreBreakdown.StructuralSupportScore, 0, 1) * 20;
+        return score;
+    }
+
+    public static string WallEvidenceReviewReason(WallEvidenceWallAssessment assessment)
+    {
+        ArgumentNullException.ThrowIfNull(assessment);
+
+        var reasons = new List<string>
+        {
+            $"wall evidence category {assessment.Category}",
+            $"decision {assessment.Decision}",
+            $"confidence {assessment.Confidence.Value.ToString("0.###", CultureInfo.InvariantCulture)}"
+        };
+
+        if (!assessment.PlacementReady)
+        {
+            reasons.Add("not placement-ready");
+        }
+
+        if (assessment.SourcePrimitiveIds.Count > 0)
+        {
+            reasons.Add($"{assessment.SourcePrimitiveIds.Count.ToString(CultureInfo.InvariantCulture)} source primitive(s)");
+        }
+
+        if (assessment.ScoreBreakdown.FragmentReviewPenalty > 0)
+        {
+            reasons.Add($"fragment review penalty {assessment.ScoreBreakdown.FragmentReviewPenalty.ToString("0.###", CultureInfo.InvariantCulture)}");
+        }
+
+        if (assessment.ScoreBreakdown.NoisePenalty > 0)
+        {
+            reasons.Add($"noise penalty {assessment.ScoreBreakdown.NoisePenalty.ToString("0.###", CultureInfo.InvariantCulture)}");
+        }
+
+        if (assessment.ScoreBreakdown.NegativeEvidence.Count > 0)
+        {
+            reasons.Add($"{assessment.ScoreBreakdown.NegativeEvidence.Count.ToString(CultureInfo.InvariantCulture)} negative evidence item(s)");
+        }
+
+        return string.Join("; ", reasons);
+    }
 
     public static IReadOnlyList<PlanDiagnostic> QueuedWallGraphGapDiagnostics(IEnumerable<PlanDiagnostic> diagnostics)
     {
