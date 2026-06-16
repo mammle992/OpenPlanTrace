@@ -15,6 +15,11 @@
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
   <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>OpenPlanTrace.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+  <ItemGroup>
     <EmbeddedResource
       Include="..\..\docs\schemas\openplantrace.layer-profile.v1.schema.json"
       LogicalName="OpenPlanTrace.Schemas.openplantrace.layer-profile.v1.schema.json" />

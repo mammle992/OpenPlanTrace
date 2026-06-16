@@ -24,6 +24,8 @@ public sealed record PlanScanResult(
 {
     public WallEvidenceMap WallEvidenceMap { get; init; } = WallEvidenceMap.Empty;
 
+    public WallTopologyPreparation WallTopologyPreparation { get; init; } = WallTopologyPreparation.Empty;
+
     public PlanScanQualityReport Quality { get; init; } = PlanScanQualityReport.Empty;
 
     public IEnumerable<SheetRegion> MainFloorPlanRegions =>

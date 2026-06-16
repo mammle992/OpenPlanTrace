@@ -19,7 +19,10 @@ public static class LayerAnalyzer
             [LayerCategory.Electrical] = new[] { "elec", "electrical", "power", "kraft", "lighting", "lys", "el-" },
             [LayerCategory.HVAC] = new[] { "hvac", "vent", "ventilation", "duct", "kanal", "air", "luft" },
             [LayerCategory.Plumbing] = new[] { "plumb", "plumbing", "vvs", "pipe", "pipes", "ror", "ror", "water", "drain" },
-            [LayerCategory.FireSafety] = new[] { "fire", "brann", "sprinkler", "alarm", "escape", "evac" }
+            [LayerCategory.FireSafety] = new[] { "fire", "brann", "sprinkler", "alarm", "escape", "evac" },
+            [LayerCategory.Furniture] = new[] { "furn", "furniture", "chair", "chairs", "table", "tables", "sofa", "desk", "bed", "cabinet" },
+            [LayerCategory.Fixture] = new[] { "fixture", "fixtures", "casework", "kitchen", "counter", "appliance", "toilet", "wc", "sink", "shower", "bath" },
+            [LayerCategory.SurfacePattern] = new[] { "hatch", "hatches", "hatching", "pattern", "patterns", "tile", "tiles", "fill", "poche", "surface-pattern" }
         };
 
     public static PlanLayerAnalysis Analyze(

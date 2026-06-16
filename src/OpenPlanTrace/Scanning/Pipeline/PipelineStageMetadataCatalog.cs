@@ -106,12 +106,19 @@ public static class PipelineStageMetadataCatalog
             Capabilities("wall-evidence-map", "missing-wall-band-recovery", "wall-noise-rejection"),
             OptionalReads(PlanArtifactKind.Dimensions)),
         Create(
+            "wall-topology-preparation",
+            "Wall topology preparation",
+            PipelineStageKind.Topology,
+            Reads(PlanArtifactKind.Walls, PlanArtifactKind.WallEvidence),
+            Writes(PlanArtifactKind.WallTopologyPreparation, PlanArtifactKind.Diagnostics),
+            Capabilities("graph-input-selection", "rejected-wall-evidence-filtering", "topology-source-gating")),
+        Create(
             "wall-graph",
             "Wall graph topology",
             PipelineStageKind.Topology,
-            Reads(PlanArtifactKind.Walls, PlanArtifactKind.WallEvidence),
+            Reads(PlanArtifactKind.Walls, PlanArtifactKind.WallEvidence, PlanArtifactKind.WallTopologyPreparation),
             Writes(PlanArtifactKind.WallGraph, PlanArtifactKind.TopologySpans, PlanArtifactKind.Diagnostics),
-            Capabilities("wall-node-snapping", "wall-edge-graph", "repair-candidates")),
+            Capabilities("wall-node-snapping", "wall-edge-graph", "repair-candidates", "object-like-wall-evidence-feedback")),
         Create(
             "openings",
             "Opening detection",

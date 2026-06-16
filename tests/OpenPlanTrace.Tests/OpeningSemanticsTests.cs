@@ -429,6 +429,76 @@ public sealed class OpeningSemanticsTests
         Assert.Equal(4000, placement.GetProperty("referenceLineMillimeters").GetProperty("end").GetProperty("x").GetDouble(), 3);
         Assert.Equal(0, placement.GetProperty("crossWallOffsetMillimeters").GetDouble(), 3);
 
+        var openingId = opening.GetProperty("id").GetString();
+        var adjacentFragmentWalls = parsed.RootElement.GetProperty("walls")
+            .EnumerateArray()
+            .Where(wall => wall.GetProperty("solidSpans")
+                .EnumerateArray()
+                .Any(span => span.GetProperty("adjacentOpeningIds")
+                    .EnumerateArray()
+                    .Any(id => id.GetString() == openingId)))
+            .OrderBy(wall => wall.GetProperty("centerLine").GetProperty("start").GetProperty("x").GetDouble())
+            .ToArray();
+        Assert.Equal(2, adjacentFragmentWalls.Length);
+        Assert.All(adjacentFragmentWalls, wall =>
+        {
+            Assert.Equal(0, wall.GetProperty("openingCutouts").GetArrayLength());
+            Assert.Single(wall.GetProperty("solidSpans").EnumerateArray());
+        });
+        Assert.Equal(100, adjacentFragmentWalls[0].GetProperty("solidSpans")[0].GetProperty("centerLine").GetProperty("start").GetProperty("x").GetDouble(), 3);
+        Assert.Equal(220, adjacentFragmentWalls[0].GetProperty("solidSpans")[0].GetProperty("centerLine").GetProperty("end").GetProperty("x").GetDouble(), 3);
+        Assert.Equal(250, adjacentFragmentWalls[1].GetProperty("solidSpans")[0].GetProperty("centerLine").GetProperty("start").GetProperty("x").GetDouble(), 3);
+        Assert.Equal(400, adjacentFragmentWalls[1].GetProperty("solidSpans")[0].GetProperty("centerLine").GetProperty("end").GetProperty("x").GetDouble(), 3);
+
+        var mergedHostWallId = "synthetic-merged-host-wall";
+        var mergedHostResult = result with
+        {
+            Walls = new[]
+            {
+                new WallSegment(
+                    mergedHostWallId,
+                    1,
+                    new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(400, 100)),
+                    4,
+                    Confidence.High)
+                {
+                    SourcePrimitiveIds = ["wall-left-run", "wall-right-run"],
+                    Evidence = ["synthetic merged host wall for placement export cutout contract"]
+                }
+            },
+            Openings = result.Openings
+                .Select(item => item with
+                {
+                    HostWallIds = [mergedHostWallId],
+                    Placement = item.Placement! with
+                    {
+                        HostWallId = mergedHostWallId,
+                        AnchorWallIds = [mergedHostWallId]
+                    }
+                })
+                .ToArray()
+        };
+        using var mergedParsed = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            mergedHostResult,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var cutWall = Assert.Single(mergedParsed.RootElement.GetProperty("walls").EnumerateArray());
+        var cutout = Assert.Single(cutWall.GetProperty("openingCutouts").EnumerateArray());
+        Assert.Equal(openingId, cutout.GetProperty("openingId").GetString());
+        Assert.Equal(220, cutout.GetProperty("centerLine").GetProperty("start").GetProperty("x").GetDouble(), 3);
+        Assert.Equal(250, cutout.GetProperty("centerLine").GetProperty("end").GetProperty("x").GetDouble(), 3);
+        Assert.Equal(120, cutout.GetProperty("startOffsetDrawingUnits").GetDouble(), 3);
+        Assert.Equal(150, cutout.GetProperty("endOffsetDrawingUnits").GetDouble(), 3);
+        Assert.Equal(300, cutout.GetProperty("lengthMillimeters").GetDouble(), 3);
+
+        var solidSpans = cutWall.GetProperty("solidSpans").EnumerateArray().ToArray();
+        Assert.Equal(2, solidSpans.Length);
+        Assert.Equal(100, solidSpans[0].GetProperty("centerLine").GetProperty("start").GetProperty("x").GetDouble(), 3);
+        Assert.Equal(220, solidSpans[0].GetProperty("centerLine").GetProperty("end").GetProperty("x").GetDouble(), 3);
+        Assert.Equal(250, solidSpans[1].GetProperty("centerLine").GetProperty("start").GetProperty("x").GetDouble(), 3);
+        Assert.Equal(400, solidSpans[1].GetProperty("centerLine").GetProperty("end").GetProperty("x").GetDouble(), 3);
+        Assert.All(solidSpans, span =>
+            Assert.Contains(openingId, span.GetProperty("adjacentOpeningIds").EnumerateArray().Select(item => item.GetString())));
+
         var geoJson = PlanTraceGeoJsonExporter.Serialize(
             result,
             new PlanTraceGeoJsonExportOptions { WriteIndented = false });

@@ -83,6 +83,8 @@ public sealed record PlanPlacementExport(
         var wallTopologySpansByWallId = wallTopologySpans
             .GroupBy(span => span.WallId, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+        var openingsByWallId = BuildWallOpeningLookup(result.Openings);
+        var wallGraphRepairCandidatesByWallId = BuildWallGraphRepairCandidateLookup(result.WallGraph.RepairCandidates);
         var wallEvidenceAssessments = WallEvidenceExportHelpers.BuildAssessmentLookup(result.WallEvidenceMap);
         var pages = result.Document.Pages.Select(PlacementPageExport.From).ToArray();
         var surfacePatterns = result.SurfacePatterns
@@ -96,13 +98,17 @@ public sealed record PlanPlacementExport(
                 wallComponentLookup,
                 wallEvidenceAssessments.TryGetValue(wall.Id, out var assessment) ? assessment : null,
                 wallTopologySpansByWallId.TryGetValue(wall.Id, out var spans) ? spans : Array.Empty<WallGraphTopologySpan>(),
-                wallReviewReasons.TryGetValue(wall.Id, out var reasons) ? reasons : Array.Empty<string>()))
+                openingsByWallId.TryGetValue(wall.Id, out var wallOpenings) ? wallOpenings : Array.Empty<OpeningCandidate>(),
+                wallReviewReasons.TryGetValue(wall.Id, out var reasons) ? reasons : Array.Empty<string>(),
+                wallGraphRepairCandidatesByWallId.TryGetValue(wall.Id, out var repairCandidates)
+                    ? repairCandidates
+                    : Array.Empty<WallGraphRepairCandidate>()))
             .ToArray();
         var rooms = result.Rooms
-            .Select(room => PlacementRoomExport.From(room, result.Calibration))
+            .Select(room => PlacementRoomExport.From(room, result.Calibration, wallEvidenceAssessments))
             .ToArray();
         var openings = result.Openings
-            .Select(opening => PlacementOpeningExport.From(opening, result.Calibration, sourceLookup))
+            .Select(opening => PlacementOpeningExport.From(opening, result.Calibration, sourceLookup, wallEvidenceAssessments))
             .ToArray();
         var objectAggregates = result.ObjectAggregates
             .Select(aggregate => PlacementObjectAggregateExport.From(aggregate, result.Calibration, sourceLookup))
@@ -186,6 +192,104 @@ public sealed record PlanPlacementExport(
             pair => pair.Key,
             pair => (IReadOnlyList<string>)pair.Value.Distinct(StringComparer.Ordinal).ToArray(),
             StringComparer.Ordinal);
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<WallGraphRepairCandidate>> BuildWallGraphRepairCandidateLookup(
+        IReadOnlyList<WallGraphRepairCandidate> candidates)
+    {
+        var lookup = new Dictionary<string, List<WallGraphRepairCandidate>>(StringComparer.Ordinal);
+        foreach (var candidate in candidates)
+        {
+            foreach (var wallId in WallGraphRepairCandidateWallIds(candidate).Distinct(StringComparer.Ordinal))
+            {
+                if (!lookup.TryGetValue(wallId, out var wallCandidates))
+                {
+                    wallCandidates = new List<WallGraphRepairCandidate>();
+                    lookup[wallId] = wallCandidates;
+                }
+
+                wallCandidates.Add(candidate);
+            }
+        }
+
+        return lookup.ToDictionary(
+            pair => pair.Key,
+            pair => (IReadOnlyList<WallGraphRepairCandidate>)pair.Value
+                .DistinctBy(candidate => candidate.Id, StringComparer.Ordinal)
+                .OrderBy(candidate => candidate.Id, StringComparer.Ordinal)
+                .ToArray(),
+            StringComparer.Ordinal);
+    }
+
+    private static IEnumerable<string> WallGraphRepairCandidateWallIds(WallGraphRepairCandidate candidate)
+    {
+        foreach (var wallId in candidate.WallIds)
+        {
+            if (!string.IsNullOrWhiteSpace(wallId))
+            {
+                yield return wallId;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(candidate.HostWallId))
+        {
+            yield return candidate.HostWallId;
+        }
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<OpeningCandidate>> BuildWallOpeningLookup(
+        IReadOnlyList<OpeningCandidate> openings)
+    {
+        var lookup = new Dictionary<string, List<OpeningCandidate>>(StringComparer.Ordinal);
+        foreach (var opening in openings.Where(opening => opening.Placement is not null))
+        {
+            foreach (var wallId in OpeningWallIds(opening))
+            {
+                if (!lookup.TryGetValue(wallId, out var wallOpenings))
+                {
+                    wallOpenings = new List<OpeningCandidate>();
+                    lookup[wallId] = wallOpenings;
+                }
+
+                wallOpenings.Add(opening);
+            }
+        }
+
+        return lookup.ToDictionary(
+            pair => pair.Key,
+            pair => (IReadOnlyList<OpeningCandidate>)pair.Value
+                .DistinctBy(opening => opening.Id, StringComparer.Ordinal)
+                .OrderBy(opening => opening.Placement?.HostWallCenterParameter ?? 0)
+                .ThenBy(opening => opening.Id, StringComparer.Ordinal)
+                .ToArray(),
+            StringComparer.Ordinal);
+    }
+
+    private static IEnumerable<string> OpeningWallIds(OpeningCandidate opening)
+    {
+        if (opening.Placement?.HostWallId is { Length: > 0 } hostWallId)
+        {
+            yield return hostWallId;
+        }
+
+        foreach (var wallId in opening.HostWallIds)
+        {
+            if (!string.IsNullOrWhiteSpace(wallId))
+            {
+                yield return wallId;
+            }
+        }
+
+        if (opening.Placement is not null)
+        {
+            foreach (var wallId in opening.Placement.AnchorWallIds)
+            {
+                if (!string.IsNullOrWhiteSpace(wallId))
+                {
+                    yield return wallId;
+                }
+            }
+        }
     }
 
     private static IReadOnlyDictionary<string, WallGraphComponent> BuildWallComponentLookup(
@@ -1016,6 +1120,8 @@ public sealed record PlacementWallExport(
     LineExport CenterLine,
     LineExport? CenterLineMillimeters,
     IReadOnlyList<PlacementWallTopologySpanExport> TopologySpans,
+    IReadOnlyList<PlacementWallOpeningCutoutExport> OpeningCutouts,
+    IReadOnlyList<PlacementWallSolidSpanExport> SolidSpans,
     RectExport Bounds,
     RectExport? BoundsMillimeters,
     double DrawingLength,
@@ -1033,6 +1139,7 @@ public sealed record PlacementWallExport(
     WallFragmentEvidenceExport? FragmentEvidence,
     WallEvidenceAssessmentExport? EvidenceAssessment,
     PlacementReliabilityExport Reliability,
+    IReadOnlyList<string> WallGraphRepairCandidateIds,
     IReadOnlyList<string> SourcePrimitiveIds,
     IReadOnlyList<string> SourceLayers,
     IReadOnlyList<string> Evidence)
@@ -1044,10 +1151,32 @@ public sealed record PlacementWallExport(
         IReadOnlyDictionary<string, WallGraphComponent> wallComponentLookup,
         WallEvidenceWallAssessment? evidenceAssessment,
         IReadOnlyList<WallGraphTopologySpan> topologySpans,
-        IReadOnlyList<string> reviewReasons)
+        IReadOnlyList<OpeningCandidate> openings,
+        IReadOnlyList<string> reviewReasons,
+        IReadOnlyList<WallGraphRepairCandidate> repairCandidates)
     {
         wallComponentLookup.TryGetValue(wall.Id, out var component);
         var scale = ResolveMillimetersPerDrawingUnit(calibration, wall.MeasurementScaleGroupId);
+        var wallGraphRepairCandidateIds = repairCandidates
+            .Select(candidate => candidate.Id)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+        var combinedReviewReasons = reviewReasons
+            .Concat(repairCandidates.Where(candidate => candidate.RequiresReview).Select(WallGraphRepairReviewReason))
+            .Where(reason => !string.IsNullOrWhiteSpace(reason))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var cutouts = openings
+            .Select((opening, index) => PlacementWallOpeningCutoutExport.From(wall, opening, scale, index + 1))
+            .Where(cutout => cutout is not null)
+            .Select(cutout => cutout!)
+            .DistinctBy(cutout => cutout.OpeningId, StringComparer.Ordinal)
+            .OrderBy(cutout => cutout.StartParameter)
+            .ThenBy(cutout => cutout.EndParameter)
+            .ThenBy(cutout => cutout.OpeningId, StringComparer.Ordinal)
+            .ToArray();
+        var solidSpans = PlacementWallSolidSpanExport.From(wall, scale, cutouts, openings);
 
         return new PlacementWallExport(
             wall.Id,
@@ -1057,6 +1186,8 @@ public sealed record PlacementWallExport(
             topologySpans
                 .Select(span => PlacementWallTopologySpanExport.From(span, scale, sourceLookup))
                 .ToArray(),
+            cutouts,
+            solidSpans,
             RectExport.From(wall.Bounds),
             ScaleRect(wall.Bounds, scale),
             wall.DrawingLength,
@@ -1073,10 +1204,369 @@ public sealed record PlacementWallExport(
             wall.Confidence.Value,
             wall.FragmentEvidence is null ? null : WallFragmentEvidenceExport.From(wall.FragmentEvidence),
             evidenceAssessment is null ? null : WallEvidenceAssessmentExport.From(evidenceAssessment),
-            PlacementReliability.ForWall(wall, calibration, component, evidenceAssessment, reviewReasons),
+            PlacementReliability.ForWall(wall, calibration, component, evidenceAssessment, combinedReviewReasons),
+            wallGraphRepairCandidateIds,
             wall.SourcePrimitiveIds,
             ExportSourceHelpers.SourceLayers(wall.SourcePrimitiveIds, sourceLookup),
             wall.Evidence);
+    }
+
+    private static string WallGraphRepairReviewReason(WallGraphRepairCandidate candidate)
+    {
+        var action = candidate.SuggestedAction switch
+        {
+            WallGraphRepairAction.TrimEndpointOverrun => "endpoint-overrun trim",
+            WallGraphRepairAction.SnapEndpointToWall => "endpoint-to-wall snap",
+            WallGraphRepairAction.SnapEndpointToEndpoint => "endpoint-to-endpoint snap",
+            _ => candidate.SuggestedAction.ToString()
+        };
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"wall graph repair candidate {candidate.Id} requires review for {action} ({candidate.Kind}, {candidate.GapDistance:0.###} drawing units)");
+    }
+}
+
+public sealed record PlacementWallOpeningCutoutExport(
+    string Id,
+    string OpeningId,
+    int PageNumber,
+    string Type,
+    string Operation,
+    LineExport CenterLine,
+    LineExport? CenterLineMillimeters,
+    PointExport StartPoint,
+    PointExport? StartPointMillimeters,
+    PointExport EndPoint,
+    PointExport? EndPointMillimeters,
+    double StartParameter,
+    double EndParameter,
+    double CenterParameter,
+    double StartOffsetDrawingUnits,
+    double EndOffsetDrawingUnits,
+    double CenterOffsetDrawingUnits,
+    double LengthDrawingUnits,
+    double? StartOffsetMillimeters,
+    double? EndOffsetMillimeters,
+    double? CenterOffsetMillimeters,
+    double? LengthMillimeters,
+    string? SourceHostWallId,
+    IReadOnlyList<string> AnchorWallIds,
+    double CrossWallOffsetDrawingUnits,
+    double? CrossWallOffsetMillimeters,
+    double Confidence,
+    IReadOnlyList<string> Evidence)
+{
+    public static PlacementWallOpeningCutoutExport? From(
+        WallSegment wall,
+        OpeningCandidate opening,
+        double? millimetersPerDrawingUnit,
+        int sequence)
+    {
+        if (opening.Placement is null
+            || !ScanReviewQueueSummary.OpeningPlacementIsCoordinateReady(opening)
+            || !OpeningBelongsToWall(wall, opening))
+        {
+            return null;
+        }
+
+        var placement = opening.Placement;
+        var wallLength = wall.CenterLine.Length;
+        if (wallLength <= 0.001)
+        {
+            return null;
+        }
+
+        var (startParameter, endParameter) = OpeningParametersOnWall(wall, opening);
+        var unclampedStart = Math.Min(startParameter, endParameter);
+        var unclampedEnd = Math.Max(startParameter, endParameter);
+        var clampedStart = Math.Clamp(unclampedStart, 0, 1);
+        var clampedEnd = Math.Clamp(unclampedEnd, 0, 1);
+        if (clampedEnd - clampedStart <= Math.Max(0.001, 0.5 / wallLength))
+        {
+            return null;
+        }
+
+        var startPoint = wall.CenterLine.PointAt(clampedStart);
+        var endPoint = wall.CenterLine.PointAt(clampedEnd);
+        var line = new PlanLineSegment(startPoint, endPoint);
+        var startOffset = clampedStart * wallLength;
+        var endOffset = clampedEnd * wallLength;
+        var centerOffset = ((clampedStart + clampedEnd) / 2.0) * wallLength;
+        var length = line.Length;
+
+        return new PlacementWallOpeningCutoutExport(
+            $"{wall.Id}:opening-cutout:{sequence}",
+            opening.Id,
+            wall.PageNumber,
+            opening.Type.ToString(),
+            opening.Operation.ToString(),
+            LineExport.From(line),
+            ScaleLine(line, millimetersPerDrawingUnit),
+            PointExport.From(startPoint),
+            ScalePoint(startPoint, millimetersPerDrawingUnit),
+            PointExport.From(endPoint),
+            ScalePoint(endPoint, millimetersPerDrawingUnit),
+            clampedStart,
+            clampedEnd,
+            (clampedStart + clampedEnd) / 2.0,
+            startOffset,
+            endOffset,
+            centerOffset,
+            length,
+            ScaleNullable(startOffset, millimetersPerDrawingUnit),
+            ScaleNullable(endOffset, millimetersPerDrawingUnit),
+            ScaleNullable(centerOffset, millimetersPerDrawingUnit),
+            ScaleNullable(length, millimetersPerDrawingUnit),
+            placement.HostWallId,
+            placement.AnchorWallIds,
+            placement.CrossWallOffsetDrawingUnits,
+            ScaleNullable(placement.CrossWallOffsetDrawingUnits, millimetersPerDrawingUnit),
+            opening.Confidence.Value,
+            opening.Evidence
+                .Concat(placement.Evidence)
+                .Append("Opening exported as a wall cutout for downstream wall splitting.")
+                .Where(item => !string.IsNullOrWhiteSpace(item))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray());
+    }
+
+    private static bool OpeningBelongsToWall(WallSegment wall, OpeningCandidate opening)
+    {
+        var placement = opening.Placement;
+        if (placement is null)
+        {
+            return false;
+        }
+
+        if (string.Equals(placement.HostWallId, wall.Id, StringComparison.Ordinal)
+            || opening.HostWallIds.Contains(wall.Id, StringComparer.Ordinal)
+            || placement.AnchorWallIds.Contains(wall.Id, StringComparer.Ordinal))
+        {
+            return true;
+        }
+
+        var maxDistance = Math.Max(wall.Thickness * 2.5, placement.DepthDrawingUnits * 2.5);
+        maxDistance = Math.Max(maxDistance, 1.5);
+        return wall.PageNumber == opening.PageNumber
+            && wall.CenterLine.DistanceToPoint(placement.StartPoint) <= maxDistance
+            && wall.CenterLine.DistanceToPoint(placement.EndPoint) <= maxDistance;
+    }
+
+    private static (double Start, double End) OpeningParametersOnWall(WallSegment wall, OpeningCandidate opening)
+    {
+        var placement = opening.Placement!;
+        if (string.Equals(placement.HostWallId, wall.Id, StringComparison.Ordinal)
+            && PlacementReferenceMatchesWall(wall, placement))
+        {
+            return (placement.HostWallStartParameter, placement.HostWallEndParameter);
+        }
+
+        return (
+            wall.CenterLine.ProjectParameter(placement.StartPoint),
+            wall.CenterLine.ProjectParameter(placement.EndPoint));
+    }
+
+    private static bool PlacementReferenceMatchesWall(WallSegment wall, OpeningPlacement placement)
+    {
+        var tolerance = Math.Max(1.5, wall.Thickness * 2.0);
+        var sameDirection =
+            wall.CenterLine.Start.DistanceTo(placement.ReferenceLine.Start) <= tolerance
+            && wall.CenterLine.End.DistanceTo(placement.ReferenceLine.End) <= tolerance;
+        var reversed =
+            wall.CenterLine.Start.DistanceTo(placement.ReferenceLine.End) <= tolerance
+            && wall.CenterLine.End.DistanceTo(placement.ReferenceLine.Start) <= tolerance;
+        var lengthTolerance = Math.Max(tolerance, wall.CenterLine.Length * 0.05);
+
+        return (sameDirection || reversed)
+            && Math.Abs(wall.CenterLine.Length - placement.ReferenceLine.Length) <= lengthTolerance;
+    }
+}
+
+public sealed record PlacementWallSolidSpanExport(
+    string Id,
+    int PageNumber,
+    string WallId,
+    int Sequence,
+    LineExport CenterLine,
+    LineExport? CenterLineMillimeters,
+    double StartParameter,
+    double EndParameter,
+    double CenterParameter,
+    double StartOffsetDrawingUnits,
+    double EndOffsetDrawingUnits,
+    double CenterOffsetDrawingUnits,
+    double DrawingLength,
+    double? LengthMeters,
+    IReadOnlyList<string> AdjacentOpeningIds,
+    IReadOnlyList<string> Evidence)
+{
+    public static IReadOnlyList<PlacementWallSolidSpanExport> From(
+        WallSegment wall,
+        double? millimetersPerDrawingUnit,
+        IReadOnlyList<PlacementWallOpeningCutoutExport> cutouts,
+        IReadOnlyList<OpeningCandidate> openings)
+    {
+        var wallLength = wall.CenterLine.Length;
+        if (wallLength <= 0.001)
+        {
+            return Array.Empty<PlacementWallSolidSpanExport>();
+        }
+
+        var normalizedCutouts = MergeCutouts(cutouts);
+        var spans = new List<PlacementWallSolidSpanExport>();
+        var cursor = 0.0;
+        string? previousOpeningId = null;
+        var sequence = 1;
+        foreach (var cutout in normalizedCutouts)
+        {
+            var cutoutStart = Math.Clamp(cutout.StartParameter, 0, 1);
+            var cutoutEnd = Math.Clamp(cutout.EndParameter, 0, 1);
+            if (cutoutStart > cursor)
+            {
+                spans.Add(CreateSpan(
+                    wall,
+                    millimetersPerDrawingUnit,
+                    sequence++,
+                    cursor,
+                    cutoutStart,
+                    previousOpeningId,
+                    cutout.OpeningId,
+                    openings));
+            }
+
+            cursor = Math.Max(cursor, cutoutEnd);
+            previousOpeningId = cutout.OpeningId;
+        }
+
+        if (cursor < 1.0)
+        {
+            spans.Add(CreateSpan(
+                wall,
+                millimetersPerDrawingUnit,
+                sequence,
+                cursor,
+                1.0,
+                previousOpeningId,
+                nextOpeningId: null,
+                openings));
+        }
+
+        return spans.ToArray();
+    }
+
+    private static PlacementWallSolidSpanExport CreateSpan(
+        WallSegment wall,
+        double? millimetersPerDrawingUnit,
+        int sequence,
+        double startParameter,
+        double endParameter,
+        string? previousOpeningId,
+        string? nextOpeningId,
+        IReadOnlyList<OpeningCandidate> openings)
+    {
+        var wallLength = wall.CenterLine.Length;
+        var startPoint = wall.CenterLine.PointAt(startParameter);
+        var endPoint = wall.CenterLine.PointAt(endParameter);
+        var line = new PlanLineSegment(startPoint, endPoint);
+        var startOffset = startParameter * wallLength;
+        var endOffset = endParameter * wallLength;
+        var centerOffset = ((startParameter + endParameter) / 2.0) * wallLength;
+        var adjacentOpeningIds = new[] { previousOpeningId, nextOpeningId }
+            .Concat(EndpointAdjacentOpeningIds(wall, startPoint, endPoint, openings))
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id!)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        return new PlacementWallSolidSpanExport(
+            $"{wall.Id}:solid-span:{sequence}",
+            wall.PageNumber,
+            wall.Id,
+            sequence,
+            LineExport.From(line),
+            ScaleLine(line, millimetersPerDrawingUnit),
+            startParameter,
+            endParameter,
+            (startParameter + endParameter) / 2.0,
+            startOffset,
+            endOffset,
+            centerOffset,
+            line.Length,
+            millimetersPerDrawingUnit is > 0 ? line.Length * millimetersPerDrawingUnit.Value / 1000.0 : null,
+            adjacentOpeningIds,
+            adjacentOpeningIds.Length == 0
+                ? ["Wall has no anchored opening cutouts; full centerline is usable as one solid span."]
+                : ["Wall solid span was trimmed around anchored opening cutouts."]);
+    }
+
+    private static IEnumerable<string> EndpointAdjacentOpeningIds(
+        WallSegment wall,
+        PlanPoint startPoint,
+        PlanPoint endPoint,
+        IReadOnlyList<OpeningCandidate> openings)
+    {
+        foreach (var opening in openings)
+        {
+            if (opening.Placement is null
+                || !ScanReviewQueueSummary.OpeningPlacementIsCoordinateReady(opening))
+            {
+                continue;
+            }
+
+            var tolerance = Math.Max(1.5, Math.Max(wall.Thickness * 2.5, opening.Placement.DepthDrawingUnits * 2.5));
+            if (OpeningEndpointTouches(opening.Placement, startPoint, tolerance)
+                || OpeningEndpointTouches(opening.Placement, endPoint, tolerance))
+            {
+                yield return opening.Id;
+            }
+        }
+    }
+
+    private static bool OpeningEndpointTouches(
+        OpeningPlacement placement,
+        PlanPoint point,
+        double tolerance) =>
+        placement.StartPoint.DistanceTo(point) <= tolerance
+        || placement.EndPoint.DistanceTo(point) <= tolerance;
+
+    private static IReadOnlyList<PlacementWallOpeningCutoutExport> MergeCutouts(
+        IReadOnlyList<PlacementWallOpeningCutoutExport> cutouts)
+    {
+        if (cutouts.Count <= 1)
+        {
+            return cutouts;
+        }
+
+        var merged = new List<PlacementWallOpeningCutoutExport>();
+        foreach (var cutout in cutouts.OrderBy(item => item.StartParameter).ThenBy(item => item.EndParameter))
+        {
+            if (merged.Count == 0
+                || cutout.StartParameter > merged[^1].EndParameter + 0.001)
+            {
+                merged.Add(cutout);
+                continue;
+            }
+
+            var previous = merged[^1];
+            if (cutout.EndParameter > previous.EndParameter)
+            {
+                merged[^1] = previous with
+                {
+                    EndParameter = cutout.EndParameter,
+                    CenterParameter = (previous.StartParameter + cutout.EndParameter) / 2.0,
+                    EndOffsetDrawingUnits = cutout.EndOffsetDrawingUnits,
+                    CenterOffsetDrawingUnits = (previous.StartOffsetDrawingUnits + cutout.EndOffsetDrawingUnits) / 2.0,
+                    LengthDrawingUnits = cutout.EndOffsetDrawingUnits - previous.StartOffsetDrawingUnits,
+                    EndOffsetMillimeters = cutout.EndOffsetMillimeters,
+                    CenterOffsetMillimeters = cutout.CenterOffsetMillimeters,
+                    LengthMillimeters = cutout.LengthMillimeters,
+                    Evidence = previous.Evidence.Concat(cutout.Evidence).Distinct(StringComparer.Ordinal).ToArray()
+                };
+            }
+        }
+
+        return merged;
     }
 }
 
@@ -1187,7 +1677,8 @@ public sealed record PlacementRoomExport(
 {
     public static PlacementRoomExport From(
         RoomRegion room,
-        PlanCalibration calibration)
+        PlanCalibration calibration,
+        IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceAssessments)
     {
         var scale = ResolveMillimetersPerDrawingUnit(calibration, room.MeasurementScaleGroupId);
         return new PlacementRoomExport(
@@ -1207,7 +1698,7 @@ public sealed record PlacementRoomExport(
             room.Label,
             room.UseKind.ToString(),
             room.Confidence.Value,
-            PlacementReliability.ForRoom(room, calibration),
+            PlacementReliability.ForRoom(room, calibration, wallEvidenceAssessments),
             room.Evidence);
     }
 }
@@ -1247,7 +1738,8 @@ public sealed record PlacementOpeningExport(
     public static PlacementOpeningExport From(
         OpeningCandidate opening,
         PlanCalibration calibration,
-        IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup)
+        IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup,
+        IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceAssessments)
     {
         var scale = ResolveMillimetersPerDrawingUnit(calibration, opening.MeasurementScaleGroupId);
         return new PlacementOpeningExport(
@@ -1277,7 +1769,7 @@ public sealed record PlacementOpeningExport(
             opening.ConnectedRoomLinks.Select(OpeningRoomConnectionExport.From).ToArray(),
             opening.RoomAdjacencyIds,
             opening.Confidence.Value,
-            PlacementReliability.ForOpening(opening, calibration),
+            PlacementReliability.ForOpening(opening, calibration, wallEvidenceAssessments),
             opening.SourcePrimitiveIds,
             ExportSourceHelpers.SourceLayers(opening.SourcePrimitiveIds, sourceLookup),
             opening.Evidence);
@@ -1485,10 +1977,12 @@ public sealed record PlacementWallGraphRepairCandidateExport(
 
     private static string RecommendedRepairAction(WallGraphRepairCandidate candidate) =>
         candidate.Applicability == WallGraphRepairApplicability.ManualCorrectionRecommended
-            ? "Manually review and correct this wall graph gap before using topology for downstream placement."
-            : candidate.SuggestedAction == WallGraphRepairAction.SnapEndpointToWall
-                ? "Review this endpoint-to-wall snap candidate before repairing the wall graph topology."
-            : "Review this endpoint-to-endpoint snap candidate before repairing the wall graph topology.";
+            ? "Manually review and correct this wall graph issue before using topology for downstream placement."
+            : candidate.SuggestedAction == WallGraphRepairAction.TrimEndpointOverrun
+                ? "Review this endpoint-overrun trim candidate before shortening the wall placement geometry."
+                : candidate.SuggestedAction == WallGraphRepairAction.SnapEndpointToWall
+                    ? "Review this endpoint-to-wall snap candidate before repairing the wall graph topology."
+                    : "Review this endpoint-to-endpoint snap candidate before repairing the wall graph topology.";
 }
 
 public sealed record PlacementWallGraphExport(
@@ -2107,7 +2601,6 @@ public sealed record PlacementIssueExport(
     IReadOnlyDictionary<string, string> Properties)
 {
     private const string DenseWallPatternDiagnosticCode = "walls.dense_orthogonal_pattern_filtered";
-    private const string WallGraphEndpointGapDiagnosticCode = "wall_graph.endpoint_gap.review";
     private const string SurfacePatternWallOverlapDiagnosticCode = "wall_graph.surface_pattern_wall_overlap.review";
     private const string PdfRasterOcrRequiredIssueCode = "quality.pdf_raster_ocr_required";
     private const string RasterNoExtractedPrimitivesIssueCode = "quality.raster_no_extracted_primitives";
@@ -2278,13 +2771,7 @@ public sealed record PlacementIssueExport(
                 properties);
         }
 
-        foreach (var entry in result.Diagnostics.Messages
-                     .Where(diagnostic => string.Equals(
-                         diagnostic.Code,
-                         WallGraphEndpointGapDiagnosticCode,
-                         StringComparison.Ordinal))
-                     .OrderBy(diagnostic => diagnostic.PageNumber ?? int.MaxValue)
-                     .ThenBy(diagnostic => diagnostic.Properties.TryGetValue("gapDistance", out var distance) ? distance : string.Empty, StringComparer.Ordinal)
+        foreach (var entry in ScanReviewQueueSummary.QueuedWallGraphGapDiagnostics(result.Diagnostics.Messages)
                      .Select((diagnostic, index) => new { Diagnostic = diagnostic, Index = index }))
         {
             var diagnostic = entry.Diagnostic;
@@ -2304,22 +2791,29 @@ public sealed record PlacementIssueExport(
             var scale = ResolveMillimetersPerDrawingUnit(result.Calibration, scaleGroupId: null);
             var gapEvidence = properties.TryGetValue("gapDistance", out var gapDistance)
                 ? new[] { $"gap distance {gapDistance} drawing units" }
-                : Array.Empty<string>();
+                : properties.TryGetValue("overrunDistance", out var overrunDistance)
+                    ? new[] { $"overrun distance {overrunDistance} drawing units" }
+                    : Array.Empty<string>();
             var wallEvidence = properties.TryGetValue("wallIds", out var wallIds) && !string.IsNullOrWhiteSpace(wallIds)
                 ? new[] { $"candidate wall ids: {wallIds}" }
                 : Array.Empty<string>();
+            var isEndpointOverrun = string.Equals(diagnostic.Code, "wall_graph.endpoint_overrun.review", StringComparison.Ordinal);
 
             yield return new PlacementIssueExport(
-                "placement.review.wall_graph_endpoint_gap",
+                isEndpointOverrun
+                    ? "placement.review.wall_graph_endpoint_overrun"
+                    : "placement.review.wall_graph_endpoint_gap",
                 diagnostic.Severity.ToString(),
                 diagnostic.Message,
                 diagnostic.PageNumber,
                 pageNumbers,
-                $"review:wall-graph-gap:{diagnostic.PageNumber?.ToString(CultureInfo.InvariantCulture) ?? "document"}:{entry.Index + 1}",
+                $"review:{(isEndpointOverrun ? "wall-graph-endpoint-overrun" : "wall-graph-gap")}:{diagnostic.PageNumber?.ToString(CultureInfo.InvariantCulture) ?? "document"}:{entry.Index + 1}",
                 diagnostic.Region is null ? null : RectExport.From(diagnostic.Region.Value),
                 diagnostic.Region is null ? null : ScaleRect(diagnostic.Region.Value, scale),
                 ClampRatio(diagnostic.Confidence?.Value ?? 0.5),
-                "Review or correct this possible unsnapped wall junction before importing wall graph topology.",
+                isEndpointOverrun
+                    ? "Review or correct this possible endpoint-overrun trim before importing wall graph topology."
+                    : "Review or correct this possible unsnapped wall junction before importing wall graph topology.",
                 sourcePrimitiveIds,
                 ExportSourceHelpers.SourceLayers(sourcePrimitiveIds, sourceLookup),
                 BuildIssueEvidence(new[] { diagnostic.Message }.Concat(gapEvidence).Concat(wallEvidence)),
@@ -2511,7 +3005,10 @@ internal static class PlacementReliability
             readiness.Reasons);
     }
 
-    public static PlacementReliabilityExport ForRoom(RoomRegion room, PlanCalibration calibration)
+    public static PlacementReliabilityExport ForRoom(
+        RoomRegion room,
+        PlanCalibration calibration,
+        IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceAssessments)
     {
         var reasons = new List<string>();
         if (room.Confidence.Value < 0.5)
@@ -2529,10 +3026,50 @@ internal static class PlacementReliability
             reasons.Add("metric scale unavailable");
         }
 
-        return Create(room.Confidence.Value, room.Confidence.Value >= 0.5 && room.Boundary.Count >= 3, calibration.HasReliableMeasurementScale, false, reasons);
+        var boundaryAssessments = room.WallIds
+            .Select(wallId => wallEvidenceAssessments.TryGetValue(wallId, out var assessment) ? assessment : null)
+            .OfType<WallEvidenceWallAssessment>()
+            .ToArray();
+        var reviewBoundaryWallIds = boundaryAssessments
+            .Where(assessment => !assessment.RejectedAsNoise)
+            .Where(assessment => assessment.Decision == WallEvidenceDecision.Review
+                || assessment.RequiresReview
+                || !assessment.PlacementReady)
+            .Select(assessment => assessment.WallId)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var rejectedBoundaryWallIds = boundaryAssessments
+            .Where(assessment => assessment.RejectedAsNoise || assessment.Decision == WallEvidenceDecision.Reject)
+            .Select(assessment => assessment.WallId)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        if (reviewBoundaryWallIds.Length > 0)
+        {
+            reasons.Add($"room boundary uses review-required wall evidence: {string.Join(",", reviewBoundaryWallIds.Take(12))}");
+        }
+
+        if (rejectedBoundaryWallIds.Length > 0)
+        {
+            reasons.Add($"room boundary uses rejected wall evidence: {string.Join(",", rejectedBoundaryWallIds.Take(12))}");
+        }
+
+        var boundaryWallsAreCoordinateReady = reviewBoundaryWallIds.Length == 0 && rejectedBoundaryWallIds.Length == 0;
+
+        return Create(
+            room.Confidence.Value,
+            room.Confidence.Value >= 0.5 && room.Boundary.Count >= 3 && boundaryWallsAreCoordinateReady,
+            calibration.HasReliableMeasurementScale,
+            !boundaryWallsAreCoordinateReady,
+            reasons);
     }
 
-    public static PlacementReliabilityExport ForOpening(OpeningCandidate opening, PlanCalibration calibration)
+    public static PlacementReliabilityExport ForOpening(
+        OpeningCandidate opening,
+        PlanCalibration calibration,
+        IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceAssessments)
     {
         var placementReady = ScanReviewQueueSummary.OpeningPlacementIsCoordinateReady(opening);
         var reasons = ScanReviewQueueSummary.OpeningReviewReasons(opening).ToList();
@@ -2542,11 +3079,43 @@ internal static class PlacementReliability
             reasons.Add("metric scale unavailable");
         }
 
+        var hostAssessments = OpeningWallIds(opening)
+            .Select(wallId => wallEvidenceAssessments.TryGetValue(wallId, out var assessment) ? assessment : null)
+            .OfType<WallEvidenceWallAssessment>()
+            .ToArray();
+        var reviewHostWallIds = hostAssessments
+            .Where(assessment => !assessment.RejectedAsNoise)
+            .Where(assessment => assessment.Decision == WallEvidenceDecision.Review
+                || assessment.RequiresReview
+                || !assessment.PlacementReady)
+            .Select(assessment => assessment.WallId)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var rejectedHostWallIds = hostAssessments
+            .Where(assessment => assessment.RejectedAsNoise || assessment.Decision == WallEvidenceDecision.Reject)
+            .Select(assessment => assessment.WallId)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        if (reviewHostWallIds.Length > 0)
+        {
+            reasons.Add($"opening placement uses review-required wall evidence: {string.Join(",", reviewHostWallIds.Take(12))}");
+        }
+
+        if (rejectedHostWallIds.Length > 0)
+        {
+            reasons.Add($"opening placement uses rejected wall evidence: {string.Join(",", rejectedHostWallIds.Take(12))}");
+        }
+
+        var hostWallsAreCoordinateReady = reviewHostWallIds.Length == 0 && rejectedHostWallIds.Length == 0;
+
         return Create(
             opening.Confidence.Value,
-            opening.Confidence.Value >= 0.5 && placementReady,
+            opening.Confidence.Value >= 0.5 && placementReady && hostWallsAreCoordinateReady,
             calibration.HasReliableMeasurementScale,
-            !placementReady || opening.Operation == OpeningOperation.Unknown,
+            !placementReady || opening.Operation == OpeningOperation.Unknown || !hostWallsAreCoordinateReady,
             reasons);
     }
 
@@ -2590,6 +3159,35 @@ internal static class PlacementReliability
             requiresReview || reasons.Count > 0,
             confidence,
             reasons);
+
+    private static IEnumerable<string> OpeningWallIds(OpeningCandidate opening)
+    {
+        foreach (var wallId in opening.HostWallIds)
+        {
+            if (!string.IsNullOrWhiteSpace(wallId))
+            {
+                yield return wallId;
+            }
+        }
+
+        if (opening.Placement is null)
+        {
+            yield break;
+        }
+
+        if (!string.IsNullOrWhiteSpace(opening.Placement.HostWallId))
+        {
+            yield return opening.Placement.HostWallId;
+        }
+
+        foreach (var wallId in opening.Placement.AnchorWallIds)
+        {
+            if (!string.IsNullOrWhiteSpace(wallId))
+            {
+                yield return wallId;
+            }
+        }
+    }
 }
 
 internal static class PlacementMetricTransform
@@ -2629,6 +3227,11 @@ internal static class PlacementMetricTransform
             ScalePoint(line.Start, millimetersPerDrawingUnit)!,
             ScalePoint(line.End, millimetersPerDrawingUnit)!);
     }
+
+    public static double? ScaleNullable(double? value, double? millimetersPerDrawingUnit) =>
+        value.HasValue && millimetersPerDrawingUnit is > 0
+            ? value.Value * millimetersPerDrawingUnit.Value
+            : null;
 
     public static RectExport? ScaleRect(PlanRect rect, double? millimetersPerDrawingUnit)
     {

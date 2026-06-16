@@ -275,10 +275,17 @@ public sealed record ScanReviewQueueSummary(
         {
             reasons.Add(gapKind);
         }
+        else if (diagnostic.Properties.TryGetValue("overrunKind", out var overrunKind) && !string.IsNullOrWhiteSpace(overrunKind))
+        {
+            reasons.Add(overrunKind);
+        }
 
         if (TryGetWallGraphGapDistance(diagnostic, out var distance))
         {
-            reasons.Add($"gap {distance.ToString("0.###", CultureInfo.InvariantCulture)} drawing unit(s)");
+            var distanceLabel = string.Equals(diagnostic.Code, "wall_graph.endpoint_overrun.review", StringComparison.Ordinal)
+                ? "overrun"
+                : "gap";
+            reasons.Add($"{distanceLabel} {distance.ToString("0.###", CultureInfo.InvariantCulture)} drawing unit(s)");
         }
 
         if (diagnostic.Properties.TryGetValue("wallIds", out var wallIds) && !string.IsNullOrWhiteSpace(wallIds))
@@ -287,7 +294,9 @@ public sealed record ScanReviewQueueSummary(
         }
 
         return reasons.Count == 0
-            ? "possible unsnapped wall graph endpoint gap"
+            ? string.Equals(diagnostic.Code, "wall_graph.endpoint_overrun.review", StringComparison.Ordinal)
+                ? "possible overextended wall graph endpoint"
+                : "possible unsnapped wall graph endpoint gap"
             : string.Join("; ", reasons);
     }
 
@@ -419,7 +428,8 @@ public sealed record ScanReviewQueueSummary(
         string.Equals(code, "wall_graph.surface_pattern_wall_overlap.review", StringComparison.Ordinal);
 
     public static bool IsWallGraphGapDiagnostic(string? code) =>
-        string.Equals(code, "wall_graph.endpoint_gap.review", StringComparison.Ordinal);
+        string.Equals(code, "wall_graph.endpoint_gap.review", StringComparison.Ordinal)
+        || string.Equals(code, "wall_graph.endpoint_overrun.review", StringComparison.Ordinal);
 
     private static double WallGraphGapDistance(PlanDiagnostic diagnostic) =>
         TryGetWallGraphGapDistance(diagnostic, out var distance)
@@ -429,7 +439,8 @@ public sealed record ScanReviewQueueSummary(
     private static bool TryGetWallGraphGapDistance(PlanDiagnostic diagnostic, out double distance)
     {
         distance = 0;
-        return diagnostic.Properties.TryGetValue("gapDistance", out var value)
+        return (diagnostic.Properties.TryGetValue("gapDistance", out var value)
+                || diagnostic.Properties.TryGetValue("overrunDistance", out value))
             && double.TryParse(
                 value,
                 NumberStyles.Float,
@@ -452,7 +463,10 @@ public sealed record ScanReviewQueueSummary(
         diagnostic.Properties.TryGetValue("gapKind", out var gapKind)
         && string.Equals(gapKind, "EndpointToWall", StringComparison.Ordinal)
             ? 0
-            : 1;
+            : diagnostic.Properties.TryGetValue("overrunKind", out var overrunKind)
+              && string.Equals(overrunKind, "EndpointOverrun", StringComparison.Ordinal)
+                ? 0
+                : 1;
 
     private sealed class ScanReviewQueueSummaryBuilder
     {

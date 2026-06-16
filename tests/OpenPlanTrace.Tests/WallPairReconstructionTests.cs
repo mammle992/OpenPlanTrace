@@ -70,6 +70,45 @@ public sealed class WallPairReconstructionTests
     }
 
     [Fact]
+    public async Task ScanAsync_ClassifiesConcaveEnvelopeWallsAsExterior()
+    {
+        var document = new PlanDocument(
+            "l-shaped-exterior-envelope",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(640, 520),
+                    new PlanPrimitive[]
+                    {
+                        WallFace("outer-top-left", new PlanPoint(100, 100), new PlanPoint(300, 100)),
+                        WallFace("outer-notch-vertical-a", new PlanPoint(300, 100), new PlanPoint(300, 200)),
+                        WallFace("outer-concave-top", new PlanPoint(300, 200), new PlanPoint(500, 200)),
+                        WallFace("outer-right", new PlanPoint(500, 200), new PlanPoint(500, 400)),
+                        WallFace("outer-bottom-right", new PlanPoint(500, 400), new PlanPoint(300, 400)),
+                        WallFace("outer-notch-vertical-b", new PlanPoint(300, 400), new PlanPoint(300, 300)),
+                        WallFace("outer-concave-bottom", new PlanPoint(300, 300), new PlanPoint(100, 300)),
+                        WallFace("outer-left", new PlanPoint(100, 300), new PlanPoint(100, 100)),
+                        WallFace("interior-partition", new PlanPoint(240, 100), new PlanPoint(240, 300))
+                    })
+            });
+
+        var result = await new OpenPlanTraceScanner().ScanAsync(document);
+
+        Assert.Contains(result.Walls, wall =>
+            wall.SourcePrimitiveIds.Contains("outer-concave-top")
+            && wall.WallType == WallType.Exterior
+            && wall.Evidence.Any(item => item.Contains("local outer boundary", StringComparison.OrdinalIgnoreCase)));
+        Assert.Contains(result.Walls, wall =>
+            wall.SourcePrimitiveIds.Contains("outer-concave-bottom")
+            && wall.WallType == WallType.Exterior
+            && wall.Evidence.Any(item => item.Contains("local outer boundary", StringComparison.OrdinalIgnoreCase)));
+        Assert.Contains(result.Walls, wall =>
+            wall.SourcePrimitiveIds.Contains("interior-partition")
+            && wall.WallType == WallType.Interior);
+    }
+
+    [Fact]
     public async Task ScanAsync_SuppressesUnsupportedSingleLineDetailInsideWallBodyContext()
     {
         var document = new PlanDocument(

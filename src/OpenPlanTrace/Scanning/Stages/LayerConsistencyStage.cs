@@ -42,6 +42,8 @@ internal sealed class LayerConsistencyStage : IPipelineStage
                 case LayerCategory.HVAC:
                 case LayerCategory.Plumbing:
                 case LayerCategory.FireSafety:
+                case LayerCategory.Furniture:
+                case LayerCategory.Fixture:
                     if (!AnyDetectionFromLayer(context.ObjectCandidates.Select(candidate => candidate.SourcePrimitiveIds), primitiveLayers, layer))
                     {
                         AddMismatch(context, primitiveLayers, layer, "layers.object_hint.no_objects", $"Layer evidence suggests {layer.LikelyCategory}, but no object candidates used primitives from this layer.", DiagnosticSeverity.Info);

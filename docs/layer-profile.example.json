@@ -27,6 +27,18 @@
     {
       "pattern": "F-FIRE-*",
       "category": "FireSafety"
+    },
+    {
+      "pattern": "A-FURN-*",
+      "category": "Furniture"
+    },
+    {
+      "pattern": "A-FIXTURE-*",
+      "category": "Fixture"
+    },
+    {
+      "pattern": "A-HATCH-*",
+      "category": "SurfacePattern"
     }
   ]
 }

@@ -406,9 +406,20 @@ h1 {
   background: rgba(208, 75, 36, 0.08);
 }
 
+.legend-row.wall-exterior .legend-swatch {
+  border-color: #1f5fbf;
+  background: rgba(31, 95, 191, 0.10);
+}
+
+.legend-row.wall-interior .legend-swatch {
+  border-color: #1f7a4d;
+  background: rgba(31, 122, 77, 0.10);
+}
+
+.legend-row.wall-unknown .legend-swatch,
 .legend-row.wall-main .legend-swatch {
-  border-color: #b82f42;
-  background: rgba(184, 47, 66, 0.08);
+  border-color: #7a5f18;
+  background: rgba(122, 95, 24, 0.10);
 }
 
 .legend-row.wall-excluded .legend-swatch {
@@ -1915,16 +1926,26 @@ h1 {
 }
 
 .wall {
-  stroke: var(--red);
-  stroke-width: 0.72;
+  stroke: #7a5f18;
+  stroke-width: 0.78;
   stroke-linecap: butt;
   vector-effect: non-scaling-stroke;
   cursor: pointer;
 }
 
-.wall-main,
-.wall-secondary {
-  stroke: #b82f42;
+.wall-exterior {
+  stroke: #1f5fbf;
+  stroke-width: 1.02;
+}
+
+.wall-interior {
+  stroke: #1f7a4d;
+  stroke-width: 0.92;
+}
+
+.wall-unknown {
+  stroke: #7a5f18;
+  stroke-width: 0.78;
 }
 
 .wall-object-like {
@@ -1940,9 +1961,8 @@ h1 {
 }
 
 .wall-review {
-  stroke: #b46610;
-  stroke-width: 1.35;
-  stroke-dasharray: 2 2;
+  stroke-width: 1.18;
+  stroke-dasharray: 3 2;
 }
 
 .wall-blocked {

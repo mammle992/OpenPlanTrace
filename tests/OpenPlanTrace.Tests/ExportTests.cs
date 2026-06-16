@@ -185,6 +185,240 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public async Task JsonExporter_WritesWallEvidenceMapAndRejectedWallLikeDetails()
+    {
+        var result = await CreateScanResultAsync();
+        var rejectedAssessment = new WallEvidenceWallAssessment(
+            "wall-door-leaf-noise",
+            1,
+            new PlanRect(196, 96, 8, 40),
+            WallEvidenceCategory.DoorOrOpeningSymbol,
+            Confidence.High,
+            PlacementReady: false,
+            RequiresReview: true,
+            RejectedAsNoise: true,
+            new[] { "wall-top" },
+            new[] { "wall evidence: rejected as door/opening leaf linework radially tied to swing arc door-swing" })
+        {
+            Decision = WallEvidenceDecision.Reject,
+            ScoreBreakdown = new WallEvidenceScoreBreakdown(
+                PositiveScore: 0.1,
+                NegativeScore: 0.9,
+                DecisionScore: -0.8,
+                PairSupportScore: 0,
+                LayerSupportScore: 0,
+                StructuralSupportScore: 0.1,
+                RecoverySupportScore: 0,
+                NoisePenalty: 0.9,
+                FragmentReviewPenalty: 0,
+                PositiveEvidence: new[] { "one endpoint supported by structural context" },
+                NegativeEvidence: new[] { "explicit non-wall evidence: DoorOrOpeningSymbol" })
+        };
+        var rejectedSegment = new WallEvidenceSegment(
+            "wall-evidence-segment:wall-door-leaf-noise",
+            1,
+            new PlanLineSegment(new PlanPoint(200, 100), new PlanPoint(200, 132)),
+            new PlanRect(196, 96, 8, 40),
+            WallEvidenceCategory.DoorOrOpeningSymbol,
+            Confidence.High,
+            "wall-door-leaf-noise",
+            new[] { "wall-top" },
+            rejectedAssessment.Evidence);
+        result = result with
+        {
+            WallEvidenceMap = new WallEvidenceMap(
+                new[] { rejectedSegment },
+                Array.Empty<WallEvidenceBand>(),
+                new[] { rejectedAssessment },
+                SourceCandidateWallCount: 3,
+                RecoveredCandidateWallCount: 1)
+        };
+
+        var json = PlanTraceJsonExporter.Serialize(result);
+        using var document = JsonDocument.Parse(json);
+        var wallEvidence = document.RootElement.GetProperty("wallEvidence");
+
+        Assert.Equal(1, wallEvidence.GetProperty("segmentCount").GetInt32());
+        Assert.Equal(1, wallEvidence.GetProperty("wallAssessmentCount").GetInt32());
+        Assert.Equal(3, wallEvidence.GetProperty("sourceCandidateWallCount").GetInt32());
+        Assert.Equal(1, wallEvidence.GetProperty("recoveredCandidateWallCount").GetInt32());
+        Assert.Equal(4, wallEvidence.GetProperty("totalCandidateWallCount").GetInt32());
+        Assert.Equal(1, wallEvidence.GetProperty("rejectedNoiseCount").GetInt32());
+        Assert.Equal(1, wallEvidence.GetProperty("rejectedDoorOrOpeningSymbolCount").GetInt32());
+        Assert.Equal(0, wallEvidence.GetProperty("rejectedSurfacePatternDetailCount").GetInt32());
+        Assert.Equal(0, wallEvidence.GetProperty("rejectedDimensionOrAnnotationCount").GetInt32());
+        Assert.Equal(0, wallEvidence.GetProperty("rejectedObjectOrFixtureDetailCount").GetInt32());
+        Assert.Contains("wall-door-leaf-noise", JsonStrings(wallEvidence.GetProperty("rejectedDoorOrOpeningSymbolWallIds")));
+        Assert.Empty(wallEvidence.GetProperty("rejectedSurfacePatternDetailWallIds").EnumerateArray());
+        Assert.Empty(wallEvidence.GetProperty("rejectedDimensionOrAnnotationWallIds").EnumerateArray());
+        Assert.Empty(wallEvidence.GetProperty("rejectedObjectOrFixtureDetailWallIds").EnumerateArray());
+        Assert.Equal(0, wallEvidence.GetProperty("acceptedWallCount").GetInt32());
+        Assert.Equal(0, wallEvidence.GetProperty("reviewDecisionWallCount").GetInt32());
+        Assert.Equal(1, wallEvidence.GetProperty("rejectedWallCount").GetInt32());
+        Assert.Equal(0, wallEvidence.GetProperty("placementReadyWallCount").GetInt32());
+        Assert.Equal(1, wallEvidence.GetProperty("reviewWallCount").GetInt32());
+        Assert.Empty(wallEvidence.GetProperty("acceptedWallIds").EnumerateArray());
+        Assert.Empty(wallEvidence.GetProperty("reviewWallIds").EnumerateArray());
+        Assert.Contains("wall-door-leaf-noise", JsonStrings(wallEvidence.GetProperty("rejectedWallIds")));
+
+        var segment = Assert.Single(wallEvidence.GetProperty("segments").EnumerateArray());
+        Assert.Equal("wall-door-leaf-noise", segment.GetProperty("wallId").GetString());
+        Assert.Equal("DoorOrOpeningSymbol", segment.GetProperty("category").GetString());
+        Assert.Equal("Reject", segment.GetProperty("decision").GetString());
+        Assert.Equal(-0.8, segment.GetProperty("scoreBreakdown").GetProperty("decisionScore").GetDouble(), precision: 3);
+        Assert.True(segment.GetProperty("rejectedAsNoise").GetBoolean());
+        Assert.Equal(JsonValueKind.Object, segment.GetProperty("line").ValueKind);
+        Assert.Equal(JsonValueKind.Object, segment.GetProperty("bounds").ValueKind);
+        Assert.Contains("Wall", JsonStrings(segment.GetProperty("sourceLayers")));
+
+        var assessment = Assert.Single(wallEvidence.GetProperty("wallAssessments").EnumerateArray());
+        Assert.Equal("Reject", assessment.GetProperty("decision").GetString());
+        Assert.Equal(0.9, assessment.GetProperty("scoreBreakdown").GetProperty("noisePenalty").GetDouble(), precision: 3);
+        Assert.Contains(
+            JsonStrings(assessment.GetProperty("scoreBreakdown").GetProperty("negativeEvidence")),
+            item => item.Contains("DoorOrOpeningSymbol", StringComparison.OrdinalIgnoreCase));
+
+        var rejected = Assert.Single(wallEvidence.GetProperty("rejectedWallLikeDetails").EnumerateArray());
+        Assert.Equal("wall-door-leaf-noise", rejected.GetProperty("wallId").GetString());
+        Assert.Equal("DoorOrOpeningSymbol", rejected.GetProperty("category").GetString());
+        Assert.Equal("Reject", rejected.GetProperty("decision").GetString());
+        Assert.Equal(0.1, rejected.GetProperty("scoreBreakdown").GetProperty("structuralSupportScore").GetDouble(), precision: 3);
+        Assert.Equal(JsonValueKind.Object, rejected.GetProperty("bounds").ValueKind);
+        Assert.Equal(JsonValueKind.Object, rejected.GetProperty("centerLine").ValueKind);
+        Assert.Contains("wall-evidence-segment:wall-door-leaf-noise", JsonStrings(rejected.GetProperty("segmentIds")));
+        Assert.Contains("wall-top", JsonStrings(rejected.GetProperty("sourcePrimitiveIds")));
+        Assert.Contains("Wall", JsonStrings(rejected.GetProperty("sourceLayers")));
+        Assert.Contains(
+            JsonStrings(rejected.GetProperty("evidence")),
+            item => item.Contains("radially tied to swing arc", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task JsonExporter_WritesWallTopologyPreparationTrustBuckets()
+    {
+        var result = await CreateScanResultAsync();
+        var acceptedWallId = result.Walls[0].Id;
+        var reviewWallId = result.Walls[1].Id;
+        var unassessedWallId = result.Walls[2].Id;
+        result = result with
+        {
+            WallTopologyPreparation = new WallTopologyPreparation(
+                new[] { acceptedWallId, reviewWallId, unassessedWallId },
+                new[]
+                {
+                    new WallTopologyRejectedWall(
+                        "wall-door-leaf-noise",
+                        1,
+                        new PlanRect(196, 96, 8, 40),
+                        WallEvidenceCategory.DoorOrOpeningSymbol,
+                        WallEvidenceDecision.Reject,
+                        RejectedAsNoise: true,
+                        new[] { "wall-top" },
+                        new[] { "wall topology preparation: rejected door/opening detail excluded from graph input" })
+                },
+                new[] { acceptedWallId },
+                new[] { reviewWallId },
+                new[] { unassessedWallId })
+        };
+
+        var json = PlanTraceJsonExporter.Serialize(result);
+        using var document = JsonDocument.Parse(json);
+        var preparation = document.RootElement.GetProperty("wallTopologyPreparation");
+
+        Assert.Equal(3, preparation.GetProperty("graphWallCount").GetInt32());
+        Assert.Equal(1, preparation.GetProperty("acceptedGraphWallCount").GetInt32());
+        Assert.Equal(1, preparation.GetProperty("reviewGraphWallCount").GetInt32());
+        Assert.Equal(1, preparation.GetProperty("unassessedGraphWallCount").GetInt32());
+        Assert.Equal(2, preparation.GetProperty("automaticCoordinateRepairWallCount").GetInt32());
+        Assert.Equal(1, preparation.GetProperty("rejectedWallCount").GetInt32());
+        Assert.Equal(1, preparation.GetProperty("rejectedAssessmentCount").GetInt32());
+        Assert.Equal(1, preparation.GetProperty("doorOrOpeningSymbolCount").GetInt32());
+        Assert.Equal(0, preparation.GetProperty("surfacePatternDetailCount").GetInt32());
+        Assert.Contains(acceptedWallId, JsonStrings(preparation.GetProperty("graphWallIds")));
+        Assert.Contains(acceptedWallId, JsonStrings(preparation.GetProperty("acceptedGraphWallIds")));
+        Assert.Contains(reviewWallId, JsonStrings(preparation.GetProperty("reviewGraphWallIds")));
+        Assert.Contains(unassessedWallId, JsonStrings(preparation.GetProperty("unassessedGraphWallIds")));
+        Assert.Contains(acceptedWallId, JsonStrings(preparation.GetProperty("automaticCoordinateRepairWallIds")));
+        Assert.Contains(unassessedWallId, JsonStrings(preparation.GetProperty("automaticCoordinateRepairWallIds")));
+        Assert.DoesNotContain(reviewWallId, JsonStrings(preparation.GetProperty("automaticCoordinateRepairWallIds")));
+        Assert.Contains("wall-door-leaf-noise", JsonStrings(preparation.GetProperty("rejectedWallIds")));
+
+        var rejected = Assert.Single(preparation.GetProperty("rejectedWalls").EnumerateArray());
+        Assert.Equal("wall-door-leaf-noise", rejected.GetProperty("wallId").GetString());
+        Assert.Equal("DoorOrOpeningSymbol", rejected.GetProperty("category").GetString());
+        Assert.Equal("Reject", rejected.GetProperty("decision").GetString());
+        Assert.True(rejected.GetProperty("rejectedAsNoise").GetBoolean());
+        Assert.Contains("wall-top", JsonStrings(rejected.GetProperty("sourcePrimitiveIds")));
+        Assert.Contains("Wall", JsonStrings(rejected.GetProperty("sourceLayers")));
+        Assert.Contains(
+            JsonStrings(rejected.GetProperty("evidence")),
+            item => item.Contains("excluded from graph input", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            JsonStrings(preparation.GetProperty("evidence")),
+            item => item.Contains("automatic coordinate repair allowed walls: 2", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void WallEvidenceMap_ExposesStableDecisionBuckets()
+    {
+        var evidenceMap = new WallEvidenceMap(
+            Array.Empty<WallEvidenceSegment>(),
+            Array.Empty<WallEvidenceBand>(),
+            new[]
+            {
+                Assessment("wall-z", WallEvidenceDecision.Accept),
+                Assessment("wall-a", WallEvidenceDecision.Accept),
+                Assessment("wall-a", WallEvidenceDecision.Accept),
+                Assessment("wall-review", WallEvidenceDecision.Review),
+                Assessment("wall-reject", WallEvidenceDecision.Reject, WallEvidenceCategory.DoorOrOpeningSymbol),
+                Assessment("wall-surface-pattern", WallEvidenceDecision.Reject, WallEvidenceCategory.SurfacePatternDetail),
+                Assessment("wall-dimension", WallEvidenceDecision.Reject, WallEvidenceCategory.DimensionOrAnnotation),
+                Assessment("wall-object", WallEvidenceDecision.Reject, WallEvidenceCategory.ObjectOrFixtureDetail)
+            },
+            SourceCandidateWallCount: 7,
+            RecoveredCandidateWallCount: 2);
+
+        Assert.Equal(7, evidenceMap.SourceCandidateWallCount);
+        Assert.Equal(2, evidenceMap.RecoveredCandidateWallCount);
+        Assert.Equal(9, evidenceMap.TotalCandidateWallCount);
+        Assert.Equal(3, evidenceMap.AcceptedWallCount);
+        Assert.Equal(1, evidenceMap.ReviewDecisionWallCount);
+        Assert.Equal(4, evidenceMap.RejectedWallCount);
+        Assert.Equal(1, evidenceMap.RejectedDoorOrOpeningSymbolCount);
+        Assert.Equal(1, evidenceMap.RejectedSurfacePatternDetailCount);
+        Assert.Equal(1, evidenceMap.RejectedDimensionOrAnnotationCount);
+        Assert.Equal(1, evidenceMap.RejectedObjectOrFixtureDetailCount);
+        Assert.Equal(new[] { "wall-reject" }, evidenceMap.RejectedDoorOrOpeningSymbolWallIds);
+        Assert.Equal(new[] { "wall-surface-pattern" }, evidenceMap.RejectedSurfacePatternDetailWallIds);
+        Assert.Equal(new[] { "wall-dimension" }, evidenceMap.RejectedDimensionOrAnnotationWallIds);
+        Assert.Equal(new[] { "wall-object" }, evidenceMap.RejectedObjectOrFixtureDetailWallIds);
+        Assert.Equal(new[] { "wall-a", "wall-z" }, evidenceMap.AcceptedWallIds);
+        Assert.Equal(new[] { "wall-review" }, evidenceMap.ReviewWallIds);
+        Assert.Equal(
+            new[] { "wall-dimension", "wall-object", "wall-reject", "wall-surface-pattern" },
+            evidenceMap.RejectedWallIds);
+
+        static WallEvidenceWallAssessment Assessment(
+            string wallId,
+            WallEvidenceDecision decision,
+            WallEvidenceCategory category = WallEvidenceCategory.StrongWallBody) =>
+            new(
+                wallId,
+                1,
+                new PlanRect(0, 0, 10, 10),
+                category,
+                Confidence.High,
+                PlacementReady: decision == WallEvidenceDecision.Accept,
+                RequiresReview: decision == WallEvidenceDecision.Review,
+                RejectedAsNoise: decision == WallEvidenceDecision.Reject,
+                new[] { $"{wallId}-primitive" },
+                new[] { "test wall evidence" })
+            {
+                Decision = decision
+            };
+    }
+
+    [Fact]
     public async Task JsonExporter_ReportsDwgAdapterBackedSourceReadiness()
     {
         var result = await CreateScanResultAsync();
@@ -659,6 +893,7 @@ public sealed class ExportTests
         Assert.Equal("MainStructural", wall.GetProperty("wallComponentKind").GetString());
         Assert.False(string.IsNullOrWhiteSpace(wall.GetProperty("wallType").GetString()));
         Assert.True(wall.GetProperty("centerLine").GetProperty("start").GetProperty("x").GetDouble() > 0);
+        Assert.Equal(JsonValueKind.Array, wall.GetProperty("wallGraphRepairCandidateIds").ValueKind);
         var evidenceAssessment = wall.GetProperty("evidenceAssessment");
         Assert.False(string.IsNullOrWhiteSpace(evidenceAssessment.GetProperty("category").GetString()));
         Assert.True(evidenceAssessment.GetProperty("placementReady").GetBoolean());
@@ -754,6 +989,178 @@ public sealed class ExportTests
         Assert.Contains(
             reliability.GetProperty("reasons").EnumerateArray(),
             reason => reason.GetString()?.Contains("wall evidence not placement-ready", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
+    public async Task PlacementExporter_MarksRoomsForReviewWhenBoundaryWallEvidenceRequiresReview()
+    {
+        var result = await CreateScanResultAsync();
+        var roomRegion = result.Rooms.First(room => room.WallIds.Count > 0);
+        var boundaryWallId = roomRegion.WallIds[0];
+        var boundaryWall = result.Walls.Single(wall => wall.Id == boundaryWallId);
+        result = result with
+        {
+            WallEvidenceMap = new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                new[]
+                {
+                    new WallEvidenceWallAssessment(
+                        boundaryWall.Id,
+                        boundaryWall.PageNumber,
+                        boundaryWall.Bounds,
+                        WallEvidenceCategory.WeakSingleLine,
+                        new Confidence(0.48),
+                        PlacementReady: false,
+                        RequiresReview: true,
+                        RejectedAsNoise: false,
+                        SourcePrimitiveIds: boundaryWall.SourcePrimitiveIds,
+                        Evidence: new[] { "test evidence: boundary wall requires review" })
+                    {
+                        Decision = WallEvidenceDecision.Review
+                    }
+                })
+        };
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var room = document.RootElement
+            .GetProperty("rooms")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == roomRegion.Id);
+
+        var reliability = room.GetProperty("reliability");
+        Assert.False(reliability.GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.True(reliability.GetProperty("requiresReview").GetBoolean());
+        Assert.Contains(
+            reliability.GetProperty("reasons").EnumerateArray(),
+            reason => reason.GetString()?.Contains("room boundary uses review-required wall evidence", StringComparison.OrdinalIgnoreCase) == true
+                && reason.GetString()?.Contains(boundaryWallId, StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public async Task PlacementExporter_MarksOpeningsForReviewWhenHostWallEvidenceRequiresReview()
+    {
+        var result = await CreateScanResultAsync();
+        var hostWall = result.Walls[0];
+        var hostWallId = hostWall.Id;
+        var openingCandidate = AnchoredOpening("opening-review-host-wall", hostWall);
+        result = result with
+        {
+            Openings = result.Openings
+                .Concat(new[] { openingCandidate })
+                .ToArray(),
+            WallEvidenceMap = new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                new[]
+                {
+                    new WallEvidenceWallAssessment(
+                        hostWall.Id,
+                        hostWall.PageNumber,
+                        hostWall.Bounds,
+                        WallEvidenceCategory.WeakSingleLine,
+                        new Confidence(0.47),
+                        PlacementReady: false,
+                        RequiresReview: true,
+                        RejectedAsNoise: false,
+                        SourcePrimitiveIds: hostWall.SourcePrimitiveIds,
+                        Evidence: new[] { "test evidence: opening host wall requires review" })
+                    {
+                        Decision = WallEvidenceDecision.Review
+                    }
+                })
+        };
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var opening = document.RootElement
+            .GetProperty("openings")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == openingCandidate.Id);
+
+        var reliability = opening.GetProperty("reliability");
+        Assert.False(reliability.GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.True(reliability.GetProperty("requiresReview").GetBoolean());
+        Assert.Contains(
+            reliability.GetProperty("reasons").EnumerateArray(),
+            reason => reason.GetString()?.Contains("opening placement uses review-required wall evidence", StringComparison.OrdinalIgnoreCase) == true
+                && reason.GetString()?.Contains(hostWallId, StringComparison.Ordinal) == true);
+
+        static OpeningCandidate AnchoredOpening(string id, WallSegment hostWall)
+        {
+            const double startParameter = 0.35;
+            const double endParameter = 0.45;
+            const double centerParameter = (startParameter + endParameter) / 2.0;
+            var referenceLine = hostWall.CenterLine;
+            var startPoint = referenceLine.PointAt(startParameter);
+            var endPoint = referenceLine.PointAt(endParameter);
+            var openingLine = new PlanLineSegment(startPoint, endPoint);
+            var length = referenceLine.Length;
+            var openingLength = openingLine.Length;
+            var alongVector = new PlanVector(
+                referenceLine.End.X - referenceLine.Start.X,
+                referenceLine.End.Y - referenceLine.Start.Y).Normalize();
+            var normalVector = new PlanVector(-alongVector.Y, alongVector.X);
+            var depth = Math.Max(hostWall.Thickness, 4);
+            var footprint = openingLine.Bounds.Inflate(depth / 2.0);
+
+            return new OpeningCandidate(
+                id,
+                hostWall.PageNumber,
+                OpeningType.Door,
+                footprint,
+                Confidence.High)
+            {
+                HostWallIds = [hostWall.Id],
+                CenterLine = openingLine,
+                Orientation = openingLine.IsHorizontal()
+                    ? OpeningOrientation.Horizontal
+                    : openingLine.IsVertical()
+                        ? OpeningOrientation.Vertical
+                        : OpeningOrientation.Unknown,
+                Operation = OpeningOperation.Hinged,
+                Placement = new OpeningPlacement(
+                    hostWall.Id,
+                    [hostWall.Id],
+                    referenceLine,
+                    startPoint,
+                    endPoint,
+                    startParameter * length,
+                    endParameter * length,
+                    centerParameter * length,
+                    openingLength,
+                    footprint,
+                    [
+                        new PlanPoint(footprint.Left, footprint.Top),
+                        new PlanPoint(footprint.Right, footprint.Top),
+                        new PlanPoint(footprint.Right, footprint.Bottom),
+                        new PlanPoint(footprint.Left, footprint.Bottom)
+                    ],
+                    new PlanLineSegment(startPoint, startPoint.Translate(normalVector.X * depth, normalVector.Y * depth)),
+                    new PlanLineSegment(endPoint, endPoint.Translate(normalVector.X * depth, normalVector.Y * depth)),
+                    depth,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    startParameter,
+                    endParameter,
+                    centerParameter,
+                    alongVector,
+                    normalVector,
+                    0,
+                    Confidence.High,
+                    ["synthetic opening placement for wall evidence reliability test"]),
+                SourcePrimitiveIds = ["opening-review-host-wall-source"],
+                Evidence = ["synthetic anchored opening"]
+            };
+        }
     }
 
     [Fact]
@@ -860,6 +1267,27 @@ public sealed class ExportTests
                                 ["hostWallId"] = "page:1:wall:2",
                                 ["wallIds"] = "page:1:wall:1,page:1:wall:2"
                             }
+                        },
+                        new PlanDiagnostic(
+                            "wall_graph.endpoint_overrun.review",
+                            DiagnosticSeverity.Warning,
+                            "wall-graph",
+                            "A wall endpoint extends beyond a supported junction but was too long to trim automatically.")
+                        {
+                            Scope = DiagnosticScope.Detection,
+                            PageNumber = 1,
+                            Region = new PlanRect(88, 92, 28, 24),
+                            Confidence = Confidence.Medium,
+                            SourcePrimitiveIds = new[] { "wall-top", "wall-left" },
+                            Properties = new Dictionary<string, string>
+                            {
+                                ["overrunKind"] = "EndpointOverrun",
+                                ["overrunDistance"] = "80",
+                                ["nodeId"] = "page:1:node:6",
+                                ["targetNodeId"] = "page:1:node:1",
+                                ["wallId"] = "page:1:wall:1",
+                                ["wallIds"] = "page:1:wall:1,page:1:wall:4"
+                            }
                         }
                     })
                     .ToArray()
@@ -909,6 +1337,14 @@ public sealed class ExportTests
         Assert.Equal("EndpointToWall", wallGap.GetProperty("properties").GetProperty("gapKind").GetString());
         Assert.Contains("wall-top", JsonStrings(wallGap.GetProperty("sourcePrimitiveIds")));
         Assert.Contains("unsnapped wall junction", wallGap.GetProperty("recommendedAction").GetString());
+
+        var wallOverrun = Assert.Single(issues, issue =>
+            issue.GetProperty("code").GetString() == "placement.review.wall_graph_endpoint_overrun");
+        Assert.Equal(88, wallOverrun.GetProperty("bounds").GetProperty("x").GetDouble());
+        Assert.Equal(880, wallOverrun.GetProperty("boundsMillimeters").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal("EndpointOverrun", wallOverrun.GetProperty("properties").GetProperty("overrunKind").GetString());
+        Assert.Contains("wall-top", JsonStrings(wallOverrun.GetProperty("sourcePrimitiveIds")));
+        Assert.Contains("endpoint-overrun trim", wallOverrun.GetProperty("recommendedAction").GetString());
 
         var unanchoredOpening = Assert.Single(issues, issue =>
             issue.GetProperty("code").GetString() == "placement.opening.unanchored"
@@ -1180,6 +1616,27 @@ public sealed class ExportTests
                                 ["hostWallId"] = "page:1:wall:2",
                                 ["wallIds"] = "page:1:wall:1,page:1:wall:2"
                             }
+                        },
+                        new PlanDiagnostic(
+                            "wall_graph.endpoint_overrun.review",
+                            DiagnosticSeverity.Warning,
+                            "wall-graph",
+                            "A wall endpoint extends beyond a supported junction but was too long to trim automatically.")
+                        {
+                            Scope = DiagnosticScope.Detection,
+                            PageNumber = 1,
+                            Region = new PlanRect(88, 92, 28, 24),
+                            Confidence = Confidence.Medium,
+                            SourcePrimitiveIds = new[] { "wall-top", "wall-left" },
+                            Properties = new Dictionary<string, string>
+                            {
+                                ["overrunKind"] = "EndpointOverrun",
+                                ["overrunDistance"] = "80",
+                                ["nodeId"] = "page:1:node:6",
+                                ["targetNodeId"] = "page:1:node:1",
+                                ["wallId"] = "page:1:wall:1",
+                                ["wallIds"] = "page:1:wall:1,page:1:wall:4"
+                            }
                         }
                     })
                     .ToArray()
@@ -1227,6 +1684,13 @@ public sealed class ExportTests
             && item.GetProperty("properties").GetProperty("reviewQueueRank").GetString() == "1"
             && item.GetProperty("properties").GetProperty("reviewQueueReason").GetString()!.Contains("gap 12 drawing unit", StringComparison.Ordinal)
             && item.GetProperty("recommendedAction").GetString()?.Contains("wall graph topology", StringComparison.Ordinal) == true);
+        Assert.Contains(queue, item =>
+            item.GetProperty("kind").GetString() == "WallGraphGapReview"
+            && item.GetProperty("itemId").GetString() == "wall_graph.endpoint_overrun.review"
+            && item.GetProperty("bounds").GetProperty("x").GetDouble() == 88
+            && item.GetProperty("properties").GetProperty("overrunKind").GetString() == "EndpointOverrun"
+            && item.GetProperty("properties").GetProperty("reviewQueueReason").GetString()!.Contains("overrun 80 drawing unit", StringComparison.Ordinal)
+            && item.GetProperty("recommendedAction").GetString()?.Contains("endpoint-overrun trim", StringComparison.Ordinal) == true);
         Assert.All(queue, item =>
         {
             Assert.False(string.IsNullOrWhiteSpace(item.GetProperty("recommendedAction").GetString()));

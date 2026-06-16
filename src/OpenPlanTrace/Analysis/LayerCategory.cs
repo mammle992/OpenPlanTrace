@@ -15,5 +15,8 @@ public enum LayerCategory
     Electrical,
     HVAC,
     Plumbing,
-    FireSafety
+    FireSafety,
+    Furniture,
+    Fixture,
+    SurfacePattern
 }

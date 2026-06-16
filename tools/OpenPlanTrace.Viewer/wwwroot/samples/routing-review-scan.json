@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "openplantrace.scan.v62",
+  "schemaVersion": "openplantrace.scan.v65",
   "generatedAt": "2026-06-09T12:00:00Z",
   "document": {
     "id": "viewer-routing-review-smoke",
@@ -373,6 +373,447 @@
       "sourceLayers": ["A-WALL"]
     }
   ],
+  "wallEvidence": {
+    "segmentCount": 4,
+    "bandCount": 0,
+    "wallAssessmentCount": 4,
+    "sourceCandidateWallCount": 4,
+    "recoveredCandidateWallCount": 0,
+    "totalCandidateWallCount": 4,
+    "strongWallBodyCount": 0,
+    "mediumWallBodyCount": 0,
+    "weakSingleLineCount": 0,
+    "recoveredWallBodyCount": 0,
+    "rejectedNoiseCount": 0,
+    "rejectedDoorOrOpeningSymbolCount": 0,
+    "rejectedSurfacePatternDetailCount": 0,
+    "rejectedDimensionOrAnnotationCount": 0,
+    "rejectedObjectOrFixtureDetailCount": 0,
+    "rejectedDoorOrOpeningSymbolWallIds": [],
+    "rejectedSurfacePatternDetailWallIds": [],
+    "rejectedDimensionOrAnnotationWallIds": [],
+    "rejectedObjectOrFixtureDetailWallIds": [],
+    "acceptedWallCount": 0,
+    "reviewDecisionWallCount": 4,
+    "rejectedWallCount": 0,
+    "placementReadyWallCount": 0,
+    "reviewWallCount": 0,
+    "acceptedWallIds": [],
+    "reviewWallIds": [
+      "wall-bottom",
+      "wall-left",
+      "wall-right",
+      "wall-top"
+    ],
+    "rejectedWallIds": [],
+    "segments": [
+      {
+        "id": "wall-evidence-segment:wall-top",
+        "pageNumber": 1,
+        "line": {
+          "start": {
+            "x": 100,
+            "y": 90
+          },
+          "end": {
+            "x": 520,
+            "y": 90
+          }
+        },
+        "bounds": {
+          "x": 100,
+          "y": 86,
+          "width": 420,
+          "height": 8
+        },
+        "category": "Unknown",
+        "confidence": 0.9,
+        "wallId": "wall-top",
+        "decision": "Review",
+        "scoreBreakdown": {
+          "positiveScore": 0.25,
+          "negativeScore": 0,
+          "decisionScore": 0.25,
+          "pairSupportScore": 0,
+          "layerSupportScore": 0.25,
+          "structuralSupportScore": 0,
+          "recoverySupportScore": 0,
+          "noisePenalty": 0,
+          "fragmentReviewPenalty": 0,
+          "positiveEvidence": [
+            "wall or structural source layer"
+          ],
+          "negativeEvidence": []
+        },
+        "placementReady": false,
+        "requiresReview": false,
+        "rejectedAsNoise": false,
+        "sourcePrimitiveIds": [
+          "wall-top"
+        ],
+        "sourceLayers": [
+          "A-WALL"
+        ],
+        "evidence": [
+          "sample structural wall"
+        ]
+      },
+      {
+        "id": "wall-evidence-segment:wall-right",
+        "pageNumber": 1,
+        "line": {
+          "start": {
+            "x": 520,
+            "y": 90
+          },
+          "end": {
+            "x": 520,
+            "y": 330
+          }
+        },
+        "bounds": {
+          "x": 516,
+          "y": 90,
+          "width": 8,
+          "height": 240
+        },
+        "category": "Unknown",
+        "confidence": 0.9,
+        "wallId": "wall-right",
+        "decision": "Review",
+        "scoreBreakdown": {
+          "positiveScore": 0.25,
+          "negativeScore": 0,
+          "decisionScore": 0.25,
+          "pairSupportScore": 0,
+          "layerSupportScore": 0.25,
+          "structuralSupportScore": 0,
+          "recoverySupportScore": 0,
+          "noisePenalty": 0,
+          "fragmentReviewPenalty": 0,
+          "positiveEvidence": [
+            "wall or structural source layer"
+          ],
+          "negativeEvidence": []
+        },
+        "placementReady": false,
+        "requiresReview": false,
+        "rejectedAsNoise": false,
+        "sourcePrimitiveIds": [
+          "wall-right"
+        ],
+        "sourceLayers": [
+          "A-WALL"
+        ],
+        "evidence": [
+          "sample structural wall"
+        ]
+      },
+      {
+        "id": "wall-evidence-segment:wall-bottom",
+        "pageNumber": 1,
+        "line": {
+          "start": {
+            "x": 520,
+            "y": 330
+          },
+          "end": {
+            "x": 100,
+            "y": 330
+          }
+        },
+        "bounds": {
+          "x": 100,
+          "y": 326,
+          "width": 420,
+          "height": 8
+        },
+        "category": "Unknown",
+        "confidence": 0.9,
+        "wallId": "wall-bottom",
+        "decision": "Review",
+        "scoreBreakdown": {
+          "positiveScore": 0.25,
+          "negativeScore": 0,
+          "decisionScore": 0.25,
+          "pairSupportScore": 0,
+          "layerSupportScore": 0.25,
+          "structuralSupportScore": 0,
+          "recoverySupportScore": 0,
+          "noisePenalty": 0,
+          "fragmentReviewPenalty": 0,
+          "positiveEvidence": [
+            "wall or structural source layer"
+          ],
+          "negativeEvidence": []
+        },
+        "placementReady": false,
+        "requiresReview": false,
+        "rejectedAsNoise": false,
+        "sourcePrimitiveIds": [
+          "wall-bottom"
+        ],
+        "sourceLayers": [
+          "A-WALL"
+        ],
+        "evidence": [
+          "sample structural wall"
+        ]
+      },
+      {
+        "id": "wall-evidence-segment:wall-left",
+        "pageNumber": 1,
+        "line": {
+          "start": {
+            "x": 100,
+            "y": 330
+          },
+          "end": {
+            "x": 100,
+            "y": 90
+          }
+        },
+        "bounds": {
+          "x": 96,
+          "y": 90,
+          "width": 8,
+          "height": 240
+        },
+        "category": "Unknown",
+        "confidence": 0.9,
+        "wallId": "wall-left",
+        "decision": "Review",
+        "scoreBreakdown": {
+          "positiveScore": 0.25,
+          "negativeScore": 0,
+          "decisionScore": 0.25,
+          "pairSupportScore": 0,
+          "layerSupportScore": 0.25,
+          "structuralSupportScore": 0,
+          "recoverySupportScore": 0,
+          "noisePenalty": 0,
+          "fragmentReviewPenalty": 0,
+          "positiveEvidence": [
+            "wall or structural source layer"
+          ],
+          "negativeEvidence": []
+        },
+        "placementReady": false,
+        "requiresReview": false,
+        "rejectedAsNoise": false,
+        "sourcePrimitiveIds": [
+          "wall-left"
+        ],
+        "sourceLayers": [
+          "A-WALL"
+        ],
+        "evidence": [
+          "sample structural wall"
+        ]
+      }
+    ],
+    "bands": [],
+    "wallAssessments": [
+      {
+        "wallId": "wall-top",
+        "pageNumber": 1,
+        "bounds": {
+          "x": 100,
+          "y": 86,
+          "width": 420,
+          "height": 8
+        },
+        "category": "Unknown",
+        "confidence": 0.9,
+        "decision": "Review",
+        "scoreBreakdown": {
+          "positiveScore": 0.25,
+          "negativeScore": 0,
+          "decisionScore": 0.25,
+          "pairSupportScore": 0,
+          "layerSupportScore": 0.25,
+          "structuralSupportScore": 0,
+          "recoverySupportScore": 0,
+          "noisePenalty": 0,
+          "fragmentReviewPenalty": 0,
+          "positiveEvidence": [
+            "wall or structural source layer"
+          ],
+          "negativeEvidence": []
+        },
+        "placementReady": false,
+        "requiresReview": false,
+        "rejectedAsNoise": false,
+        "sourcePrimitiveIds": [
+          "wall-top"
+        ],
+        "sourceLayers": [
+          "A-WALL"
+        ],
+        "evidence": [
+          "sample structural wall"
+        ]
+      },
+      {
+        "wallId": "wall-right",
+        "pageNumber": 1,
+        "bounds": {
+          "x": 516,
+          "y": 90,
+          "width": 8,
+          "height": 240
+        },
+        "category": "Unknown",
+        "confidence": 0.9,
+        "decision": "Review",
+        "scoreBreakdown": {
+          "positiveScore": 0.25,
+          "negativeScore": 0,
+          "decisionScore": 0.25,
+          "pairSupportScore": 0,
+          "layerSupportScore": 0.25,
+          "structuralSupportScore": 0,
+          "recoverySupportScore": 0,
+          "noisePenalty": 0,
+          "fragmentReviewPenalty": 0,
+          "positiveEvidence": [
+            "wall or structural source layer"
+          ],
+          "negativeEvidence": []
+        },
+        "placementReady": false,
+        "requiresReview": false,
+        "rejectedAsNoise": false,
+        "sourcePrimitiveIds": [
+          "wall-right"
+        ],
+        "sourceLayers": [
+          "A-WALL"
+        ],
+        "evidence": [
+          "sample structural wall"
+        ]
+      },
+      {
+        "wallId": "wall-bottom",
+        "pageNumber": 1,
+        "bounds": {
+          "x": 100,
+          "y": 326,
+          "width": 420,
+          "height": 8
+        },
+        "category": "Unknown",
+        "confidence": 0.9,
+        "decision": "Review",
+        "scoreBreakdown": {
+          "positiveScore": 0.25,
+          "negativeScore": 0,
+          "decisionScore": 0.25,
+          "pairSupportScore": 0,
+          "layerSupportScore": 0.25,
+          "structuralSupportScore": 0,
+          "recoverySupportScore": 0,
+          "noisePenalty": 0,
+          "fragmentReviewPenalty": 0,
+          "positiveEvidence": [
+            "wall or structural source layer"
+          ],
+          "negativeEvidence": []
+        },
+        "placementReady": false,
+        "requiresReview": false,
+        "rejectedAsNoise": false,
+        "sourcePrimitiveIds": [
+          "wall-bottom"
+        ],
+        "sourceLayers": [
+          "A-WALL"
+        ],
+        "evidence": [
+          "sample structural wall"
+        ]
+      },
+      {
+        "wallId": "wall-left",
+        "pageNumber": 1,
+        "bounds": {
+          "x": 96,
+          "y": 90,
+          "width": 8,
+          "height": 240
+        },
+        "category": "Unknown",
+        "confidence": 0.9,
+        "decision": "Review",
+        "scoreBreakdown": {
+          "positiveScore": 0.25,
+          "negativeScore": 0,
+          "decisionScore": 0.25,
+          "pairSupportScore": 0,
+          "layerSupportScore": 0.25,
+          "structuralSupportScore": 0,
+          "recoverySupportScore": 0,
+          "noisePenalty": 0,
+          "fragmentReviewPenalty": 0,
+          "positiveEvidence": [
+            "wall or structural source layer"
+          ],
+          "negativeEvidence": []
+        },
+        "placementReady": false,
+        "requiresReview": false,
+        "rejectedAsNoise": false,
+        "sourcePrimitiveIds": [
+          "wall-left"
+        ],
+        "sourceLayers": [
+          "A-WALL"
+        ],
+        "evidence": [
+          "sample structural wall"
+        ]
+      }
+    ],
+    "rejectedWallLikeDetails": []
+  },
+  "wallTopologyPreparation": {
+    "graphWallCount": 4,
+    "acceptedGraphWallCount": 0,
+    "reviewGraphWallCount": 4,
+    "unassessedGraphWallCount": 0,
+    "automaticCoordinateRepairWallCount": 0,
+    "rejectedWallCount": 0,
+    "rejectedAssessmentCount": 0,
+    "doorOrOpeningSymbolCount": 0,
+    "surfacePatternDetailCount": 0,
+    "dimensionOrAnnotationCount": 0,
+    "objectOrFixtureDetailCount": 0,
+    "graphWallIds": [
+      "wall-bottom",
+      "wall-left",
+      "wall-right",
+      "wall-top"
+    ],
+    "acceptedGraphWallIds": [],
+    "reviewGraphWallIds": [
+      "wall-bottom",
+      "wall-left",
+      "wall-right",
+      "wall-top"
+    ],
+    "unassessedGraphWallIds": [],
+    "automaticCoordinateRepairWallIds": [],
+    "rejectedWallIds": [],
+    "rejectedWalls": [],
+    "evidence": [
+      "graph wall input: 4",
+      "accepted graph walls: 0",
+      "review-required graph walls: 4",
+      "unassessed graph walls: 0",
+      "automatic coordinate repair allowed walls: 0"
+    ]
+  },
   "wallGraph": {
     "nodes": [
       { "id": "node-a", "pageNumber": 1, "position": { "x": 100, "y": 90 }, "kind": "Corner", "degree": 2, "directions": ["Right", "Down"], "confidence": 0.88, "evidence": ["sample corner"] },

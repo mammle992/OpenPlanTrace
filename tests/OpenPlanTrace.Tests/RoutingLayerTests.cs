@@ -199,6 +199,44 @@ public sealed class RoutingLayerTests
             item => item == "short unreferenced wall fragments suppressed as routing barriers: 0");
     }
 
+    [Fact]
+    public void RoutingLayer_SuppressesUnprotectedReviewRequiredWallEvidence()
+    {
+        var acceptedWall = Wall("accepted-wall", 100, 100, 300, 100);
+        var reviewWall = Wall("review-wall", 140, 140, 140, 240);
+        var result = SyntheticResult(
+            [acceptedWall, reviewWall],
+            WallGraph.Empty,
+            rooms: Array.Empty<RoomRegion>(),
+            wallEvidenceMap: WallEvidenceMapFor(ReviewAssessment(reviewWall)));
+
+        var routing = result.RoutingLayer;
+
+        Assert.Contains(routing.Barriers, barrier => barrier.SourceId == acceptedWall.Id);
+        Assert.DoesNotContain(routing.Barriers, barrier => barrier.SourceId == reviewWall.Id);
+        Assert.Contains(
+            routing.Evidence,
+            item => item == "wall-evidence review barriers suppressed: 1");
+    }
+
+    [Fact]
+    public void RoutingLayer_KeepsReviewRequiredWallEvidenceWhenProtectedByRoomTopology()
+    {
+        var reviewWall = Wall("review-wall", 100, 100, 300, 100);
+        var result = SyntheticResult(
+            [reviewWall],
+            WallGraph.Empty,
+            rooms: [Room("room-1", [reviewWall.Id])],
+            wallEvidenceMap: WallEvidenceMapFor(ReviewAssessment(reviewWall)));
+
+        var routing = result.RoutingLayer;
+
+        Assert.Contains(routing.Barriers, barrier => barrier.SourceId == reviewWall.Id);
+        Assert.Contains(
+            routing.Evidence,
+            item => item == "wall-evidence review barriers suppressed: 0");
+    }
+
     private static PlanScanResult SyntheticResult(RoomRegion? room, bool includeShortWallInStructuralComponent)
     {
         var walls = new[]
@@ -268,7 +306,11 @@ public sealed class RoutingLayerTests
                 Array.Empty<PlanDiagnostic>()));
     }
 
-    private static PlanScanResult SyntheticResult(IReadOnlyList<WallSegment> walls, WallGraph wallGraph)
+    private static PlanScanResult SyntheticResult(
+        IReadOnlyList<WallSegment> walls,
+        WallGraph wallGraph,
+        IReadOnlyList<RoomRegion>? rooms = null,
+        WallEvidenceMap? wallEvidenceMap = null)
     {
         var now = DateTimeOffset.UtcNow;
         return new PlanScanResult(
@@ -287,7 +329,7 @@ public sealed class RoutingLayerTests
             Array.Empty<SurfacePatternCandidate>(),
             walls,
             wallGraph,
-            Array.Empty<RoomRegion>(),
+            rooms ?? Array.Empty<RoomRegion>(),
             RoomAdjacencyGraph.Empty,
             Array.Empty<OpeningCandidate>(),
             Array.Empty<ObjectCandidate>(),
@@ -297,8 +339,34 @@ public sealed class RoutingLayerTests
                 now,
                 now,
                 Array.Empty<PipelineStageReport>(),
-                Array.Empty<PlanDiagnostic>()));
+                Array.Empty<PlanDiagnostic>()))
+        {
+            WallEvidenceMap = wallEvidenceMap ?? WallEvidenceMap.Empty
+        };
     }
+
+    private static WallEvidenceMap WallEvidenceMapFor(params WallEvidenceWallAssessment[] assessments) =>
+        new(
+            Array.Empty<WallEvidenceSegment>(),
+            Array.Empty<WallEvidenceBand>(),
+            assessments,
+            SourceCandidateWallCount: assessments.Length);
+
+    private static WallEvidenceWallAssessment ReviewAssessment(WallSegment wall) =>
+        new(
+            wall.Id,
+            wall.PageNumber,
+            wall.Bounds,
+            WallEvidenceCategory.WeakSingleLine,
+            new Confidence(0.52),
+            PlacementReady: false,
+            RequiresReview: true,
+            RejectedAsNoise: false,
+            wall.SourcePrimitiveIds,
+            ["wall evidence: review-required synthetic wall"])
+        {
+            Decision = WallEvidenceDecision.Review
+        };
 
     private static WallSegment Wall(string id, double x1, double y1, double x2, double y2) =>
         new(

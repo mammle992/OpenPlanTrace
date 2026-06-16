@@ -3,13 +3,15 @@ namespace OpenPlanTrace;
 public enum WallGraphRepairCandidateKind
 {
     EndpointToWall,
-    EndpointToEndpoint
+    EndpointToEndpoint,
+    EndpointOverrun
 }
 
 public enum WallGraphRepairAction
 {
     SnapEndpointToWall,
-    SnapEndpointToEndpoint
+    SnapEndpointToEndpoint,
+    TrimEndpointOverrun
 }
 
 public enum WallGraphRepairSeverity
@@ -28,6 +30,7 @@ public enum WallGraphRepairImportImpact
 public enum WallGraphRepairApplicability
 {
     ReviewAndApplySuggestedSnap,
+    ReviewAndApplySuggestedTrim,
     ManualCorrectionRecommended
 }
 

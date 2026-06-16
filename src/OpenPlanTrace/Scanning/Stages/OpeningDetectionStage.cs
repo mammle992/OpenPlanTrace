@@ -12,8 +12,13 @@ internal sealed class OpeningDetectionStage : IPipelineStage
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var structuralWalls = WallTopologyFilter.StructuralWallsForPage(context, page.Number, out var excludedComponents);
+            var structuralWalls = WallTopologyFilter.StructuralWallsForPage(
+                context,
+                page.Number,
+                out var excludedComponents,
+                out var excludedEvidenceAssessments);
             WallTopologyFilter.AddStructuralTopologyExclusionDiagnostic(context, Name, page.Number, excludedComponents);
+            WallTopologyFilter.AddRejectedWallEvidenceExclusionDiagnostic(context, Name, page.Number, excludedEvidenceAssessments);
 
             var axisWalls = structuralWalls
                 .Select(wall => AxisWall.TryCreate(wall, context.Options.GeometryTolerance.Distance))

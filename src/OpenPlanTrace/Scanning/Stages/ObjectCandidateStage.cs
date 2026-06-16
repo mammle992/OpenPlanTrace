@@ -460,7 +460,13 @@ internal sealed class ObjectCandidateStage : IPipelineStage
     private static int LineworkPriority(LineworkItem item) =>
         item.LayerCategory switch
         {
-            LayerCategory.Equipment or LayerCategory.Electrical or LayerCategory.HVAC or LayerCategory.Plumbing or LayerCategory.FireSafety => 4,
+            LayerCategory.Equipment
+                or LayerCategory.Electrical
+                or LayerCategory.HVAC
+                or LayerCategory.Plumbing
+                or LayerCategory.FireSafety
+                or LayerCategory.Furniture
+                or LayerCategory.Fixture => 4,
             LayerCategory.Structural => 3,
             LayerCategory.Unknown => 2,
             _ => 1
@@ -658,6 +664,8 @@ internal sealed class ObjectCandidateStage : IPipelineStage
             LayerCategory.HVAC => ObjectCategory.HVACEquipment,
             LayerCategory.Plumbing => ObjectCategory.PlumbingFixture,
             LayerCategory.FireSafety => ObjectCategory.FireSafety,
+            LayerCategory.Furniture => ObjectCategory.Furniture,
+            LayerCategory.Fixture => ObjectCategory.Fixture,
             _ => ObjectCategory.Unknown
         };
 
@@ -1383,6 +1391,7 @@ internal sealed class ObjectCandidateStage : IPipelineStage
                 or LayerCategory.Room
                 or LayerCategory.Dimension
                 or LayerCategory.Text
-                or LayerCategory.Grid;
+                or LayerCategory.Grid
+                or LayerCategory.SurfacePattern;
     }
 }

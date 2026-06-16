@@ -10,19 +10,36 @@ internal sealed class WallGraphStage : IPipelineStage
         var edges = new List<WallEdge>();
         var inferredNearTouchJunctionCount = 0;
         var normalizedCollinearJunctionCount = 0;
+        var snappedEndpointGapCount = 0;
         var trimmedEndpointOverrunCount = 0;
+        var suppressedEndpointOverrunTailEdgeCount = 0;
         var normalizedWallSegmentCount = 0;
+        var endpointOverrunReviews = new List<EndpointOverrunReview>();
         var nearTouchTolerance = InferredNearTouchJunctionTolerance(context.Options);
         var normalizedWallsById = new Dictionary<string, WallSegment>(StringComparer.Ordinal);
-        var pointsByWallId = context.Walls.ToDictionary(
+        var graphInput = context.WallTopologyPreparation.HasPreparedSelection
+            ? context.WallTopologyPreparation
+            : WallTopologyPreparationStage.Prepare(context);
+        var graphInputWallIds = graphInput.GraphWallIds
+            .ToHashSet(StringComparer.Ordinal);
+        var automaticCoordinateRepairWallIds = graphInput.AutomaticCoordinateRepairWallIds
+            .ToHashSet(StringComparer.Ordinal);
+        var coordinateRepairSkippedWallIds = new HashSet<string>(StringComparer.Ordinal);
+        var graphWalls = context.Walls
+            .Where(wall => graphInputWallIds.Contains(wall.Id))
+            .ToArray();
+        var pointsByWallId = graphWalls.ToDictionary(
             wall => wall.Id,
             wall => new List<PlanPoint> { wall.CenterLine.Start, wall.CenterLine.End });
 
-        foreach (var pageGroup in context.Walls.GroupBy(wall => wall.PageNumber))
+        foreach (var pageGroup in graphWalls.GroupBy(wall => wall.PageNumber))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             var walls = pageGroup.ToArray();
+            var coordinateRepairSupportWalls = walls
+                .Where(wall => automaticCoordinateRepairWallIds.Contains(wall.Id))
+                .ToArray();
             for (var leftIndex = 0; leftIndex < walls.Length; leftIndex++)
             {
                 for (var rightIndex = leftIndex + 1; rightIndex < walls.Length; rightIndex++)
@@ -74,21 +91,43 @@ internal sealed class WallGraphStage : IPipelineStage
 
                         return unique;
                     });
-                orderedPoints = TrimEndpointOverruns(
-                    orderedPoints,
-                    wall,
-                    pointsByWallId,
-                    walls,
-                    context.Options,
-                    out var wallTrimmedEndpointOverrunCount);
-                trimmedEndpointOverrunCount += wallTrimmedEndpointOverrunCount;
-                if (wallTrimmedEndpointOverrunCount > 0)
+                var wallSnappedEndpointGapCount = 0;
+                var wallTrimmedEndpointOverrunCount = 0;
+                IReadOnlyList<EndpointOverrunReview> wallEndpointOverrunReviews = Array.Empty<EndpointOverrunReview>();
+                if (automaticCoordinateRepairWallIds.Contains(wall.Id))
+                {
+                    orderedPoints = SnapNearTouchEndpointGaps(
+                        orderedPoints,
+                        wall,
+                        pointsByWallId,
+                        coordinateRepairSupportWalls,
+                        context.Options,
+                        out wallSnappedEndpointGapCount);
+                    snappedEndpointGapCount += wallSnappedEndpointGapCount;
+                    orderedPoints = TrimEndpointOverruns(
+                        orderedPoints,
+                        wall,
+                        pointsByWallId,
+                        coordinateRepairSupportWalls,
+                        context.Options,
+                        out wallTrimmedEndpointOverrunCount,
+                        out wallEndpointOverrunReviews);
+                    trimmedEndpointOverrunCount += wallTrimmedEndpointOverrunCount;
+                    endpointOverrunReviews.AddRange(wallEndpointOverrunReviews);
+                }
+                else if (orderedPoints.Count > 2)
+                {
+                    coordinateRepairSkippedWallIds.Add(wall.Id);
+                }
+
+                if (wallSnappedEndpointGapCount > 0 || wallTrimmedEndpointOverrunCount > 0)
                 {
                     var normalizedWall = NormalizeWallSegmentCenterLine(
                         wall,
                         orderedPoints,
                         context.Calibration,
-                        wallTrimmedEndpointOverrunCount);
+                        wallTrimmedEndpointOverrunCount,
+                        wallSnappedEndpointGapCount);
                     if (!normalizedWall.CenterLine.Equals(wall.CenterLine))
                     {
                         normalizedWallsById[wall.Id] = normalizedWall;
@@ -98,6 +137,16 @@ internal sealed class WallGraphStage : IPipelineStage
 
                 for (var index = 1; index < orderedPoints.Count; index++)
                 {
+                    if (IsReviewedEndpointOverrunTail(
+                        orderedPoints[index - 1],
+                        orderedPoints[index],
+                        wallEndpointOverrunReviews,
+                        context.Options))
+                    {
+                        suppressedEndpointOverrunTailEdgeCount++;
+                        continue;
+                    }
+
                     var from = GetOrCreateNode(nodes, pageGroup.Key, orderedPoints[index - 1], context.Options);
                     var to = GetOrCreateNode(nodes, pageGroup.Key, orderedPoints[index], context.Options);
 
@@ -130,6 +179,8 @@ internal sealed class WallGraphStage : IPipelineStage
                     context.Walls[index] = normalizedWall;
                 }
             }
+
+            SynchronizeWallEvidenceGeometry(context, normalizedWallsById);
         }
 
         var graphNodes = nodes
@@ -149,17 +200,45 @@ internal sealed class WallGraphStage : IPipelineStage
             .ToArray();
 
         var graphEdges = edges.ToArray();
-        var components = BuildComponents(graphNodes, graphEdges, context.Walls, context);
-        var repairCandidates = DetectUnresolvedEndpointGaps(graphNodes, graphEdges, components, context.Walls, context.Options).ToArray();
+        var components = BuildComponents(graphNodes, graphEdges, graphWalls, context);
+        RefineObjectLikeComponentWallEvidence(context, components);
+        var endpointGapRepairCandidates = DetectUnresolvedEndpointGaps(
+            graphNodes,
+            graphEdges,
+            components,
+            graphWalls,
+            automaticCoordinateRepairWallIds,
+            context.Options,
+            out var suppressedReviewEndpointGapCount).ToArray();
+        var endpointOverrunRepairCandidates = DetectEndpointOverrunRepairCandidates(
+            endpointOverrunReviews,
+            graphNodes,
+            components,
+            graphWalls,
+            context.Options);
+        var repairCandidates = endpointGapRepairCandidates
+            .Concat(endpointOverrunRepairCandidates)
+            .OrderBy(candidate => candidate.PageNumber)
+            .ThenBy(candidate => candidate.Kind)
+            .ThenBy(candidate => candidate.GapDistance)
+            .ThenBy(candidate => candidate.SourceNodeId, StringComparer.Ordinal)
+            .ToArray();
         context.WallGraph = new WallGraph(graphNodes, graphEdges, components, repairCandidates);
 
         AddComponentDiagnostics(context, components);
         AddSurfacePatternWallOverlapDiagnostics(context, components);
-        AddEndpointGapDiagnostics(context, repairCandidates);
+        AddEndpointGapDiagnostics(context, endpointGapRepairCandidates);
+        AddEndpointOverrunDiagnostics(context, endpointOverrunRepairCandidates);
+        AddGraphInputRejectionDiagnostics(context, graphInput.RejectedWalls);
+        AddCoordinateRepairTrustGateDiagnostics(context, graphInput, graphWalls, coordinateRepairSkippedWallIds);
+        AddCoordinateRepairSupportTrustDiagnostics(context, graphInput, graphWalls);
+        AddEndpointGapReviewTrustDiagnostics(context, graphInput, graphWalls, suppressedReviewEndpointGapCount);
         AddTopologyNormalizationDiagnostics(
             context,
             normalizedCollinearJunctionCount,
+            snappedEndpointGapCount,
             trimmedEndpointOverrunCount,
+            suppressedEndpointOverrunTailEdgeCount,
             normalizedWallSegmentCount);
 
         if (inferredNearTouchJunctionCount > 0)
@@ -176,7 +255,7 @@ internal sealed class WallGraphStage : IPipelineStage
                 });
         }
 
-        if (context.Walls.Count > 0 && graphNodes.Length == 0)
+        if (graphWalls.Length > 0 && graphNodes.Length == 0)
         {
             context.AddDiagnostic(
                 "wall_graph.empty",
@@ -187,6 +266,178 @@ internal sealed class WallGraphStage : IPipelineStage
         }
 
         return ValueTask.CompletedTask;
+    }
+
+    private void AddEndpointGapReviewTrustDiagnostics(
+        ScanContext context,
+        WallTopologyPreparation graphInput,
+        IReadOnlyList<WallSegment> graphWalls,
+        int suppressedReviewEndpointGapCount)
+    {
+        if (suppressedReviewEndpointGapCount <= 0)
+        {
+            return;
+        }
+
+        var reviewWalls = graphWalls
+            .Where(wall => graphInput.IsReviewGraphWall(wall.Id))
+            .OrderBy(wall => wall.PageNumber)
+            .ThenBy(wall => wall.Id, StringComparer.Ordinal)
+            .ToArray();
+        var sourcePrimitiveIds = reviewWalls
+            .SelectMany(wall => wall.SourcePrimitiveIds)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        context.AddDiagnostic(
+            "wall_graph.endpoint_gap.review_candidate_trust_gated",
+            DiagnosticSeverity.Info,
+            Name,
+            "Endpoint gap repair candidates involving review-required graph walls were suppressed; review wall evidence before suggesting snaps.",
+            confidence: Confidence.Medium,
+            scope: DiagnosticScope.Detection,
+            sourcePrimitiveIds: sourcePrimitiveIds,
+            properties: new Dictionary<string, string>
+            {
+                ["suppressedEndpointGapCandidateCount"] = suppressedReviewEndpointGapCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["reviewGraphWallCount"] = graphInput.ReviewGraphWallCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["automaticCoordinateRepairWallCount"] = graphInput.AutomaticCoordinateRepairWallCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["wallIds"] = string.Join(",", reviewWalls.Select(wall => wall.Id).Take(30))
+            });
+    }
+
+    private void AddCoordinateRepairSupportTrustDiagnostics(
+        ScanContext context,
+        WallTopologyPreparation graphInput,
+        IReadOnlyList<WallSegment> graphWalls)
+    {
+        if (graphInput.ReviewGraphWallCount == 0
+            || graphInput.AutomaticCoordinateRepairWallCount == 0)
+        {
+            return;
+        }
+
+        var reviewWalls = graphWalls
+            .Where(wall => graphInput.IsReviewGraphWall(wall.Id))
+            .OrderBy(wall => wall.PageNumber)
+            .ThenBy(wall => wall.Id, StringComparer.Ordinal)
+            .ToArray();
+        if (reviewWalls.Length == 0)
+        {
+            return;
+        }
+
+        var sourcePrimitiveIds = reviewWalls
+            .SelectMany(wall => wall.SourcePrimitiveIds)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        context.AddDiagnostic(
+            "wall_graph.coordinate_repair.review_support_excluded",
+            DiagnosticSeverity.Info,
+            Name,
+            "Review-required graph walls were excluded as automatic coordinate repair support for trusted walls.",
+            confidence: Confidence.Medium,
+            scope: DiagnosticScope.Detection,
+            sourcePrimitiveIds: sourcePrimitiveIds,
+            properties: new Dictionary<string, string>
+            {
+                ["excludedSupportWallCount"] = reviewWalls.Length.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["graphWallCount"] = graphInput.GraphWallCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["acceptedGraphWallCount"] = graphInput.AcceptedGraphWallCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["reviewGraphWallCount"] = graphInput.ReviewGraphWallCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["unassessedGraphWallCount"] = graphInput.UnassessedGraphWallCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["automaticCoordinateRepairWallCount"] = graphInput.AutomaticCoordinateRepairWallCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["wallIds"] = string.Join(",", reviewWalls.Select(wall => wall.Id).Take(30))
+            });
+    }
+
+    private void AddCoordinateRepairTrustGateDiagnostics(
+        ScanContext context,
+        WallTopologyPreparation graphInput,
+        IReadOnlyList<WallSegment> graphWalls,
+        IReadOnlySet<string> skippedWallIds)
+    {
+        if (skippedWallIds.Count == 0)
+        {
+            return;
+        }
+
+        var skippedWalls = graphWalls
+            .Where(wall => skippedWallIds.Contains(wall.Id))
+            .OrderBy(wall => wall.PageNumber)
+            .ThenBy(wall => wall.Id, StringComparer.Ordinal)
+            .ToArray();
+        var sourcePrimitiveIds = skippedWalls
+            .SelectMany(wall => wall.SourcePrimitiveIds)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        context.AddDiagnostic(
+            "wall_graph.coordinate_repair.trust_gated",
+            DiagnosticSeverity.Info,
+            Name,
+            "Automatic wall coordinate repair was skipped for review-required graph input walls.",
+            confidence: Confidence.Medium,
+            scope: DiagnosticScope.Detection,
+            sourcePrimitiveIds: sourcePrimitiveIds,
+            properties: new Dictionary<string, string>
+            {
+                ["skippedWallCount"] = skippedWallIds.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["acceptedGraphWallCount"] = graphInput.AcceptedGraphWallCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["reviewGraphWallCount"] = graphInput.ReviewGraphWallCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["unassessedGraphWallCount"] = graphInput.UnassessedGraphWallCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["automaticCoordinateRepairWallCount"] = graphInput.AutomaticCoordinateRepairWallCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["wallIds"] = string.Join(",", skippedWalls.Select(wall => wall.Id).Take(30))
+            });
+    }
+
+    private void AddGraphInputRejectionDiagnostics(
+        ScanContext context,
+        IReadOnlyList<WallTopologyRejectedWall> excludedWalls)
+    {
+        if (excludedWalls.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var pageGroup in excludedWalls.GroupBy(wall => wall.PageNumber).OrderBy(group => group.Key))
+        {
+            var pageRejectedWalls = pageGroup.ToArray();
+            var excludedWallIds = pageRejectedWalls
+                .Select(wall => wall.WallId)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+            var sourcePrimitiveIds = pageRejectedWalls
+                .SelectMany(wall => wall.SourcePrimitiveIds)
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+
+            context.AddDiagnostic(
+                "wall_graph.rejected_wall_evidence_excluded",
+                DiagnosticSeverity.Info,
+                Name,
+                "Rejected Wall Evidence V2 candidates were withheld from wall graph topology while remaining available for QA/export review.",
+                pageGroup.Key,
+                confidence: Confidence.Medium,
+                scope: DiagnosticScope.Page,
+                sourcePrimitiveIds: sourcePrimitiveIds,
+                properties: new Dictionary<string, string>
+                {
+                    ["excludedWallCount"] = excludedWallIds.Length.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["doorOrOpeningSymbolCount"] = pageRejectedWalls.Count(wall => wall.Category == WallEvidenceCategory.DoorOrOpeningSymbol).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["surfacePatternDetailCount"] = pageRejectedWalls.Count(wall => wall.Category == WallEvidenceCategory.SurfacePatternDetail).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["dimensionOrAnnotationCount"] = pageRejectedWalls.Count(wall => wall.Category == WallEvidenceCategory.DimensionOrAnnotation).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["objectOrFixtureDetailCount"] = pageRejectedWalls.Count(wall => wall.Category == WallEvidenceCategory.ObjectOrFixtureDetail).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["wallIds"] = string.Join(",", excludedWallIds.Take(30))
+                });
+        }
     }
 
     private static IReadOnlyList<WallGraphComponent> BuildComponents(
@@ -337,6 +588,287 @@ internal sealed class WallGraphStage : IPipelineStage
             .ThenBy(component => component.Id, StringComparer.Ordinal)
             .ToArray();
     }
+
+    private static void RefineObjectLikeComponentWallEvidence(
+        ScanContext context,
+        IReadOnlyList<WallGraphComponent> components)
+    {
+        var objectLikeComponents = components
+            .Where(component => component.Kind == WallGraphComponentKind.ObjectLikeIsland)
+            .Where(component => component.ExcludedFromStructuralTopology)
+            .Where(component => component.WallIds.Count > 0)
+            .ToArray();
+        if (objectLikeComponents.Length == 0 || context.WallEvidenceMap.WallAssessments.Count == 0)
+        {
+            return;
+        }
+
+        var componentByWallId = objectLikeComponents
+            .SelectMany(component => component.WallIds.Select(wallId => new { WallId = wallId, Component = component }))
+            .GroupBy(item => item.WallId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First().Component, StringComparer.Ordinal);
+        var refinedWallIds = new HashSet<string>(StringComparer.Ordinal);
+        var refinedAssessments = context.WallEvidenceMap.WallAssessments
+            .Select(assessment =>
+            {
+                if (!componentByWallId.TryGetValue(assessment.WallId, out var component)
+                    || assessment.RejectedAsNoise)
+                {
+                    return assessment;
+                }
+
+                refinedWallIds.Add(assessment.WallId);
+                return RefineObjectLikeComponentAssessment(assessment, component);
+            })
+            .ToArray();
+
+        if (refinedWallIds.Count == 0)
+        {
+            return;
+        }
+
+        var refinedSegments = context.WallEvidenceMap.Segments
+            .Select(segment => segment.WallId is not null && refinedWallIds.Contains(segment.WallId)
+                ? segment with
+                {
+                    Category = WallEvidenceCategory.ObjectOrFixtureDetail,
+                    Confidence = new Confidence(Math.Max(segment.Confidence.Value, 0.74)),
+                    Evidence = AppendEvidence(
+                        segment.Evidence,
+                        new[]
+                        {
+                            $"wall evidence: graph component {componentByWallId[segment.WallId].Id} classified as object-like linework"
+                        })
+                }
+                : segment)
+            .ToArray();
+
+        context.WallEvidenceMap = context.WallEvidenceMap with
+        {
+            Segments = refinedSegments,
+            WallAssessments = refinedAssessments
+        };
+
+        for (var index = 0; index < context.Walls.Count; index++)
+        {
+            var wall = context.Walls[index];
+            if (!refinedWallIds.Contains(wall.Id) || !componentByWallId.TryGetValue(wall.Id, out var component))
+            {
+                continue;
+            }
+
+            context.Walls[index] = wall with
+            {
+                Evidence = AppendEvidence(
+                    wall.Evidence,
+                    new[]
+                    {
+                        $"wall evidence assessment: {WallEvidenceCategory.ObjectOrFixtureDetail} / rejected / graph component {component.Id}"
+                    })
+            };
+        }
+
+        var refinedSourceIds = objectLikeComponents
+            .Where(component => component.WallIds.Any(refinedWallIds.Contains))
+            .SelectMany(component => component.SourcePrimitiveIds)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        context.AddDiagnostic(
+            "wall_evidence.object_like_components_reclassified",
+            DiagnosticSeverity.Info,
+            "wall-graph",
+            $"{refinedWallIds.Count} wall evidence assessment(s) were reclassified as object/fixture detail from object-like wall graph components.",
+            confidence: Confidence.Medium,
+            scope: DiagnosticScope.Detection,
+            sourcePrimitiveIds: refinedSourceIds,
+            properties: new Dictionary<string, string>
+            {
+                ["reclassifiedWallCount"] = refinedWallIds.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["objectLikeComponentCount"] = objectLikeComponents.Count(component => component.WallIds.Any(refinedWallIds.Contains)).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["componentIds"] = string.Join(",", objectLikeComponents
+                    .Where(component => component.WallIds.Any(refinedWallIds.Contains))
+                    .Select(component => component.Id)
+                    .Take(20))
+            });
+    }
+
+    private void SynchronizeWallEvidenceGeometry(
+        ScanContext context,
+        IReadOnlyDictionary<string, WallSegment> normalizedWallsById)
+    {
+        if (normalizedWallsById.Count == 0
+            || context.WallEvidenceMap.Segments.Count == 0
+            && context.WallEvidenceMap.Bands.Count == 0
+            && context.WallEvidenceMap.WallAssessments.Count == 0)
+        {
+            return;
+        }
+
+        const string evidenceMessage = "wall evidence geometry synchronized after wall graph topology normalization";
+        var synchronizedWallIds = new HashSet<string>(StringComparer.Ordinal);
+        var synchronizedSegmentCount = 0;
+        var synchronizedBandCount = 0;
+        var synchronizedAssessmentCount = 0;
+
+        var segments = context.WallEvidenceMap.Segments
+            .Select(segment =>
+            {
+                if (segment.WallId is null
+                    || !normalizedWallsById.TryGetValue(segment.WallId, out var normalizedWall)
+                    || segment.Line.Equals(normalizedWall.CenterLine)
+                    && segment.Bounds.Equals(normalizedWall.Bounds))
+                {
+                    return segment;
+                }
+
+                synchronizedSegmentCount++;
+                synchronizedWallIds.Add(segment.WallId);
+                return segment with
+                {
+                    Line = normalizedWall.CenterLine,
+                    Bounds = normalizedWall.Bounds,
+                    Evidence = AppendEvidence(segment.Evidence, new[] { evidenceMessage })
+                };
+            })
+            .ToArray();
+
+        var bands = context.WallEvidenceMap.Bands
+            .Select(band =>
+            {
+                if (band.WallId is null
+                    || !normalizedWallsById.TryGetValue(band.WallId, out var normalizedWall)
+                    || band.CenterLine.Equals(normalizedWall.CenterLine))
+                {
+                    return band;
+                }
+
+                synchronizedBandCount++;
+                synchronizedWallIds.Add(band.WallId);
+                return band with
+                {
+                    CenterLine = normalizedWall.CenterLine,
+                    Evidence = AppendEvidence(band.Evidence, new[] { evidenceMessage })
+                };
+            })
+            .ToArray();
+
+        var assessments = context.WallEvidenceMap.WallAssessments
+            .Select(assessment =>
+            {
+                if (!normalizedWallsById.TryGetValue(assessment.WallId, out var normalizedWall)
+                    || assessment.Bounds.Equals(normalizedWall.Bounds))
+                {
+                    return assessment;
+                }
+
+                synchronizedAssessmentCount++;
+                synchronizedWallIds.Add(assessment.WallId);
+                return assessment with
+                {
+                    Bounds = normalizedWall.Bounds,
+                    Evidence = AppendEvidence(assessment.Evidence, new[] { evidenceMessage })
+                };
+            })
+            .ToArray();
+
+        if (synchronizedWallIds.Count == 0)
+        {
+            return;
+        }
+
+        context.WallEvidenceMap = context.WallEvidenceMap with
+        {
+            Segments = segments,
+            Bands = bands,
+            WallAssessments = assessments
+        };
+
+        context.AddDiagnostic(
+            "wall_evidence.geometry_synchronized",
+            DiagnosticSeverity.Info,
+            Name,
+            "Wall Evidence V2 geometry was synchronized with topology-normalized wall coordinates.",
+            confidence: Confidence.Medium,
+            scope: DiagnosticScope.Detection,
+            sourcePrimitiveIds: context.Walls
+                .Where(wall => synchronizedWallIds.Contains(wall.Id))
+                .SelectMany(wall => wall.SourcePrimitiveIds)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray(),
+            properties: new Dictionary<string, string>
+            {
+                ["synchronizedWallCount"] = synchronizedWallIds.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["synchronizedSegmentCount"] = synchronizedSegmentCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["synchronizedBandCount"] = synchronizedBandCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["synchronizedAssessmentCount"] = synchronizedAssessmentCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["wallIds"] = string.Join(",", synchronizedWallIds.OrderBy(id => id, StringComparer.Ordinal).Take(20))
+            });
+    }
+
+    private static WallEvidenceWallAssessment RefineObjectLikeComponentAssessment(
+        WallEvidenceWallAssessment assessment,
+        WallGraphComponent component)
+    {
+        var evidence = AppendEvidence(
+            assessment.Evidence,
+            new[]
+            {
+                $"wall evidence: reclassified as object/fixture detail because graph component {component.Id} is {component.Kind}",
+                "wall evidence: component excluded from structural topology as compact object-like linework"
+            });
+        return assessment with
+        {
+            Category = WallEvidenceCategory.ObjectOrFixtureDetail,
+            Confidence = new Confidence(Math.Max(assessment.Confidence.Value, 0.74)),
+            PlacementReady = false,
+            RequiresReview = true,
+            RejectedAsNoise = true,
+            Decision = WallEvidenceDecision.Reject,
+            ScoreBreakdown = PenalizeObjectLikeComponentEvidence(assessment.ScoreBreakdown, component),
+            Evidence = evidence
+        };
+    }
+
+    private static WallEvidenceScoreBreakdown PenalizeObjectLikeComponentEvidence(
+        WallEvidenceScoreBreakdown score,
+        WallGraphComponent component)
+    {
+        var noisePenalty = Math.Max(score.NoisePenalty, 0.75);
+        var negativeScore = RoundScore(Math.Min(1, Math.Max(score.NegativeScore, noisePenalty + score.FragmentReviewPenalty)));
+        var decisionScore = RoundScore(Math.Max(-1, Math.Min(1, score.PositiveScore - negativeScore)));
+        var negativeEvidence = AppendEvidence(
+            score.NegativeEvidence,
+            new[]
+            {
+                $"explicit non-wall evidence: {WallEvidenceCategory.ObjectOrFixtureDetail}",
+                $"wall graph component {component.Id} is {component.Kind} and excluded from structural topology"
+            });
+
+        return new WallEvidenceScoreBreakdown(
+            score.PositiveScore,
+            negativeScore,
+            decisionScore,
+            score.PairSupportScore,
+            score.LayerSupportScore,
+            score.StructuralSupportScore,
+            score.RecoverySupportScore,
+            RoundScore(noisePenalty),
+            score.FragmentReviewPenalty,
+            score.PositiveEvidence,
+            negativeEvidence);
+    }
+
+    private static double RoundScore(double value) =>
+        Math.Round(value, 4, MidpointRounding.AwayFromZero);
+
+    private static IReadOnlyList<string> AppendEvidence(
+        IReadOnlyList<string> existing,
+        IEnumerable<string> additions) =>
+        existing
+            .Concat(additions)
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
 
     private static RawWallGraphComponent CreateRawComponent(
         int pageNumber,
@@ -848,8 +1380,11 @@ internal sealed class WallGraphStage : IPipelineStage
         IReadOnlyList<WallEdge> edges,
         IReadOnlyList<WallGraphComponent> components,
         IReadOnlyList<WallSegment> walls,
-        ScannerOptions options)
+        IReadOnlySet<string> repairCandidateWallIds,
+        ScannerOptions options,
+        out int suppressedReviewEndpointGapCount)
     {
+        suppressedReviewEndpointGapCount = 0;
         if (options.MaxWallGraphEndpointGapReviewItems <= 0)
         {
             return Array.Empty<WallGraphRepairCandidate>();
@@ -931,6 +1466,12 @@ internal sealed class WallGraphStage : IPipelineStage
                 }
 
                 var involvedWallIds = nodeWallIds.Concat(new[] { wall.Id }).ToArray();
+                if (!CanCreateEndpointGapRepairCandidate(involvedWallIds, repairCandidateWallIds))
+                {
+                    suppressedReviewEndpointGapCount++;
+                    continue;
+                }
+
                 if (!ShouldReviewEndpointGap(involvedWallIds, componentByWallId))
                 {
                     continue;
@@ -971,6 +1512,12 @@ internal sealed class WallGraphStage : IPipelineStage
                 }
 
                 var involvedWallIds = nodeWallIds.Concat(otherWallIds).ToArray();
+                if (!CanCreateEndpointGapRepairCandidate(involvedWallIds, repairCandidateWallIds))
+                {
+                    suppressedReviewEndpointGapCount++;
+                    continue;
+                }
+
                 if (!ShouldReviewEndpointGap(involvedWallIds, componentByWallId))
                 {
                     continue;
@@ -1027,6 +1574,13 @@ internal sealed class WallGraphStage : IPipelineStage
             .Take(options.MaxWallGraphEndpointGapReviewItems)
             .ToArray();
     }
+
+    private static bool CanCreateEndpointGapRepairCandidate(
+        IEnumerable<string> wallIds,
+        IReadOnlySet<string> repairCandidateWallIds) =>
+        wallIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .All(repairCandidateWallIds.Contains);
 
     private static string EndpointGapDedupeKey(WallGraphRepairCandidate gap, double bucketSize)
     {
@@ -1090,6 +1644,65 @@ internal sealed class WallGraphStage : IPipelineStage
             && (component.ExcludedFromStructuralTopology
                 || component.Kind == WallGraphComponentKind.ObjectLikeIsland));
 
+    private static IReadOnlyList<WallGraphRepairCandidate> DetectEndpointOverrunRepairCandidates(
+        IReadOnlyList<EndpointOverrunReview> reviews,
+        IReadOnlyList<WallNode> nodes,
+        IReadOnlyList<WallGraphComponent> components,
+        IReadOnlyList<WallSegment> walls,
+        ScannerOptions options)
+    {
+        if (reviews.Count == 0 || options.MaxWallGraphEndpointGapReviewItems <= 0)
+        {
+            return Array.Empty<WallGraphRepairCandidate>();
+        }
+
+        var wallsById = walls.ToDictionary(wall => wall.Id, StringComparer.Ordinal);
+        var componentByWallId = BuildComponentByWallId(components);
+        var candidates = new List<WallGraphRepairCandidate>();
+        foreach (var review in reviews)
+        {
+            var involvedWallIds = new[] { review.WallId }
+                .Concat(review.SupportWallIds)
+                .Where(id => !string.IsNullOrWhiteSpace(id) && wallsById.ContainsKey(id))
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+            if (!ShouldReviewEndpointGap(involvedWallIds, componentByWallId))
+            {
+                continue;
+            }
+
+            candidates.Add(CreateEndpointOverrunReview(
+                review,
+                FindNodeId(nodes, review.PageNumber, review.Endpoint, options.WallSnapTolerance)
+                    ?? $"wall:{review.WallId}:overrun-endpoint",
+                FindNodeId(nodes, review.PageNumber, review.JunctionPoint, options.WallSnapTolerance),
+                involvedWallIds,
+                wallsById,
+                options));
+        }
+
+        return candidates
+            .OrderBy(candidate => candidate.PageNumber)
+            .ThenBy(candidate => candidate.GapDistance)
+            .ThenBy(candidate => candidate.SourceNodeId, StringComparer.Ordinal)
+            .GroupBy(candidate => EndpointGapDedupeKey(candidate, Math.Max(2, options.WallSnapTolerance * 2.0)), StringComparer.Ordinal)
+            .Select(group => group.First())
+            .Take(options.MaxWallGraphEndpointGapReviewItems)
+            .ToArray();
+    }
+
+    private static string? FindNodeId(
+        IReadOnlyList<WallNode> nodes,
+        int pageNumber,
+        PlanPoint point,
+        double tolerance) =>
+        nodes
+            .Where(node => node.PageNumber == pageNumber)
+            .OrderBy(node => node.Position.DistanceTo(point))
+            .FirstOrDefault(node => node.Position.DistanceTo(point) <= Math.Max(tolerance, 0.5))
+            ?.Id;
+
     private static WallGraphRepairCandidate? ChooseNearest(WallGraphRepairCandidate? current, WallGraphRepairCandidate candidate) =>
         current is null || candidate.GapDistance < current.GapDistance
             ? candidate
@@ -1126,9 +1739,13 @@ internal sealed class WallGraphStage : IPipelineStage
             $"candidate wall ids: {string.Join(",", orderedWallIds)}"
         };
 
-        var action = kind == WallGraphRepairCandidateKind.EndpointToWall
-            ? WallGraphRepairAction.SnapEndpointToWall
-            : WallGraphRepairAction.SnapEndpointToEndpoint;
+        var action = kind switch
+        {
+            WallGraphRepairCandidateKind.EndpointToWall => WallGraphRepairAction.SnapEndpointToWall,
+            WallGraphRepairCandidateKind.EndpointToEndpoint => WallGraphRepairAction.SnapEndpointToEndpoint,
+            WallGraphRepairCandidateKind.EndpointOverrun => WallGraphRepairAction.TrimEndpointOverrun,
+            _ => WallGraphRepairAction.SnapEndpointToEndpoint
+        };
         var safeSnapDistance = InferredNearTouchJunctionTolerance(options);
         var reviewDistanceLimit = UnresolvedEndpointGapReviewTolerance(options);
         var excessDistanceBeyondSafeSnap = Math.Max(0, distance - safeSnapDistance);
@@ -1168,6 +1785,71 @@ internal sealed class WallGraphStage : IPipelineStage
             new PlanLineSegment(node.Position, targetPoint),
             bounds,
             orderedWallIds,
+            sourcePrimitiveIds,
+            Confidence.Medium,
+            true,
+            evidence);
+    }
+
+    private static WallGraphRepairCandidate CreateEndpointOverrunReview(
+        EndpointOverrunReview review,
+        string sourceNodeId,
+        string? targetNodeId,
+        IReadOnlyList<string> wallIds,
+        IReadOnlyDictionary<string, WallSegment> wallsById,
+        ScannerOptions options)
+    {
+        var sourcePrimitiveIds = wallIds
+            .SelectMany(id => wallsById[id].SourcePrimitiveIds)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var excessDistanceBeyondSafeTrim = Math.Max(0, review.TailLength - review.AutoTrimLimit);
+        var severity = AssessRepairSeverity(
+            WallGraphRepairCandidateKind.EndpointOverrun,
+            review.TailLength,
+            review.AutoTrimLimit,
+            review.ReviewLimit);
+        var importImpact = severity == WallGraphRepairSeverity.High
+            ? WallGraphRepairImportImpact.TopologyImportBlocked
+            : WallGraphRepairImportImpact.TopologyReviewRequired;
+        var applicability = severity == WallGraphRepairSeverity.High
+            ? WallGraphRepairApplicability.ManualCorrectionRecommended
+            : WallGraphRepairApplicability.ReviewAndApplySuggestedTrim;
+        var inflation = Math.Max(options.DefaultWallThickness, options.WallSnapTolerance * 3.0);
+        var evidence = new[]
+        {
+            $"EndpointOverrun tail {review.TailLength.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)} drawing units",
+            "supported junction suggests a possible overextended wall endpoint",
+            "tail is outside safe auto-trim tolerance; review before trimming placement geometry",
+            $"safe auto-trim distance {review.AutoTrimLimit.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)} drawing units",
+            $"review distance limit {review.ReviewLimit.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)} drawing units",
+            $"excess beyond safe trim {excessDistanceBeyondSafeTrim.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)} drawing units",
+            $"support wall ids: {string.Join(",", review.SupportWallIds)}",
+            $"repair assessment {severity} / {importImpact} / {applicability}"
+        };
+
+        return new WallGraphRepairCandidate(
+            RepairCandidateId(review.PageNumber, sourceNodeId, targetNodeId, review.WallId, WallGraphRepairCandidateKind.EndpointOverrun),
+            review.PageNumber,
+            WallGraphRepairCandidateKind.EndpointOverrun,
+            WallGraphRepairAction.TrimEndpointOverrun,
+            severity,
+            importImpact,
+            applicability,
+            sourceNodeId,
+            review.Endpoint,
+            review.JunctionPoint,
+            targetNodeId,
+            review.WallId,
+            review.TailLength,
+            review.AutoTrimLimit,
+            review.ReviewLimit,
+            excessDistanceBeyondSafeTrim,
+            new PlanLineSegment(review.Endpoint, review.JunctionPoint),
+            PlanRect.FromPoints(review.Endpoint, review.JunctionPoint).Inflate(inflation),
+            wallIds,
             sourcePrimitiveIds,
             Confidence.Medium,
             true,
@@ -1274,13 +1956,79 @@ internal sealed class WallGraphStage : IPipelineStage
         }
     }
 
+    private static void AddEndpointOverrunDiagnostics(
+        ScanContext context,
+        IReadOnlyList<WallGraphRepairCandidate> endpointOverruns)
+    {
+        if (endpointOverruns.Count == 0)
+        {
+            return;
+        }
+
+        context.AddDiagnostic(
+            "wall_graph.endpoint_overruns.detected",
+            DiagnosticSeverity.Warning,
+            "wall-graph",
+            "Possible overextended wall endpoints were found and queued for trim review.",
+            confidence: Confidence.Medium,
+            scope: DiagnosticScope.Detection,
+            sourcePrimitiveIds: endpointOverruns.SelectMany(candidate => candidate.SourcePrimitiveIds),
+            properties: new Dictionary<string, string>
+            {
+                ["overrunCount"] = endpointOverruns.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["minOverrunDistance"] = endpointOverruns.Min(candidate => candidate.GapDistance).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
+                ["maxOverrunDistance"] = endpointOverruns.Max(candidate => candidate.GapDistance).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
+                ["candidateKinds"] = string.Join(",", endpointOverruns.Select(candidate => candidate.Kind.ToString()).Distinct(StringComparer.Ordinal))
+            });
+
+        foreach (var overrun in endpointOverruns)
+        {
+            context.AddDiagnostic(
+                "wall_graph.endpoint_overrun.review",
+                DiagnosticSeverity.Warning,
+                "wall-graph",
+                "A wall endpoint extends beyond a supported junction but was too long to trim automatically.",
+                pageNumber: overrun.PageNumber,
+                region: overrun.Bounds,
+                confidence: Confidence.Medium,
+                scope: DiagnosticScope.Detection,
+                sourcePrimitiveIds: overrun.SourcePrimitiveIds,
+                properties: new Dictionary<string, string>
+                {
+                    ["overrunKind"] = overrun.Kind.ToString(),
+                    ["overrunDistance"] = overrun.GapDistance.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
+                    ["safeAutoTrimDistance"] = overrun.SafeSnapDistance.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
+                    ["reviewDistanceLimit"] = overrun.ReviewDistanceLimit.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
+                    ["excessDistanceBeyondSafeTrim"] = overrun.ExcessDistanceBeyondSafeSnap.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
+                    ["severity"] = overrun.Severity.ToString(),
+                    ["importImpact"] = overrun.ImportImpact.ToString(),
+                    ["applicability"] = overrun.Applicability.ToString(),
+                    ["repairCandidateId"] = overrun.Id,
+                    ["suggestedAction"] = overrun.SuggestedAction.ToString(),
+                    ["nodeId"] = overrun.SourceNodeId,
+                    ["targetNodeId"] = overrun.TargetNodeId ?? string.Empty,
+                    ["wallId"] = overrun.HostWallId ?? string.Empty,
+                    ["endpointX"] = overrun.SourcePoint.X.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
+                    ["endpointY"] = overrun.SourcePoint.Y.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
+                    ["junctionX"] = overrun.TargetPoint.X.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
+                    ["junctionY"] = overrun.TargetPoint.Y.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
+                    ["wallIds"] = string.Join(",", overrun.WallIds)
+                });
+        }
+    }
+
     private void AddTopologyNormalizationDiagnostics(
         ScanContext context,
         int normalizedCollinearJunctionCount,
+        int snappedEndpointGapCount,
         int trimmedEndpointOverrunCount,
+        int suppressedEndpointOverrunTailEdgeCount,
         int normalizedWallSegmentCount)
     {
-        if (normalizedCollinearJunctionCount == 0 && trimmedEndpointOverrunCount == 0)
+        if (normalizedCollinearJunctionCount == 0
+            && snappedEndpointGapCount == 0
+            && trimmedEndpointOverrunCount == 0
+            && suppressedEndpointOverrunTailEdgeCount == 0)
         {
             return;
         }
@@ -1289,13 +2037,15 @@ internal sealed class WallGraphStage : IPipelineStage
             "wall_graph.topology.normalized",
             DiagnosticSeverity.Info,
             Name,
-            "Wall graph topology was normalized by connecting supported collinear fragments and trimming tiny endpoint overruns.",
+            "Wall graph topology was normalized by connecting supported collinear fragments, snapping safe near-touch endpoint gaps, trimming trusted endpoint overruns, and suppressing reviewed overrun tails from clean graph edges.",
             confidence: Confidence.Medium,
             scope: DiagnosticScope.Detection,
             properties: new Dictionary<string, string>
             {
                 ["collinearJunctionCount"] = normalizedCollinearJunctionCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["snappedEndpointGapCount"] = snappedEndpointGapCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["trimmedEndpointOverrunCount"] = trimmedEndpointOverrunCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["suppressedEndpointOverrunTailEdgeCount"] = suppressedEndpointOverrunTailEdgeCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["normalizedWallSegmentCount"] = normalizedWallSegmentCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["endpointOverrunTrimTolerance"] = EndpointOverrunTrimTolerance(context.Options).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
             });
@@ -1429,15 +2179,18 @@ internal sealed class WallGraphStage : IPipelineStage
         IReadOnlyDictionary<string, List<PlanPoint>> pointsByWallId,
         IReadOnlyList<WallSegment> pageWalls,
         ScannerOptions options,
-        out int trimmedCount)
+        out int trimmedCount,
+        out IReadOnlyList<EndpointOverrunReview> overrunReviews)
     {
         trimmedCount = 0;
+        overrunReviews = Array.Empty<EndpointOverrunReview>();
         if (orderedPoints.Count < 3)
         {
             return orderedPoints;
         }
 
         var normalized = new List<PlanPoint>(orderedPoints);
+        var reviews = new List<EndpointOverrunReview>();
         var trimTolerance = EndpointOverrunTrimTolerance(options);
         var sharedTolerance = Math.Max(options.WallSnapTolerance, 0.5);
 
@@ -1455,6 +2208,19 @@ internal sealed class WallGraphStage : IPipelineStage
             normalized.RemoveAt(0);
             trimmedCount++;
         }
+        else if (normalized.Count >= 3
+            && TryCreateEndpointOverrunReview(
+                wall,
+                normalized[0],
+                normalized[1],
+                pointsByWallId,
+                pageWalls,
+                options,
+                sharedTolerance,
+                out var review))
+        {
+            reviews.Add(review);
+        }
 
         if (normalized.Count >= 3
             && ShouldTrimEndpointTail(
@@ -1470,17 +2236,98 @@ internal sealed class WallGraphStage : IPipelineStage
             normalized.RemoveAt(normalized.Count - 1);
             trimmedCount++;
         }
+        else if (normalized.Count >= 3
+            && TryCreateEndpointOverrunReview(
+                wall,
+                normalized[^1],
+                normalized[^2],
+                pointsByWallId,
+                pageWalls,
+                options,
+                sharedTolerance,
+                out var review))
+        {
+            reviews.Add(review);
+        }
+
+        overrunReviews = reviews.ToArray();
+        return normalized;
+    }
+
+    private static List<PlanPoint> SnapNearTouchEndpointGaps(
+        List<PlanPoint> orderedPoints,
+        WallSegment wall,
+        IReadOnlyDictionary<string, List<PlanPoint>> pointsByWallId,
+        IReadOnlyList<WallSegment> pageWalls,
+        ScannerOptions options,
+        out int snappedCount)
+    {
+        snappedCount = 0;
+        if (orderedPoints.Count < 3)
+        {
+            return orderedPoints;
+        }
+
+        var normalized = new List<PlanPoint>(orderedPoints);
+        var snapTolerance = InferredNearTouchJunctionTolerance(options);
+        var sharedTolerance = Math.Max(options.WallSnapTolerance, 0.5);
+
+        if (normalized.Count >= 3
+            && ShouldSnapNearTouchEndpointGap(
+                wall,
+                normalized[0],
+                normalized[1],
+                pointsByWallId,
+                pageWalls,
+                snapTolerance,
+                sharedTolerance))
+        {
+            normalized.RemoveAt(1);
+            snappedCount++;
+        }
+
+        if (normalized.Count >= 3
+            && ShouldSnapNearTouchEndpointGap(
+                wall,
+                normalized[^1],
+                normalized[^2],
+                pointsByWallId,
+                pageWalls,
+                snapTolerance,
+                sharedTolerance))
+        {
+            normalized.RemoveAt(normalized.Count - 2);
+            snappedCount++;
+        }
 
         return normalized;
+    }
+
+    private static bool IsReviewedEndpointOverrunTail(
+        PlanPoint first,
+        PlanPoint second,
+        IReadOnlyList<EndpointOverrunReview> reviews,
+        ScannerOptions options)
+    {
+        if (reviews.Count == 0)
+        {
+            return false;
+        }
+
+        var tolerance = Math.Max(options.WallSnapTolerance, 0.5);
+        return reviews.Any(review =>
+            (first.DistanceTo(review.Endpoint) <= tolerance && second.DistanceTo(review.JunctionPoint) <= tolerance)
+            || (second.DistanceTo(review.Endpoint) <= tolerance && first.DistanceTo(review.JunctionPoint) <= tolerance));
     }
 
     private static WallSegment NormalizeWallSegmentCenterLine(
         WallSegment wall,
         IReadOnlyList<PlanPoint> orderedPoints,
         PlanCalibration calibration,
-        int trimmedEndpointCount)
+        int trimmedEndpointCount,
+        int snappedEndpointGapCount)
     {
-        if (orderedPoints.Count < 2 || trimmedEndpointCount <= 0)
+        if (orderedPoints.Count < 2 || trimmedEndpointCount <= 0 && snappedEndpointGapCount <= 0)
         {
             return wall;
         }
@@ -1498,10 +2345,7 @@ internal sealed class WallGraphStage : IPipelineStage
             normalizedLine.Bounds.Inflate(Math.Max(wall.Thickness / 2.0, 0.5)),
             wall.SourceRegionId);
         var evidence = wall.Evidence
-            .Concat(new[]
-            {
-                $"trimmed {trimmedEndpointCount} supported endpoint overrun(s) from wall centerline"
-            })
+            .Concat(WallNormalizationEvidence(trimmedEndpointCount, snappedEndpointGapCount))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 
@@ -1514,6 +2358,67 @@ internal sealed class WallGraphStage : IPipelineStage
             MeasurementScaleGroupId = scaleGroup?.Id ?? wall.MeasurementScaleGroupId
         };
     }
+
+    private static IEnumerable<string> WallNormalizationEvidence(
+        int trimmedEndpointCount,
+        int snappedEndpointGapCount)
+    {
+        if (snappedEndpointGapCount > 0)
+        {
+            yield return $"snapped {snappedEndpointGapCount} near-touch endpoint gap(s) into wall centerline";
+        }
+
+        if (trimmedEndpointCount > 0)
+        {
+            yield return $"trimmed {trimmedEndpointCount} supported endpoint overrun(s) from wall centerline";
+        }
+    }
+
+    private static bool ShouldSnapNearTouchEndpointGap(
+        WallSegment wall,
+        PlanPoint inferredJunctionPoint,
+        PlanPoint originalEndpoint,
+        IReadOnlyDictionary<string, List<PlanPoint>> pointsByWallId,
+        IReadOnlyList<WallSegment> pageWalls,
+        double snapTolerance,
+        double sharedTolerance)
+    {
+        var gap = inferredJunctionPoint.DistanceTo(originalEndpoint);
+        if (gap <= 0.001 || gap > snapTolerance)
+        {
+            return false;
+        }
+
+        var endpointTolerance = Math.Max(sharedTolerance, 0.5);
+        if (originalEndpoint.DistanceTo(wall.CenterLine.Start) > endpointTolerance
+            && originalEndpoint.DistanceTo(wall.CenterLine.End) > endpointTolerance)
+        {
+            return false;
+        }
+
+        if (DistanceToInfiniteLine(wall.CenterLine, inferredJunctionPoint) > Math.Max(1, sharedTolerance))
+        {
+            return false;
+        }
+
+        var parameter = wall.CenterLine.ProjectParameter(inferredJunctionPoint);
+        const double parameterTolerance = 0.001;
+        if (parameter >= -parameterTolerance && parameter <= 1 + parameterTolerance)
+        {
+            return false;
+        }
+
+        if (!IsSharedJunctionPoint(wall.Id, inferredJunctionPoint, pointsByWallId, pageWalls, sharedTolerance)
+            || IsSharedJunctionPoint(wall.Id, originalEndpoint, pointsByWallId, pageWalls, sharedTolerance))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static double DistanceToInfiniteLine(PlanLineSegment line, PlanPoint point) =>
+        line.PointAt(line.ProjectParameter(point)).DistanceTo(point);
 
     private static bool IsSharedJunctionPoint(
         string wallId,
@@ -1557,9 +2462,54 @@ internal sealed class WallGraphStage : IPipelineStage
             return true;
         }
 
-        return support.HasPerpendicularJunction
+        return support.HasPerpendicularEndpointJunction
             && tailLength <= ExtendedEndpointOverrunTrimTolerance(options)
             && tailLength <= Math.Max(wall.DrawingLength * 0.35, trimTolerance);
+    }
+
+    private static bool TryCreateEndpointOverrunReview(
+        WallSegment wall,
+        PlanPoint endpoint,
+        PlanPoint junctionPoint,
+        IReadOnlyDictionary<string, List<PlanPoint>> pointsByWallId,
+        IReadOnlyList<WallSegment> pageWalls,
+        ScannerOptions options,
+        double sharedTolerance,
+        out EndpointOverrunReview review)
+    {
+        review = default!;
+        var tailLength = endpoint.DistanceTo(junctionPoint);
+        if (tailLength <= 0.001)
+        {
+            return false;
+        }
+
+        if (IsSharedJunctionPoint(wall.Id, endpoint, pointsByWallId, pageWalls, sharedTolerance))
+        {
+            return false;
+        }
+
+        var support = EndpointTrimSupportAt(wall, junctionPoint, pointsByWallId, pageWalls, sharedTolerance);
+        var autoTrimLimit = ExtendedEndpointOverrunTrimTolerance(options);
+        var reviewLimit = EndpointOverrunReviewTolerance(options);
+        if (!support.HasPerpendicularEndpointJunction
+            || tailLength <= autoTrimLimit
+            || tailLength > reviewLimit
+            || tailLength > Math.Max(wall.DrawingLength * 0.45, autoTrimLimit))
+        {
+            return false;
+        }
+
+        review = new EndpointOverrunReview(
+            wall.PageNumber,
+            wall.Id,
+            endpoint,
+            junctionPoint,
+            tailLength,
+            autoTrimLimit,
+            reviewLimit,
+            support.WallIds);
+        return true;
     }
 
     private static EndpointTrimSupport EndpointTrimSupportAt(
@@ -1569,8 +2519,9 @@ internal sealed class WallGraphStage : IPipelineStage
         IReadOnlyList<WallSegment> pageWalls,
         double tolerance)
     {
-        var hasSharedJunction = false;
-        var hasPerpendicularJunction = false;
+        var wallIds = new List<string>();
+        var perpendicularWallIds = new List<string>();
+        var perpendicularEndpointWallIds = new List<string>();
 
         foreach (var other in pageWalls.Where(other => !string.Equals(other.Id, wall.Id, StringComparison.Ordinal)))
         {
@@ -1579,14 +2530,25 @@ internal sealed class WallGraphStage : IPipelineStage
                 continue;
             }
 
-            hasSharedJunction = true;
+            wallIds.Add(other.Id);
             if (IsNearPerpendicular(wall.CenterLine, other.CenterLine))
             {
-                hasPerpendicularJunction = true;
+                perpendicularWallIds.Add(other.Id);
+                if (other.CenterLine.Start.DistanceTo(junctionPoint) <= tolerance
+                    || other.CenterLine.End.DistanceTo(junctionPoint) <= tolerance)
+                {
+                    perpendicularEndpointWallIds.Add(other.Id);
+                }
             }
         }
 
-        return new EndpointTrimSupport(hasSharedJunction, hasPerpendicularJunction);
+        return new EndpointTrimSupport(
+            wallIds.Count > 0,
+            perpendicularWallIds.Count > 0,
+            perpendicularEndpointWallIds.Count > 0,
+            wallIds.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray(),
+            perpendicularWallIds.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray(),
+            perpendicularEndpointWallIds.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray());
     }
 
     private static double EndpointOverrunTrimTolerance(ScannerOptions options) =>
@@ -1602,6 +2564,13 @@ internal sealed class WallGraphStage : IPipelineStage
             Math.Min(
                 Math.Max(options.MaxOpeningGap * 0.8, options.DefaultWallThickness * 8.0),
                 Math.Max(options.DefaultWallThickness * 12.0, options.MaxWallFragmentGap * 7.0)));
+
+    private static double EndpointOverrunReviewTolerance(ScannerOptions options) =>
+        Math.Max(
+            ExtendedEndpointOverrunTrimTolerance(options),
+            Math.Min(
+                Math.Max(options.MaxOpeningGap * 1.8, options.DefaultWallThickness * 20.0),
+                Math.Max(options.DefaultWallThickness * 30.0, options.MaxWallFragmentGap * 12.0)));
 
     private static IReadOnlyList<PlanPoint> InferNearTouchJunctions(
         PlanLineSegment first,
@@ -1901,7 +2870,21 @@ internal sealed class WallGraphStage : IPipelineStage
 
     private readonly record struct EndpointTrimSupport(
         bool HasSharedJunction,
-        bool HasPerpendicularJunction);
+        bool HasPerpendicularJunction,
+        bool HasPerpendicularEndpointJunction,
+        IReadOnlyList<string> WallIds,
+        IReadOnlyList<string> PerpendicularWallIds,
+        IReadOnlyList<string> PerpendicularEndpointWallIds);
+
+    private sealed record EndpointOverrunReview(
+        int PageNumber,
+        string WallId,
+        PlanPoint Endpoint,
+        PlanPoint JunctionPoint,
+        double TailLength,
+        double AutoTrimLimit,
+        double ReviewLimit,
+        IReadOnlyList<string> SupportWallIds);
 
     private sealed record RawWallGraphComponent(
         int PageNumber,

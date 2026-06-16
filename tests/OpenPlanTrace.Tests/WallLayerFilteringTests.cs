@@ -435,6 +435,85 @@ public sealed class WallLayerFilteringTests
     }
 
     [Fact]
+    public async Task WallEvidenceRefinement_RejectsUnlayeredWallCandidatesInsideExcludedSurfacePatterns()
+    {
+        var document = new PlanDocument(
+            "surface-pattern-overlap-noise-rejection",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(680, 420),
+                    new PlanPrimitive[]
+                    {
+                        Line("protected-wall-over-pattern", "A-WALL", new PlanPoint(420, 180), new PlanPoint(520, 180)),
+                        UnlayeredLine("false-wall-over-pattern", new PlanPoint(420, 204), new PlanPoint(520, 204))
+                    })
+            });
+        var context = new ScanContext(
+            document,
+            new ScannerOptions { EnableWallEvidenceNoiseRejection = true });
+        context.LayerAnalysis = new PlanLayerAnalysis(new[]
+        {
+            Layer("A-WALL", LayerCategory.Wall, Confidence.High)
+        });
+        context.SurfacePatterns.Add(new SurfacePatternCandidate(
+            "page:1:surface-pattern:001",
+            1,
+            SurfacePatternKind.DenseOrthogonalGrid,
+            SurfacePatternOrientation.Orthogonal,
+            new PlanRect(400, 96, 160, 160),
+            null,
+            22,
+            11,
+            11,
+            100,
+            16,
+            16,
+            null,
+            ExcludedFromWallDetection: true,
+            ExcludedFromStructuralTopology: true,
+            new[] { "terrace-grid-source" },
+            Confidence.High,
+            RequiresReview: true,
+            new[] { "synthetic dense terrace/detail pattern" }));
+        context.WallCandidates.Add(new WallSegment(
+            "wall-protected",
+            1,
+            new PlanLineSegment(new PlanPoint(420, 180), new PlanPoint(520, 180)),
+            4,
+            Confidence.Medium)
+        {
+            SourcePrimitiveIds = new[] { "protected-wall-over-pattern" }
+        });
+        context.WallCandidates.Add(new WallSegment(
+            "wall-false-pattern-detail",
+            1,
+            new PlanLineSegment(new PlanPoint(420, 204), new PlanPoint(520, 204)),
+            4,
+            Confidence.Medium)
+        {
+            SourcePrimitiveIds = new[] { "false-wall-over-pattern" }
+        });
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Contains(context.Walls, wall => wall.SourcePrimitiveIds.Contains("protected-wall-over-pattern"));
+        Assert.DoesNotContain(context.Walls, wall => wall.SourcePrimitiveIds.Contains("false-wall-over-pattern"));
+
+        var diagnostic = Assert.Single(context.Diagnostics.Build().Messages.Where(message => message.Code == "wall_evidence.noise_walls_rejected"));
+        Assert.Equal("1", diagnostic.Properties["surfacePatternRejectedCount"]);
+        Assert.Contains("false-wall-over-pattern", diagnostic.SourcePrimitiveIds);
+
+        Assert.Contains(
+            context.WallEvidenceMap.WallAssessments,
+            assessment => assessment.SourcePrimitiveIds.Contains("false-wall-over-pattern")
+                && assessment.Category == WallEvidenceCategory.SurfacePatternDetail
+                && assessment.RejectedAsNoise
+                && assessment.Evidence.Any(item => item.Contains("page:1:surface-pattern:001", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public async Task ScanAsync_CanKeepDenseOrthogonalPatternsWhenFilterIsDisabled()
     {
         var primitives = new List<PlanPrimitive>
@@ -984,6 +1063,488 @@ public sealed class WallLayerFilteringTests
         Assert.Contains(withOverride.Walls, wall => wall.Evidence.Any(item => item.Contains("override", StringComparison.OrdinalIgnoreCase)));
     }
 
+    [Fact]
+    public async Task WallEvidenceRefinement_RejectsServiceLayerLineworkAsObjectFixtureDetail()
+    {
+        var document = new PlanDocument(
+            "wall-evidence-service-layer-linework-filter",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(460, 280),
+                    new PlanPrimitive[]
+                    {
+                        Line("host-wall", "A-WALL", new PlanPoint(80, 100), new PlanPoint(360, 100)),
+                        Line("hvac-linework-noise", "M-HVAC-EQPM", new PlanPoint(140, 120), new PlanPoint(260, 120))
+                    })
+            });
+        var context = new ScanContext(
+            document,
+            new ScannerOptions
+            {
+                EnableWallEvidenceNoiseRejection = true
+            })
+        {
+            LayerAnalysis = new PlanLayerAnalysis(new[]
+            {
+                Layer("A-WALL", LayerCategory.Wall, Confidence.High),
+                Layer("M-HVAC-EQPM", LayerCategory.HVAC, Confidence.High)
+            })
+        };
+        context.WallCandidates.Add(new WallSegment(
+            "wall-host",
+            1,
+            new PlanLineSegment(new PlanPoint(80, 100), new PlanPoint(360, 100)),
+            4,
+            Confidence.High)
+        {
+            SourcePrimitiveIds = new[] { "host-wall" },
+            Evidence = new[] { "test structural wall" }
+        });
+        context.WallCandidates.Add(new WallSegment(
+            "wall-hvac-linework-noise",
+            1,
+            new PlanLineSegment(new PlanPoint(140, 120), new PlanPoint(260, 120)),
+            4,
+            Confidence.Medium)
+        {
+            SourcePrimitiveIds = new[] { "hvac-linework-noise" },
+            Evidence = new[] { "test service equipment linework candidate" }
+        });
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Contains(context.Walls, wall => wall.SourcePrimitiveIds.Contains("host-wall"));
+        Assert.DoesNotContain(context.Walls, wall => wall.SourcePrimitiveIds.Contains("hvac-linework-noise"));
+
+        var rejected = Assert.Single(
+            context.WallEvidenceMap.WallAssessments,
+            assessment => assessment.SourcePrimitiveIds.Contains("hvac-linework-noise"));
+        Assert.Equal(WallEvidenceCategory.ObjectOrFixtureDetail, rejected.Category);
+        Assert.Equal(WallEvidenceDecision.Reject, rejected.Decision);
+        Assert.True(rejected.RejectedAsNoise);
+        Assert.True(rejected.ScoreBreakdown.NoisePenalty >= 0.75);
+        Assert.Contains(
+            rejected.Evidence,
+            item => item.Contains("object/fixture/service linework", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            rejected.ScoreBreakdown.NegativeEvidence,
+            item => item.Contains(nameof(WallEvidenceCategory.ObjectOrFixtureDetail), StringComparison.OrdinalIgnoreCase));
+
+        var diagnostic = Assert.Single(context.Diagnostics.Build().Messages.Where(
+            message => message.Code == "wall_evidence.noise_walls_rejected"));
+        Assert.Equal("1", diagnostic.Properties["objectFixtureRejectedCount"]);
+        Assert.Contains("hvac-linework-noise", diagnostic.SourcePrimitiveIds);
+    }
+
+    [Fact]
+    public async Task WallEvidenceRefinement_RejectsFurnitureAndFixtureLayerLineworkAsObjectFixtureDetail()
+    {
+        var document = new PlanDocument(
+            "wall-evidence-furniture-fixture-layer-linework-filter",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(520, 320),
+                    new PlanPrimitive[]
+                    {
+                        Line("host-wall", "A-WALL", new PlanPoint(80, 100), new PlanPoint(420, 100)),
+                        Line("furniture-linework-noise", "A-FURN", new PlanPoint(140, 145), new PlanPoint(220, 145)),
+                        Line("fixture-linework-noise", "A-FIXTURE", new PlanPoint(260, 145), new PlanPoint(340, 145))
+                    })
+            });
+        var context = new ScanContext(
+            document,
+            new ScannerOptions
+            {
+                EnableWallEvidenceNoiseRejection = true
+            })
+        {
+            LayerAnalysis = new PlanLayerAnalysis(new[]
+            {
+                Layer("A-WALL", LayerCategory.Wall, Confidence.High),
+                Layer("A-FURN", LayerCategory.Furniture, Confidence.High),
+                Layer("A-FIXTURE", LayerCategory.Fixture, Confidence.High)
+            })
+        };
+        context.WallCandidates.Add(new WallSegment(
+            "wall-host",
+            1,
+            new PlanLineSegment(new PlanPoint(80, 100), new PlanPoint(420, 100)),
+            4,
+            Confidence.High)
+        {
+            SourcePrimitiveIds = new[] { "host-wall" },
+            Evidence = new[] { "test structural wall" }
+        });
+        context.WallCandidates.Add(new WallSegment(
+            "wall-furniture-linework-noise",
+            1,
+            new PlanLineSegment(new PlanPoint(140, 145), new PlanPoint(220, 145)),
+            4,
+            Confidence.Medium)
+        {
+            SourcePrimitiveIds = new[] { "furniture-linework-noise" },
+            Evidence = new[] { "test furniture linework candidate" }
+        });
+        context.WallCandidates.Add(new WallSegment(
+            "wall-fixture-linework-noise",
+            1,
+            new PlanLineSegment(new PlanPoint(260, 145), new PlanPoint(340, 145)),
+            4,
+            Confidence.Medium)
+        {
+            SourcePrimitiveIds = new[] { "fixture-linework-noise" },
+            Evidence = new[] { "test fixture linework candidate" }
+        });
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Contains(context.Walls, wall => wall.SourcePrimitiveIds.Contains("host-wall"));
+        Assert.DoesNotContain(context.Walls, wall => wall.SourcePrimitiveIds.Contains("furniture-linework-noise"));
+        Assert.DoesNotContain(context.Walls, wall => wall.SourcePrimitiveIds.Contains("fixture-linework-noise"));
+
+        var rejected = context.WallEvidenceMap.WallAssessments
+            .Where(assessment => assessment.SourcePrimitiveIds.Any(
+                sourceId => sourceId is "furniture-linework-noise" or "fixture-linework-noise"))
+            .OrderBy(assessment => assessment.SourcePrimitiveIds[0], StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(2, rejected.Length);
+        Assert.All(rejected, assessment =>
+        {
+            Assert.Equal(WallEvidenceCategory.ObjectOrFixtureDetail, assessment.Category);
+            Assert.Equal(WallEvidenceDecision.Reject, assessment.Decision);
+            Assert.True(assessment.RejectedAsNoise);
+            Assert.True(assessment.ScoreBreakdown.NoisePenalty >= 0.75);
+            Assert.Contains(
+                assessment.Evidence,
+                item => item.Contains("object/fixture/service linework", StringComparison.OrdinalIgnoreCase));
+        });
+
+        var diagnostic = Assert.Single(context.Diagnostics.Build().Messages.Where(
+            message => message.Code == "wall_evidence.noise_walls_rejected"));
+        Assert.Equal("2", diagnostic.Properties["objectFixtureRejectedCount"]);
+        Assert.Contains("furniture-linework-noise", diagnostic.SourcePrimitiveIds);
+        Assert.Contains("fixture-linework-noise", diagnostic.SourcePrimitiveIds);
+    }
+
+    [Fact]
+    public async Task WallEvidenceRefinement_RejectsObjectFixtureParallelPairBeforeStrongWallAcceptance()
+    {
+        var firstFace = new PlanLineSegment(new PlanPoint(140, 145), new PlanPoint(240, 145));
+        var secondFace = new PlanLineSegment(new PlanPoint(140, 151), new PlanPoint(240, 151));
+        var document = new PlanDocument(
+            "wall-evidence-object-fixture-pair-filter",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(520, 320),
+                    new PlanPrimitive[]
+                    {
+                        Line("host-wall", "A-WALL", new PlanPoint(80, 100), new PlanPoint(420, 100)),
+                        Line("fixture-pair-face-a", "A-FIXTURE", firstFace.Start, firstFace.End),
+                        Line("fixture-pair-face-b", "A-FIXTURE", secondFace.Start, secondFace.End)
+                    })
+            });
+        var context = new ScanContext(
+            document,
+            new ScannerOptions
+            {
+                EnableWallEvidenceNoiseRejection = true
+            })
+        {
+            LayerAnalysis = new PlanLayerAnalysis(new[]
+            {
+                Layer("A-WALL", LayerCategory.Wall, Confidence.High),
+                Layer("A-FIXTURE", LayerCategory.Fixture, Confidence.High)
+            })
+        };
+        context.WallCandidates.Add(new WallSegment(
+            "wall-host",
+            1,
+            new PlanLineSegment(new PlanPoint(80, 100), new PlanPoint(420, 100)),
+            4,
+            Confidence.High)
+        {
+            SourcePrimitiveIds = new[] { "host-wall" },
+            Evidence = new[] { "test structural wall" }
+        });
+        context.WallCandidates.Add(new WallSegment(
+            "wall-fixture-pair-noise",
+            1,
+            new PlanLineSegment(new PlanPoint(140, 148), new PlanPoint(240, 148)),
+            6,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            SourcePrimitiveIds = new[] { "fixture-pair-face-a", "fixture-pair-face-b" },
+            PairEvidence = new WallPairEvidence(
+                firstFace,
+                secondFace,
+                FaceSeparation: 6,
+                OverlapRatio: 1,
+                Score: 0.91,
+                FirstFaceFragmentCount: 1,
+                SecondFaceFragmentCount: 1,
+                FirstFaceSourcePrimitiveIds: new[] { "fixture-pair-face-a" },
+                SecondFaceSourcePrimitiveIds: new[] { "fixture-pair-face-b" }),
+            Evidence = new[] { "test high-scoring fixture pair candidate" }
+        });
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Contains(context.Walls, wall => wall.SourcePrimitiveIds.Contains("host-wall"));
+        Assert.DoesNotContain(context.Walls, wall => wall.SourcePrimitiveIds.Contains("fixture-pair-face-a"));
+
+        var rejected = Assert.Single(
+            context.WallEvidenceMap.WallAssessments,
+            assessment => assessment.SourcePrimitiveIds.Contains("fixture-pair-face-a"));
+        Assert.Equal(WallEvidenceCategory.ObjectOrFixtureDetail, rejected.Category);
+        Assert.Equal(WallEvidenceDecision.Reject, rejected.Decision);
+        Assert.True(rejected.RejectedAsNoise);
+        Assert.True(rejected.ScoreBreakdown.NegativeScore > rejected.ScoreBreakdown.PositiveScore);
+        Assert.Contains(
+            rejected.Evidence,
+            item => item.Contains("paired object/fixture/service linework", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task WallEvidenceRefinement_RejectsDimensionGridParallelPairBeforeStrongWallAcceptance()
+    {
+        var firstFace = new PlanLineSegment(new PlanPoint(140, 185), new PlanPoint(340, 185));
+        var secondFace = new PlanLineSegment(new PlanPoint(140, 191), new PlanPoint(340, 191));
+        var document = new PlanDocument(
+            "wall-evidence-dimension-grid-pair-filter",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(520, 320),
+                    new PlanPrimitive[]
+                    {
+                        Line("host-wall", "A-WALL", new PlanPoint(80, 100), new PlanPoint(420, 100)),
+                        Line("dimension-pair-face-a", "A-DIMS", firstFace.Start, firstFace.End),
+                        Line("dimension-pair-face-b", "A-DIMS", secondFace.Start, secondFace.End)
+                    })
+            });
+        var context = new ScanContext(
+            document,
+            new ScannerOptions
+            {
+                EnableWallEvidenceNoiseRejection = true
+            })
+        {
+            LayerAnalysis = new PlanLayerAnalysis(new[]
+            {
+                Layer("A-WALL", LayerCategory.Wall, Confidence.High),
+                Layer("A-DIMS", LayerCategory.Dimension, Confidence.High)
+            })
+        };
+        context.WallCandidates.Add(new WallSegment(
+            "wall-host",
+            1,
+            new PlanLineSegment(new PlanPoint(80, 100), new PlanPoint(420, 100)),
+            4,
+            Confidence.High)
+        {
+            SourcePrimitiveIds = new[] { "host-wall" },
+            Evidence = new[] { "test structural wall" }
+        });
+        context.WallCandidates.Add(new WallSegment(
+            "wall-dimension-pair-noise",
+            1,
+            new PlanLineSegment(new PlanPoint(140, 188), new PlanPoint(340, 188)),
+            6,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            SourcePrimitiveIds = new[] { "dimension-pair-face-a", "dimension-pair-face-b" },
+            PairEvidence = new WallPairEvidence(
+                firstFace,
+                secondFace,
+                FaceSeparation: 6,
+                OverlapRatio: 1,
+                Score: 0.92,
+                FirstFaceFragmentCount: 1,
+                SecondFaceFragmentCount: 1,
+                FirstFaceSourcePrimitiveIds: new[] { "dimension-pair-face-a" },
+                SecondFaceSourcePrimitiveIds: new[] { "dimension-pair-face-b" }),
+            Evidence = new[] { "test high-scoring dimension pair candidate" }
+        });
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Contains(context.Walls, wall => wall.SourcePrimitiveIds.Contains("host-wall"));
+        Assert.DoesNotContain(context.Walls, wall => wall.SourcePrimitiveIds.Contains("dimension-pair-face-a"));
+
+        var rejected = Assert.Single(
+            context.WallEvidenceMap.WallAssessments,
+            assessment => assessment.SourcePrimitiveIds.Contains("dimension-pair-face-a"));
+        Assert.Equal(WallEvidenceCategory.DimensionOrAnnotation, rejected.Category);
+        Assert.Equal(WallEvidenceDecision.Reject, rejected.Decision);
+        Assert.True(rejected.RejectedAsNoise);
+        Assert.True(rejected.ScoreBreakdown.NegativeScore > rejected.ScoreBreakdown.PositiveScore);
+        Assert.Contains(
+            rejected.Evidence,
+            item => item.Contains("paired dimension, text, or grid layer linework", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task WallEvidenceRefinement_RejectsSurfacePatternLayerLineworkAsSurfacePatternDetail()
+    {
+        var document = new PlanDocument(
+            "wall-evidence-surface-pattern-layer-linework-filter",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(520, 320),
+                    new PlanPrimitive[]
+                    {
+                        Line("host-wall", "A-WALL", new PlanPoint(80, 100), new PlanPoint(420, 100)),
+                        Line("hatch-linework-noise", "A-HATCH", new PlanPoint(140, 145), new PlanPoint(340, 145))
+                    })
+            });
+        var context = new ScanContext(
+            document,
+            new ScannerOptions
+            {
+                EnableWallEvidenceNoiseRejection = true
+            })
+        {
+            LayerAnalysis = new PlanLayerAnalysis(new[]
+            {
+                Layer("A-WALL", LayerCategory.Wall, Confidence.High),
+                Layer("A-HATCH", LayerCategory.SurfacePattern, Confidence.High)
+            })
+        };
+        context.WallCandidates.Add(new WallSegment(
+            "wall-host",
+            1,
+            new PlanLineSegment(new PlanPoint(80, 100), new PlanPoint(420, 100)),
+            4,
+            Confidence.High)
+        {
+            SourcePrimitiveIds = new[] { "host-wall" },
+            Evidence = new[] { "test structural wall" }
+        });
+        context.WallCandidates.Add(new WallSegment(
+            "wall-hatch-linework-noise",
+            1,
+            new PlanLineSegment(new PlanPoint(140, 145), new PlanPoint(340, 145)),
+            4,
+            Confidence.Medium)
+        {
+            SourcePrimitiveIds = new[] { "hatch-linework-noise" },
+            Evidence = new[] { "test hatch linework candidate" }
+        });
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Contains(context.Walls, wall => wall.SourcePrimitiveIds.Contains("host-wall"));
+        Assert.DoesNotContain(context.Walls, wall => wall.SourcePrimitiveIds.Contains("hatch-linework-noise"));
+
+        var rejected = Assert.Single(
+            context.WallEvidenceMap.WallAssessments,
+            assessment => assessment.SourcePrimitiveIds.Contains("hatch-linework-noise"));
+        Assert.Equal(WallEvidenceCategory.SurfacePatternDetail, rejected.Category);
+        Assert.Equal(WallEvidenceDecision.Reject, rejected.Decision);
+        Assert.True(rejected.RejectedAsNoise);
+        Assert.True(rejected.ScoreBreakdown.NoisePenalty >= 0.85);
+        Assert.Contains(
+            rejected.Evidence,
+            item => item.Contains("hatch/surface-pattern linework", StringComparison.OrdinalIgnoreCase));
+
+        var diagnostic = Assert.Single(context.Diagnostics.Build().Messages.Where(
+            message => message.Code == "wall_evidence.noise_walls_rejected"));
+        Assert.Equal("1", diagnostic.Properties["surfacePatternRejectedCount"]);
+        Assert.Contains("hatch-linework-noise", diagnostic.SourcePrimitiveIds);
+    }
+
+    [Fact]
+    public async Task WallEvidenceRefinement_RejectsSurfacePatternParallelPairBeforeStrongWallAcceptance()
+    {
+        var firstFace = new PlanLineSegment(new PlanPoint(140, 145), new PlanPoint(340, 145));
+        var secondFace = new PlanLineSegment(new PlanPoint(140, 151), new PlanPoint(340, 151));
+        var document = new PlanDocument(
+            "wall-evidence-surface-pattern-pair-filter",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(520, 320),
+                    new PlanPrimitive[]
+                    {
+                        Line("host-wall", "A-WALL", new PlanPoint(80, 100), new PlanPoint(420, 100)),
+                        Line("hatch-pair-face-a", "A-HATCH", firstFace.Start, firstFace.End),
+                        Line("hatch-pair-face-b", "A-HATCH", secondFace.Start, secondFace.End)
+                    })
+            });
+        var context = new ScanContext(
+            document,
+            new ScannerOptions
+            {
+                EnableWallEvidenceNoiseRejection = true
+            })
+        {
+            LayerAnalysis = new PlanLayerAnalysis(new[]
+            {
+                Layer("A-WALL", LayerCategory.Wall, Confidence.High),
+                Layer("A-HATCH", LayerCategory.SurfacePattern, Confidence.High)
+            })
+        };
+        context.WallCandidates.Add(new WallSegment(
+            "wall-host",
+            1,
+            new PlanLineSegment(new PlanPoint(80, 100), new PlanPoint(420, 100)),
+            4,
+            Confidence.High)
+        {
+            SourcePrimitiveIds = new[] { "host-wall" },
+            Evidence = new[] { "test structural wall" }
+        });
+        context.WallCandidates.Add(new WallSegment(
+            "wall-hatch-pair-noise",
+            1,
+            new PlanLineSegment(new PlanPoint(140, 148), new PlanPoint(340, 148)),
+            6,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            SourcePrimitiveIds = new[] { "hatch-pair-face-a", "hatch-pair-face-b" },
+            PairEvidence = new WallPairEvidence(
+                firstFace,
+                secondFace,
+                FaceSeparation: 6,
+                OverlapRatio: 1,
+                Score: 0.92,
+                FirstFaceFragmentCount: 1,
+                SecondFaceFragmentCount: 1,
+                FirstFaceSourcePrimitiveIds: new[] { "hatch-pair-face-a" },
+                SecondFaceSourcePrimitiveIds: new[] { "hatch-pair-face-b" }),
+            Evidence = new[] { "test high-scoring hatch pair candidate" }
+        });
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Contains(context.Walls, wall => wall.SourcePrimitiveIds.Contains("host-wall"));
+        Assert.DoesNotContain(context.Walls, wall => wall.SourcePrimitiveIds.Contains("hatch-pair-face-a"));
+
+        var rejected = Assert.Single(
+            context.WallEvidenceMap.WallAssessments,
+            assessment => assessment.SourcePrimitiveIds.Contains("hatch-pair-face-a"));
+        Assert.Equal(WallEvidenceCategory.SurfacePatternDetail, rejected.Category);
+        Assert.Equal(WallEvidenceDecision.Reject, rejected.Decision);
+        Assert.True(rejected.RejectedAsNoise);
+        Assert.True(rejected.ScoreBreakdown.NegativeScore > rejected.ScoreBreakdown.PositiveScore);
+        Assert.Contains(
+            rejected.Evidence,
+            item => item.Contains("paired hatch/surface-pattern linework", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static LinePrimitive Line(string sourceId, string layer, PlanPoint start, PlanPoint end) =>
         new(new PlanLineSegment(start, end))
         {
@@ -1017,6 +1578,20 @@ public sealed class WallLayerFilteringTests
                 DrawingSpace = SourceDrawingSpace.Model
             }
         };
+
+    private static LayerSummary Layer(string name, LayerCategory category, Confidence confidence) =>
+        new(
+            name,
+            "test",
+            1,
+            new Dictionary<PlanPrimitiveKind, int> { [PlanPrimitiveKind.Line] = 1 },
+            100,
+            new PlanRect(0, 0, 100, 10),
+            category,
+            confidence,
+            new[] { new LayerCategoryScore(category, confidence.Value, new[] { "test layer summary" }) },
+            new[] { $"classified {category}" },
+            new[] { 1 });
 
     private static PrimitiveSourceMetadata Source(string sourceId, string entityType, string layer) =>
         new()

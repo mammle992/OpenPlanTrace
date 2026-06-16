@@ -2827,6 +2827,8 @@ function drawOverlay() {
       const reliability = wallReliabilitySummary(wall);
       const title = [
         `${wall.id} - ${component}`,
+        wall.wallType ? `type ${wall.wallType}` : "",
+        wall.evidenceAssessment?.category ? `evidence ${wall.evidenceAssessment.category}` : "",
         `confidence ${wall.confidence.toFixed(2)}`,
         reliability
       ].filter(Boolean).join(" - ");
@@ -2925,7 +2927,11 @@ function shouldDrawWallInStructuralLayer(wall) {
     return false;
   }
 
-  return wall?.wallComponentKind !== "ObjectLikeIsland";
+  if (wall?.wallComponentKind === "ObjectLikeIsland" || wall?.wallComponentKind === "IsolatedFragment") {
+    return false;
+  }
+
+  return !wallCoordinateBlocked(wall);
 }
 
 function drawScanReviewQueue(page, options = {}) {
@@ -4058,6 +4064,8 @@ function describeTopology(item) {
 
 function wallClassName(wall) {
   const classes = ["wall"];
+  classes.push(wallTypeClassName(wall));
+
   switch (wall.wallComponentKind) {
     case "MainStructural":
       classes.push("wall-main");
@@ -4086,6 +4094,17 @@ function wallClassName(wall) {
   }
 
   return classes.join(" ");
+}
+
+function wallTypeClassName(wall) {
+  switch (String(wall?.wallType || "").toLowerCase()) {
+    case "exterior":
+      return "wall-exterior";
+    case "interior":
+      return "wall-interior";
+    default:
+      return "wall-unknown";
+  }
 }
 
 function wallDrawOpacity(wall) {
@@ -6061,11 +6080,19 @@ function appendWallTopologyLegend(container, scan = state.scan) {
     return;
   }
 
-  const structuralWalls = walls.filter((wall) => !wall.excludedFromStructuralTopology);
-  const excludedWalls = walls.filter((wall) => wall.excludedFromStructuralTopology);
+  const structuralWalls = walls.filter(shouldDrawWallInStructuralLayer);
+  const hiddenWalls = walls.filter((wall) => !shouldDrawWallInStructuralLayer(wall));
+  const exteriorWalls = structuralWalls.filter((wall) => String(wall.wallType || "").toLowerCase() === "exterior");
+  const interiorWalls = structuralWalls.filter((wall) => String(wall.wallType || "").toLowerCase() === "interior");
+  const unknownWalls = structuralWalls.filter((wall) => {
+    const wallType = String(wall.wallType || "").toLowerCase();
+    return wallType !== "exterior" && wallType !== "interior";
+  });
   const rows = [
-    ["wall-main", "Structural wall candidates", structuralWalls.length],
-    ["wall-excluded", "Excluded wall/detail fragments", excludedWalls.length]
+    ["wall-exterior", "Exterior placement walls", exteriorWalls.length],
+    ["wall-interior", "Interior placement walls", interiorWalls.length],
+    ["wall-unknown", "Unclassified placement walls", unknownWalls.length],
+    ["wall-excluded", "Hidden wall/detail candidates", hiddenWalls.length]
   ];
 
   rows.forEach(([className, label, count]) => {
@@ -9000,7 +9027,7 @@ function layerTotalForKey(scan, key) {
     case "wallComponents":
       return scan.wallComponents?.length ?? 0;
     case "walls":
-      return scan.walls?.length ?? 0;
+      return (scan.walls ?? []).filter(shouldDrawWallInStructuralLayer).length;
     case "nodes":
       return scan.nodes?.length ?? 0;
     case "rooms":
@@ -9054,7 +9081,10 @@ function layerCountForKey(scan, key) {
     case "wallComponents":
       return currentPageOnly(scan.wallComponents);
     case "walls":
-      return currentPageOnly(scan.walls);
+      return (scan.walls ?? [])
+        .filter((wall) => wall.pageNumber == null || wall.pageNumber === state.currentPage)
+        .filter(shouldDrawWallInStructuralLayer)
+        .length;
     case "nodes":
       return currentPageOnly(scan.nodes);
     case "rooms":
@@ -13521,10 +13551,13 @@ function serializeCurrentOverlaySvg() {
         .annotation{fill:rgba(37,135,180,.055);stroke:#2587b4;stroke-width:.85;stroke-dasharray:3 3;vector-effect:non-scaling-stroke}
         .annotation-reference{fill:rgba(25,105,166,.10);stroke:#1969a6;stroke-width:1;vector-effect:non-scaling-stroke}
         .annotation-reference-link{stroke:#1969a6;stroke-width:.8;stroke-dasharray:4 4;stroke-linecap:round;fill:none;vector-effect:non-scaling-stroke}
-        .wall{stroke:#c43d3d;stroke-width:.72;stroke-linecap:butt;fill:none;vector-effect:non-scaling-stroke}
-        .wall-main,.wall-secondary{stroke:#b82f42}
+        .wall{stroke:#7a5f18;stroke-width:.78;stroke-linecap:butt;fill:none;vector-effect:non-scaling-stroke}
+        .wall-exterior{stroke:#1f5fbf;stroke-width:1.02}
+        .wall-interior{stroke:#1f7a4d;stroke-width:.92}
+        .wall-unknown{stroke:#7a5f18;stroke-width:.78}
         .wall-object-like{stroke:#c97c18;stroke-width:.58;stroke-dasharray:5 4}
         .wall-fragment{stroke:#7854a8;stroke-width:.48;stroke-dasharray:3 5}
+        .wall-review{stroke-width:1.18;stroke-dasharray:3 2}
         .wall-excluded{stroke-width:.42;stroke-dasharray:2 6}
         .node{fill:rgba(255,255,255,.65);stroke:#b82f42;stroke-width:.42;vector-effect:non-scaling-stroke}
         .room{fill:rgba(63,143,87,.075);stroke:#3f8f57;stroke-width:.95;vector-effect:non-scaling-stroke}

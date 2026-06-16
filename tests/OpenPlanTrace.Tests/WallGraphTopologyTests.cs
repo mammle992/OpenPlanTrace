@@ -82,12 +82,158 @@ public sealed class WallGraphTopologyTests
 
         Assert.Equal(3, node.Degree);
         Assert.Empty(result.WallGraph.RepairCandidates);
+        var snappedPartition = Assert.Single(result.Walls, wall => wall.SourcePrimitiveIds.Contains("partition-near"));
+        Assert.Equal(200, snappedPartition.CenterLine.Start.X, precision: 1);
+        Assert.Equal(100, snappedPartition.CenterLine.Start.Y, precision: 1);
+        Assert.Equal(200, snappedPartition.CenterLine.End.X, precision: 1);
+        Assert.Equal(220, snappedPartition.CenterLine.End.Y, precision: 1);
+        Assert.Contains(
+            snappedPartition.Evidence,
+            item => item.Contains("snapped 1 near-touch endpoint gap", StringComparison.Ordinal));
+        var evidenceSegment = Assert.Single(result.WallEvidenceMap.Segments, segment => segment.WallId == snappedPartition.Id);
+        Assert.Equal(200, evidenceSegment.Line.Start.X, precision: 1);
+        Assert.Equal(100, evidenceSegment.Line.Start.Y, precision: 1);
+        Assert.Equal(200, evidenceSegment.Line.End.X, precision: 1);
+        Assert.Equal(220, evidenceSegment.Line.End.Y, precision: 1);
+        Assert.True(evidenceSegment.Bounds.Contains(new PlanPoint(200, 100), tolerance: 0.5));
+        Assert.Contains(
+            evidenceSegment.Evidence,
+            item => item.Contains("wall evidence geometry synchronized", StringComparison.Ordinal));
+        var evidenceAssessment = Assert.Single(result.WallEvidenceMap.WallAssessments, assessment => assessment.WallId == snappedPartition.Id);
+        Assert.True(evidenceAssessment.Bounds.Contains(new PlanPoint(200, 100), tolerance: 0.5));
+        Assert.Contains(
+            evidenceAssessment.Evidence,
+            item => item.Contains("wall evidence geometry synchronized", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.WallGraph.Nodes, graphNode =>
+            graphNode.Position.DistanceTo(new PlanPoint(200, 108)) <= 0.5);
         Assert.DoesNotContain(
             result.Diagnostics.Messages,
             diagnostic => diagnostic.Code == "wall_graph.endpoint_gap.review");
         Assert.Contains(
             result.Diagnostics.Messages,
+            diagnostic => diagnostic.Code == "wall_evidence.geometry_synchronized"
+                && diagnostic.Properties["synchronizedWallCount"] == "1");
+        Assert.Contains(
+            result.Diagnostics.Messages,
             diagnostic => diagnostic.Code == "wall_graph.near_touch_junctions.inferred");
+        Assert.Contains(
+            result.Diagnostics.Messages,
+            diagnostic => diagnostic.Code == "wall_graph.topology.normalized"
+                && diagnostic.Properties["snappedEndpointGapCount"] == "1"
+                && diagnostic.Properties["normalizedWallSegmentCount"] == "1");
+    }
+
+    [Fact]
+    public async Task WallGraphStage_DoesNotAutoRepairReviewRequiredWallCoordinates()
+    {
+        var hostWall = DetectedWall("wall-host", new PlanPoint(100, 100), new PlanPoint(320, 100));
+        var reviewWall = DetectedWall("wall-review-partition", new PlanPoint(200, 108), new PlanPoint(200, 220));
+        var context = new ScanContext(
+            Document("wall-review-coordinate-repair-gate"),
+            new ScannerOptions());
+        context.Walls.AddRange(new[] { hostWall, reviewWall });
+        context.WallTopologyPreparation = new WallTopologyPreparation(
+            new[] { hostWall.Id, reviewWall.Id },
+            Array.Empty<WallTopologyRejectedWall>(),
+            new[] { hostWall.Id },
+            new[] { reviewWall.Id },
+            Array.Empty<string>());
+
+        await new WallGraphStage().ExecuteAsync(context, CancellationToken.None);
+
+        var retainedReviewWall = Assert.Single(context.Walls, wall => wall.Id == reviewWall.Id);
+
+        Assert.Equal(200, retainedReviewWall.CenterLine.Start.X, precision: 1);
+        Assert.Equal(108, retainedReviewWall.CenterLine.Start.Y, precision: 1);
+        Assert.Equal(200, retainedReviewWall.CenterLine.End.X, precision: 1);
+        Assert.Equal(220, retainedReviewWall.CenterLine.End.Y, precision: 1);
+        Assert.DoesNotContain(
+            retainedReviewWall.Evidence,
+            item => item.Contains("snapped", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("trimmed", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "wall_graph.coordinate_repair.trust_gated"
+                && diagnostic.Properties["skippedWallCount"] == "1"
+                && diagnostic.Properties["acceptedGraphWallCount"] == "1"
+                && diagnostic.Properties["reviewGraphWallCount"] == "1"
+                && diagnostic.Properties["automaticCoordinateRepairWallCount"] == "1"
+                && diagnostic.Properties["wallIds"] == reviewWall.Id);
+    }
+
+    [Fact]
+    public async Task WallGraphStage_DoesNotUseReviewRequiredWallsAsAutoRepairSupport()
+    {
+        var reviewHostWall = DetectedWall("wall-review-host", new PlanPoint(100, 100), new PlanPoint(320, 100));
+        var acceptedPartition = DetectedWall("wall-accepted-partition", new PlanPoint(200, 108), new PlanPoint(200, 220));
+        var context = new ScanContext(
+            Document("wall-review-support-coordinate-repair-gate"),
+            new ScannerOptions());
+        context.Walls.AddRange(new[] { reviewHostWall, acceptedPartition });
+        context.WallTopologyPreparation = new WallTopologyPreparation(
+            new[] { acceptedPartition.Id, reviewHostWall.Id },
+            Array.Empty<WallTopologyRejectedWall>(),
+            new[] { acceptedPartition.Id },
+            new[] { reviewHostWall.Id },
+            Array.Empty<string>());
+
+        await new WallGraphStage().ExecuteAsync(context, CancellationToken.None);
+
+        var retainedPartition = Assert.Single(context.Walls, wall => wall.Id == acceptedPartition.Id);
+
+        Assert.Equal(200, retainedPartition.CenterLine.Start.X, precision: 1);
+        Assert.Equal(108, retainedPartition.CenterLine.Start.Y, precision: 1);
+        Assert.Equal(200, retainedPartition.CenterLine.End.X, precision: 1);
+        Assert.Equal(220, retainedPartition.CenterLine.End.Y, precision: 1);
+        Assert.DoesNotContain(
+            retainedPartition.Evidence,
+            item => item.Contains("snapped", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("trimmed", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "wall_evidence.geometry_synchronized");
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "wall_graph.coordinate_repair.review_support_excluded"
+                && diagnostic.Properties["excludedSupportWallCount"] == "1"
+                && diagnostic.Properties["acceptedGraphWallCount"] == "1"
+                && diagnostic.Properties["reviewGraphWallCount"] == "1"
+                && diagnostic.Properties["automaticCoordinateRepairWallCount"] == "1"
+                && diagnostic.Properties["wallIds"] == reviewHostWall.Id);
+    }
+
+    [Fact]
+    public async Task WallGraphStage_DoesNotCreateEndpointGapRepairCandidatesForReviewWalls()
+    {
+        var top = DetectedWall("wall-room-top", new PlanPoint(100, 100), new PlanPoint(320, 100));
+        var right = DetectedWall("wall-room-right", new PlanPoint(320, 100), new PlanPoint(320, 260));
+        var bottom = DetectedWall("wall-room-bottom", new PlanPoint(320, 260), new PlanPoint(100, 260));
+        var left = DetectedWall("wall-room-left", new PlanPoint(100, 260), new PlanPoint(100, 100));
+        var reviewPartition = DetectedWall("wall-review-partition-gap", new PlanPoint(200, 112), new PlanPoint(200, 220));
+        var context = new ScanContext(
+            Document("wall-review-gap-repair-candidate-gate"),
+            new ScannerOptions());
+        context.Walls.AddRange(new[] { top, right, bottom, left, reviewPartition });
+        context.WallTopologyPreparation = new WallTopologyPreparation(
+            new[] { bottom.Id, left.Id, reviewPartition.Id, right.Id, top.Id },
+            Array.Empty<WallTopologyRejectedWall>(),
+            new[] { bottom.Id, left.Id, right.Id, top.Id },
+            new[] { reviewPartition.Id },
+            Array.Empty<string>());
+
+        await new WallGraphStage().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Empty(context.WallGraph.RepairCandidates);
+        Assert.DoesNotContain(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "wall_graph.endpoint_gap.review");
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "wall_graph.endpoint_gap.review_candidate_trust_gated"
+                && diagnostic.Properties["suppressedEndpointGapCandidateCount"] == "1"
+                && diagnostic.Properties["reviewGraphWallCount"] == "1"
+                && diagnostic.Properties["automaticCoordinateRepairWallCount"] == "4"
+                && diagnostic.Properties["wallIds"] == reviewPartition.Id);
     }
 
     [Fact]
@@ -172,6 +318,93 @@ public sealed class WallGraphTopologyTests
             result.Diagnostics.Messages,
             diagnostic => diagnostic.Code == "wall_graph.topology.normalized"
                 && diagnostic.Properties["trimmedEndpointOverrunCount"] == "1");
+    }
+
+    [Fact]
+    public async Task ScanAsync_QueuesReviewForLongEndpointOverrunBeyondSafeAutoTrimTolerance()
+    {
+        var result = await new OpenPlanTraceScanner().ScanAsync(
+            Document(
+                "wall-long-overrun-review",
+                Wall("top-long-overrun", new PlanPoint(20, 100), new PlanPoint(320, 100)),
+                Wall("left", new PlanPoint(100, 100), new PlanPoint(100, 260))));
+
+        var overrunWall = Assert.Single(result.Walls, wall => wall.SourcePrimitiveIds.Contains("top-long-overrun"));
+        var repairCandidate = Assert.Single(result.WallGraph.RepairCandidates);
+
+        Assert.Equal(20, overrunWall.CenterLine.Start.X, precision: 1);
+        Assert.DoesNotContain(result.WallGraph.Nodes, node =>
+            node.Position.DistanceTo(new PlanPoint(20, 100)) <= 0.5);
+        Assert.Equal(WallGraphRepairCandidateKind.EndpointOverrun, repairCandidate.Kind);
+        Assert.Equal(WallGraphRepairAction.TrimEndpointOverrun, repairCandidate.SuggestedAction);
+        Assert.Equal(WallGraphRepairApplicability.ReviewAndApplySuggestedTrim, repairCandidate.Applicability);
+        Assert.Equal(80, repairCandidate.GapDistance, precision: 1);
+        Assert.True(repairCandidate.SafeSnapDistance < repairCandidate.GapDistance);
+        Assert.Equal(20, repairCandidate.SourcePoint.X, precision: 1);
+        Assert.Equal(100, repairCandidate.SourcePoint.Y, precision: 1);
+        Assert.Equal(100, repairCandidate.TargetPoint.X, precision: 1);
+        Assert.Equal(100, repairCandidate.TargetPoint.Y, precision: 1);
+        Assert.Contains("top-long-overrun", repairCandidate.SourcePrimitiveIds);
+        Assert.Contains("left", repairCandidate.SourcePrimitiveIds);
+        Assert.Contains(
+            repairCandidate.Evidence,
+            item => item.Contains("possible overextended wall endpoint", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            result.Diagnostics.Messages,
+            diagnostic => diagnostic.Code == "wall_graph.endpoint_overruns.detected"
+                && diagnostic.Properties["overrunCount"] == "1");
+        Assert.Contains(
+            result.Diagnostics.Messages,
+            diagnostic => diagnostic.Code == "wall_graph.endpoint_overrun.review"
+                && diagnostic.Properties["suggestedAction"] == "TrimEndpointOverrun"
+                && diagnostic.Properties["overrunDistance"] == "80");
+        Assert.Contains(
+            result.Diagnostics.Messages,
+            diagnostic => diagnostic.Code == "wall_graph.topology.normalized"
+                && diagnostic.Properties["suppressedEndpointOverrunTailEdgeCount"] == "1");
+    }
+
+    [Fact]
+    public async Task PlacementExporter_IncludesEndpointOverrunTrimRepairCandidate()
+    {
+        var result = await new OpenPlanTraceScanner().ScanAsync(
+            Document(
+                "wall-long-overrun-placement-export",
+                Wall("top-long-overrun", new PlanPoint(20, 100), new PlanPoint(320, 100)),
+                Wall("left", new PlanPoint(100, 100), new PlanPoint(100, 260))));
+
+        result = result with
+        {
+            Calibration = result.Calibration with
+            {
+                MillimetersPerDrawingUnit = 10,
+                Confidence = Confidence.High
+            }
+        };
+
+        using var parsed = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(result));
+        var root = parsed.RootElement;
+        var candidate = Assert.Single(root.GetProperty("wallGraphRepairCandidates").EnumerateArray());
+        var wall = Assert.Single(root.GetProperty("walls").EnumerateArray(), item =>
+            item.GetProperty("sourcePrimitiveIds").EnumerateArray().Any(id => id.GetString() == "top-long-overrun"));
+
+        Assert.Equal("EndpointOverrun", candidate.GetProperty("kind").GetString());
+        Assert.Equal("TrimEndpointOverrun", candidate.GetProperty("suggestedAction").GetString());
+        Assert.Equal("ReviewAndApplySuggestedTrim", candidate.GetProperty("applicability").GetString());
+        Assert.Equal(80, candidate.GetProperty("gapDistanceDrawingUnits").GetDouble(), precision: 1);
+        Assert.Equal(800, candidate.GetProperty("gapDistanceMillimeters").GetDouble(), precision: 1);
+        Assert.Equal(200, candidate.GetProperty("sourcePointMillimeters").GetProperty("x").GetDouble(), precision: 1);
+        Assert.Equal(1000, candidate.GetProperty("targetPointMillimeters").GetProperty("x").GetDouble(), precision: 1);
+        Assert.Contains("endpoint-overrun trim", candidate.GetProperty("recommendedAction").GetString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            candidate.GetProperty("id").GetString(),
+            wall.GetProperty("wallGraphRepairCandidateIds").EnumerateArray().Select(item => item.GetString()));
+        Assert.True(wall.GetProperty("reliability").GetProperty("requiresReview").GetBoolean());
+        Assert.Contains(
+            wall.GetProperty("reliability").GetProperty("reasons").EnumerateArray().Select(item => item.GetString()),
+            reason => reason is not null
+                && reason.Contains(candidate.GetProperty("id").GetString()!, StringComparison.Ordinal)
+                && reason.Contains("endpoint-overrun trim", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -520,5 +753,17 @@ public sealed class WallGraphTopologyTests
                 Layer = "A-WALL",
                 DrawingSpace = SourceDrawingSpace.Model
             }
+        };
+
+    private static WallSegment DetectedWall(string id, PlanPoint start, PlanPoint end) =>
+        new(
+            id,
+            1,
+            new PlanLineSegment(start, end),
+            4,
+            Confidence.High)
+        {
+            SourcePrimitiveIds = new[] { id },
+            Evidence = new[] { "test detected wall" }
         };
 }

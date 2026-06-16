@@ -157,6 +157,7 @@ public sealed class OpenPlanTraceScanner : IFloorplanScanner
             new DimensionChainConsistencyStage(),
             new WallDetectionStage(),
             new WallEvidenceRefinementStage(),
+            new WallTopologyPreparationStage(),
             new WallGraphStage(),
             new OpeningDetectionStage(),
             new RoomDetectionStage(),

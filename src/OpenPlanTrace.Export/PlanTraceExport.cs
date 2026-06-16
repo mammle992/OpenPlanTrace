@@ -20,6 +20,8 @@ public sealed record PlanTraceExport(
     IReadOnlyList<RegionExport> Regions,
     IReadOnlyList<SurfacePatternExport> SurfacePatterns,
     IReadOnlyList<WallExport> Walls,
+    WallEvidenceExport WallEvidence,
+    WallTopologyPreparationExport WallTopologyPreparation,
     WallGraphExport WallGraph,
     IReadOnlyList<RoomExport> Rooms,
     RoomAdjacencyGraphExport RoomAdjacencyGraph,
@@ -33,7 +35,7 @@ public sealed record PlanTraceExport(
     QualityExport Quality,
     DiagnosticsExport Diagnostics)
 {
-    public const string CurrentSchemaVersion = "openplantrace.scan.v62";
+    public const string CurrentSchemaVersion = "openplantrace.scan.v65";
 
     public static PlanTraceExport From(PlanScanResult result) =>
         Create(result);
@@ -74,6 +76,8 @@ public sealed record PlanTraceExport(
                 wallComponentLookup,
                 wallEvidenceAssessments.TryGetValue(wall.Id, out var assessment) ? assessment : null,
                 wallTopologySpansByWallId.TryGetValue(wall.Id, out var spans) ? spans : Array.Empty<WallGraphTopologySpan>())).ToArray(),
+            WallEvidenceExport.From(result.WallEvidenceMap, sourceLookup),
+            WallTopologyPreparationExport.From(result.WallTopologyPreparation, sourceLookup),
             WallGraphExport.From(result.WallGraph, wallTopologySpans, sourceLookup),
             result.Rooms.Select(RoomExport.From).ToArray(),
             RoomAdjacencyGraphExport.From(result.RoomAdjacencyGraph),
@@ -1073,6 +1077,389 @@ public sealed record WallEvidenceAssessmentExport(
             assessment.RejectedAsNoise,
             assessment.SourcePrimitiveIds,
             assessment.Evidence);
+}
+
+public sealed record WallEvidenceScoreBreakdownExport(
+    double PositiveScore,
+    double NegativeScore,
+    double DecisionScore,
+    double PairSupportScore,
+    double LayerSupportScore,
+    double StructuralSupportScore,
+    double RecoverySupportScore,
+    double NoisePenalty,
+    double FragmentReviewPenalty,
+    IReadOnlyList<string> PositiveEvidence,
+    IReadOnlyList<string> NegativeEvidence)
+{
+    public static WallEvidenceScoreBreakdownExport From(WallEvidenceScoreBreakdown score) =>
+        new(
+            score.PositiveScore,
+            score.NegativeScore,
+            score.DecisionScore,
+            score.PairSupportScore,
+            score.LayerSupportScore,
+            score.StructuralSupportScore,
+            score.RecoverySupportScore,
+            score.NoisePenalty,
+            score.FragmentReviewPenalty,
+            score.PositiveEvidence,
+            score.NegativeEvidence);
+}
+
+public sealed record WallTopologyPreparationExport(
+    int GraphWallCount,
+    int AcceptedGraphWallCount,
+    int ReviewGraphWallCount,
+    int UnassessedGraphWallCount,
+    int AutomaticCoordinateRepairWallCount,
+    int RejectedWallCount,
+    int RejectedAssessmentCount,
+    int DoorOrOpeningSymbolCount,
+    int SurfacePatternDetailCount,
+    int DimensionOrAnnotationCount,
+    int ObjectOrFixtureDetailCount,
+    IReadOnlyList<string> GraphWallIds,
+    IReadOnlyList<string> AcceptedGraphWallIds,
+    IReadOnlyList<string> ReviewGraphWallIds,
+    IReadOnlyList<string> UnassessedGraphWallIds,
+    IReadOnlyList<string> AutomaticCoordinateRepairWallIds,
+    IReadOnlyList<string> RejectedWallIds,
+    IReadOnlyList<WallTopologyRejectedWallExport> RejectedWalls,
+    IReadOnlyList<string> Evidence)
+{
+    public static WallTopologyPreparationExport From(
+        WallTopologyPreparation preparation,
+        IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup) =>
+        new(
+            preparation.GraphWallCount,
+            preparation.AcceptedGraphWallCount,
+            preparation.ReviewGraphWallCount,
+            preparation.UnassessedGraphWallCount,
+            preparation.AutomaticCoordinateRepairWallCount,
+            preparation.RejectedWallCount,
+            preparation.RejectedWalls.Count,
+            preparation.DoorOrOpeningSymbolCount,
+            preparation.SurfacePatternDetailCount,
+            preparation.DimensionOrAnnotationCount,
+            preparation.ObjectOrFixtureDetailCount,
+            preparation.GraphWallIds,
+            preparation.AcceptedGraphWallIds,
+            preparation.ReviewGraphWallIds,
+            preparation.UnassessedGraphWallIds,
+            preparation.AutomaticCoordinateRepairWallIds,
+            preparation.RejectedWallIds,
+            preparation.RejectedWalls.Select(wall => WallTopologyRejectedWallExport.From(wall, sourceLookup)).ToArray(),
+            BuildEvidence(preparation));
+
+    private static IReadOnlyList<string> BuildEvidence(WallTopologyPreparation preparation)
+    {
+        var evidence = new List<string>
+        {
+            $"graph wall input: {preparation.GraphWallCount}",
+            $"accepted graph walls: {preparation.AcceptedGraphWallCount}",
+            $"review-required graph walls: {preparation.ReviewGraphWallCount}",
+            $"unassessed graph walls: {preparation.UnassessedGraphWallCount}",
+            $"automatic coordinate repair allowed walls: {preparation.AutomaticCoordinateRepairWallCount}"
+        };
+
+        if (preparation.RejectedWallCount > 0)
+        {
+            evidence.Add($"rejected wall-like detail walls excluded from graph: {preparation.RejectedWallCount}");
+        }
+
+        return evidence;
+    }
+}
+
+public sealed record WallTopologyRejectedWallExport(
+    string WallId,
+    int PageNumber,
+    RectExport Bounds,
+    string Category,
+    string Decision,
+    bool RejectedAsNoise,
+    IReadOnlyList<string> SourcePrimitiveIds,
+    IReadOnlyList<string> SourceLayers,
+    IReadOnlyList<string> Evidence)
+{
+    public static WallTopologyRejectedWallExport From(
+        WallTopologyRejectedWall wall,
+        IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup) =>
+        new(
+            wall.WallId,
+            wall.PageNumber,
+            RectExport.From(wall.Bounds),
+            wall.Category.ToString(),
+            wall.Decision.ToString(),
+            wall.RejectedAsNoise,
+            wall.SourcePrimitiveIds,
+            ExportSourceHelpers.SourceLayers(wall.SourcePrimitiveIds, sourceLookup),
+            wall.Evidence);
+}
+
+public sealed record WallEvidenceExport(
+    int SegmentCount,
+    int BandCount,
+    int WallAssessmentCount,
+    int SourceCandidateWallCount,
+    int RecoveredCandidateWallCount,
+    int TotalCandidateWallCount,
+    int StrongWallBodyCount,
+    int MediumWallBodyCount,
+    int WeakSingleLineCount,
+    int RecoveredWallBodyCount,
+    int RejectedNoiseCount,
+    int RejectedDoorOrOpeningSymbolCount,
+    int RejectedSurfacePatternDetailCount,
+    int RejectedDimensionOrAnnotationCount,
+    int RejectedObjectOrFixtureDetailCount,
+    IReadOnlyList<string> RejectedDoorOrOpeningSymbolWallIds,
+    IReadOnlyList<string> RejectedSurfacePatternDetailWallIds,
+    IReadOnlyList<string> RejectedDimensionOrAnnotationWallIds,
+    IReadOnlyList<string> RejectedObjectOrFixtureDetailWallIds,
+    int AcceptedWallCount,
+    int ReviewDecisionWallCount,
+    int RejectedWallCount,
+    int PlacementReadyWallCount,
+    int ReviewWallCount,
+    IReadOnlyList<string> AcceptedWallIds,
+    IReadOnlyList<string> ReviewWallIds,
+    IReadOnlyList<string> RejectedWallIds,
+    IReadOnlyList<WallEvidenceSegmentExport> Segments,
+    IReadOnlyList<WallEvidenceBandExport> Bands,
+    IReadOnlyList<WallEvidenceAssessmentDetailExport> WallAssessments,
+    IReadOnlyList<RejectedWallLikeDetailExport> RejectedWallLikeDetails)
+{
+    public static WallEvidenceExport From(
+        WallEvidenceMap evidenceMap,
+        IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup)
+    {
+        var assessmentsByWallId = WallEvidenceExportHelpers.BuildAssessmentLookup(evidenceMap);
+        var segmentsByWallId = evidenceMap.Segments
+            .Where(segment => !string.IsNullOrWhiteSpace(segment.WallId))
+            .GroupBy(segment => segment.WallId!, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+        var bandsByWallId = evidenceMap.Bands
+            .Where(band => !string.IsNullOrWhiteSpace(band.WallId))
+            .GroupBy(band => band.WallId!, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+
+        return new WallEvidenceExport(
+            evidenceMap.Segments.Count,
+            evidenceMap.Bands.Count,
+            evidenceMap.WallAssessments.Count,
+            evidenceMap.SourceCandidateWallCount,
+            evidenceMap.RecoveredCandidateWallCount,
+            evidenceMap.TotalCandidateWallCount,
+            evidenceMap.StrongWallBodyCount,
+            evidenceMap.MediumWallBodyCount,
+            evidenceMap.WeakSingleLineCount,
+            evidenceMap.RecoveredWallBodyCount,
+            evidenceMap.RejectedNoiseCount,
+            evidenceMap.RejectedDoorOrOpeningSymbolCount,
+            evidenceMap.RejectedSurfacePatternDetailCount,
+            evidenceMap.RejectedDimensionOrAnnotationCount,
+            evidenceMap.RejectedObjectOrFixtureDetailCount,
+            evidenceMap.RejectedDoorOrOpeningSymbolWallIds,
+            evidenceMap.RejectedSurfacePatternDetailWallIds,
+            evidenceMap.RejectedDimensionOrAnnotationWallIds,
+            evidenceMap.RejectedObjectOrFixtureDetailWallIds,
+            evidenceMap.AcceptedWallCount,
+            evidenceMap.ReviewDecisionWallCount,
+            evidenceMap.RejectedWallCount,
+            evidenceMap.PlacementReadyWallCount,
+            evidenceMap.ReviewWallCount,
+            evidenceMap.AcceptedWallIds,
+            evidenceMap.ReviewWallIds,
+            evidenceMap.RejectedWallIds,
+            evidenceMap.Segments
+                .Select(segment => WallEvidenceSegmentExport.From(segment, assessmentsByWallId, sourceLookup))
+                .ToArray(),
+            evidenceMap.Bands
+                .Select(band => WallEvidenceBandExport.From(band, assessmentsByWallId, sourceLookup))
+                .ToArray(),
+            evidenceMap.WallAssessments
+                .Select(assessment => WallEvidenceAssessmentDetailExport.From(assessment, sourceLookup))
+                .ToArray(),
+            evidenceMap.WallAssessments
+                .Where(assessment => assessment.RejectedAsNoise)
+                .Select(assessment => RejectedWallLikeDetailExport.From(
+                    assessment,
+                    segmentsByWallId.TryGetValue(assessment.WallId, out var segments) ? segments : Array.Empty<WallEvidenceSegment>(),
+                    bandsByWallId.TryGetValue(assessment.WallId, out var bands) ? bands : Array.Empty<WallEvidenceBand>(),
+                    sourceLookup))
+                .ToArray());
+    }
+}
+
+public sealed record WallEvidenceSegmentExport(
+    string Id,
+    int PageNumber,
+    LineExport Line,
+    RectExport Bounds,
+    string Category,
+    double Confidence,
+    string? WallId,
+    string? Decision,
+    WallEvidenceScoreBreakdownExport? ScoreBreakdown,
+    bool? PlacementReady,
+    bool? RequiresReview,
+    bool? RejectedAsNoise,
+    IReadOnlyList<string> SourcePrimitiveIds,
+    IReadOnlyList<string> SourceLayers,
+    IReadOnlyList<string> Evidence)
+{
+    public static WallEvidenceSegmentExport From(
+        WallEvidenceSegment segment,
+        IReadOnlyDictionary<string, WallEvidenceWallAssessment> assessmentsByWallId,
+        IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup)
+    {
+        var assessment = segment.WallId is not null && assessmentsByWallId.TryGetValue(segment.WallId, out var found)
+            ? found
+            : null;
+        return new WallEvidenceSegmentExport(
+            segment.Id,
+            segment.PageNumber,
+            LineExport.From(segment.Line),
+            RectExport.From(segment.Bounds),
+            segment.Category.ToString(),
+            segment.Confidence.Value,
+            segment.WallId,
+            assessment?.Decision.ToString(),
+            assessment is null ? null : WallEvidenceScoreBreakdownExport.From(assessment.ScoreBreakdown),
+            assessment?.PlacementReady,
+            assessment?.RequiresReview,
+            assessment?.RejectedAsNoise,
+            segment.SourcePrimitiveIds,
+            ExportSourceHelpers.SourceLayers(segment.SourcePrimitiveIds, sourceLookup),
+            segment.Evidence);
+    }
+}
+
+public sealed record WallEvidenceBandExport(
+    string Id,
+    int PageNumber,
+    LineExport FirstFaceLine,
+    LineExport SecondFaceLine,
+    LineExport CenterLine,
+    double FaceSeparation,
+    double OverlapRatio,
+    double Confidence,
+    string? WallId,
+    string? Decision,
+    WallEvidenceScoreBreakdownExport? ScoreBreakdown,
+    bool? PlacementReady,
+    bool? RequiresReview,
+    bool? RejectedAsNoise,
+    IReadOnlyList<string> SourcePrimitiveIds,
+    IReadOnlyList<string> SourceLayers,
+    IReadOnlyList<string> Evidence)
+{
+    public static WallEvidenceBandExport From(
+        WallEvidenceBand band,
+        IReadOnlyDictionary<string, WallEvidenceWallAssessment> assessmentsByWallId,
+        IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup)
+    {
+        var assessment = band.WallId is not null && assessmentsByWallId.TryGetValue(band.WallId, out var found)
+            ? found
+            : null;
+        return new WallEvidenceBandExport(
+            band.Id,
+            band.PageNumber,
+            LineExport.From(band.FirstFaceLine),
+            LineExport.From(band.SecondFaceLine),
+            LineExport.From(band.CenterLine),
+            band.FaceSeparation,
+            band.OverlapRatio,
+            band.Confidence.Value,
+            band.WallId,
+            assessment?.Decision.ToString(),
+            assessment is null ? null : WallEvidenceScoreBreakdownExport.From(assessment.ScoreBreakdown),
+            assessment?.PlacementReady,
+            assessment?.RequiresReview,
+            assessment?.RejectedAsNoise,
+            band.SourcePrimitiveIds,
+            ExportSourceHelpers.SourceLayers(band.SourcePrimitiveIds, sourceLookup),
+            band.Evidence);
+    }
+}
+
+public sealed record WallEvidenceAssessmentDetailExport(
+    string WallId,
+    int PageNumber,
+    RectExport Bounds,
+    string Category,
+    double Confidence,
+    string Decision,
+    WallEvidenceScoreBreakdownExport ScoreBreakdown,
+    bool PlacementReady,
+    bool RequiresReview,
+    bool RejectedAsNoise,
+    IReadOnlyList<string> SourcePrimitiveIds,
+    IReadOnlyList<string> SourceLayers,
+    IReadOnlyList<string> Evidence)
+{
+    public static WallEvidenceAssessmentDetailExport From(
+        WallEvidenceWallAssessment assessment,
+        IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup) =>
+        new(
+            assessment.WallId,
+            assessment.PageNumber,
+            RectExport.From(assessment.Bounds),
+            assessment.Category.ToString(),
+            assessment.Confidence.Value,
+            assessment.Decision.ToString(),
+            WallEvidenceScoreBreakdownExport.From(assessment.ScoreBreakdown),
+            assessment.PlacementReady,
+            assessment.RequiresReview,
+            assessment.RejectedAsNoise,
+            assessment.SourcePrimitiveIds,
+            ExportSourceHelpers.SourceLayers(assessment.SourcePrimitiveIds, sourceLookup),
+            assessment.Evidence);
+}
+
+public sealed record RejectedWallLikeDetailExport(
+    string Id,
+    string WallId,
+    int PageNumber,
+    RectExport Bounds,
+    LineExport? CenterLine,
+    string Category,
+    double Confidence,
+    string Decision,
+    WallEvidenceScoreBreakdownExport ScoreBreakdown,
+    IReadOnlyList<string> SegmentIds,
+    IReadOnlyList<string> BandIds,
+    IReadOnlyList<string> SourcePrimitiveIds,
+    IReadOnlyList<string> SourceLayers,
+    IReadOnlyList<string> Evidence)
+{
+    public static RejectedWallLikeDetailExport From(
+        WallEvidenceWallAssessment assessment,
+        IReadOnlyList<WallEvidenceSegment> segments,
+        IReadOnlyList<WallEvidenceBand> bands,
+        IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup)
+    {
+        var primarySegment = segments
+            .OrderByDescending(segment => segment.Line.Length)
+            .FirstOrDefault();
+        return new RejectedWallLikeDetailExport(
+            $"rejected-wall-like-detail:{assessment.WallId}",
+            assessment.WallId,
+            assessment.PageNumber,
+            RectExport.From(assessment.Bounds),
+            primarySegment is null ? null : LineExport.From(primarySegment.Line),
+            assessment.Category.ToString(),
+            assessment.Confidence.Value,
+            assessment.Decision.ToString(),
+            WallEvidenceScoreBreakdownExport.From(assessment.ScoreBreakdown),
+            segments.Select(segment => segment.Id).Distinct(StringComparer.Ordinal).ToArray(),
+            bands.Select(band => band.Id).Distinct(StringComparer.Ordinal).ToArray(),
+            assessment.SourcePrimitiveIds,
+            ExportSourceHelpers.SourceLayers(assessment.SourcePrimitiveIds, sourceLookup),
+            assessment.Evidence);
+    }
 }
 
 internal static class WallEvidenceExportHelpers
@@ -2395,13 +2782,16 @@ public sealed record ScanReviewQueueItemExport(
 
             var gapEvidence = properties.TryGetValue("gapDistance", out var gapDistance)
                 ? new[] { $"gap distance {gapDistance} drawing units" }
-                : Array.Empty<string>();
+                : properties.TryGetValue("overrunDistance", out var overrunDistance)
+                    ? new[] { $"overrun distance {overrunDistance} drawing units" }
+                    : Array.Empty<string>();
             var wallEvidence = properties.TryGetValue("wallIds", out var wallIds) && !string.IsNullOrWhiteSpace(wallIds)
                 ? new[] { $"candidate wall ids: {wallIds}" }
                 : Array.Empty<string>();
+            var isEndpointOverrun = string.Equals(diagnostic.Code, "wall_graph.endpoint_overrun.review", StringComparison.Ordinal);
 
             items.Add(new ScanReviewQueueItemExport(
-                $"review:wall-graph-gap:{diagnostic.PageNumber?.ToString(CultureInfo.InvariantCulture) ?? "document"}:{entry.Index + 1}",
+                $"review:{(isEndpointOverrun ? "wall-graph-endpoint-overrun" : "wall-graph-gap")}:{diagnostic.PageNumber?.ToString(CultureInfo.InvariantCulture) ?? "document"}:{entry.Index + 1}",
                 ScanReviewQueueKinds.WallGraphGapReview,
                 diagnostic.Stage,
                 diagnostic.Code,
@@ -2411,7 +2801,9 @@ public sealed record ScanReviewQueueItemExport(
                 pageNumbers,
                 diagnostic.Region is null ? null : RectExport.From(diagnostic.Region.Value),
                 diagnostic.Confidence?.Value ?? 0.5,
-                "Review or correct this possible unsnapped wall junction before trusting wall graph topology.",
+                isEndpointOverrun
+                    ? "Review or correct this possible endpoint-overrun trim before trusting wall graph topology."
+                    : "Review or correct this possible unsnapped wall junction before trusting wall graph topology.",
                 diagnostic.SourcePrimitiveIds,
                 ExportSourceHelpers.SourceLayers(diagnostic.SourcePrimitiveIds, sourceLookup),
                 new[] { diagnostic.Message }

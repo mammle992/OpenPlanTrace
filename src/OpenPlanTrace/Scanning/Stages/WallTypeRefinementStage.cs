@@ -16,6 +16,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         var roomIdsByWallId = BuildRoomIdsByWallId(context.Rooms);
         var sharedWallIds = BuildSharedWallIds(context.RoomAdjacencyGraph);
         var componentsByWallId = BuildComponentsByWallId(context.WallGraph);
+        var rejectedEvidenceByWallId = BuildRejectedEvidenceByWallId(context.WallEvidenceMap);
         var roomsByPage = context.Rooms
             .GroupBy(room => room.PageNumber)
             .ToDictionary(group => group.Key, group => group.ToArray());
@@ -24,6 +25,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         var roomReferenced = 0;
         var twoSidedRoomEvidence = 0;
         var oneSidedRoomEvidence = 0;
+        var rejectedEvidenceProtected = 0;
 
         for (var index = 0; index < context.Walls.Count; index++)
         {
@@ -53,12 +55,21 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             var component = componentsByWallId.TryGetValue(wall.Id, out var foundComponent)
                 ? foundComponent
                 : null;
+            var rejectedEvidence = rejectedEvidenceByWallId.TryGetValue(wall.Id, out var foundEvidence)
+                ? foundEvidence
+                : null;
+            if (rejectedEvidence is not null)
+            {
+                rejectedEvidenceProtected++;
+            }
+
             var refined = RefineWallType(
                 wall,
                 wallRoomIds.Length,
                 sharedWallIds.Contains(wall.Id),
                 sideEvidence,
-                component);
+                component,
+                rejectedEvidence);
 
             var evidence = IsActionableEvidence(refined.Evidence)
                 ? AppendEvidence(wall.Evidence, refined.Evidence)
@@ -92,7 +103,8 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             evidenceUpdated,
             roomReferenced,
             twoSidedRoomEvidence,
-            oneSidedRoomEvidence);
+            oneSidedRoomEvidence,
+            rejectedEvidenceProtected);
         return ValueTask.CompletedTask;
     }
 
@@ -138,13 +150,35 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         return result;
     }
 
+    private static Dictionary<string, WallEvidenceWallAssessment> BuildRejectedEvidenceByWallId(WallEvidenceMap evidenceMap) =>
+        evidenceMap.WallAssessments
+            .Where(assessment => assessment.RejectedAsNoise || assessment.Decision == WallEvidenceDecision.Reject)
+            .Where(assessment => !string.IsNullOrWhiteSpace(assessment.WallId))
+            .GroupBy(assessment => assessment.WallId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+
     private static WallTypeRefinement RefineWallType(
         WallSegment wall,
         int roomReferenceCount,
         bool isSharedByRoomAdjacency,
         RoomSideEvidence sideEvidence,
-        WallGraphComponent? component)
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? rejectedEvidence)
     {
+        if (rejectedEvidence is not null && IsNonStructuralWallComponent(component))
+        {
+            return new WallTypeRefinement(
+                WallType.Unknown,
+                $"wall type refined unknown: wall belongs to non-structural or isolated graph component; Wall Evidence V2 rejected candidate as {rejectedEvidence.Category}");
+        }
+
+        if (rejectedEvidence is not null)
+        {
+            return new WallTypeRefinement(
+                WallType.Unknown,
+                $"wall type refined unknown: Wall Evidence V2 rejected candidate as {rejectedEvidence.Category}");
+        }
+
         if (IsNonStructuralWallComponent(component))
         {
             return new WallTypeRefinement(
@@ -161,6 +195,13 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
 
         if (isSharedByRoomAdjacency)
         {
+            if (wall.WallType == WallType.Exterior)
+            {
+                return new WallTypeRefinement(
+                    WallType.Exterior,
+                    "wall type preserved exterior: envelope/local boundary evidence outranks room adjacency");
+            }
+
             return new WallTypeRefinement(
                 WallType.Interior,
                 "wall type refined interior: shared by room adjacency boundary");
@@ -304,7 +345,8 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         int evidenceUpdated,
         int roomReferenced,
         int twoSidedRoomEvidence,
-        int oneSidedRoomEvidence)
+        int oneSidedRoomEvidence,
+        int rejectedEvidenceProtected)
     {
         var exterior = context.Walls.Count(wall => wall.WallType == WallType.Exterior);
         var interior = context.Walls.Count(wall => wall.WallType == WallType.Interior);
@@ -324,6 +366,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
                 ["roomReferencedWallCount"] = roomReferenced.ToString(),
                 ["twoSidedRoomEvidenceWallCount"] = twoSidedRoomEvidence.ToString(),
                 ["oneSidedRoomEvidenceWallCount"] = oneSidedRoomEvidence.ToString(),
+                ["rejectedEvidenceProtectedWallCount"] = rejectedEvidenceProtected.ToString(),
                 ["exteriorWallCount"] = exterior.ToString(),
                 ["interiorWallCount"] = interior.ToString(),
                 ["unknownWallCount"] = unknown.ToString()

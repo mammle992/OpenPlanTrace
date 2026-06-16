@@ -39,6 +39,24 @@ public sealed class ScanReviewQueueSummaryTests
     }
 
     [Fact]
+    public void QueuedWallGraphGapDiagnostics_IncludesEndpointOverrunReviews()
+    {
+        var gap = WallGap("node-gap", 12, "EndpointToWall");
+        var overrun = WallOverrun("node-overrun", 80);
+
+        var queued = ScanReviewQueueSummary.QueuedWallGraphGapDiagnostics(new[] { overrun, gap });
+
+        Assert.Equal(2, queued.Count);
+        Assert.Contains(queued, diagnostic => diagnostic.Code == "wall_graph.endpoint_gap.review");
+        Assert.Contains(queued, diagnostic => diagnostic.Code == "wall_graph.endpoint_overrun.review");
+
+        var reason = ScanReviewQueueSummary.WallGraphGapReviewReason(overrun);
+        Assert.Contains("EndpointOverrun", reason);
+        Assert.Contains("overrun 80 drawing unit", reason);
+        Assert.Contains("walls wall-a,wall-b", reason);
+    }
+
+    [Fact]
     public void QueuedObjectGroups_CapsAndRanksActionableReviewGroups()
     {
         var repeatedGroups = Enumerable.Range(0, 30)
@@ -115,6 +133,28 @@ public sealed class ScanReviewQueueSummaryTests
                 ["nodeId"] = nodeId,
                 ["hostWallId"] = "wall-b",
                 ["targetNodeId"] = string.Empty,
+                ["wallIds"] = "wall-a,wall-b"
+            }
+        };
+
+    private static PlanDiagnostic WallOverrun(string nodeId, double distance) =>
+        new(
+            "wall_graph.endpoint_overrun.review",
+            DiagnosticSeverity.Warning,
+            "wall-graph",
+            "A wall endpoint extends beyond a supported junction but was too long to trim automatically.")
+        {
+            PageNumber = 1,
+            Region = new PlanRect(10, 10, 20, 20),
+            Confidence = Confidence.Medium,
+            SourcePrimitiveIds = new[] { "wall-a-src", "wall-b-src" },
+            Properties = new Dictionary<string, string>
+            {
+                ["overrunKind"] = "EndpointOverrun",
+                ["overrunDistance"] = distance.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
+                ["nodeId"] = nodeId,
+                ["wallId"] = "wall-a",
+                ["targetNodeId"] = "node-target",
                 ["wallIds"] = "wall-a,wall-b"
             }
         };

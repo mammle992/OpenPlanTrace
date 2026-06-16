@@ -486,6 +486,7 @@ internal sealed class WallDetectionStage : IPipelineStage
             var doorDetailSymbolWalls = FilterDoorDetailSymbolWalls(
                 context,
                 page.Number,
+                page.Primitives,
                 mainRegion,
                 wallStartCount);
             if (doorDetailSymbolWalls.Length > 0)
@@ -679,9 +680,10 @@ internal sealed class WallDetectionStage : IPipelineStage
         }
 
         if (IsNearEnvelopeBoundary(wall, structuralEnvelope, tolerance, options)
-            || IsNearEnvelopeBoundary(wall, mainRegion.Bounds, tolerance, options))
+            || IsNearEnvelopeBoundary(wall, mainRegion.Bounds, tolerance, options)
+            || IsLocallyOuterWallBoundary(wall, pageWalls, tolerance, options))
         {
-            return (WallType.Exterior, "wall type exterior: near detected floorplan/wall envelope boundary");
+            return (WallType.Exterior, "wall type exterior: near detected floorplan/wall envelope or local outer boundary");
         }
 
         var supportContacts = CountTopologyContacts(wall, pageWalls, WallBodySupportTolerance(options));
@@ -723,6 +725,117 @@ internal sealed class WallDetectionStage : IPipelineStage
                 || Math.Abs(bounds.Top - envelope.Top) <= tolerance
                 || Math.Abs(bounds.Bottom - envelope.Bottom) <= tolerance
         };
+    }
+
+    private static bool IsLocallyOuterWallBoundary(
+        WallSegment wall,
+        IReadOnlyList<WallSegment> pageWalls,
+        double tolerance,
+        ScannerOptions options)
+    {
+        var orientation = ResolveWallOrientation(wall.CenterLine, options);
+        if (orientation is not (WallOrientation.Horizontal or WallOrientation.Vertical)
+            || wall.DrawingLength < Math.Max(options.MinWallLength, tolerance * 3.0))
+        {
+            return false;
+        }
+
+        const int sampleCount = 7;
+        var negativeClearSamples = 0;
+        var positiveClearSamples = 0;
+        var negativeSupportSamples = 0;
+        var positiveSupportSamples = 0;
+        var probeTolerance = Math.Max(tolerance, wall.Thickness * 1.5);
+
+        for (var index = 0; index < sampleCount; index++)
+        {
+            var point = wall.CenterLine.PointAt((index + 0.5) / sampleCount);
+            var hasNegativeSideWall = HasWallBeyondSample(
+                wall,
+                pageWalls,
+                orientation,
+                point,
+                negativeSide: true,
+                probeTolerance);
+            var hasPositiveSideWall = HasWallBeyondSample(
+                wall,
+                pageWalls,
+                orientation,
+                point,
+                negativeSide: false,
+                probeTolerance);
+
+            if (!hasNegativeSideWall)
+            {
+                negativeClearSamples++;
+            }
+            else
+            {
+                negativeSupportSamples++;
+            }
+
+            if (!hasPositiveSideWall)
+            {
+                positiveClearSamples++;
+            }
+            else
+            {
+                positiveSupportSamples++;
+            }
+        }
+
+        var requiredClearSamples = (int)Math.Ceiling(sampleCount * 0.58);
+        var requiredSupportSamples = Math.Max(2, (int)Math.Floor(sampleCount * 0.28));
+        return negativeClearSamples >= requiredClearSamples && positiveSupportSamples >= requiredSupportSamples
+            || positiveClearSamples >= requiredClearSamples && negativeSupportSamples >= requiredSupportSamples;
+    }
+
+    private static bool HasWallBeyondSample(
+        WallSegment wall,
+        IReadOnlyList<WallSegment> pageWalls,
+        WallOrientation orientation,
+        PlanPoint sample,
+        bool negativeSide,
+        double tolerance)
+    {
+        foreach (var other in pageWalls)
+        {
+            if (string.Equals(other.Id, wall.Id, StringComparison.Ordinal)
+                || other.Confidence.Value < 0.4)
+            {
+                continue;
+            }
+
+            var bounds = other.Bounds.Inflate(tolerance);
+            if (orientation == WallOrientation.Horizontal)
+            {
+                if (sample.X < bounds.Left || sample.X > bounds.Right)
+                {
+                    continue;
+                }
+
+                if (negativeSide && bounds.Bottom < sample.Y - tolerance
+                    || !negativeSide && bounds.Top > sample.Y + tolerance)
+                {
+                    return true;
+                }
+            }
+            else
+            {
+                if (sample.Y < bounds.Top || sample.Y > bounds.Bottom)
+                {
+                    continue;
+                }
+
+                if (negativeSide && bounds.Right < sample.X - tolerance
+                    || !negativeSide && bounds.Left > sample.X + tolerance)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static double MedianWallThickness(IReadOnlyList<WallSegment> walls)
@@ -823,6 +936,7 @@ internal sealed class WallDetectionStage : IPipelineStage
     private static WallSegment[] FilterDoorDetailSymbolWalls(
         ScanContext context,
         int pageNumber,
+        IReadOnlyList<PlanPrimitive> primitives,
         SheetRegion mainRegion,
         int wallStartCount)
     {
@@ -836,7 +950,8 @@ internal sealed class WallDetectionStage : IPipelineStage
             .Where(wall => wall.PageNumber == pageNumber)
             .ToArray();
         var symbolWalls = pageWalls
-            .Where(wall => IsLikelyDoorDetailSymbolWall(wall, pageWalls, mainRegion, context.Options))
+            .Where(wall => IsLikelyDoorDetailSymbolWall(wall, pageWalls, mainRegion, context.Options)
+                || IsLikelyArcDoorLeafWall(wall, primitives, pageWalls, mainRegion, context.Options))
             .ToArray();
         if (symbolWalls.Length == 0)
         {
@@ -906,6 +1021,79 @@ internal sealed class WallDetectionStage : IPipelineStage
         }
 
         return true;
+    }
+
+    private static bool IsLikelyArcDoorLeafWall(
+        WallSegment wall,
+        IReadOnlyList<PlanPrimitive> primitives,
+        IReadOnlyList<WallSegment> pageWalls,
+        SheetRegion mainRegion,
+        ScannerOptions options)
+    {
+        if (wall.DetectionKind == WallDetectionKind.ParallelLinePair
+            || HasStrongWallLayerEvidence(wall.Evidence)
+            || IsNearMainRegionBoundary(wall, mainRegion, WallBodySupportTolerance(options)))
+        {
+            return false;
+        }
+
+        var maxDoorLeafLength = Math.Max(options.MaxOpeningGap * 1.35, options.MinWallLength * 1.8);
+        if (wall.DrawingLength < Math.Max(1, options.MinOpeningGap * 0.35)
+            || wall.DrawingLength > maxDoorLeafLength)
+        {
+            return false;
+        }
+
+        var supportTolerance = WallBodySupportTolerance(options);
+        var topologyContactCount = CountTopologyContacts(wall, pageWalls, supportTolerance);
+        if (topologyContactCount >= 3)
+        {
+            return false;
+        }
+
+        return primitives
+            .OfType<ArcPrimitive>()
+            .Where(arc => IsPlausibleDoorSwingArc(arc, options))
+            .Any(arc => IsRadialDoorLeafForArc(wall.CenterLine, arc, options));
+    }
+
+    private static bool IsPlausibleDoorSwingArc(ArcPrimitive arc, ScannerOptions options)
+    {
+        var sweep = Math.Abs(arc.SweepAngleRadians);
+        return arc.Radius >= Math.Max(1, options.MinOpeningGap * 0.35)
+            && arc.Radius <= Math.Max(options.MaxOpeningGap * 1.75, options.MinWallLength * 3.0)
+            && sweep >= Math.PI / 8.0
+            && sweep <= Math.PI * 1.15;
+    }
+
+    private static bool IsRadialDoorLeafForArc(
+        PlanLineSegment line,
+        ArcPrimitive arc,
+        ScannerOptions options)
+    {
+        if (!line.Bounds.Inflate(WallBodySupportTolerance(options)).Intersects(arc.Bounds))
+        {
+            return false;
+        }
+
+        var tolerance = Math.Max(
+            Math.Max(options.WallSnapTolerance * 2.0, options.DefaultWallThickness * 2.0),
+            arc.Radius * 0.14);
+        return EndpointLooksLikeArcHinge(line.Start, line.End)
+            || EndpointLooksLikeArcHinge(line.End, line.Start);
+
+        bool EndpointLooksLikeArcHinge(PlanPoint hingeCandidate, PlanPoint leafTipCandidate)
+        {
+            if (hingeCandidate.DistanceTo(arc.Center) > tolerance)
+            {
+                return false;
+            }
+
+            var leafRadiusError = Math.Abs(leafTipCandidate.DistanceTo(arc.Center) - arc.Radius);
+            var lengthRadiusError = Math.Abs(line.Length - arc.Radius);
+            return leafRadiusError <= tolerance
+                || lengthRadiusError <= tolerance;
+        }
     }
 
     private static bool IsUnsupportedDenseParallelWallBodyPattern(
@@ -4242,7 +4430,8 @@ internal sealed class WallDetectionStage : IPipelineStage
                 or LayerCategory.Electrical
                 or LayerCategory.HVAC
                 or LayerCategory.Plumbing
-                or LayerCategory.FireSafety;
+                or LayerCategory.FireSafety
+                or LayerCategory.SurfacePattern;
 
         private static string LayerNameFor(PlanPrimitive primitive) =>
             Clean(primitive.Source.Layer)

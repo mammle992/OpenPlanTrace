@@ -70,8 +70,13 @@ internal sealed class RoomDetectionStage : IPipelineStage
                 continue;
             }
 
-            var structuralWalls = WallTopologyFilter.StructuralWallsForPage(context, pageGroup.Key, out var excludedComponents);
+            var structuralWalls = WallTopologyFilter.StructuralWallsForPage(
+                context,
+                pageGroup.Key,
+                out var excludedComponents,
+                out var excludedEvidenceAssessments);
             WallTopologyFilter.AddStructuralTopologyExclusionDiagnostic(context, Name, pageGroup.Key, excludedComponents);
+            WallTopologyFilter.AddRejectedWallEvidenceExclusionDiagnostic(context, Name, pageGroup.Key, excludedEvidenceAssessments);
 
             var seen = new HashSet<string>(StringComparer.Ordinal);
             var addedForPage = AddGraphRooms(page, pageGroup.Key, structuralWalls, context, seen, cancellationToken);

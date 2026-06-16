@@ -287,6 +287,179 @@ public sealed class StructuralTopologyFilteringTests
                 && message.Properties["isolatedFragmentCount"] == "1");
     }
 
+    [Fact]
+    public async Task StructuralFilters_ExcludeRejectedWallEvidenceRetainedForReviewAndRouting()
+    {
+        var document = Document(
+            "retained-rejected-wall-evidence-structural-filter",
+            Wall("host-wall", new PlanPoint(80, 100), new PlanPoint(320, 100)),
+            DoorLeaf("door-leaf-noise", new PlanPoint(200, 100), new PlanPoint(200, 132)),
+            DoorArc("door-swing", new PlanPoint(200, 100), 32));
+        var context = new ScanContext(
+            document,
+            new ScannerOptions
+            {
+                EnableWallEvidenceNoiseRejection = false,
+                MinOpeningGap = 8,
+                MaxOpeningGap = 60
+            })
+        {
+            LayerAnalysis = new PlanLayerAnalysis(new[]
+            {
+                Layer("A-WALL", LayerCategory.Wall, Confidence.High),
+                Layer("A-DOOR", LayerCategory.Door, Confidence.High)
+            })
+        };
+        context.WallCandidates.Add(new WallSegment(
+            "wall-host",
+            1,
+            new PlanLineSegment(new PlanPoint(80, 100), new PlanPoint(320, 100)),
+            4,
+            Confidence.High)
+        {
+            SourcePrimitiveIds = new[] { "host-wall" },
+            Evidence = new[] { "test structural wall" }
+        });
+        context.WallCandidates.Add(new WallSegment(
+            "wall-door-leaf-noise",
+            1,
+            new PlanLineSegment(new PlanPoint(200, 100), new PlanPoint(200, 132)),
+            4,
+            Confidence.Medium)
+        {
+            WallType = WallType.Exterior,
+            SourcePrimitiveIds = new[] { "door-leaf-noise" },
+            Evidence = new[] { "test retained rejected wall-like detail" }
+        });
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var retainedDoorLeafWall = Assert.Single(context.Walls, wall => wall.SourcePrimitiveIds.Contains("door-leaf-noise"));
+        var hostWall = Assert.Single(context.Walls, wall => wall.SourcePrimitiveIds.Contains("host-wall"));
+        var rejected = Assert.Single(
+            context.WallEvidenceMap.WallAssessments,
+            assessment => assessment.WallId == retainedDoorLeafWall.Id);
+
+        Assert.Equal(WallEvidenceCategory.DoorOrOpeningSymbol, rejected.Category);
+        Assert.True(rejected.RejectedAsNoise);
+        Assert.Equal(WallEvidenceDecision.Reject, rejected.Decision);
+
+        await new WallTopologyPreparationStage().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Contains(hostWall.Id, context.WallTopologyPreparation.GraphWallIds);
+        Assert.DoesNotContain(retainedDoorLeafWall.Id, context.WallTopologyPreparation.GraphWallIds);
+        var preparedRejectedWall = Assert.Single(context.WallTopologyPreparation.RejectedWalls);
+        Assert.Equal(retainedDoorLeafWall.Id, preparedRejectedWall.WallId);
+        Assert.Equal(WallEvidenceCategory.DoorOrOpeningSymbol, preparedRejectedWall.Category);
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            message => message.Code == "wall_topology_preparation.prepared"
+                && message.Properties["graphWallCount"] == "1"
+                && message.Properties["rejectedWallCount"] == "1"
+                && message.Properties["doorOrOpeningSymbolCount"] == "1");
+
+        await new WallGraphStage().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Contains(context.WallGraph.Edges, edge => edge.WallId == hostWall.Id);
+        Assert.DoesNotContain(context.WallGraph.Edges, edge => edge.WallId == retainedDoorLeafWall.Id);
+        Assert.DoesNotContain(
+            context.WallGraph.Components,
+            component => component.WallIds.Contains(retainedDoorLeafWall.Id));
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            message => message.Code == "wall_graph.rejected_wall_evidence_excluded"
+                && message.Properties["excludedWallCount"] == "1"
+                && message.Properties["doorOrOpeningSymbolCount"] == "1");
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var refinedDoorLeafWall = Assert.Single(context.Walls, wall => wall.Id == retainedDoorLeafWall.Id);
+        Assert.Equal(WallType.Unknown, refinedDoorLeafWall.WallType);
+        Assert.Contains(
+            refinedDoorLeafWall.Evidence,
+            item => item.Contains("Wall Evidence V2 rejected candidate", StringComparison.Ordinal));
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            message => message.Code == "walls.architectural_type_refined"
+                && message.Properties["rejectedEvidenceProtectedWallCount"] == "1");
+
+        var structuralWalls = WallTopologyFilter.StructuralWallsForPage(
+            context,
+            1,
+            out var excludedComponents,
+            out var excludedEvidenceAssessments);
+
+        Assert.Empty(excludedComponents);
+        var excludedEvidence = Assert.Single(excludedEvidenceAssessments);
+        Assert.Equal(retainedDoorLeafWall.Id, excludedEvidence.WallId);
+        Assert.Contains(structuralWalls, wall => wall.Id == hostWall.Id);
+        Assert.DoesNotContain(structuralWalls, wall => wall.Id == retainedDoorLeafWall.Id);
+
+        WallTopologyFilter.AddRejectedWallEvidenceExclusionDiagnostic(
+            context,
+            "test-stage",
+            1,
+            excludedEvidenceAssessments);
+
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            message => message.Code == "test-stage.rejected_wall_evidence_excluded"
+                && message.Properties["excludedWallCount"] == "1"
+                && message.Properties["doorOrOpeningSymbolCount"] == "1");
+
+        var routingLayer = PlanRoutingLayerBuilder.FromScanResult(context.ToRoutingSourceResult());
+
+        Assert.Contains(routingLayer.Barriers, barrier => barrier.SourceId == hostWall.Id);
+        Assert.DoesNotContain(routingLayer.Barriers, barrier => barrier.SourceId == retainedDoorLeafWall.Id);
+        Assert.Contains(
+            routingLayer.Evidence,
+            item => item == "wall-evidence rejected barriers suppressed: 1");
+    }
+
+    [Fact]
+    public async Task WallTopologyPreparationStage_SplitsGraphInputByEvidenceDecision()
+    {
+        var acceptedWall = PreparedWall("wall-accepted", 100);
+        var reviewWall = PreparedWall("wall-review", 140);
+        var unassessedWall = PreparedWall("wall-unassessed", 180);
+        var rejectedWall = PreparedWall("wall-rejected-door-detail", 220);
+        var context = new ScanContext(
+            Document("wall-topology-preparation-decision-split"),
+            new ScannerOptions());
+        context.Walls.AddRange(new[] { acceptedWall, reviewWall, unassessedWall, rejectedWall });
+        context.WallEvidenceMap = new WallEvidenceMap(
+            Array.Empty<WallEvidenceSegment>(),
+            Array.Empty<WallEvidenceBand>(),
+            new[]
+            {
+                Assessment(acceptedWall, WallEvidenceDecision.Accept, WallEvidenceCategory.StrongWallBody),
+                Assessment(reviewWall, WallEvidenceDecision.Review, WallEvidenceCategory.WeakSingleLine),
+                Assessment(rejectedWall, WallEvidenceDecision.Reject, WallEvidenceCategory.DoorOrOpeningSymbol, rejectedAsNoise: true)
+            });
+
+        await new WallTopologyPreparationStage().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(new[] { acceptedWall.Id, reviewWall.Id, unassessedWall.Id }, context.WallTopologyPreparation.GraphWallIds);
+        Assert.Equal(new[] { acceptedWall.Id }, context.WallTopologyPreparation.AcceptedGraphWallIds);
+        Assert.Equal(new[] { reviewWall.Id }, context.WallTopologyPreparation.ReviewGraphWallIds);
+        Assert.Equal(new[] { unassessedWall.Id }, context.WallTopologyPreparation.UnassessedGraphWallIds);
+        Assert.Equal(new[] { rejectedWall.Id }, context.WallTopologyPreparation.RejectedWallIds);
+        Assert.True(context.WallTopologyPreparation.IsAcceptedGraphWall(acceptedWall.Id));
+        Assert.True(context.WallTopologyPreparation.IsReviewGraphWall(reviewWall.Id));
+        Assert.True(context.WallTopologyPreparation.IsUnassessedGraphWall(unassessedWall.Id));
+        Assert.False(context.WallTopologyPreparation.IsGraphWall(rejectedWall.Id));
+
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            message => message.Code == "wall_topology_preparation.prepared"
+                && message.Properties["graphWallCount"] == "3"
+                && message.Properties["acceptedGraphWallCount"] == "1"
+                && message.Properties["reviewGraphWallCount"] == "1"
+                && message.Properties["unassessedGraphWallCount"] == "1"
+                && message.Properties["rejectedWallCount"] == "1"
+                && message.Properties["doorOrOpeningSymbolCount"] == "1");
+    }
+
     private static PlanDocument Document(string id, params PlanPrimitive[] primitives) =>
         new(
             id,
@@ -323,6 +496,33 @@ public sealed class StructuralTopologyFilteringTests
             }
         };
 
+    private static LinePrimitive DoorLeaf(string sourceId, PlanPoint start, PlanPoint end) =>
+        new(new PlanLineSegment(start, end))
+        {
+            SourceId = sourceId,
+            Source = new PrimitiveSourceMetadata
+            {
+                SourceFormat = "test",
+                SourceId = sourceId,
+                EntityType = "LINE",
+                DrawingSpace = SourceDrawingSpace.Model
+            }
+        };
+
+    private static LayerSummary Layer(string name, LayerCategory category, Confidence confidence) =>
+        new(
+            name,
+            "test",
+            1,
+            new Dictionary<PlanPrimitiveKind, int> { [PlanPrimitiveKind.Line] = 1 },
+            100,
+            new PlanRect(0, 0, 100, 10),
+            category,
+            confidence,
+            new[] { new LayerCategoryScore(category, confidence.Value, new[] { "test layer summary" }) },
+            new[] { $"classified {category}" },
+            new[] { 1 });
+
     private static ArcPrimitive DoorArc(string sourceId, PlanPoint center, double radius) =>
         new(center, radius, 0, Math.PI / 2)
         {
@@ -336,5 +536,37 @@ public sealed class StructuralTopologyFilteringTests
                 Layer = "A-DOOR",
                 DrawingSpace = SourceDrawingSpace.Model
             }
+        };
+
+    private static WallSegment PreparedWall(string id, double y) =>
+        new(
+            id,
+            1,
+            new PlanLineSegment(new PlanPoint(80, y), new PlanPoint(220, y)),
+            4,
+            Confidence.High)
+        {
+            SourcePrimitiveIds = new[] { id },
+            Evidence = new[] { "prepared topology test wall" }
+        };
+
+    private static WallEvidenceWallAssessment Assessment(
+        WallSegment wall,
+        WallEvidenceDecision decision,
+        WallEvidenceCategory category,
+        bool rejectedAsNoise = false) =>
+        new(
+            wall.Id,
+            wall.PageNumber,
+            wall.Bounds,
+            category,
+            wall.Confidence,
+            decision == WallEvidenceDecision.Accept,
+            decision == WallEvidenceDecision.Review,
+            rejectedAsNoise,
+            wall.SourcePrimitiveIds,
+            new[] { "test wall evidence assessment" })
+        {
+            Decision = decision
         };
 }

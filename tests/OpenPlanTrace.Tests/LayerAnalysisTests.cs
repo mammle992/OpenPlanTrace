@@ -18,7 +18,10 @@ public sealed class LayerAnalysisTests
                         Line("wall-2", "A-WALL", new PlanPoint(10, 30), new PlanPoint(210, 30)),
                         Text("dim-1", "DIMENSIONS", "1200 mm", new PlanRect(20, 60, 70, 14)),
                         Symbol("eq-1", "HVAC-VENT", "AHU", new PlanRect(100, 100, 30, 30)),
-                        Text("note-1", "NOTES", "verify dimensions", new PlanRect(20, 120, 120, 14))
+                        Text("note-1", "NOTES", "verify dimensions", new PlanRect(20, 120, 120, 14)),
+                        Line("furn-1", "A-FURN", new PlanPoint(240, 80), new PlanPoint(285, 80)),
+                        Line("fixture-1", "A-FIXTURE", new PlanPoint(240, 110), new PlanPoint(285, 110)),
+                        Line("hatch-1", "A-HATCH", new PlanPoint(240, 140), new PlanPoint(285, 140))
                     })
             });
 
@@ -29,6 +32,9 @@ public sealed class LayerAnalysisTests
         Assert.Equal(LayerCategory.Dimension, analysis.Find("DIMENSIONS")!.LikelyCategory);
         Assert.Equal(LayerCategory.HVAC, analysis.Find("HVAC-VENT")!.LikelyCategory);
         Assert.Equal(LayerCategory.Text, analysis.Find("NOTES")!.LikelyCategory);
+        Assert.Equal(LayerCategory.Furniture, analysis.Find("A-FURN")!.LikelyCategory);
+        Assert.Equal(LayerCategory.Fixture, analysis.Find("A-FIXTURE")!.LikelyCategory);
+        Assert.Equal(LayerCategory.SurfacePattern, analysis.Find("A-HATCH")!.LikelyCategory);
         Assert.Contains(analysis.Find("A-WALL")!.Evidence, evidence => evidence.Contains("wall", StringComparison.OrdinalIgnoreCase));
     }
 

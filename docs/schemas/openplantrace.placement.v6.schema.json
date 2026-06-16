@@ -932,6 +932,7 @@
         "confidence",
         "fragmentEvidence",
         "reliability",
+        "wallGraphRepairCandidateIds",
         "sourcePrimitiveIds",
         "sourceLayers",
         "evidence"
@@ -963,6 +964,20 @@
           "description": "Trusted wall graph spans derived from graph nodes. These are the trimmed/split topology segments consumers should prefer over raw wall centerlines when available.",
           "items": {
             "$ref": "#/$defs/wallTopologySpan"
+          }
+        },
+        "openingCutouts": {
+          "type": "array",
+          "description": "Anchored openings projected onto this wall centerline. Consumers can subtract these cutouts from the raw wall line when a detector exports a continuous wall through a door or window.",
+          "items": {
+            "$ref": "#/$defs/wallOpeningCutout"
+          }
+        },
+        "solidSpans": {
+          "type": "array",
+          "description": "Placement-ready solid wall centerline spans after anchored opening cutouts are subtracted. If the detector already split a wall at an opening, the span remains intact and carries adjacentOpeningIds.",
+          "items": {
+            "$ref": "#/$defs/wallSolidSpan"
           }
         },
         "bounds": {
@@ -1000,10 +1015,266 @@
         "reliability": {
           "$ref": "#/$defs/reliability"
         },
+        "wallGraphRepairCandidateIds": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Wall graph repair candidate IDs that affect this wall. Consumers should inspect these before applying snap or trim topology corrections to this wall."
+        },
         "sourcePrimitiveIds": {
           "$ref": "#/$defs/stringArray"
         },
         "sourceLayers": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "wallOpeningCutout": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "openingId",
+        "pageNumber",
+        "type",
+        "operation",
+        "centerLine",
+        "startPoint",
+        "endPoint",
+        "startParameter",
+        "endParameter",
+        "centerParameter",
+        "startOffsetDrawingUnits",
+        "endOffsetDrawingUnits",
+        "centerOffsetDrawingUnits",
+        "lengthDrawingUnits",
+        "sourceHostWallId",
+        "anchorWallIds",
+        "crossWallOffsetDrawingUnits",
+        "confidence",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "openingId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pageNumber": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "type": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "centerLine": {
+          "$ref": "#/$defs/line"
+        },
+        "centerLineMillimeters": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/line"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startPoint": {
+          "$ref": "#/$defs/point"
+        },
+        "startPointMillimeters": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/point"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endPoint": {
+          "$ref": "#/$defs/point"
+        },
+        "endPointMillimeters": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/point"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startParameter": {
+          "$ref": "#/$defs/ratio"
+        },
+        "endParameter": {
+          "$ref": "#/$defs/ratio"
+        },
+        "centerParameter": {
+          "$ref": "#/$defs/ratio"
+        },
+        "startOffsetDrawingUnits": {
+          "type": "number",
+          "minimum": 0
+        },
+        "endOffsetDrawingUnits": {
+          "type": "number",
+          "minimum": 0
+        },
+        "centerOffsetDrawingUnits": {
+          "type": "number",
+          "minimum": 0
+        },
+        "lengthDrawingUnits": {
+          "type": "number",
+          "minimum": 0
+        },
+        "startOffsetMillimeters": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "endOffsetMillimeters": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "centerOffsetMillimeters": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "lengthMillimeters": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "sourceHostWallId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "anchorWallIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "crossWallOffsetDrawingUnits": {
+          "type": "number"
+        },
+        "crossWallOffsetMillimeters": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/ratio"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "wallSolidSpan": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "pageNumber",
+        "wallId",
+        "sequence",
+        "centerLine",
+        "startParameter",
+        "endParameter",
+        "centerParameter",
+        "startOffsetDrawingUnits",
+        "endOffsetDrawingUnits",
+        "centerOffsetDrawingUnits",
+        "drawingLength",
+        "lengthMeters",
+        "adjacentOpeningIds",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pageNumber": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "wallId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "centerLine": {
+          "$ref": "#/$defs/line"
+        },
+        "centerLineMillimeters": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/line"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startParameter": {
+          "$ref": "#/$defs/ratio"
+        },
+        "endParameter": {
+          "$ref": "#/$defs/ratio"
+        },
+        "centerParameter": {
+          "$ref": "#/$defs/ratio"
+        },
+        "startOffsetDrawingUnits": {
+          "type": "number",
+          "minimum": 0
+        },
+        "endOffsetDrawingUnits": {
+          "type": "number",
+          "minimum": 0
+        },
+        "centerOffsetDrawingUnits": {
+          "type": "number",
+          "minimum": 0
+        },
+        "drawingLength": {
+          "type": "number",
+          "minimum": 0
+        },
+        "lengthMeters": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "adjacentOpeningIds": {
           "$ref": "#/$defs/stringArray"
         },
         "evidence": {
@@ -2072,14 +2343,16 @@
           "type": "string",
           "enum": [
             "EndpointToWall",
-            "EndpointToEndpoint"
+            "EndpointToEndpoint",
+            "EndpointOverrun"
           ]
         },
         "suggestedAction": {
           "type": "string",
           "enum": [
             "SnapEndpointToWall",
-            "SnapEndpointToEndpoint"
+            "SnapEndpointToEndpoint",
+            "TrimEndpointOverrun"
           ]
         },
         "severity": {
@@ -2101,6 +2374,7 @@
           "type": "string",
           "enum": [
             "ReviewAndApplySuggestedSnap",
+            "ReviewAndApplySuggestedTrim",
             "ManualCorrectionRecommended"
           ]
         },

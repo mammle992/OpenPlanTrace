@@ -6,6 +6,717 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.058] - 2026-06-16
+
+### Fixed
+- Placement opening reliability now checks Wall Evidence V2 assessments for
+  host and anchor wall IDs, so doors/windows attached to review-required or
+  rejected wall evidence are exported as requiring review before exact
+  coordinate placement.
+- Opening reliability reasons now name the suspicious host/anchor wall IDs,
+  keeping downstream placement of cutouts, passages, and loop routes tied back
+  to the wall evidence trust decision.
+
+### Verified
+- Focused placement export tests passed with `7` tests.
+- Full solution test suite passed with `492` tests.
+
+## [0.02.057] - 2026-06-16
+
+### Fixed
+- Placement room reliability now checks Wall Evidence V2 assessments for the
+  room boundary wall IDs, so a room polygon built from review-required or
+  rejected wall evidence is exported as requiring review instead of looking
+  coordinate-ready.
+- Room reliability reasons now name the review-required or rejected boundary
+  wall IDs, giving downstream engines a direct trace from room geometry back to
+  suspicious wall evidence.
+
+### Verified
+- Focused placement export tests passed with `6` tests.
+- Full solution test suite passed with `491` tests.
+
+## [0.02.056] - 2026-06-16
+
+### Fixed
+- Routing barriers now suppress unprotected review-required wall evidence, so
+  weak wall-like geometry that Wall Evidence V2 already marked for review does
+  not leak into placement/routing output as a trusted obstacle.
+- Review-required walls are still kept as routing barriers when protected by
+  stronger room or opening topology, preserving real walls that downstream
+  topology already depends on.
+
+### Verified
+- Focused routing layer tests passed with `8` tests.
+- Full solution test suite passed with `490` tests.
+
+## [0.02.055] - 2026-06-16
+
+### Fixed
+- Wall graph endpoint-gap repair candidates now respect topology-preparation
+  trust buckets: candidates involving review-required graph walls are
+  suppressed instead of adding extra snap suggestions for geometry that already
+  needs wall evidence review.
+- Added `wall_graph.endpoint_gap.review_candidate_trust_gated` diagnostics so
+  QA tools can see when endpoint repair suggestions were withheld because a
+  review wall was involved.
+
+### Verified
+- Focused wall graph, structural topology, and export tests passed with `50`
+  tests.
+- Full solution test suite passed with `488` tests.
+
+## [0.02.054] - 2026-06-16
+
+### Fixed
+- Automatic wall graph coordinate repair now uses only accepted or unassessed
+  graph walls as snap/trim support, preventing review-required wall candidates
+  from pulling trusted wall endpoints into suspicious geometry.
+- Added `wall_graph.coordinate_repair.review_support_excluded` diagnostics so
+  QA tools can see when review walls stayed visible in topology but were not
+  allowed to drive automatic coordinate mutation.
+
+### Verified
+- Focused wall graph, structural topology, and export tests passed with `49`
+  tests.
+- Full solution test suite passed with `487` tests.
+
+## [0.02.053] - 2026-06-16
+
+### Fixed
+- Short unlayered single-line wall candidates with only one structural endpoint
+  support are now downgraded to `WeakSingleLine` review evidence instead of
+  becoming placement-ready medium wall bodies.
+- These ambiguous short candidates still remain graph input for QA/topology,
+  but enter the review-required topology bucket so automatic coordinate repair
+  cannot silently snap or trim them as trusted wall geometry.
+
+### Verified
+- Focused wall evidence, recovery, structural topology, and wall graph tests
+  passed with `38` tests.
+- Full solution test suite passed with `486` tests.
+
+## [0.02.052] - 2026-06-16
+
+### Added
+- Full scan JSON now exports `wallTopologyPreparation`, including graph wall
+  IDs split into accepted, review-required, unassessed, automatic coordinate
+  repair, and rejected buckets.
+- Rejected topology-preparation wall-like details now carry category, decision,
+  source primitive IDs, source layers, and evidence in the scan export so
+  downstream engines can inspect why noisy geometry stayed out of the graph.
+- Bumped the scan schema to `openplantrace.scan.v65` and updated the bundled
+  viewer routing-review sample to exercise the new topology preparation
+  contract.
+
+### Verified
+- Focused export and schema contract tests passed with `64` tests.
+- Full solution test suite passed with `485` tests.
+
+## [0.02.051] - 2026-06-16
+
+### Fixed
+- Wall graph automatic coordinate repair now respects topology-preparation
+  trust buckets: accepted and unassessed graph walls may still auto snap/trim,
+  while review-required graph walls participate in topology without silently
+  mutating their exported centerline coordinates.
+- Added `wall_graph.coordinate_repair.trust_gated` diagnostics so QA tools can
+  see when suspicious wall geometry was intentionally left raw for review.
+
+### Verified
+- Focused wall graph topology, structural topology filtering, scanner pipeline,
+  and schema contract tests passed with `81` tests.
+- Full solution test suite passed with `484` tests.
+
+## [0.02.050] - 2026-06-16
+
+### Added
+- `WallTopologyPreparation` now separates graph-ready walls into accepted,
+  review-required, and unassessed wall ID buckets while keeping rejected
+  wall-like details outside graph construction.
+- The wall topology preparation diagnostic now reports accepted/review/
+  unassessed graph input counts and ID samples, giving future topology repair
+  and QA tools a cleaner trust boundary before snapping, trimming, room solving,
+  or opening detection.
+
+### Verified
+- Focused structural topology filtering, scanner pipeline, and schema contract
+  tests passed with `61` tests.
+- Full solution test suite passed with `483` tests.
+
+## [0.02.049] - 2026-06-16
+
+### Added
+- Added a dedicated `wall-topology-preparation` pipeline stage and
+  `WallTopologyPreparation` artifact between Wall Evidence V2 and wall graph
+  construction.
+- Wall graph construction now consumes an explicit graph-ready wall ID set,
+  making rejected door/detail/surface/noise evidence a first-class topology
+  input decision instead of local graph-stage filtering.
+
+### Verified
+- Focused structural topology filtering, scanner pipeline, and schema contract
+  tests passed with `60` tests.
+- Full solution test suite passed with `482` tests.
+
+## [0.02.048] - 2026-06-16
+
+### Fixed
+- Wall graph construction now withholds Wall Evidence V2 rejected/non-wall
+  candidates from topology input while keeping those wall-like details available
+  in wall evidence and wall exports for QA review.
+- Wall graph diagnostics now report rejected wall-evidence candidates excluded
+  from graph input by category, making retained door/detail/noise linework
+  easier to audit without polluting clean graph nodes and edges.
+
+### Verified
+- Focused structural topology filtering and wall graph topology tests passed
+  with `26` tests.
+- Focused structural topology, wall graph topology, opening semantics, room
+  semantics, routing layer, wall placement readiness, object semantics, export,
+  and schema contract tests passed with `153` tests.
+- Full solution test suite passed with `482` tests.
+
+## [0.02.047] - 2026-06-16
+
+### Fixed
+- Wall type refinement now forces Wall Evidence V2 rejected/non-wall
+  candidates back to `Unknown`, preventing retained door/detail/noise wall-like
+  geometry from being exported or visualized as exterior or interior walls.
+- Wall type diagnostics now report how many rejected evidence walls were
+  protected from architectural wall classification.
+
+### Verified
+- Focused structural topology filtering and wall pair reconstruction tests
+  passed with `28` tests.
+- Focused structural topology, wall reconstruction, routing layer, object
+  semantics, export, schema contract, and wall placement readiness tests passed
+  with `118` tests.
+- Full solution test suite passed with `482` tests.
+
+## [0.02.046] - 2026-06-16
+
+### Fixed
+- Structural topology filtering now excludes Wall Evidence V2 candidates marked
+  as rejected/non-wall even when those wall-like details are retained in the
+  wall list for QA/export review.
+- Routing barrier generation now suppresses rejected wall-evidence candidates,
+  preventing retained door/detail/noise linework from becoming downstream
+  routing barriers.
+
+### Verified
+- Focused structural topology filtering tests passed with `7` tests.
+- Focused structural topology, routing layer, opening semantics, room
+  semantics, export, schema contract, and wall placement readiness tests passed
+  with `116` tests.
+- Full solution test suite passed with `482` tests.
+
+## [0.02.045] - 2026-06-16
+
+### Fixed
+- Wall Evidence V2 segment, band, and assessment geometry now stays
+  synchronized with wall graph endpoint normalization, so QA overlays and
+  exports follow snapped or trimmed placement-ready wall coordinates instead of
+  stale pre-normalized candidate geometry.
+
+### Verified
+- Focused wall graph topology tests passed with `19` tests.
+- Focused wall graph topology, export, schema contract, wall placement
+  readiness, opening semantics, and scanner pipeline tests passed with `108`
+  tests.
+- Full solution test suite passed with `481` tests.
+
+## [0.02.044] - 2026-06-16
+
+### Fixed
+- Wall graph near-touch endpoint inference now normalizes safe snapped wall
+  endpoints into the exported wall centerline, removing tiny connector edges
+  from clean graph output and improving placement-ready coordinates.
+
+### Verified
+- Focused wall graph topology tests passed with `19` tests.
+- Focused wall graph topology, export, schema contract, wall placement
+  readiness, opening semantics, and scanner pipeline tests passed with `108`
+  tests.
+- Full solution test suite passed with `481` tests.
+
+## [0.02.043] - 2026-06-16
+
+### Added
+- Wall Evidence V2 exports now include stable rejected wall ID sets for each
+  rejection family, letting visual QA and downstream importers jump directly to
+  door/opening, surface-pattern, dimension/annotation, or object/fixture wall
+  candidates without parsing every rejected detail.
+
+### Verified
+- Focused export, schema contract, wall layer filtering, arc-door, wall
+  evidence recovery, scanner pipeline, and object semantics tests passed with
+  `124` tests.
+- Full solution test suite passed with `481` tests.
+
+## [0.02.042] - 2026-06-16
+
+### Added
+- Wall Evidence V2 exports now include stable rejected-wall reason counts for
+  door/opening symbols, surface-pattern details, dimension/annotation linework,
+  and object/fixture details so downstream QA can compare rejection causes
+  without parsing every rejected wall-like item.
+
+### Verified
+- Focused export, schema contract, wall layer filtering, arc-door, wall
+  evidence recovery, scanner pipeline, and object semantics tests passed with
+  `124` tests.
+- Full solution test suite passed with `481` tests.
+
+## [0.02.041] - 2026-06-16
+
+### Fixed
+- Wall Evidence V2 now rejects high-scoring paired object, fixture, service,
+  dimension, text, and grid layer linework before strong-wall acceptance unless
+  the pair is wall-backed or structurally supported at both ends.
+
+### Verified
+- Focused wall layer filtering, arc-door, wall evidence recovery, export,
+  schema contract, scanner pipeline, and object semantics tests passed with
+  `124` tests.
+- Full solution test suite passed with `481` tests.
+
+## [0.02.040] - 2026-06-16
+
+### Fixed
+- Wall Evidence V2 now rejects high-scoring paired hatch/surface-pattern
+  linework from `SurfacePattern` layers before strong-wall acceptance, reducing
+  false placement walls from dense tile, hatch, and detail patterns.
+
+### Verified
+- Focused wall layer filtering, arc-door, wall evidence recovery, export,
+  schema contract, scanner pipeline, and object semantics tests passed with
+  `122` tests.
+- Full solution test suite passed with `479` tests.
+
+## [0.02.039] - 2026-06-16
+
+### Fixed
+- Wall Evidence V2 now rejects short paired door/window frame linework from
+  door/window layers before it can be accepted as a strong parallel-face wall,
+  reducing false placement walls from opening symbol details.
+
+### Verified
+- Focused arc-door, wall evidence recovery, wall layer filtering, export,
+  schema contract, and scanner pipeline tests passed with `103` tests.
+- Full solution test suite passed with `478` tests.
+
+## [0.02.038] - 2026-06-16
+
+### Changed
+- Wall Evidence V2 now carries source, recovered, and total wall candidate
+  counts through the scan model, diagnostics, and JSON export so downstream QA
+  can compare raw candidates against accepted/review/rejected wall output.
+
+### Verified
+- Focused export, schema contract, wall layer filtering, and wall evidence
+  recovery tests passed with `88` tests.
+- Full solution test suite passed with `477` tests.
+
+## [0.02.037] - 2026-06-16
+
+### Changed
+- Layer analysis now recognizes hatch and surface-pattern layers as
+  `SurfacePattern`, giving hatches, tile patterns, fills, and poche/detail
+  pattern linework explicit provenance instead of letting it look like walls.
+- Wall detection, Wall Evidence V2, and short-wall recovery now suppress
+  `SurfacePattern` layer linework before it can pollute placement-ready wall
+  graph output.
+- Object candidate generation now ignores surface-pattern linework, keeping
+  hatch/detail fills out of both structural walls and object candidates.
+
+### Verified
+- Focused layer analysis, wall layer filtering, object semantics, schema
+  contract, and layer profile tests passed with `94` tests.
+- Full solution test suite passed with `477` tests.
+
+## [0.02.036] - 2026-06-16
+
+### Changed
+- Layer analysis now recognizes furniture and architectural fixture layers, so
+  furniture/fixture linework can be treated as object evidence instead of
+  wall evidence.
+- Wall detection and Wall Evidence V2 now exclude or reject furniture and
+  fixture layer linework before topology, reducing false walls from sofas,
+  tables, cabinetry, counters, toilets, sinks, and similar plan details.
+- Object candidate generation now maps furniture and fixture layers to
+  `Furniture` and `Fixture` object categories instead of generic symbols.
+
+### Verified
+- Focused layer analysis, wall layer filtering, object semantics, schema
+  contract, and layer profile tests passed with `93` tests.
+- Focused wall-pair reconstruction regression tests passed with `48` tests.
+- Full solution test suite passed with `476` tests.
+
+## [0.02.035] - 2026-06-16
+
+### Changed
+- Wall Evidence V2 now rejects equipment, electrical, HVAC, plumbing, and fire
+  safety layer linework as `ObjectOrFixtureDetail` before wall graphing when it
+  reaches refinement as a wall candidate, keeping service/equipment geometry out
+  of placement-ready structural walls.
+- Wall evidence rejection diagnostics now include an
+  `objectFixtureRejectedCount` property for object/fixture/service false-wall
+  suppression.
+
+### Verified
+- Focused wall layer filtering, wall evidence recovery, and object semantics
+  tests passed with `41` tests.
+- Full solution test suite passed with `475` tests.
+
+## [0.02.034] - 2026-06-16
+
+### Changed
+- Wall Evidence V2 now rejects unlayered short linework that is strongly tied
+  to a nearby swing arc when it has at most one distinct structural support
+  wall, while preserving short wall candidates supported by two structural wall
+  bodies.
+
+### Verified
+- Focused arc-door, wall evidence recovery, and wall layer filtering tests
+  passed with `27` tests.
+- Full solution test suite passed with `474` tests.
+
+## [0.02.033] - 2026-06-16
+
+### Changed
+- Wall Evidence V2 now rejects short door/window-layer linework tied to a nearby
+  swing arc even when the candidate touches surrounding wall geometry, reducing
+  false wall placement from door symbol details before wall graphing.
+
+### Verified
+- Focused arc-door, wall evidence recovery, and wall layer filtering tests
+  passed with `25` tests.
+- Full solution test suite passed with `472` tests.
+
+## [0.02.032] - 2026-06-16
+
+### Added
+- Wall Evidence V2 scan exports now include explicit decision counts and stable
+  wall ID sets for accepted, review-decision, and rejected wall assessments, so
+  downstream engines and visual QA can compare wall membership without deriving
+  it from every assessment item.
+
+### Verified
+- Focused export and schema contract tests passed with `63` tests.
+- Full solution test suite passed with `471` tests.
+
+## [0.02.031] - 2026-06-16
+
+### Changed
+- Wall graph object-like component classification now feeds back into Wall
+  Evidence V2, reclassifying affected wall assessments as
+  `ObjectOrFixtureDetail` with reject decisions when compact wall-like islands
+  are excluded from structural topology.
+- Affected wall evidence segments and wall evidence text now carry the related
+  object-like component ID, preserving source primitive provenance while making
+  the non-wall reason explicit for scan JSON consumers.
+
+### Verified
+- Focused object semantics, scanner pipeline, wall graph topology, export, and
+  schema contract tests passed with `108` tests.
+
+## [0.02.030] - 2026-06-16
+
+### Added
+- Placement wall exports now include `wallGraphRepairCandidateIds`, linking each
+  wall directly to related wall-graph snap or trim review candidates.
+
+### Changed
+- Wall placement reliability now includes wall-graph repair review reasons when
+  a wall participates in endpoint snap or endpoint-overrun trim candidates, so
+  downstream engines can see exact topology concerns on the wall item itself.
+
+### Verified
+- Focused wall graph topology, export, schema contract, and placement
+  validation tests passed with `95` tests.
+- Full solution test suite passed with `470` tests.
+
+## [0.02.029] - 2026-06-16
+
+### Changed
+- Scan review queues and placement issues now treat endpoint-overrun trim
+  reviews as first-class wall-graph topology review items, with trim-specific
+  reason text, evidence, item IDs, and recommended actions instead of generic
+  unsnapped-junction wording.
+
+### Verified
+- Focused export and scan review queue tests passed with `23` tests.
+- Focused wall graph, export, schema, scan review queue, and scan quality tests
+  passed with `104` tests.
+- Full solution test suite passed with `470` tests.
+
+## [0.02.028] - 2026-06-16
+
+### Changed
+- Public changelog QA notes now use neutral difficulty labels and local-only
+  artifact paths instead of private plan/customer identifiers.
+
+### Verified
+- Repository search for known private plan/customer tokens returned no matches.
+- `.gitignore` keeps local artifacts, drawing inputs, and screenshots out of
+  normal commits.
+- Full solution test suite passed with `469` tests.
+
+## [0.02.027] - 2026-06-16
+
+### Changed
+- Reviewed long endpoint-overrun tails are now suppressed from clean wall graph
+  edges while keeping the original wall geometry and endpoint-overrun repair
+  candidate available for review/export.
+- Endpoint-overrun review evidence now requires a perpendicular support wall
+  endpoint at the junction for long-tail review, preventing legitimate crossing
+  walls from being downgraded to overrun cleanup.
+
+### Verified
+- Focused wall graph topology tests passed with `19` tests.
+- Focused wall graph, export, schema, and wall evidence recovery tests passed
+  with `84` tests.
+- Full solution test suite passed with `469` tests.
+
+## [0.02.026] - 2026-06-16
+
+### Added
+- Wall evidence recovery now includes conservative short supported wall
+  segments, allowing real bathroom/entry/interior wall stubs to be recovered
+  when they are backed by wall-like layer evidence and nearby structural
+  endpoint support.
+- Wall evidence diagnostics now split recovered wall bands from recovered short
+  wall segments while preserving the total recovered wall count for existing
+  consumers.
+
+### Verified
+- Focused wall evidence recovery tests passed with `3` tests.
+- Focused wall evidence, wall-pair reconstruction, arc door filtering, export,
+  and schema contract tests passed with `88` tests.
+- Full solution test suite passed with `469` tests.
+
+## [0.02.025] - 2026-06-16
+
+### Added
+- Wall graph repair candidates now include `EndpointOverrun` review items for
+  supported wall endpoint tails that look overextended but are too long to trim
+  automatically.
+- Endpoint overrun repair candidates export exact source endpoint, target
+  junction point, tail distance, safe auto-trim distance, source primitive IDs,
+  and a `TrimEndpointOverrun` suggested action in scan and placement JSON.
+
+### Changed
+- Placement repair guidance now distinguishes endpoint-overrun trim candidates
+  from endpoint snap candidates.
+
+### Verified
+- Focused wall graph topology tests passed with `19` tests.
+- Focused schema/export/placement validation tests passed with `76` tests.
+- Full solution test suite passed with `468` tests.
+
+## [0.02.024] - 2026-06-16
+
+### Added
+- Wall Evidence V2 assessments now include an explicit `Accept`, `Review`, or
+  `Reject` decision plus a score breakdown with positive support, negative
+  penalties, pair/layer/endpoint/recovery contributions, and evidence strings.
+- Scan JSON now exports wall evidence decisions and score breakdowns for
+  evidence segments, bands, detailed wall assessments, and rejected wall-like
+  details under the new `openplantrace.scan.v64` contract.
+
+### Changed
+- The viewer routing sample was updated to the v64 scan schema with synthetic
+  wall evidence scores so debug tools can exercise the richer contract.
+
+### Verified
+- Focused arc door-leaf filtering, export contract, and scan schema tests
+  passed with `64` tests.
+- Full solution test suite passed with `466` tests.
+
+## [0.02.023] - 2026-06-16
+
+### Added
+- Scan JSON export now includes a top-level `wallEvidence` section with wall
+  evidence segments, wall-band support, detailed wall assessments, and explicit
+  rejected wall-like details.
+- Rejected wall-like details now carry bounds, optional centerline, category,
+  confidence, source primitive IDs, source layers, and evidence so downstream
+  QA tools can inspect why door/detail/grid/furniture-like geometry was kept
+  out of accepted placement walls.
+- Added the `openplantrace.scan.v63` schema artifact and updated the embedded
+  scan schema resource plus the viewer routing sample to the new contract.
+
+### Verified
+- Focused export contract tests passed with `18` tests.
+- Scan schema contract tests passed with `44` tests.
+- Full solution test suite passed with `466` tests.
+
+## [0.02.022] - 2026-06-16
+
+### Fixed
+- Wall evidence refinement now rejects radial door-leaf linework that is tied to
+  a swing arc even when the leaf endpoint touches a real wall, preventing normal
+  door geometry from being protected as structural endpoint support.
+
+### Verified
+- Focused arc door-leaf wall filtering tests passed with `2` tests.
+- Wall evidence/filtering/reconstruction/opening semantics tests passed with
+  `56` tests.
+- Full solution test suite passed with `465` tests.
+
+## [0.02.021] - 2026-06-16
+
+### Changed
+- The viewer's `Walls` overlay now uses wall-truth colors for visual QA:
+  exterior walls draw blue, interior walls draw green, and unclassified
+  placement walls draw muted amber instead of the previous hard-to-read red.
+- Wall hover titles now include the architectural wall type and wall evidence
+  category, making screenshot review and local truth-reference comparison
+  faster.
+- The overlay legend now breaks displayed placement walls into exterior,
+  interior, and unclassified counts while still reporting hidden/detail wall
+  candidates separately.
+
+### Fixed
+- Wall type classification now recognizes local outer-boundary walls on
+  concave/L-shaped floorplan envelopes instead of relying only on the global
+  rectangular wall envelope.
+- Room-adjacency refinement now preserves a wall already classified as exterior
+  by envelope/local-boundary evidence, avoiding false interior labels on
+  exterior walls that sit beside terrace/covered/outdoor regions.
+
+### Verified
+- Focused wall reconstruction tests passed with `21` tests.
+- Full solution test suite passed with `464` tests.
+- Local light-plan wall-truth scan stayed stable at `54` raw walls while
+  wall type classification shifted from `14` exterior / `37` interior /
+  `3` unknown to `26` exterior / `25` interior / `3` unknown.
+- Walls-only and PDF-background QA screenshots were regenerated under
+  `artifacts/local-wall-truth/light-plan-20260616/qa-screenshots`.
+  Visual review confirms the exterior outline is much closer to the local
+  blue/green truth references, especially garage bottom and right-wing top and
+  bottom boundaries. Remaining issues are still visible around the garage/right
+  transition and bathroom/entry door/detail linework.
+
+## [0.02.020] - 2026-06-16
+
+### Changed
+- The viewer's primary `Walls` layer now draws only placement/import wall
+  candidates, hiding object-like components, isolated fragments, and
+  coordinate-blocked wall candidates from normal wall QA screenshots.
+- Wall overlay counts and legend rows now report the displayed placement wall
+  candidates separately from hidden wall/detail candidates, so visual review no
+  longer mistakes raw candidate volume for trusted wall output.
+
+### Verified
+- Full solution test suite passed with `463` tests.
+- Light PDF scan produced `80` raw walls, with `68` displayed placement wall
+  candidates and `12` hidden wall/detail candidates in wall-only QA.
+- Hard PDF scan produced `53` raw walls, with `31` displayed placement wall
+  candidates and `22` hidden wall/detail candidates in wall-only QA.
+- Wall-only and PDF-background wall QA screenshots were regenerated under
+  `artifacts/wall-qa-structural-overlay-filter-20260616/qa-screenshots`.
+  Visual review confirms the wall overlay is easier to inspect, but the light
+  plan still shows false stair/detail wall lines and the hard plan still misses
+  many true walls; the next scanner leap should target wall-body recovery and
+  structural-vs-detail classification, not just display filtering.
+
+## [0.02.019] - 2026-06-16
+
+### Added
+- Placement JSON walls now export `openingCutouts` and `solidSpans` so
+  downstream engines can consume exact wall centerline pieces after anchored
+  door/window openings are accounted for.
+- Wall solid spans now carry `adjacentOpeningIds` when the scanner already
+  split a wall at an opening, preserving the door/window relationship without
+  inventing a continuous wall.
+- Updated the placement v6 schema and opening placement tests to cover both
+  split wall fragments beside an opening and a continuous host wall with a
+  cutout subtracted from it.
+
+### Fixed
+- Opening cutout projection now falls back to jamb-point projection when an
+  opening placement reference line is longer than the specific wall fragment
+  that claims the opening, avoiding shifted cutouts on short host fragments.
+
+### Verified
+- Focused opening, placement export, and schema contract tests passed with
+  `75` tests.
+- Full solution test suite passed with `463` tests.
+- Light PDF scan produced `80` walls, `7` rooms, `29` openings, `29` wall
+  opening cutouts, `97` wall solid spans, and `39` solid spans adjacent to
+  openings; `68` walls are coordinate-ready and `14` require review.
+- Hard PDF scan produced `53` walls, `7` rooms, `33` openings, `32` wall
+  opening cutouts, `83` wall solid spans, and `45` solid spans adjacent to
+  openings; `31` walls are coordinate-ready and `22` require review.
+- Wall-only and PDF-background wall QA screenshots were regenerated under
+  `artifacts/wall-opening-placement-output-20260616/qa-screenshots`. Visual
+  review confirms the placement JSON now carries opening-aware wall spans, but
+  the detector still under-detects many hard-plan walls and still mistakes some
+  furniture/stair/detail linework for walls on the light plan.
+
+## [0.02.018] - 2026-06-15
+
+### Changed
+- Enabled deterministic wall-evidence recovery by default so unclaimed paired
+  wall-face evidence can reconstruct missing wall bodies before graphing.
+- Tightened recovered wall-band acceptance: non-wall-layer recovered pairs now
+  require support at both endpoints, are deduplicated against already recovered
+  centerlines, and are blocked inside excluded surface/detail patterns.
+- Added dense-parallel recovery suppression so repeated hatch/detail bands do
+  not re-enter the wall graph as recovered walls.
+
+### Added
+- Added focused wall-evidence recovery contract tests for supported wall-band
+  recovery, duplicate recovered centerline collapse, unsupported pair rejection,
+  surface/detail rejection, and dense parallel detail suppression.
+
+### Verified
+- Focused recovery, wall filtering, and door-leaf tests passed with `22` tests.
+- Full solution test suite passed with `463` tests.
+- Light PDF scan recovered `2` missing wall bands, producing `54` walls,
+  `6` rooms, and `27` openings; `52` walls are placement-ready and `2` require
+  review.
+- Extreme PDF scan recovered `11` missing wall bands while rejecting `7`
+  surface/detail false wall candidates, producing `53` walls, `7` rooms, and
+  `33` openings; `46` walls are placement-ready and `7` require review.
+- Wall-only and PDF-background wall QA screenshots were regenerated under
+  `artifacts/wall-band-recovery-density-tuned-20260615`. Visual review shows
+  better internal wall recovery than the prior `42`-wall scan and less hatch
+  noise than the raw `102`-wall recovery experiment, but the hard plan still
+  needs stronger opening-aware splitting and interior partition recovery.
+
+## [0.02.017] - 2026-06-15
+
+### Changed
+- Enabled wall-evidence noise rejection by default so confirmed non-wall
+  detail candidates are removed before wall graph construction instead of only
+  being marked for review.
+- Surface/detail pattern evidence now rejects unlayered single-line wall
+  candidates that sit inside excluded dense grid/detail regions even when they
+  do not share the exact surface-pattern source primitive IDs.
+- Added core internals visibility for the test assembly so individual scanner
+  stages can be covered with focused contract tests.
+
+### Fixed
+- Added a door-swing leaf regression guard so short door leaf/detail linework
+  near swing arcs is filtered without removing nearby real short partitions.
+
+### Verified
+- Focused wall filtering, opening semantics, and wall graph topology tests
+  passed with `51` tests.
+- Full solution test suite passed with `461` tests.
+- Light PDF scan stayed stable with `52` walls, `5` rooms, and `26` openings;
+  wall evidence reports `50` placement-ready walls and `2` review walls.
+- Extreme PDF scan removed `7` surface/detail false wall candidates before
+  graphing, reducing walls from the prior `49` to `42`, with `35`
+  placement-ready walls and `7` review walls.
+- Wall-only and PDF-background wall QA screenshots were regenerated under
+  `artifacts/surface-pattern-noise-rejection-20260615`. Visual review shows the
+  dense surface/detail cleanup improved noise on the extreme plan, but true
+  internal wall recovery remains the next major accuracy gap.
+
 ## [0.02.016] - 2026-06-15
 
 ### Fixed

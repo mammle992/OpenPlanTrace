@@ -22,6 +22,7 @@ public enum PlanArtifactKind
     WallCandidates,
     Walls,
     WallEvidence,
+    WallTopologyPreparation,
     WallGraph,
     TopologySpans,
     Openings,

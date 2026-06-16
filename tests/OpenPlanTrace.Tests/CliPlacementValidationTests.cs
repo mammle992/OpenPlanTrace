@@ -717,6 +717,7 @@ public sealed class CliPlacementValidationTests
                 "confidence": 0.9,
                 "reasons": {{SurfaceOverlapWallReasonsJson(markSurfaceOverlapWallReview)}}
               },
+              "wallGraphRepairCandidateIds": [],
               "sourcePrimitiveIds": ["wall-primitive-1"],
               "sourceLayers": ["A-WALL"],
               "evidence": ["test wall"]

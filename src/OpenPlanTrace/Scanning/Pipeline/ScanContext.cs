@@ -42,6 +42,8 @@ internal sealed class ScanContext
 
     public WallEvidenceMap WallEvidenceMap { get; set; } = WallEvidenceMap.Empty;
 
+    public WallTopologyPreparation WallTopologyPreparation { get; set; } = WallTopologyPreparation.Empty;
+
     public WallGraph WallGraph { get; set; } = WallGraph.Empty;
 
     public List<RoomRegion> Rooms { get; } = new();
@@ -79,6 +81,8 @@ internal sealed class ScanContext
         + WallEvidenceMap.Segments.Count
         + WallEvidenceMap.Bands.Count
         + WallEvidenceMap.WallAssessments.Count
+        + WallTopologyPreparation.GraphWallCount
+        + WallTopologyPreparation.RejectedWallCount
         + WallGraph.Nodes.Count
         + WallGraph.Edges.Count
         + WallGraph.Components.Count
@@ -138,6 +142,9 @@ internal sealed class ScanContext
                 WallEvidenceMap.Segments.Count
                 + WallEvidenceMap.Bands.Count
                 + WallEvidenceMap.WallAssessments.Count,
+            [PlanArtifactKind.WallTopologyPreparation] =
+                WallTopologyPreparation.GraphWallCount
+                + WallTopologyPreparation.RejectedWallCount,
             [PlanArtifactKind.WallGraph] =
                 WallGraph.Nodes.Count
                 + WallGraph.Edges.Count
@@ -247,7 +254,11 @@ internal sealed class ScanContext
             ObjectAggregates.ToArray(),
             Diagnostics.Build());
 
-        result = result with { WallEvidenceMap = WallEvidenceMap };
+        result = result with
+        {
+            WallEvidenceMap = WallEvidenceMap,
+            WallTopologyPreparation = WallTopologyPreparation
+        };
 
         if (HasRoutingLayer)
         {
@@ -281,7 +292,11 @@ internal sealed class ScanContext
             ObjectAggregates.ToArray(),
             Diagnostics.Build());
 
-        return result with { WallEvidenceMap = WallEvidenceMap };
+        return result with
+        {
+            WallEvidenceMap = WallEvidenceMap,
+            WallTopologyPreparation = WallTopologyPreparation
+        };
     }
 
     private bool IsFormat(string format) =>

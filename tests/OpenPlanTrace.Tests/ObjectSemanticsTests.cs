@@ -344,6 +344,24 @@ public sealed class ObjectSemanticsTests
             diagnostic => diagnostic.Code == "objects.wall_component_islands.promoted"
                 && diagnostic.Properties["candidateCount"] == "1"
                 && diagnostic.Properties["componentIds"].Contains(objectComponent.Id, StringComparison.Ordinal));
+        Assert.Contains(
+            result.Diagnostics.Messages,
+            diagnostic => diagnostic.Code == "wall_evidence.object_like_components_reclassified"
+                && diagnostic.Properties["componentIds"].Contains(objectComponent.Id, StringComparison.Ordinal));
+
+        var objectWallAssessments = result.WallEvidenceMap.WallAssessments
+            .Where(assessment => objectComponent.WallIds.Contains(assessment.WallId))
+            .ToArray();
+        Assert.Equal(objectComponent.WallCount, objectWallAssessments.Length);
+        Assert.All(objectWallAssessments, assessment =>
+        {
+            Assert.Equal(WallEvidenceCategory.ObjectOrFixtureDetail, assessment.Category);
+            Assert.Equal(WallEvidenceDecision.Reject, assessment.Decision);
+            Assert.True(assessment.RejectedAsNoise);
+            Assert.False(assessment.PlacementReady);
+            Assert.True(assessment.ScoreBreakdown.NoisePenalty >= 0.75);
+            Assert.Contains(assessment.Evidence, item => item.Contains(objectComponent.Id, StringComparison.Ordinal));
+        });
 
         var group = Assert.Single(
             result.ObjectGroups,
@@ -359,6 +377,12 @@ public sealed class ObjectSemanticsTests
         Assert.Equal("WallComponentIsland", promotedJson.GetProperty("sourceKind").GetString());
         Assert.Equal(objectComponent.Id, promotedJson.GetProperty("sourceWallComponentId").GetString());
         Assert.Equal("ObjectLikeIsland", promotedJson.GetProperty("sourceWallComponentKind").GetString());
+        var rejectedWallLikeDetails = parsed.RootElement.GetProperty("wallEvidence").GetProperty("rejectedWallLikeDetails").EnumerateArray().ToArray();
+        Assert.Equal(objectComponent.WallCount, rejectedWallLikeDetails.Count(detail =>
+            detail.GetProperty("category").GetString() == "ObjectOrFixtureDetail"));
+        Assert.Contains(
+            rejectedWallLikeDetails,
+            detail => detail.GetProperty("sourcePrimitiveIds").EnumerateArray().Any(id => id.GetString() == "car-outline-top"));
 
         var geoJson = PlanTraceGeoJsonExporter.Serialize(result);
         using var parsedGeoJson = JsonDocument.Parse(geoJson);

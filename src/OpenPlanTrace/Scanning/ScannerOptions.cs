@@ -50,9 +50,9 @@ public sealed record ScannerOptions
 
     public bool FilterDimensionLikeFragmentLineworkFromWalls { get; init; } = true;
 
-    public bool EnableWallEvidenceRecovery { get; init; }
+    public bool EnableWallEvidenceRecovery { get; init; } = true;
 
-    public bool EnableWallEvidenceNoiseRejection { get; init; }
+    public bool EnableWallEvidenceNoiseRejection { get; init; } = true;
 
     public int MaxWallEvidenceRecoveredWallsPerPage { get; init; } = 60;
 

@@ -23,9 +23,20 @@ public static class PlanRoutingLayerBuilder
             .Where(wall => wall.FragmentEvidence?.RequiresGeometryReview == true)
             .Select(wall => wall.Id)
             .ToHashSet(StringComparer.Ordinal);
+        var rejectedEvidenceWallIds = BuildRejectedWallEvidenceIds(result);
+        var reviewRequiredEvidenceWallIds = BuildReviewRequiredWallEvidenceIds(result);
         var allBarriers = BuildRoutingBarriers(result, wallComponentLookup);
         var suppressedFragmentReviewBarrierCount = allBarriers.Count(barrier =>
             fragmentReviewWallIds.Contains(barrier.SourceId));
+        var suppressedRejectedEvidenceBarrierCount = allBarriers.Count(barrier =>
+            rejectedEvidenceWallIds.Contains(barrier.SourceId));
+        var suppressedReviewEvidenceBarrierCount = allBarriers.Count(barrier =>
+            !fragmentReviewWallIds.Contains(barrier.SourceId)
+            && !rejectedEvidenceWallIds.Contains(barrier.SourceId)
+            && IsUnprotectedReviewEvidenceRoutingBarrier(
+                barrier,
+                reviewRequiredEvidenceWallIds,
+                protectedRoutingWallIds));
         var suppressedIsolatedBarrierCount = allBarriers.Count(barrier =>
             IsUnusedIsolatedRoutingBarrier(barrier, protectedRoutingWallIds, structuralComponentPages));
         var suppressedShortUnreferencedBarrierCount = allBarriers.Count(barrier =>
@@ -34,6 +45,11 @@ public static class PlanRoutingLayerBuilder
             IsDenseMinorRoutingDetailBarrier(barrier, denseMinorRoutingDetailWallIds));
         var barriers = allBarriers
             .Where(barrier => !fragmentReviewWallIds.Contains(barrier.SourceId))
+            .Where(barrier => !rejectedEvidenceWallIds.Contains(barrier.SourceId))
+            .Where(barrier => !IsUnprotectedReviewEvidenceRoutingBarrier(
+                barrier,
+                reviewRequiredEvidenceWallIds,
+                protectedRoutingWallIds))
             .Where(barrier => !barrier.ExcludedFromStructuralTopology)
             .Where(barrier => !IsUnusedIsolatedRoutingBarrier(barrier, protectedRoutingWallIds, structuralComponentPages))
             .Where(barrier => !IsUnusedShortStructuralRoutingBarrier(barrier, protectedRoutingWallIds, roomSolvedPages))
@@ -109,6 +125,8 @@ public static class PlanRoutingLayerBuilder
             $"short unreferenced wall fragments suppressed as routing barriers: {suppressedShortUnreferencedBarrierCount}",
             $"dense minor-detail routing barriers suppressed: {suppressedDenseMinorDetailBarrierCount}",
             $"fragment-review wall barriers suppressed: {suppressedFragmentReviewBarrierCount}",
+            $"wall-evidence rejected barriers suppressed: {suppressedRejectedEvidenceBarrierCount}",
+            $"wall-evidence review barriers suppressed: {suppressedReviewEvidenceBarrierCount}",
             $"routing passages from opening evidence: {passages.Length}",
             $"routing obstacles after aggregate suppression: {obstacles.Count}",
             $"suppressed child object candidates: {suppressedObjectIds.Length}",
@@ -131,6 +149,22 @@ public static class PlanRoutingLayerBuilder
             ignoredObjectIds.ToArray(),
             evidence);
     }
+
+    private static IReadOnlySet<string> BuildRejectedWallEvidenceIds(PlanScanResult result) =>
+        result.WallEvidenceMap.WallAssessments
+            .Where(assessment => assessment.RejectedAsNoise || assessment.Decision == WallEvidenceDecision.Reject)
+            .Select(assessment => assessment.WallId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.Ordinal);
+
+    private static IReadOnlySet<string> BuildReviewRequiredWallEvidenceIds(PlanScanResult result) =>
+        result.WallEvidenceMap.WallAssessments
+            .Where(assessment => !assessment.RejectedAsNoise)
+            .Where(assessment => assessment.Decision != WallEvidenceDecision.Reject)
+            .Where(assessment => assessment.RequiresReview || assessment.Decision == WallEvidenceDecision.Review)
+            .Select(assessment => assessment.WallId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.Ordinal);
 
     private static RoutingBarrier CreateBarrier(
         WallSegment wall,
@@ -1016,6 +1050,13 @@ public static class PlanRoutingLayerBuilder
         IReadOnlySet<string> denseMinorRoutingDetailWallIds) =>
         barrier.WallComponentKind == WallGraphComponentKind.SecondaryStructural
         && denseMinorRoutingDetailWallIds.Contains(barrier.SourceId);
+
+    private static bool IsUnprotectedReviewEvidenceRoutingBarrier(
+        RoutingBarrier barrier,
+        IReadOnlySet<string> reviewRequiredEvidenceWallIds,
+        IReadOnlySet<string> protectedRoutingWallIds) =>
+        reviewRequiredEvidenceWallIds.Contains(barrier.SourceId)
+        && !protectedRoutingWallIds.Contains(barrier.SourceId);
 
     private static bool IsShortRoutingBarrier(RoutingBarrier barrier) =>
         barrier.LengthMeters is > 0
