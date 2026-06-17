@@ -121,7 +121,8 @@ public sealed record PlanPlacementExport(
             wallTopologySpans,
             result.Calibration,
             sourceLookup,
-            wallComponentLookup);
+            wallComponentLookup,
+            wallEvidenceAssessments);
         var placementRoutingLayer = PlacementRoutingLayerExport.From(routingLayer, result.Calibration, sourceLookup);
         var issues = PlacementIssueExport.From(result, sourceLookup).ToArray();
 
@@ -1179,6 +1180,8 @@ public sealed record PlacementWallExport(
             .ThenBy(cutout => cutout.OpeningId, StringComparer.Ordinal)
             .ToArray();
         var solidSpans = PlacementWallSolidSpanExport.From(wall, scale, cutouts, openings);
+        var excludedFromStructuralTopology =
+            WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment);
 
         return new PlacementWallExport(
             wall.Id,
@@ -1200,7 +1203,7 @@ public sealed record PlacementWallExport(
             wall.WallType.ToString(),
             component?.Id,
             component?.Kind.ToString(),
-            component?.ExcludedFromStructuralTopology ?? false,
+            excludedFromStructuralTopology,
             wall.MeasurementScaleGroupId,
             scale,
             wall.Confidence.Value,
@@ -2000,7 +2003,8 @@ public sealed record PlacementWallGraphExport(
         IReadOnlyList<WallGraphTopologySpan> topologySpans,
         PlanCalibration calibration,
         IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup,
-        IReadOnlyDictionary<string, WallGraphComponent> wallComponentLookup)
+        IReadOnlyDictionary<string, WallGraphComponent> wallComponentLookup,
+        IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceAssessments)
     {
         var spansByEdgeId = topologySpans
             .GroupBy(span => span.Id, StringComparer.Ordinal)
@@ -2014,7 +2018,8 @@ public sealed record PlacementWallGraphExport(
                 spansByEdgeId.TryGetValue(edge.Id, out var span) ? span : null,
                 calibration,
                 sourceLookup,
-                wallComponentLookup))
+                wallComponentLookup,
+                wallEvidenceAssessments))
             .ToArray();
         var components = graph.Components
             .Select(component => PlacementWallGraphComponentExport.From(component, calibration, sourceLookup))
@@ -2128,12 +2133,16 @@ public sealed record PlacementWallGraphEdgeExport(
         WallGraphTopologySpan? topologySpan,
         PlanCalibration calibration,
         IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup,
-        IReadOnlyDictionary<string, WallGraphComponent> wallComponentLookup)
+        IReadOnlyDictionary<string, WallGraphComponent> wallComponentLookup,
+        IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceAssessments)
     {
         wallComponentLookup.TryGetValue(edge.WallId, out var component);
+        wallEvidenceAssessments.TryGetValue(edge.WallId, out var evidenceAssessment);
         var scale = ResolveMillimetersPerDrawingUnit(calibration, topologySpan?.SourceWall?.MeasurementScaleGroupId);
         var drawingLength = topologySpan?.DrawingLength ?? 0;
         var thickness = topologySpan?.Thickness ?? 0;
+        var excludedFromStructuralTopology =
+            WallStructuralTrust.IsExcludedFromStructuralTopology(component, evidenceAssessment);
         return new PlacementWallGraphEdgeExport(
             edge.Id,
             edge.PageNumber,
@@ -2142,7 +2151,7 @@ public sealed record PlacementWallGraphEdgeExport(
             edge.WallId,
             component?.Id,
             component?.Kind.ToString(),
-            component?.ExcludedFromStructuralTopology ?? false,
+            excludedFromStructuralTopology,
             topologySpan is null ? null : LineExport.From(topologySpan.CenterLine),
             topologySpan is null ? null : ScaleLine(topologySpan.CenterLine, scale),
             topologySpan is null ? null : RectExport.From(topologySpan.Bounds),
@@ -2157,7 +2166,20 @@ public sealed record PlacementWallGraphEdgeExport(
             topologySpan is null
                 ? Array.Empty<string>()
                 : ExportSourceHelpers.SourceLayers(topologySpan.SourcePrimitiveIds, sourceLookup),
-            topologySpan?.Evidence ?? Array.Empty<string>());
+            EdgeEvidence(topologySpan, evidenceAssessment));
+    }
+
+    private static IReadOnlyList<string> EdgeEvidence(
+        WallGraphTopologySpan? topologySpan,
+        WallEvidenceWallAssessment? evidenceAssessment)
+    {
+        var evidence = new List<string>(topologySpan?.Evidence ?? Array.Empty<string>());
+        if (WallStructuralTrust.IsRejectedNonStructural(evidenceAssessment))
+        {
+            evidence.Add($"wall graph edge excluded because wall evidence rejected as non-wall/noise ({evidenceAssessment!.Category})");
+        }
+
+        return evidence.Distinct(StringComparer.Ordinal).ToArray();
     }
 }
 

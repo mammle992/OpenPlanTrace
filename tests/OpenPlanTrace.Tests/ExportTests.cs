@@ -359,6 +359,83 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public async Task Exporters_MarkRejectedWallEvidenceAsTopologyExcluded()
+    {
+        var result = await CreateScanResultAsync();
+        var rejectedEdge = result.WallGraph.Edges[0];
+        var rejectedWall = result.Walls.Single(wall => wall.Id == rejectedEdge.WallId);
+        var rejectedAssessment = new WallEvidenceWallAssessment(
+            rejectedWall.Id,
+            rejectedWall.PageNumber,
+            rejectedWall.Bounds,
+            WallEvidenceCategory.DoorOrOpeningSymbol,
+            Confidence.High,
+            PlacementReady: false,
+            RequiresReview: true,
+            RejectedAsNoise: true,
+            rejectedWall.SourcePrimitiveIds,
+            new[] { "wall evidence: rejected as door/opening symbol" })
+        {
+            Decision = WallEvidenceDecision.Reject
+        };
+        result = result with
+        {
+            WallEvidenceMap = new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                new[] { rejectedAssessment })
+        };
+
+        using var scanDocument = JsonDocument.Parse(PlanTraceJsonExporter.Serialize(result));
+        var scanWall = scanDocument.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(wall => wall.GetProperty("id").GetString() == rejectedWall.Id);
+
+        Assert.True(scanWall.GetProperty("excludedFromStructuralTopology").GetBoolean());
+        Assert.True(scanWall.GetProperty("evidenceAssessment").GetProperty("rejectedAsNoise").GetBoolean());
+
+        using var placementDocument = JsonDocument.Parse(
+            PlanPlacementJsonExporter.Serialize(
+                result,
+                new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var placementWall = placementDocument.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(wall => wall.GetProperty("id").GetString() == rejectedWall.Id);
+
+        Assert.True(placementWall.GetProperty("excludedFromStructuralTopology").GetBoolean());
+        Assert.True(placementWall.GetProperty("evidenceAssessment").GetProperty("rejectedAsNoise").GetBoolean());
+        var placementWallGraph = placementDocument.RootElement.GetProperty("wallGraph");
+        var placementGraphEdge = placementWallGraph
+            .GetProperty("edges")
+            .EnumerateArray()
+            .Single(edge => edge.GetProperty("id").GetString() == rejectedEdge.Id);
+
+        Assert.True(placementGraphEdge.GetProperty("excludedFromStructuralTopology").GetBoolean());
+        Assert.Equal(
+            1,
+            placementWallGraph.GetProperty("summary").GetProperty("excludedEdgeCount").GetInt32());
+        Assert.Contains(
+            placementGraphEdge.GetProperty("evidence").EnumerateArray().Select(item => item.GetString()),
+            item => item is not null && item.Contains("wall evidence rejected as non-wall/noise", StringComparison.OrdinalIgnoreCase));
+
+        using var geoJsonDocument = JsonDocument.Parse(
+            PlanTraceGeoJsonExporter.Serialize(
+                result,
+                new PlanTraceGeoJsonExportOptions { WriteIndented = false }));
+        var geoJsonWall = geoJsonDocument.RootElement
+            .GetProperty("features")
+            .EnumerateArray()
+            .Single(feature =>
+                FeatureType(feature) == "wall"
+                && feature.GetProperty("properties").GetProperty("openPlanTraceId").GetString() == rejectedWall.Id);
+
+        Assert.True(geoJsonWall.GetProperty("properties").GetProperty("excludedFromStructuralTopology").GetBoolean());
+        Assert.True(geoJsonWall.GetProperty("properties").GetProperty("wallEvidenceRejectedAsNoise").GetBoolean());
+    }
+
+    [Fact]
     public void WallEvidenceMap_ExposesStableDecisionBuckets()
     {
         var evidenceMap = new WallEvidenceMap(
@@ -481,6 +558,41 @@ public sealed class ExportTests
         Assert.Contains("id=\"annotation-references\"", svg);
         Assert.Contains("annotation-reference", svg);
         Assert.Contains("page:1:wall:", svg);
+    }
+
+    [Fact]
+    public async Task SvgRenderer_MarksRejectedWallEvidenceAsTopologyExcluded()
+    {
+        var result = await CreateScanResultAsync();
+        var rejectedWall = result.Walls[0];
+        var rejectedAssessment = new WallEvidenceWallAssessment(
+            rejectedWall.Id,
+            rejectedWall.PageNumber,
+            rejectedWall.Bounds,
+            WallEvidenceCategory.DoorOrOpeningSymbol,
+            Confidence.High,
+            PlacementReady: false,
+            RequiresReview: true,
+            RejectedAsNoise: true,
+            rejectedWall.SourcePrimitiveIds,
+            new[] { "wall evidence: rejected as door/opening symbol" })
+        {
+            Decision = WallEvidenceDecision.Reject
+        };
+        result = result with
+        {
+            WallEvidenceMap = new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                new[] { rejectedAssessment })
+        };
+
+        var svg = PlanOverlaySvgRenderer.RenderPage(result, 1);
+
+        Assert.Contains("wall-excluded", svg);
+        Assert.Contains("topology excluded True", svg);
+        Assert.Contains("wall evidence Reject DoorOrOpeningSymbol", svg);
+        Assert.Contains("1 topology-excluded walls", svg);
     }
 
     [Fact]

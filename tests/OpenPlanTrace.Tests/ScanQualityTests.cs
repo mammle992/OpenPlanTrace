@@ -844,6 +844,136 @@ public sealed class ScanQualityTests
     }
 
     [Fact]
+    public void Analyze_TreatsRejectedWallEvidenceAsNonStructural()
+    {
+        var walls = new[]
+        {
+            SyntheticWall("door-leaf-detail", 200, 120, 260, 120, confidence: new Confidence(0.25)),
+            SyntheticWall("fixture-edge-detail", 260, 120, 260, 170, confidence: new Confidence(0.25))
+        };
+        var evidenceMap = new WallEvidenceMap(
+            [],
+            [],
+            walls.Select(wall => RejectedWallEvidence(wall, WallEvidenceCategory.DoorOrOpeningSymbol)).ToArray());
+        var result = CreateSyntheticResult(walls: walls, wallEvidenceMap: evidenceMap);
+
+        var quality = PlanScanQualityAnalyzer.Analyze(result);
+        var wallDetector = Assert.Single(quality.Detectors, detector => detector.Name == "walls");
+
+        Assert.Equal(0, wallDetector.ItemCount);
+        Assert.Contains(quality.Issues, issue =>
+            issue.Code == "quality.no_walls"
+            && issue.Message.Contains("structural", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(quality.Issues, issue => issue.Code == "quality.no_rooms_from_walls");
+    }
+
+    [Fact]
+    public void ImportReadiness_DoesNotPenalizeRejectedWallEvidenceWalls()
+    {
+        var regions = new[]
+        {
+            new SheetRegion("sheet", 1, RegionKind.Sheet, new PlanRect(0, 0, 600, 400), Confidence.High),
+            new SheetRegion("main", 1, RegionKind.MainFloorPlan, new PlanRect(0, 0, 600, 400), Confidence.High)
+        };
+        var structuralWalls = new[]
+        {
+            SyntheticWall("w1", 100, 100, 250, 100),
+            SyntheticWall("w2", 250, 100, 250, 250),
+            SyntheticWall("w3", 250, 250, 100, 250),
+            SyntheticWall("w4", 100, 250, 100, 100)
+        };
+        var rejectedWalls = new[]
+        {
+            SyntheticWall("door-leaf-detail", 180, 116, 236, 116, confidence: new Confidence(0.25)),
+            SyntheticWall("fixture-edge-detail", 210, 145, 240, 145, confidence: new Confidence(0.25))
+        };
+        var walls = structuralWalls.Concat(rejectedWalls).ToArray();
+        var wallGraph = new WallGraph(
+            [
+                SyntheticNode("n1", 100, 100),
+                SyntheticNode("n2", 250, 100),
+                SyntheticNode("n3", 250, 250),
+                SyntheticNode("n4", 100, 250)
+            ],
+            [
+                SyntheticEdge("e1", "n1", "n2", "w1"),
+                SyntheticEdge("e2", "n2", "n3", "w2"),
+                SyntheticEdge("e3", "n3", "n4", "w3"),
+                SyntheticEdge("e4", "n4", "n1", "w4")
+            ],
+            [
+                new WallGraphComponent(
+                    "component-main",
+                    1,
+                    WallGraphComponentKind.MainStructural,
+                    new PlanRect(100, 100, 150, 150),
+                    ["w1", "w2", "w3", "w4"],
+                    ["n1", "n2", "n3", "n4"],
+                    ["e1", "e2", "e3", "e4"],
+                    ["w1", "w2", "w3", "w4"],
+                    600,
+                    Confidence.High,
+                    ["main structural component"])
+            ]);
+        var rooms = new[]
+        {
+            SyntheticRoom("r1", new PlanRect(105, 105, 140, 140), ["w1", "w2", "w3", "w4"])
+        };
+        var evidenceMap = new WallEvidenceMap(
+            [],
+            [],
+            rejectedWalls.Select(wall => RejectedWallEvidence(wall, WallEvidenceCategory.DoorOrOpeningSymbol)).ToArray());
+        var baseResult = CreateSyntheticResult(
+            regions: regions,
+            walls: walls,
+            wallGraph: wallGraph,
+            rooms: rooms,
+            wallEvidenceMap: evidenceMap);
+
+        var quality = PlanScanQualityAnalyzer.Analyze(baseResult);
+        var wallDetector = Assert.Single(quality.Detectors, detector => detector.Name == "walls");
+
+        Assert.Equal(4, wallDetector.ItemCount);
+        Assert.Equal(0, wallDetector.LowConfidenceCount);
+
+        var result = baseResult with
+        {
+            Quality = UsableQuality()
+        };
+        var readiness = PlanImportReadiness.FromScanResult(result);
+
+        Assert.True(readiness.ReadyForGeometryImport);
+        Assert.True(readiness.ReadyForMetricImport);
+        Assert.False(readiness.RequiresReview);
+        Assert.DoesNotContain("placement.import.low_coordinate_ready_ratio", readiness.BlockingIssueCodes);
+        Assert.DoesNotContain("placement.import.low_metric_ready_ratio", readiness.BlockingIssueCodes);
+        Assert.DoesNotContain("placement.wall_evidence.requires_review", readiness.ReviewIssueCodes);
+        Assert.Contains(
+            readiness.Evidence,
+            evidence => evidence.Contains("coordinate readiness ratio 1", StringComparison.OrdinalIgnoreCase));
+
+        using var document = JsonDocument.Parse(
+            PlanPlacementJsonExporter.Serialize(
+                result,
+                new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var root = document.RootElement;
+        var summary = root.GetProperty("summary");
+
+        Assert.Equal(6, summary.GetProperty("wallCount").GetInt32());
+        Assert.Equal(4, summary.GetProperty("structuralWallCount").GetInt32());
+        Assert.Equal(2, summary.GetProperty("excludedWallCount").GetInt32());
+        Assert.False(summary.GetProperty("importReadiness").GetProperty("requiresReview").GetBoolean());
+        Assert.Contains(
+            root.GetProperty("walls").EnumerateArray(),
+            wall => wall.GetProperty("id").GetString() == "door-leaf-detail"
+                && wall.GetProperty("excludedFromStructuralTopology").GetBoolean()
+                && !wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean()
+                && wall.GetProperty("reliability").GetProperty("reasons")
+                    .EnumerateArray()
+                    .Any(reason => reason.GetString() == "wall evidence rejected as non-wall/noise (DoorOrOpeningSymbol)"));
+    }
+
+    [Fact]
     public void Analyze_DoesNotFlagScanRiskForExcludedObjectLikeWallComponents()
     {
         var regions = new[]
@@ -1206,7 +1336,8 @@ public sealed class ScanQualityTests
         IReadOnlyList<ObjectCandidateGroup>? objectGroups = null,
         IReadOnlyList<ObjectAggregate>? objectAggregates = null,
         MeasurementConsistencyReport? measurementConsistency = null,
-        IReadOnlyList<PlanDiagnostic>? diagnostics = null)
+        IReadOnlyList<PlanDiagnostic>? diagnostics = null,
+        WallEvidenceMap? wallEvidenceMap = null)
     {
         var now = DateTimeOffset.UtcNow;
         return new PlanScanResult(
@@ -1240,7 +1371,10 @@ public sealed class ScanQualityTests
             objects ?? Array.Empty<ObjectCandidate>(),
             objectGroups ?? Array.Empty<ObjectCandidateGroup>(),
             objectAggregates ?? Array.Empty<ObjectAggregate>(),
-            new PipelineDiagnostics(now, now, Array.Empty<PipelineStageReport>(), diagnostics ?? Array.Empty<PlanDiagnostic>()));
+            new PipelineDiagnostics(now, now, Array.Empty<PipelineStageReport>(), diagnostics ?? Array.Empty<PlanDiagnostic>()))
+        {
+            WallEvidenceMap = wallEvidenceMap ?? WallEvidenceMap.Empty
+        };
     }
 
     private static PlanCalibration ReliableCalibration() =>
@@ -1293,6 +1427,24 @@ public sealed class ScanQualityTests
         {
             SourcePrimitiveIds = withEvidence ? [id] : [],
             Evidence = withEvidence ? ["synthetic wall source"] : []
+        };
+
+    private static WallEvidenceWallAssessment RejectedWallEvidence(
+        WallSegment wall,
+        WallEvidenceCategory category) =>
+        new(
+            wall.Id,
+            wall.PageNumber,
+            wall.Bounds,
+            category,
+            wall.Confidence,
+            PlacementReady: false,
+            RequiresReview: true,
+            RejectedAsNoise: true,
+            wall.SourcePrimitiveIds,
+            ["synthetic rejected wall evidence"])
+        {
+            Decision = WallEvidenceDecision.Reject
         };
 
     private static PlanScanQualityReport UsableQuality() =>

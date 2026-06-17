@@ -1043,7 +1043,7 @@ public sealed record WallExport(
             wall.WallType.ToString(),
             component?.Id,
             component?.Kind.ToString(),
-            component?.ExcludedFromStructuralTopology ?? false,
+            WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment),
             wall.DrawingLength,
             wall.LengthMeters,
             wall.ThicknessMillimeters,
@@ -1475,6 +1475,11 @@ internal static class WallEvidenceExportHelpers
                     .OrderByDescending(assessment => assessment.Confidence.Value)
                     .First(),
                 StringComparer.Ordinal);
+
+    public static bool IsExcludedFromStructuralTopology(
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? evidenceAssessment) =>
+        WallStructuralTrust.IsExcludedFromStructuralTopology(component, evidenceAssessment);
 }
 
 public sealed record WallTopologySpanExport(

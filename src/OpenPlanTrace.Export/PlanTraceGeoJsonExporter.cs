@@ -248,7 +248,9 @@ public static class PlanTraceGeoJsonExporter
                 .AddValue("wallType", wall.WallType.ToString())
                 .AddValue("wallComponentId", component?.Id)
                 .AddValue("wallComponentKind", component?.Kind.ToString())
-                .AddValue("excludedFromStructuralTopology", component?.ExcludedFromStructuralTopology ?? false)
+                .AddValue(
+                    "excludedFromStructuralTopology",
+                    WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment))
                 .AddValue("thickness", wall.Thickness)
                 .AddValue("drawingLength", wall.DrawingLength)
                 .AddValue("lengthMeters", wall.LengthMeters)

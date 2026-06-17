@@ -330,13 +330,13 @@ public static class PlanOverlaySvgRenderer
         {
             builder.AppendLine("""<g id="walls">""");
             var componentByWallId = BuildWallComponentLookup(result.WallGraph.Components);
+            var wallEvidenceAssessments = WallEvidenceExportHelpers.BuildAssessmentLookup(result.WallEvidenceMap);
             foreach (var wall in result.Walls.Where(wall => wall.PageNumber == page.Number))
             {
                 componentByWallId.TryGetValue(wall.Id, out var component);
-                var title = component is null
-                    ? wall.Id
-                    : $"{wall.Id} ({component.Kind}; component {component.Id}; topology excluded {component.ExcludedFromStructuralTopology})";
-                builder.AppendLine($"""<line class="{WallCssClass(component)}" x1="{N(wall.CenterLine.Start.X)}" y1="{N(wall.CenterLine.Start.Y)}" x2="{N(wall.CenterLine.End.X)}" y2="{N(wall.CenterLine.End.Y)}" opacity="{N(WallOpacity(wall.Confidence, component))}"><title>{Esc(title)}</title></line>""");
+                wallEvidenceAssessments.TryGetValue(wall.Id, out var assessment);
+                var title = WallTitle(wall, component, assessment);
+                builder.AppendLine($"""<line class="{WallCssClass(component, assessment)}" x1="{N(wall.CenterLine.Start.X)}" y1="{N(wall.CenterLine.Start.Y)}" x2="{N(wall.CenterLine.End.X)}" y2="{N(wall.CenterLine.End.Y)}" opacity="{N(WallOpacity(wall.Confidence, component, assessment))}"><title>{Esc(title)}</title></line>""");
             }
             builder.AppendLine("</g>");
         }
@@ -609,10 +609,13 @@ public static class PlanOverlaySvgRenderer
     private static double Opacity(Confidence confidence) =>
         Math.Clamp(0.32 + (confidence.Value * 0.68), 0.32, 1.0);
 
-    private static double WallOpacity(Confidence confidence, WallGraphComponent? component)
+    private static double WallOpacity(
+        Confidence confidence,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? evidenceAssessment)
     {
         var opacity = Opacity(confidence);
-        return component?.ExcludedFromStructuralTopology == true
+        return WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment)
             ? Math.Max(0.12, opacity * 0.32)
             : opacity;
     }
@@ -628,20 +631,41 @@ public static class PlanOverlaySvgRenderer
             _ => "wall-component"
         };
 
-    private static string WallCssClass(WallGraphComponent? component) =>
+    private static string WallCssClass(
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? evidenceAssessment) =>
         component?.Kind switch
         {
-            WallGraphComponentKind.MainStructural => WallCssClass("wall wall-main", component),
-            WallGraphComponentKind.SecondaryStructural => WallCssClass("wall wall-secondary", component),
-            WallGraphComponentKind.ObjectLikeIsland => WallCssClass("wall wall-object-like", component),
-            WallGraphComponentKind.IsolatedFragment => WallCssClass("wall wall-fragment", component),
-            _ => WallCssClass("wall", component)
+            WallGraphComponentKind.MainStructural => WallCssClass("wall wall-main", component, evidenceAssessment),
+            WallGraphComponentKind.SecondaryStructural => WallCssClass("wall wall-secondary", component, evidenceAssessment),
+            WallGraphComponentKind.ObjectLikeIsland => WallCssClass("wall wall-object-like", component, evidenceAssessment),
+            WallGraphComponentKind.IsolatedFragment => WallCssClass("wall wall-fragment", component, evidenceAssessment),
+            _ => WallCssClass("wall", component, evidenceAssessment)
         };
 
-    private static string WallCssClass(string cssClass, WallGraphComponent? component) =>
-        component?.ExcludedFromStructuralTopology == true
+    private static string WallCssClass(
+        string cssClass,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? evidenceAssessment) =>
+        WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment)
             ? $"{cssClass} wall-excluded"
             : cssClass;
+
+    private static string WallTitle(
+        WallSegment wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? evidenceAssessment)
+    {
+        var topologyExcluded = WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment);
+        var componentText = component is null
+            ? "no component"
+            : $"{component.Kind}; component {component.Id}";
+        var evidenceText = evidenceAssessment is null
+            ? "no wall evidence assessment"
+            : $"wall evidence {evidenceAssessment.Decision} {evidenceAssessment.Category}";
+
+        return $"{wall.Id} ({componentText}; topology excluded {topologyExcluded}; {evidenceText})";
+    }
 
     private static string RoutingObstacleCssClass(RoutingObstacleKind kind) =>
         kind switch
@@ -652,11 +676,21 @@ public static class PlanOverlaySvgRenderer
         };
 
     private static int TopologyExcludedWallCount(PlanScanResult result, int pageNumber) =>
-        result.WallGraph.Components
-            .Where(component => component.PageNumber == pageNumber && component.ExcludedFromStructuralTopology)
-            .SelectMany(component => component.WallIds)
-            .Distinct(StringComparer.Ordinal)
-            .Count();
+        CountTopologyExcludedWalls(result, pageNumber);
+
+    private static int CountTopologyExcludedWalls(PlanScanResult result, int pageNumber)
+    {
+        var componentByWallId = BuildWallComponentLookup(result.WallGraph.Components);
+        var wallEvidenceAssessments = WallEvidenceExportHelpers.BuildAssessmentLookup(result.WallEvidenceMap);
+        return result.Walls
+            .Where(wall => wall.PageNumber == pageNumber)
+            .Count(wall =>
+            {
+                componentByWallId.TryGetValue(wall.Id, out var component);
+                wallEvidenceAssessments.TryGetValue(wall.Id, out var assessment);
+                return WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, assessment);
+            });
+    }
 
     private static int RoutingItemCount(PlanRoutingLayer routingLayer, int pageNumber) =>
         routingLayer.Barriers.Count(item => item.PageNumber == pageNumber)

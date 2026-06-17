@@ -6,6 +6,66 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.064] - 2026-06-16
+
+### Fixed
+- Added a shared core `WallStructuralTrust` helper so quality/readiness,
+  placement exports, scan exports, GeoJSON, and SVG overlays use one
+  deterministic rule for rejected Wall Evidence V2 structural exclusion.
+- Placement wall-graph edge exports now apply rejected wall evidence to
+  `excludedFromStructuralTopology`, excluded-edge summary counts, and edge
+  evidence, preventing retained non-wall evidence edges from being counted as
+  structural downstream.
+
+### Verified
+- Focused export tests passed with `24` tests.
+- Focused scan quality, structural-topology, wall placement readiness, and
+  routing layer tests passed with `40` tests.
+- Full solution test suite passed with `498` tests.
+
+## [0.02.063] - 2026-06-16
+
+### Fixed
+- SVG wall overlays now use the shared Wall Evidence V2 structural-exclusion
+  rule, so rejected wall-like details render with excluded-wall styling,
+  reduced opacity, accurate hover text, and correct legend counts instead of
+  looking like normal structural wall output.
+
+### Verified
+- Focused export/SVG tests passed with `24` tests.
+- Focused scan quality, structural-topology, and wall placement readiness tests
+  passed with `32` tests.
+- Full solution test suite passed with `498` tests.
+
+## [0.02.062] - 2026-06-16
+
+### Fixed
+- Scan JSON, placement JSON, and GeoJSON now share one Wall Evidence V2
+  structural-exclusion rule, so rejected wall-like details are consistently
+  marked as excluded from structural topology across every downstream contract.
+
+### Verified
+- Focused export tests passed with `23` tests.
+- Focused scan quality, structural-topology, and wall placement readiness tests
+  passed with `32` tests.
+- Full solution test suite passed with `497` tests.
+
+## [0.02.061] - 2026-06-16
+
+### Fixed
+- Shared structural wall selection now excludes Wall Evidence V2 candidates
+  marked as rejected/non-wall, so rejected door/detail/object geometry cannot
+  inflate quality detector counts or import-readiness ratios.
+- Placement wall exports now mark rejected wall evidence as excluded from
+  structural topology while still exporting the rejected wall-like detail, its
+  source IDs, reliability reasons, and evidence for QA review.
+
+### Verified
+- Focused scan quality/import readiness tests passed with `21` tests.
+- Focused export, structural-topology, and wall placement readiness tests
+  passed with `33` tests.
+- Full solution test suite passed with `496` tests.
+
 ## [0.02.060] - 2026-06-16
 
 ### Added

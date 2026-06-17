@@ -16,10 +16,25 @@ internal static class StructuralWallSelector
     {
         ArgumentNullException.ThrowIfNull(result);
 
-        return result.WallGraph.Components
+        var excludedWallIds = result.WallGraph.Components
             .Where(component => component.ExcludedFromStructuralTopology)
             .SelectMany(component => component.WallIds)
             .Where(id => !string.IsNullOrWhiteSpace(id))
             .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var assessment in result.WallEvidenceMap.WallAssessments)
+        {
+            if (string.IsNullOrWhiteSpace(assessment.WallId))
+            {
+                continue;
+            }
+
+            if (WallStructuralTrust.IsRejectedNonStructural(assessment))
+            {
+                excludedWallIds.Add(assessment.WallId);
+            }
+        }
+
+        return excludedWallIds;
     }
 }
