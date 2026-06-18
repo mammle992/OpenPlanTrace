@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Text;
+using System.Text.Json.Nodes;
 
 namespace OpenPlanTrace.Tests;
 
@@ -8,6 +10,17 @@ public sealed class ExportTests
     public async Task JsonExporter_WritesSchemaVersionedScanResult()
     {
         var result = await CreateScanResultAsync();
+        result = result with
+        {
+            Calibration = new PlanCalibration(
+                PlanMeasurementUnit.DrawingUnit,
+                PlanMeasurementUnit.Millimeter,
+                ScaleRatio: null,
+                MillimetersPerDrawingUnit: 10,
+                Confidence.High,
+                Array.Empty<CalibrationEvidence>(),
+                Array.Empty<CalibrationScaleGroup>())
+        };
 
         var json = PlanTraceJsonExporter.Serialize(result);
         using var document = JsonDocument.Parse(json);
@@ -179,9 +192,55 @@ public sealed class ExportTests
 
         var firstWallEdge = document.RootElement.GetProperty("wallGraph").GetProperty("edges")[0];
         Assert.Equal(JsonValueKind.Object, firstWallEdge.GetProperty("line").ValueKind);
+        Assert.Equal(JsonValueKind.Object, firstWallEdge.GetProperty("lineMillimeters").ValueKind);
         Assert.Equal(JsonValueKind.Object, firstWallEdge.GetProperty("bounds").ValueKind);
+        Assert.Equal(JsonValueKind.Object, firstWallEdge.GetProperty("boundsMillimeters").ValueKind);
         Assert.True(firstWallEdge.GetProperty("drawingLength").GetDouble() > 0);
+        Assert.True(firstWallEdge.GetProperty("lengthMeters").GetDouble() > 0);
+        Assert.True(firstWallEdge.GetProperty("thicknessDrawingUnits").GetDouble() > 0);
+        Assert.True(firstWallEdge.GetProperty("thicknessMillimeters").GetDouble() > 0);
+        Assert.True(firstWallEdge.GetProperty("millimetersPerDrawingUnit").GetDouble() > 0);
         Assert.Contains("Wall", firstWallEdge.GetProperty("sourceLayers").EnumerateArray().Select(layer => layer.GetString()));
+    }
+
+    [Fact]
+    public async Task CompactJsonExporter_WritesLosslessDictionaryEncodedScanResult()
+    {
+        var result = await CreateScanResultAsync();
+        var export = PlanTraceExport.From(result);
+        var fullJson = JsonSerializer.Serialize(
+            export,
+            new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                WriteIndented = false
+            });
+
+        var compactJson = PlanTraceCompactJsonExporter.Serialize(export);
+        var expandedJson = PlanTraceCompactJsonExporter.ExpandToScanJson(compactJson);
+
+        using var compactDocument = JsonDocument.Parse(compactJson);
+        var root = compactDocument.RootElement;
+        Assert.Equal(PlanTraceCompactJsonExporter.CurrentSchemaVersion, root.GetProperty("schemaVersion").GetString());
+        Assert.Equal(PlanTraceExport.CurrentSchemaVersion, root.GetProperty("sourceSchemaVersion").GetString());
+        Assert.Equal("shape-string-token-v1", root.GetProperty("encoding").GetString());
+
+        var dictionary = root.GetProperty("dictionary");
+        Assert.True(dictionary.GetProperty("strings").GetArrayLength() > 0);
+        Assert.True(dictionary.GetProperty("shapes").GetArrayLength() > 0);
+        Assert.True(root.GetProperty("stats").GetProperty("encodedObjectCount").GetInt32() > 0);
+        Assert.True(root.GetProperty("stats").GetProperty("encodedStringReferenceCount").GetInt32() > 0);
+
+        var fullBytes = Encoding.UTF8.GetByteCount(fullJson);
+        var compactBytes = Encoding.UTF8.GetByteCount(compactJson);
+        Assert.Equal(fullBytes, root.GetProperty("stats").GetProperty("sourceUtf8Bytes").GetInt32());
+        Assert.True(
+            compactBytes < fullBytes,
+            $"Expected compact scan JSON to be smaller than minified scan JSON. compact={compactBytes}, full={fullBytes}");
+
+        var fullNode = JsonNode.Parse(fullJson);
+        var expandedNode = JsonNode.Parse(expandedJson);
+        Assert.True(JsonNode.DeepEquals(fullNode, expandedNode));
     }
 
     [Fact]
@@ -364,6 +423,7 @@ public sealed class ExportTests
         var result = await CreateScanResultAsync();
         var rejectedEdge = result.WallGraph.Edges[0];
         var rejectedWall = result.Walls.Single(wall => wall.Id == rejectedEdge.WallId);
+        var rejectedComponent = result.WallGraph.Components.Single(component => component.WallIds.Contains(rejectedWall.Id));
         var rejectedAssessment = new WallEvidenceWallAssessment(
             rejectedWall.Id,
             rejectedWall.PageNumber,
@@ -394,6 +454,18 @@ public sealed class ExportTests
 
         Assert.True(scanWall.GetProperty("excludedFromStructuralTopology").GetBoolean());
         Assert.True(scanWall.GetProperty("evidenceAssessment").GetProperty("rejectedAsNoise").GetBoolean());
+        var scanGraphEdge = scanDocument.RootElement
+            .GetProperty("wallGraph")
+            .GetProperty("edges")
+            .EnumerateArray()
+            .Single(edge => edge.GetProperty("id").GetString() == rejectedEdge.Id);
+
+        Assert.Equal(rejectedComponent.Id, scanGraphEdge.GetProperty("wallComponentId").GetString());
+        Assert.Equal(rejectedComponent.Kind.ToString(), scanGraphEdge.GetProperty("wallComponentKind").GetString());
+        Assert.True(scanGraphEdge.GetProperty("excludedFromStructuralTopology").GetBoolean());
+        Assert.Contains(
+            scanGraphEdge.GetProperty("evidence").EnumerateArray().Select(item => item.GetString()),
+            item => item is not null && item.Contains("wall evidence rejected as non-wall/noise", StringComparison.OrdinalIgnoreCase));
 
         using var placementDocument = JsonDocument.Parse(
             PlanPlacementJsonExporter.Serialize(
@@ -626,6 +698,101 @@ public sealed class ExportTests
         Assert.Contains("detail-host", svg);
         Assert.Contains("x1=\"100\" y1=\"100\" x2=\"300\" y2=\"100\"", svg);
         Assert.DoesNotContain("detail-host span edge-host-1", svg);
+    }
+
+    [Fact]
+    public void SvgRenderer_PlacementReviewProfileDrawsCleanTopologySpansWithoutRawWallLayer()
+    {
+        var result = WithReviewOnlyWallAssessment(
+            CreateDenseMinorRoutingDetailResult(),
+            "detail-tooth-1");
+
+        var svg = PlanOverlaySvgRenderer.RenderPage(
+            result,
+            1,
+            SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.PlacementReview));
+
+        Assert.Contains("data-profile=\"placement-review\"", svg);
+        Assert.Contains("id=\"wall-topology-spans\"", svg);
+        Assert.Contains("clean wall topology span detail-host:clean-run:1", svg);
+        Assert.Contains("x1=\"100\" y1=\"100\" x2=\"300\" y2=\"100\"", svg);
+        Assert.Contains("1 visible topology spans", svg);
+        Assert.Contains("4 hidden non-placement topology spans", svg);
+        Assert.DoesNotContain("edge-tooth-1", svg);
+        Assert.DoesNotContain("edge-tooth-2", svg);
+        Assert.DoesNotContain("id=\"walls\"", svg);
+    }
+
+    [Fact]
+    public void VisualSnapshotExporter_PlacementReviewProfileExposesWallTopologySpanLayer()
+    {
+        var result = WithReviewOnlyWallAssessment(
+            CreateDenseMinorRoutingDetailResult(),
+            "detail-tooth-1");
+
+        var snapshot = PlanOverlaySnapshot.From(
+            result,
+            new Dictionary<int, string> { [1] = "overlays/page-1.svg" },
+            SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.PlacementReview));
+
+        var page = Assert.Single(snapshot.Pages);
+        Assert.Equal("placement-review", page.SvgProfile);
+        Assert.Contains("wallTopologySpans", page.VisibleLayerNames);
+        Assert.DoesNotContain("walls", page.VisibleLayerNames);
+        Assert.Equal(1, page.Layers.Single(layer => layer.Name == "wallTopologySpans").Count);
+        Assert.Equal(4, page.Layers.Single(layer => layer.Name == "wallTopologyReviewSpans").Count);
+        Assert.Contains("wallTopologyReviewSpans", page.HiddenLayerNames);
+    }
+
+    [Fact]
+    public void SvgRenderer_PlacementReviewProfileDrawsTrustedIsolatedFragmentsAsCleanTopologySpans()
+    {
+        var result = WithPlacementReadyIsolatedFragment(CreateDenseMinorRoutingDetailResult());
+
+        var svg = PlanOverlaySvgRenderer.RenderPage(
+            result,
+            1,
+            SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.PlacementReview));
+
+        Assert.Contains("2 visible topology spans", svg);
+        Assert.Contains("4 hidden non-placement topology spans", svg);
+        Assert.Contains("clean wall topology span isolated-clean-fragment:clean-run:1", svg);
+
+        var snapshot = PlanOverlaySnapshot.From(
+            result,
+            new Dictionary<int, string> { [1] = "overlays/page-1.svg" },
+            SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.PlacementReview));
+
+        var page = Assert.Single(snapshot.Pages);
+        Assert.Equal(2, page.Layers.Single(layer => layer.Name == "wallTopologySpans").Count);
+        Assert.Equal(4, page.Layers.Single(layer => layer.Name == "wallTopologyReviewSpans").Count);
+    }
+
+    [Fact]
+    public void SvgRenderer_PlacementReviewProfileDrawsWallGraphRepairCandidatesAsSeparateQaLayer()
+    {
+        var result = WithWallGraphRepairCandidate(CreateDenseMinorRoutingDetailResult());
+
+        var svg = PlanOverlaySvgRenderer.RenderPage(
+            result,
+            1,
+            SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.PlacementReview));
+
+        Assert.Contains("id=\"wall-graph-repairs\"", svg);
+        Assert.Contains("EndpointToWall SnapEndpointToWall", svg);
+        Assert.Contains("1 wall graph repairs (1 blocking)", svg);
+        Assert.Contains("class=\"wall-graph-repair wall-graph-repair-high\"", svg);
+
+        var snapshot = PlanOverlaySnapshot.From(
+            result,
+            new Dictionary<int, string> { [1] = "overlays/page-1.svg" },
+            SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.PlacementReview));
+
+        var page = Assert.Single(snapshot.Pages);
+        Assert.Contains("wallGraphRepairs", page.VisibleLayerNames);
+        var repairLayer = page.Layers.Single(layer => layer.Name == "wallGraphRepairs");
+        Assert.Equal(1, repairLayer.Count);
+        Assert.Equal(1, repairLayer.Breakdown["High"]);
     }
 
     [Fact]
@@ -1291,6 +1458,65 @@ public sealed class ExportTests
                 Evidence = ["synthetic anchored opening"]
             };
         }
+    }
+
+    [Fact]
+    public void OpeningPlacementExport_NormalizesReversedHostWallOffsets()
+    {
+        var referenceLine = new PlanLineSegment(new PlanPoint(100, 40), new PlanPoint(0, 40));
+        var startPoint = new PlanPoint(25, 40);
+        var endPoint = new PlanPoint(35, 40);
+        var footprint = new PlanRect(25, 38, 10, 4);
+        var placement = new OpeningPlacement(
+            "wall-reversed",
+            ["wall-reversed"],
+            referenceLine,
+            startPoint,
+            endPoint,
+            75,
+            65,
+            70,
+            10,
+            footprint,
+            [
+                new PlanPoint(25, 38),
+                new PlanPoint(35, 38),
+                new PlanPoint(35, 42),
+                new PlanPoint(25, 42)
+            ],
+            new PlanLineSegment(new PlanPoint(25, 38), new PlanPoint(25, 42)),
+            new PlanLineSegment(new PlanPoint(35, 38), new PlanPoint(35, 42)),
+            4,
+            null,
+            null,
+            null,
+            null,
+            null,
+            0.75,
+            0.65,
+            0.7,
+            new PlanVector(-1, 0),
+            new PlanVector(0, -1),
+            0,
+            Confidence.High,
+            ["synthetic reversed placement"]);
+
+        var exported = OpeningPlacementExport.From(placement);
+
+        Assert.Equal(65, exported.StartOffsetDrawingUnits, 3);
+        Assert.Equal(75, exported.EndOffsetDrawingUnits, 3);
+        Assert.Equal(10, exported.LengthDrawingUnits, 3);
+        Assert.Equal(0.65, exported.HostWallStartParameter, 3);
+        Assert.Equal(0.75, exported.HostWallEndParameter, 3);
+        Assert.Equal(35, exported.StartPoint.X, 3);
+        Assert.Equal(25, exported.EndPoint.X, 3);
+        Assert.Equal(exported.FootprintCorners[0], exported.StartJambLine.Start);
+        Assert.Equal(exported.FootprintCorners[3], exported.StartJambLine.End);
+        Assert.Equal(exported.FootprintCorners[1], exported.EndJambLine.Start);
+        Assert.Equal(exported.FootprintCorners[2], exported.EndJambLine.End);
+        Assert.Contains(
+            exported.Evidence,
+            item => item.Contains("normalized reversed opening placement offset order", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -2020,12 +2246,137 @@ public sealed class ExportTests
                 now,
                 now,
                 Array.Empty<PipelineStageReport>(),
-                Array.Empty<PlanDiagnostic>()));
+              Array.Empty<PlanDiagnostic>()));
+      }
+
+    private static PlanScanResult WithReviewOnlyWallAssessment(
+        PlanScanResult result,
+        string wallId)
+    {
+        var wall = result.Walls.Single(item => item.Id == wallId);
+        var assessment = new WallEvidenceWallAssessment(
+            wall.Id,
+            wall.PageNumber,
+            wall.Bounds,
+            WallEvidenceCategory.SurfacePatternDetail,
+            Confidence.Medium,
+            PlacementReady: false,
+            RequiresReview: true,
+            RejectedAsNoise: false,
+            wall.SourcePrimitiveIds,
+            ["synthetic review-only detail wall should not be placement-ready"])
+        {
+            Decision = WallEvidenceDecision.Review
+        };
+
+        return result with
+        {
+            WallEvidenceMap = new WallEvidenceMap(
+                result.WallEvidenceMap.Segments,
+                result.WallEvidenceMap.Bands,
+                result.WallEvidenceMap.WallAssessments.Append(assessment).ToArray(),
+                result.WallEvidenceMap.SourceCandidateWallCount,
+                result.WallEvidenceMap.RecoveredCandidateWallCount)
+        };
     }
 
-    private static LinePrimitive WallLine(string sourceId, PlanPoint start, PlanPoint end) =>
-        new(new PlanLineSegment(start, end))
+    private static PlanScanResult WithPlacementReadyIsolatedFragment(PlanScanResult result)
+    {
+        var wall = SyntheticWall("isolated-clean-fragment", 360, 220, 386, 220);
+        var fromNode = SyntheticNode("node-isolated-fragment-a", 360, 220, WallNodeKind.Endpoint);
+        var toNode = SyntheticNode("node-isolated-fragment-b", 386, 220, WallNodeKind.Endpoint);
+        var edge = new WallEdge(
+            "edge-isolated-fragment",
+            1,
+            fromNode.Id,
+            toNode.Id,
+            wall.Id,
+            Confidence.High);
+        var component = new WallGraphComponent(
+            "component-isolated-fragment",
+            1,
+            WallGraphComponentKind.IsolatedFragment,
+            wall.Bounds,
+            [wall.Id],
+            [fromNode.Id, toNode.Id],
+            [edge.Id],
+            wall.SourcePrimitiveIds,
+            wall.DrawingLength,
+            Confidence.Medium,
+            ["synthetic isolated fragment retained for review/opening support"],
+            ExcludedFromStructuralTopology: false);
+        var assessment = new WallEvidenceWallAssessment(
+            wall.Id,
+            wall.PageNumber,
+            wall.Bounds,
+            WallEvidenceCategory.StrongWallBody,
+            Confidence.High,
+            PlacementReady: true,
+            RequiresReview: false,
+            RejectedAsNoise: false,
+            wall.SourcePrimitiveIds,
+            ["synthetic accepted wall evidence"])
         {
+            Decision = WallEvidenceDecision.Accept
+        };
+
+        return result with
+        {
+            Walls = result.Walls.Append(wall).ToArray(),
+            WallGraph = new WallGraph(
+                result.WallGraph.Nodes.Concat(new[] { fromNode, toNode }).ToArray(),
+                result.WallGraph.Edges.Append(edge).ToArray(),
+                result.WallGraph.Components.Append(component).ToArray(),
+                result.WallGraph.RepairCandidates),
+            WallEvidenceMap = new WallEvidenceMap(
+                result.WallEvidenceMap.Segments,
+                result.WallEvidenceMap.Bands,
+                result.WallEvidenceMap.WallAssessments.Append(assessment).ToArray(),
+                result.WallEvidenceMap.SourceCandidateWallCount,
+                result.WallEvidenceMap.RecoveredCandidateWallCount)
+        };
+    }
+
+    private static PlanScanResult WithWallGraphRepairCandidate(PlanScanResult result)
+    {
+        var candidate = new WallGraphRepairCandidate(
+            "repair-high-gap",
+            1,
+            WallGraphRepairCandidateKind.EndpointToWall,
+            WallGraphRepairAction.SnapEndpointToWall,
+            WallGraphRepairSeverity.High,
+            WallGraphRepairImportImpact.TopologyImportBlocked,
+            WallGraphRepairApplicability.ManualCorrectionRecommended,
+            "node-right",
+            new PlanPoint(300, 100),
+            new PlanPoint(300, 118),
+            null,
+            "detail-tooth-4",
+            GapDistance: 18,
+            SafeSnapDistance: 9,
+            ReviewDistanceLimit: 18,
+            ExcessDistanceBeyondSafeSnap: 9,
+            new PlanLineSegment(new PlanPoint(300, 100), new PlanPoint(300, 118)),
+            new PlanRect(298, 98, 4, 22),
+            ["detail-host", "detail-tooth-4"],
+            ["detail-host", "detail-tooth-4"],
+            Confidence.High,
+            RequiresReview: true,
+            ["synthetic high-severity wall graph repair candidate"]);
+
+        return result with
+        {
+            WallGraph = new WallGraph(
+                result.WallGraph.Nodes,
+                result.WallGraph.Edges,
+                result.WallGraph.Components,
+                result.WallGraph.RepairCandidates.Append(candidate).ToArray())
+        };
+    }
+
+      private static LinePrimitive WallLine(string sourceId, PlanPoint start, PlanPoint end) =>
+          new(new PlanLineSegment(start, end))
+          {
             SourceId = sourceId,
             Layer = "Wall",
             Source = new PrimitiveSourceMetadata

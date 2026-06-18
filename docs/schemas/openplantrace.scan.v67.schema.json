@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:openplantrace:schema:scan:v48",
+  "$id": "urn:openplantrace:schema:scan:v67",
   "title": "OpenPlanTrace Scan Result",
   "description": "Schema for the schema-versioned JSON emitted by OpenPlanTrace scan exports. The contract is strict about stable top-level fields and core evidence shapes, while allowing additional detector-specific fields for forward-compatible evolution.",
   "type": "object",
   "additionalProperties": true,
-  "x-openplantrace-schemaVersion": "openplantrace.scan.v48",
+  "x-openplantrace-schemaVersion": "openplantrace.scan.v67",
   "required": [
     "schemaVersion",
     "generatedAt",
@@ -24,6 +24,8 @@
     "regions",
     "surfacePatterns",
     "walls",
+    "wallEvidence",
+    "wallTopologyPreparation",
     "wallGraph",
     "rooms",
     "roomAdjacencyGraph",
@@ -39,7 +41,7 @@
   ],
   "properties": {
     "schemaVersion": {
-      "const": "openplantrace.scan.v48"
+      "const": "openplantrace.scan.v67"
     },
     "generatedAt": {
       "type": "string",
@@ -119,6 +121,12 @@
       "items": {
         "$ref": "#/$defs/wall"
       }
+    },
+    "wallEvidence": {
+      "$ref": "#/$defs/wallEvidence"
+    },
+    "wallTopologyPreparation": {
+      "$ref": "#/$defs/wallTopologyPreparation"
     },
     "wallGraph": {
       "$ref": "#/$defs/wallGraph"
@@ -695,8 +703,25 @@
         "durationMilliseconds",
         "executionModel",
         "stageCount",
+        "executionWaveCount",
+        "parallelCandidateStageCount",
         "artifactKinds",
         "sourceArtifacts",
+        "artifactPlanCount",
+        "artifactPlans",
+        "sourceArtifactPlanCount",
+        "terminalArtifactPlanCount",
+        "multiProducerArtifactPlanCount",
+        "artifactInventory",
+        "availableArtifactCount",
+        "emptyArtifactCount",
+        "importCriticalArtifactCount",
+        "missingImportCriticalArtifactCount",
+        "executionWaves",
+        "rerunImpactCount",
+        "rerunImpacts",
+        "rerunPlanCount",
+        "rerunPlans",
         "isDependencyReady",
         "planIssueCount",
         "planWarningCount",
@@ -719,11 +744,77 @@
         "stageCount": {
           "$ref": "#/$defs/nonNegativeInteger"
         },
+        "executionWaveCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "parallelCandidateStageCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
         "artifactKinds": {
           "$ref": "#/$defs/stringArray"
         },
         "sourceArtifacts": {
           "$ref": "#/$defs/stringArray"
+        },
+        "artifactPlanCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "artifactPlans": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifactPlan"
+          }
+        },
+        "sourceArtifactPlanCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "terminalArtifactPlanCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "multiProducerArtifactPlanCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "artifactInventory": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifactInventoryItem"
+          }
+        },
+        "availableArtifactCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "emptyArtifactCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "importCriticalArtifactCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "missingImportCriticalArtifactCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "executionWaves": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/executionWave"
+          }
+        },
+        "rerunImpactCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "rerunImpacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rerunImpact"
+          }
+        },
+        "rerunPlanCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "rerunPlans": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rerunPlan"
+          }
         },
         "isDependencyReady": {
           "type": "boolean"
@@ -2284,6 +2375,13 @@
         "centerLine": {
           "$ref": "#/$defs/line"
         },
+        "topologySpans": {
+          "type": "array",
+          "description": "Trusted wall graph spans derived from graph nodes. These are the trimmed/split topology segments consumers should prefer over raw wall centerlines when available.",
+          "items": {
+            "$ref": "#/$defs/wallTopologySpan"
+          }
+        },
         "bounds": {
           "$ref": "#/$defs/rect"
         },
@@ -2351,7 +2449,13 @@
         "hostWallIds",
         "connectedRoomIds",
         "connectedRoomLabels",
+        "connectedRoomLinks",
+        "roomAdjacencyIds",
         "placement",
+        "placementStatus",
+        "readyForCoordinatePlacement",
+        "requiresReview",
+        "reviewReasons",
         "confidence",
         "sourcePrimitiveIds",
         "sourceLayers",
@@ -2403,6 +2507,15 @@
         "connectedRoomLabels": {
           "$ref": "#/$defs/stringArray"
         },
+        "connectedRoomLinks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/openingRoomConnection"
+          }
+        },
+        "roomAdjacencyIds": {
+          "$ref": "#/$defs/stringArray"
+        },
         "placement": {
           "oneOf": [
             {
@@ -2412,6 +2525,23 @@
               "type": "null"
             }
           ]
+        },
+        "placementStatus": {
+          "enum": [
+            "Anchored",
+            "Unanchored"
+          ]
+        },
+        "readyForCoordinatePlacement": {
+          "type": "boolean",
+          "description": "True only when the passage's opening placement is internally coherent enough for exact downstream coordinates."
+        },
+        "requiresReview": {
+          "type": "boolean",
+          "description": "True when opening placement, operation, confidence, or related routing evidence requires human review before exact downstream use."
+        },
+        "reviewReasons": {
+          "$ref": "#/$defs/stringArray"
         },
         "confidence": {
           "$ref": "#/$defs/confidence"
@@ -2990,12 +3120,25 @@
         "hostWallId",
         "anchorWallIds",
         "referenceLine",
+        "referenceLineMillimeters",
         "startPoint",
+        "startPointMillimeters",
         "endPoint",
+        "endPointMillimeters",
         "startOffsetDrawingUnits",
         "endOffsetDrawingUnits",
         "centerOffsetDrawingUnits",
         "lengthDrawingUnits",
+        "footprintBounds",
+        "footprintBoundsMillimeters",
+        "footprintCorners",
+        "footprintCornersMillimeters",
+        "startJambLine",
+        "startJambLineMillimeters",
+        "endJambLine",
+        "endJambLineMillimeters",
+        "depthDrawingUnits",
+        "depthMillimeters",
         "startOffsetMillimeters",
         "endOffsetMillimeters",
         "centerOffsetMillimeters",
@@ -3006,6 +3149,7 @@
         "alongVector",
         "normalVector",
         "crossWallOffsetDrawingUnits",
+        "crossWallOffsetMillimeters",
         "confidence",
         "evidence"
       ],
@@ -3022,11 +3166,42 @@
           "$ref": "#/$defs/line",
           "description": "Page-space line used as the local placement axis for offsets and direction vectors."
         },
+        "referenceLineMillimeters": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/line"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Metric version of referenceLine when calibration is reliable."
+        },
         "startPoint": {
           "$ref": "#/$defs/point"
         },
+        "startPointMillimeters": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/point"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "endPoint": {
           "$ref": "#/$defs/point"
+        },
+        "endPointMillimeters": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/point"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "startOffsetDrawingUnits": {
           "type": "number"
@@ -3039,6 +3214,75 @@
         },
         "lengthDrawingUnits": {
           "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "footprintBounds": {
+          "$ref": "#/$defs/rect",
+          "description": "Axis-aligned page-space bounds of the opening footprint across the wall-normal depth."
+        },
+        "footprintBoundsMillimeters": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/rect"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "footprintCorners": {
+          "type": "array",
+          "description": "Four page-space footprint corners ordered start-minus-normal, end-minus-normal, end-plus-normal, start-plus-normal.",
+          "items": {
+            "$ref": "#/$defs/point"
+          }
+        },
+        "footprintCornersMillimeters": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/point"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startJambLine": {
+          "$ref": "#/$defs/line",
+          "description": "Wall-normal jamb line at the opening start point."
+        },
+        "startJambLineMillimeters": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/line"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endJambLine": {
+          "$ref": "#/$defs/line",
+          "description": "Wall-normal jamb line at the opening end point."
+        },
+        "endJambLineMillimeters": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/line"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "depthDrawingUnits": {
+          "$ref": "#/$defs/nonNegativeNumber",
+          "description": "Wall-normal footprint depth in drawing units."
+        },
+        "depthMillimeters": {
+          "$ref": "#/$defs/nullableNumber"
         },
         "startOffsetMillimeters": {
           "$ref": "#/$defs/nullableNumber"
@@ -3071,6 +3315,9 @@
         "crossWallOffsetDrawingUnits": {
           "$ref": "#/$defs/nonNegativeNumber"
         },
+        "crossWallOffsetMillimeters": {
+          "$ref": "#/$defs/nullableNumber"
+        },
         "confidence": {
           "$ref": "#/$defs/confidence"
         },
@@ -3087,6 +3334,10 @@
         "roomLabel",
         "roomUseKind",
         "roomAdjacencyIds",
+        "side",
+        "roomSidePoint",
+        "nearestBoundaryPoint",
+        "signedDistanceFromOpening",
         "distanceToOpening",
         "sharesHostWall",
         "confidence",
@@ -3104,6 +3355,36 @@
         },
         "roomAdjacencyIds": {
           "$ref": "#/$defs/stringArray"
+        },
+        "side": {
+          "type": "string",
+          "description": "Room side relative to the opening normal vector. PositiveNormalSide and NegativeNormalSide give deterministic side-of-opening placement context."
+        },
+        "roomSidePoint": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/point"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Page-space sample point on the room side of the opening, useful for downstream room-to-opening placement checks."
+        },
+        "nearestBoundaryPoint": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/point"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Nearest detected room-boundary point to the opening midpoint."
+        },
+        "signedDistanceFromOpening": {
+          "type": "number",
+          "description": "Signed page-space offset from opening midpoint to the room center along the opening normal vector."
         },
         "distanceToOpening": {
           "$ref": "#/$defs/nonNegativeNumber"
@@ -3706,6 +3987,246 @@
         }
       }
     },
+    "executionWave": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "level",
+        "stageCount",
+        "stages",
+        "reads",
+        "writes",
+        "writeConflictArtifacts",
+        "intraWaveDependencies",
+        "directDownstreamStages",
+        "directDownstreamStageCount",
+        "downstreamReadArtifacts",
+        "hasWriteConflicts",
+        "hasIntraWaveDependencies",
+        "isParallelCandidate",
+        "parallelReadiness",
+        "schedulingReasons",
+        "recommendedExecutionMode"
+      ],
+      "properties": {
+        "level": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "stageCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "stages": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "reads": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "writes": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "writeConflictArtifacts": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "intraWaveDependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/executionWaveDependency"
+          }
+        },
+        "directDownstreamStages": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "directDownstreamStageCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "downstreamReadArtifacts": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "hasWriteConflicts": {
+          "type": "boolean"
+        },
+        "hasIntraWaveDependencies": {
+          "type": "boolean"
+        },
+        "isParallelCandidate": {
+          "type": "boolean"
+        },
+        "parallelReadiness": {
+          "type": "string",
+          "enum": [
+            "Ready",
+            "SingleStage",
+            "WriteConflict",
+            "IntraWaveDependency",
+            "Sequential"
+          ]
+        },
+        "schedulingReasons": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "recommendedExecutionMode": {
+          "type": "string",
+          "enum": [
+            "Parallel",
+            "Sequential"
+          ]
+        }
+      }
+    },
+    "executionWaveDependency": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "stage",
+        "dependsOnStage",
+        "artifacts"
+      ],
+      "properties": {
+        "stage": {
+          "type": "string"
+        },
+        "dependsOnStage": {
+          "type": "string"
+        },
+        "artifacts": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "rerunImpact": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "artifact",
+        "isSourceArtifact",
+        "impactScope",
+        "producerStages",
+        "directConsumerStages",
+        "affectedStages",
+        "affectedArtifacts",
+        "firstAffectedWave",
+        "affectedStageCount",
+        "hasImpact",
+        "evidence"
+      ],
+      "properties": {
+        "artifact": {
+          "type": "string"
+        },
+        "isSourceArtifact": {
+          "type": "boolean"
+        },
+        "impactScope": {
+          "type": "string",
+          "enum": [
+            "None",
+            "SourceArtifact",
+            "DerivedArtifact"
+          ]
+        },
+        "producerStages": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "directConsumerStages": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "affectedStages": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "affectedArtifacts": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "firstAffectedWave": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "affectedStageCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "hasImpact": {
+          "type": "boolean"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "rerunPlan": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "planId",
+        "displayName",
+        "changedArtifacts",
+        "changedSourceArtifacts",
+        "directConsumerStages",
+        "rerunStages",
+        "rerunWaves",
+        "affectedArtifacts",
+        "firstRerunWave",
+        "lastRerunWave",
+        "rerunStageCount",
+        "affectedArtifactCount",
+        "hasWork",
+        "recommendedExecutionMode",
+        "evidence"
+      ],
+      "properties": {
+        "planId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "changedArtifacts": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "changedSourceArtifacts": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "directConsumerStages": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "rerunStages": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "rerunWaves": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonNegativeInteger"
+          }
+        },
+        "affectedArtifacts": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "firstRerunWave": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "lastRerunWave": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "rerunStageCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "affectedArtifactCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "hasWork": {
+          "type": "boolean"
+        },
+        "recommendedExecutionMode": {
+          "type": "string",
+          "enum": [
+            "None",
+            "WaveOrderedSequential",
+            "WaveOrderedWithParallelCandidates"
+          ]
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
     "stage": {
       "type": "object",
       "additionalProperties": true,
@@ -3713,6 +4234,8 @@
         "stage",
         "displayName",
         "kind",
+        "executionWave",
+        "isParallelCandidate",
         "reads",
         "optionalReads",
         "writes",
@@ -3723,9 +4246,13 @@
         "availableBefore",
         "missingRequiredReads",
         "missingOptionalReads",
+        "runtimeReadiness",
+        "outputReadiness",
         "inputArtifacts",
         "outputArtifacts",
         "changedArtifacts",
+        "artifactDeltas",
+        "contract",
         "durationMilliseconds",
         "inputCount",
         "outputCount",
@@ -3754,6 +4281,12 @@
             "Quality",
             "Diagnostics"
           ]
+        },
+        "executionWave": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "isParallelCandidate": {
+          "type": "boolean"
         },
         "reads": {
           "$ref": "#/$defs/stringArray"
@@ -3785,6 +4318,12 @@
         "missingOptionalReads": {
           "$ref": "#/$defs/stringArray"
         },
+        "runtimeReadiness": {
+          "$ref": "#/$defs/stageRuntimeReadiness"
+        },
+        "outputReadiness": {
+          "$ref": "#/$defs/stageOutputReadiness"
+        },
         "inputArtifacts": {
           "type": "array",
           "items": {
@@ -3802,6 +4341,15 @@
           "items": {
             "$ref": "#/$defs/artifactChange"
           }
+        },
+        "artifactDeltas": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifactDelta"
+          }
+        },
+        "contract": {
+          "$ref": "#/$defs/stageContract"
         },
         "durationMilliseconds": {
           "$ref": "#/$defs/nonNegativeNumber"
@@ -3826,12 +4374,131 @@
         }
       }
     },
+    "stageOutputReadiness": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "declaredOutputsHaveData",
+        "hasEmptyDeclaredOutputs",
+        "nonEmptyDeclaredOutputs",
+        "emptyDeclaredOutputs",
+        "changedDeclaredOutputs",
+        "unchangedDeclaredOutputs",
+        "hasUndeclaredChanges",
+        "undeclaredChangedArtifacts",
+        "evidence"
+      ],
+      "properties": {
+        "declaredOutputsHaveData": {
+          "type": "boolean"
+        },
+        "hasEmptyDeclaredOutputs": {
+          "type": "boolean"
+        },
+        "nonEmptyDeclaredOutputs": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "emptyDeclaredOutputs": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "changedDeclaredOutputs": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "unchangedDeclaredOutputs": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "hasUndeclaredChanges": {
+          "type": "boolean"
+        },
+        "undeclaredChangedArtifacts": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "stageRuntimeReadiness": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "requiredReadsHaveData",
+        "hasEmptyRequiredReads",
+        "nonEmptyRequiredReads",
+        "emptyRequiredReads",
+        "optionalReadsHaveData",
+        "hasEmptyOptionalReads",
+        "nonEmptyOptionalReads",
+        "emptyOptionalReads",
+        "evidence"
+      ],
+      "properties": {
+        "requiredReadsHaveData": {
+          "type": "boolean"
+        },
+        "hasEmptyRequiredReads": {
+          "type": "boolean"
+        },
+        "nonEmptyRequiredReads": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "emptyRequiredReads": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "optionalReadsHaveData": {
+          "type": "boolean"
+        },
+        "hasEmptyOptionalReads": {
+          "type": "boolean"
+        },
+        "nonEmptyOptionalReads": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "emptyOptionalReads": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "stageContract": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "writesOnlyDeclaredArtifacts",
+        "declaredWrites",
+        "changedArtifacts",
+        "undeclaredChangedArtifacts",
+        "declaredUnchangedArtifacts"
+      ],
+      "properties": {
+        "writesOnlyDeclaredArtifacts": {
+          "type": "boolean"
+        },
+        "declaredWrites": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "changedArtifacts": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "undeclaredChangedArtifacts": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "declaredUnchangedArtifacts": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
     "artifactSnapshot": {
       "type": "object",
       "additionalProperties": true,
       "required": [
         "artifact",
-        "count"
+        "count",
+        "stateKey",
+        "revision",
+        "evidence"
       ],
       "properties": {
         "artifact": {
@@ -3839,6 +4506,173 @@
         },
         "count": {
           "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "stateKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "artifactPlan": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "artifact",
+        "isSourceArtifact",
+        "isProducedByStage",
+        "isConsumedByStage",
+        "isTerminalArtifact",
+        "producerStages",
+        "requiredConsumerStages",
+        "optionalConsumerStages",
+        "consumerStages",
+        "producerCount",
+        "consumerCount",
+        "firstProducerOrder",
+        "lastProducerOrder",
+        "firstConsumerOrder",
+        "lastConsumerOrder",
+        "firstProducerWave",
+        "lastProducerWave",
+        "firstConsumerWave",
+        "lastConsumerWave",
+        "hasMultipleProducers",
+        "hasRequiredConsumers",
+        "dependencyRole",
+        "evidence"
+      ],
+      "properties": {
+        "artifact": {
+          "type": "string"
+        },
+        "isSourceArtifact": {
+          "type": "boolean"
+        },
+        "isProducedByStage": {
+          "type": "boolean"
+        },
+        "isConsumedByStage": {
+          "type": "boolean"
+        },
+        "isTerminalArtifact": {
+          "type": "boolean"
+        },
+        "producerStages": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "requiredConsumerStages": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "optionalConsumerStages": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "consumerStages": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "producerCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "consumerCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "firstProducerOrder": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "lastProducerOrder": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "firstConsumerOrder": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "lastConsumerOrder": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "firstProducerWave": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "lastProducerWave": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "firstConsumerWave": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "lastConsumerWave": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "hasMultipleProducers": {
+          "type": "boolean"
+        },
+        "hasRequiredConsumers": {
+          "type": "boolean"
+        },
+        "dependencyRole": {
+          "type": "string"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "artifactInventoryItem": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "artifact",
+        "count",
+        "stateKey",
+        "revision",
+        "isPresent",
+        "isSourceArtifact",
+        "isImportCritical",
+        "importance",
+        "readinessImpact",
+        "producerStages",
+        "consumerStages",
+        "evidence"
+      ],
+      "properties": {
+        "artifact": {
+          "type": "string"
+        },
+        "count": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "stateKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "isPresent": {
+          "type": "boolean"
+        },
+        "isSourceArtifact": {
+          "type": "boolean"
+        },
+        "isImportCritical": {
+          "type": "boolean"
+        },
+        "importance": {
+          "type": "string"
+        },
+        "readinessImpact": {
+          "type": "string"
+        },
+        "producerStages": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "consumerStages": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
         }
       }
     },
@@ -3849,7 +4683,8 @@
         "artifact",
         "beforeCount",
         "afterCount",
-        "delta"
+        "delta",
+        "changeKind"
       ],
       "properties": {
         "artifact": {
@@ -3863,8 +4698,73 @@
         },
         "delta": {
           "type": "integer"
+        },
+        "changeKind": {
+          "$ref": "#/$defs/artifactDeltaKind"
         }
       }
+    },
+    "artifactDelta": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "artifact",
+        "beforeCount",
+        "afterCount",
+        "delta",
+        "changeKind",
+        "changed",
+        "wasPresent",
+        "isPresent",
+        "isDeclaredWrite",
+        "isEmptyDeclaredOutput",
+        "evidence"
+      ],
+      "properties": {
+        "artifact": {
+          "type": "string"
+        },
+        "beforeCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "afterCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "delta": {
+          "type": "integer"
+        },
+        "changeKind": {
+          "$ref": "#/$defs/artifactDeltaKind"
+        },
+        "changed": {
+          "type": "boolean"
+        },
+        "wasPresent": {
+          "type": "boolean"
+        },
+        "isPresent": {
+          "type": "boolean"
+        },
+        "isDeclaredWrite": {
+          "type": "boolean"
+        },
+        "isEmptyDeclaredOutput": {
+          "type": "boolean"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "artifactDeltaKind": {
+      "type": "string",
+      "enum": [
+        "Unchanged",
+        "Created",
+        "Increased",
+        "Decreased",
+        "Removed"
+      ]
     },
     "sourceReadiness": {
       "type": "object",
@@ -4035,6 +4935,7 @@
         "bounds",
         "thickness",
         "detectionKind",
+        "wallType",
         "wallComponentId",
         "wallComponentKind",
         "excludedFromStructuralTopology",
@@ -4046,6 +4947,7 @@
         "sourceRegionId",
         "sourcePrimitiveIds",
         "pairEvidence",
+        "fragmentEvidence",
         "evidence",
         "sourceLayers"
       ],
@@ -4067,6 +4969,14 @@
         },
         "detectionKind": {
           "type": "string"
+        },
+        "wallType": {
+          "type": "string",
+          "enum": [
+            "Unknown",
+            "Exterior",
+            "Interior"
+          ]
         },
         "wallComponentId": {
           "$ref": "#/$defs/nullableString"
@@ -4115,10 +5025,151 @@
             }
           ]
         },
+        "fragmentEvidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/wallFragmentEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "evidence": {
           "$ref": "#/$defs/stringArray"
         },
         "sourceLayers": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "wallFragmentEvidence": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "fragmentCount",
+        "totalHealedGap",
+        "maxHealedGap",
+        "duplicatePrimitiveCount",
+        "gapRatio",
+        "requiresGeometryReview",
+        "evidence"
+      ],
+      "properties": {
+        "fragmentCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalHealedGap": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "maxHealedGap": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "duplicatePrimitiveCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gapRatio": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "requiresGeometryReview": {
+          "type": "boolean"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "wallTopologySpan": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "wallGraphEdgeId",
+        "pageNumber",
+        "wallId",
+        "fromNodeId",
+        "toNodeId",
+        "centerLine",
+        "bounds",
+        "drawingLength",
+        "thickness",
+        "confidence",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "wallGraphEdgeId": {
+          "$ref": "#/$defs/id"
+        },
+        "pageNumber": {
+          "$ref": "#/$defs/pageNumber"
+        },
+        "wallId": {
+          "$ref": "#/$defs/id"
+        },
+        "fromNodeId": {
+          "$ref": "#/$defs/id"
+        },
+        "toNodeId": {
+          "$ref": "#/$defs/id"
+        },
+        "centerLine": {
+          "$ref": "#/$defs/line"
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "drawingLength": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "sourceWallStartOffsetDrawingUnits": {
+          "$ref": "#/$defs/nullableNumber",
+          "description": "Projected span start offset along the source wall centerline in drawing units."
+        },
+        "sourceWallEndOffsetDrawingUnits": {
+          "$ref": "#/$defs/nullableNumber",
+          "description": "Projected span end offset along the source wall centerline in drawing units."
+        },
+        "sourceWallProjectedLengthDrawingUnits": {
+          "$ref": "#/$defs/nullableNumber",
+          "description": "Absolute difference between projected source-wall start/end offsets."
+        },
+        "sourceWallStartParameter": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "sourceWallEndParameter": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "sourceWallCenterParameter": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "sourceWallStartProjectionDistanceDrawingUnits": {
+          "$ref": "#/$defs/nullableNumber",
+          "description": "Distance from topology span start to the source wall centerline projection."
+        },
+        "sourceWallEndProjectionDistanceDrawingUnits": {
+          "$ref": "#/$defs/nullableNumber",
+          "description": "Distance from topology span end to the source wall centerline projection."
+        },
+        "thickness": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "sourcePrimitiveIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourceLayers": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
           "$ref": "#/$defs/stringArray"
         }
       }
@@ -4176,7 +5227,23 @@
         "fromNodeId",
         "toNodeId",
         "wallId",
-        "confidence"
+        "wallComponentId",
+        "wallComponentKind",
+        "excludedFromStructuralTopology",
+        "line",
+        "lineMillimeters",
+        "bounds",
+        "boundsMillimeters",
+        "drawingLength",
+        "lengthMeters",
+        "thicknessDrawingUnits",
+        "thicknessMillimeters",
+        "measurementScaleGroupId",
+        "millimetersPerDrawingUnit",
+        "confidence",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "evidence"
       ],
       "properties": {
         "id": {
@@ -4194,8 +5261,84 @@
         "wallId": {
           "$ref": "#/$defs/id"
         },
+        "wallComponentId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "wallComponentKind": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "excludedFromStructuralTopology": {
+          "type": "boolean"
+        },
+        "line": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/line"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lineMillimeters": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/line"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bounds": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/rect"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "boundsMillimeters": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/rect"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "drawingLength": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "lengthMeters": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "thicknessDrawingUnits": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "thicknessMillimeters": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "measurementScaleGroupId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "millimetersPerDrawingUnit": {
+          "$ref": "#/$defs/nullableNumber"
+        },
         "confidence": {
           "$ref": "#/$defs/confidence"
+        },
+        "sourcePrimitiveIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourceLayers": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
         }
       }
     },
@@ -4323,12 +5466,18 @@
         "pageNumber",
         "kind",
         "suggestedAction",
+        "severity",
+        "importImpact",
+        "applicability",
         "sourceNodeId",
         "sourcePoint",
         "targetPoint",
         "targetNodeId",
         "hostWallId",
         "gapDistance",
+        "safeSnapDistance",
+        "reviewDistanceLimit",
+        "excessDistanceBeyondSafeSnap",
         "repairLine",
         "bounds",
         "wallIds",
@@ -4349,14 +5498,39 @@
           "type": "string",
           "enum": [
             "EndpointToWall",
-            "EndpointToEndpoint"
+            "EndpointToEndpoint",
+            "EndpointOverrun"
           ]
         },
         "suggestedAction": {
           "type": "string",
           "enum": [
             "SnapEndpointToWall",
-            "SnapEndpointToEndpoint"
+            "SnapEndpointToEndpoint",
+            "TrimEndpointOverrun"
+          ]
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "Low",
+            "Medium",
+            "High"
+          ]
+        },
+        "importImpact": {
+          "type": "string",
+          "enum": [
+            "TopologyReviewRequired",
+            "TopologyImportBlocked"
+          ]
+        },
+        "applicability": {
+          "type": "string",
+          "enum": [
+            "ReviewAndApplySuggestedSnap",
+            "ReviewAndApplySuggestedTrim",
+            "ManualCorrectionRecommended"
           ]
         },
         "sourceNodeId": {
@@ -4375,6 +5549,15 @@
           "$ref": "#/$defs/nullableString"
         },
         "gapDistance": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "safeSnapDistance": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "reviewDistanceLimit": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "excessDistanceBeyondSafeSnap": {
           "$ref": "#/$defs/nonNegativeNumber"
         },
         "repairLine": {
@@ -4440,6 +5623,778 @@
         },
         "evidence": {
           "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "wallTopologyPreparation": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Prepared wall topology input showing which wall IDs were allowed into graph construction, which require review, which can be auto-repaired, and which wall-like details were rejected before topology.",
+      "required": [
+        "graphWallCount",
+        "acceptedGraphWallCount",
+        "reviewGraphWallCount",
+        "unassessedGraphWallCount",
+        "automaticCoordinateRepairWallCount",
+        "rejectedWallCount",
+        "rejectedAssessmentCount",
+        "doorOrOpeningSymbolCount",
+        "surfacePatternDetailCount",
+        "dimensionOrAnnotationCount",
+        "objectOrFixtureDetailCount",
+        "graphWallIds",
+        "acceptedGraphWallIds",
+        "reviewGraphWallIds",
+        "unassessedGraphWallIds",
+        "automaticCoordinateRepairWallIds",
+        "rejectedWallIds",
+        "rejectedWalls",
+        "evidence"
+      ],
+      "properties": {
+        "graphWallCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "acceptedGraphWallCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "reviewGraphWallCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "unassessedGraphWallCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "automaticCoordinateRepairWallCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "rejectedWallCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "rejectedAssessmentCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "doorOrOpeningSymbolCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "surfacePatternDetailCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "dimensionOrAnnotationCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "objectOrFixtureDetailCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "graphWallIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "acceptedGraphWallIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "reviewGraphWallIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "unassessedGraphWallIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "automaticCoordinateRepairWallIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "rejectedWallIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "rejectedWalls": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/wallTopologyRejectedWall"
+          }
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "wallTopologyRejectedWall": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "wallId",
+        "pageNumber",
+        "bounds",
+        "category",
+        "decision",
+        "rejectedAsNoise",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "evidence"
+      ],
+      "properties": {
+        "wallId": {
+          "$ref": "#/$defs/id"
+        },
+        "pageNumber": {
+          "$ref": "#/$defs/pageNumber"
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "category": {
+          "type": "string"
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "Unknown",
+            "Accept",
+            "Review",
+            "Reject"
+          ]
+        },
+        "rejectedAsNoise": {
+          "type": "boolean"
+        },
+        "sourcePrimitiveIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourceLayers": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "wallEvidence": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Wall Evidence V2 export containing accepted/rejected wall evidence, wall-band support, and explicit rejected wall-like details for visual QA and downstream audit.",
+      "required": [
+        "segmentCount",
+        "bandCount",
+        "wallAssessmentCount",
+        "sourceCandidateWallCount",
+        "recoveredCandidateWallCount",
+        "totalCandidateWallCount",
+        "strongWallBodyCount",
+        "mediumWallBodyCount",
+        "weakSingleLineCount",
+        "recoveredWallBodyCount",
+        "rejectedNoiseCount",
+        "rejectedDoorOrOpeningSymbolCount",
+        "rejectedSurfacePatternDetailCount",
+        "rejectedDimensionOrAnnotationCount",
+        "rejectedObjectOrFixtureDetailCount",
+        "rejectedDoorOrOpeningSymbolWallIds",
+        "rejectedSurfacePatternDetailWallIds",
+        "rejectedDimensionOrAnnotationWallIds",
+        "rejectedObjectOrFixtureDetailWallIds",
+        "acceptedWallCount",
+        "reviewDecisionWallCount",
+        "rejectedWallCount",
+        "placementReadyWallCount",
+        "reviewWallCount",
+        "acceptedWallIds",
+        "reviewWallIds",
+        "rejectedWallIds",
+        "segments",
+        "bands",
+        "wallAssessments",
+        "rejectedWallLikeDetails"
+      ],
+      "properties": {
+        "segmentCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bandCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "wallAssessmentCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sourceCandidateWallCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of source wall candidates entering Wall Evidence V2 before recovered wall candidates are added."
+        },
+        "recoveredCandidateWallCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of additional wall candidates recovered from source primitive evidence by Wall Evidence V2."
+        },
+        "totalCandidateWallCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total wall candidates assessed by Wall Evidence V2, including source candidates and recovered candidates."
+        },
+        "strongWallBodyCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mediumWallBodyCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "weakSingleLineCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "recoveredWallBodyCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rejectedNoiseCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rejectedDoorOrOpeningSymbolCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of rejected wall assessments classified as door/opening symbol linework."
+        },
+        "rejectedSurfacePatternDetailCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of rejected wall assessments classified as hatch, surface-pattern, tile, or detail linework."
+        },
+        "rejectedDimensionOrAnnotationCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of rejected wall assessments classified as dimension, text, grid, or annotation linework."
+        },
+        "rejectedObjectOrFixtureDetailCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of rejected wall assessments classified as object, fixture, furniture, or service/equipment linework."
+        },
+        "rejectedDoorOrOpeningSymbolWallIds": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Sorted unique rejected wall IDs classified as door/opening symbol linework."
+        },
+        "rejectedSurfacePatternDetailWallIds": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Sorted unique rejected wall IDs classified as hatch, surface-pattern, tile, or detail linework."
+        },
+        "rejectedDimensionOrAnnotationWallIds": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Sorted unique rejected wall IDs classified as dimension, text, grid, or annotation linework."
+        },
+        "rejectedObjectOrFixtureDetailWallIds": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Sorted unique rejected wall IDs classified as object, fixture, furniture, or service/equipment linework."
+        },
+        "acceptedWallCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of wall assessments whose wall evidence decision is Accept."
+        },
+        "reviewDecisionWallCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of wall assessments whose wall evidence decision is Review. This is decision-specific and may differ from reviewWallCount, which tracks the requiresReview flag."
+        },
+        "rejectedWallCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of wall assessments whose wall evidence decision is Reject."
+        },
+        "placementReadyWallCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reviewWallCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "acceptedWallIds": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Sorted unique wall IDs with an Accept wall evidence decision."
+        },
+        "reviewWallIds": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Sorted unique wall IDs with a Review wall evidence decision."
+        },
+        "rejectedWallIds": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Sorted unique wall IDs with a Reject wall evidence decision."
+        },
+        "segments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/wallEvidenceSegment"
+          }
+        },
+        "bands": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/wallEvidenceBand"
+          }
+        },
+        "wallAssessments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/wallEvidenceAssessmentDetail"
+          }
+        },
+        "rejectedWallLikeDetails": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rejectedWallLikeDetail"
+          }
+        }
+      }
+    },
+    "wallEvidenceScoreBreakdown": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "positiveScore",
+        "negativeScore",
+        "decisionScore",
+        "pairSupportScore",
+        "layerSupportScore",
+        "structuralSupportScore",
+        "recoverySupportScore",
+        "noisePenalty",
+        "fragmentReviewPenalty",
+        "positiveEvidence",
+        "negativeEvidence"
+      ],
+      "properties": {
+        "positiveScore": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "negativeScore": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "decisionScore": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1
+        },
+        "pairSupportScore": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "layerSupportScore": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "structuralSupportScore": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "recoverySupportScore": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "noisePenalty": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "fragmentReviewPenalty": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "positiveEvidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "negativeEvidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "wallEvidenceSegment": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "pageNumber",
+        "line",
+        "bounds",
+        "category",
+        "confidence",
+        "wallId",
+        "decision",
+        "scoreBreakdown",
+        "placementReady",
+        "requiresReview",
+        "rejectedAsNoise",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "pageNumber": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "line": {
+          "$ref": "#/$defs/line"
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "category": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "wallId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "decision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scoreBreakdown": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/wallEvidenceScoreBreakdown"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "placementReady": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "requiresReview": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "rejectedAsNoise": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "sourcePrimitiveIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sourceLayers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "wallEvidenceBand": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "pageNumber",
+        "firstFaceLine",
+        "secondFaceLine",
+        "centerLine",
+        "faceSeparation",
+        "overlapRatio",
+        "confidence",
+        "wallId",
+        "decision",
+        "scoreBreakdown",
+        "placementReady",
+        "requiresReview",
+        "rejectedAsNoise",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "pageNumber": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "firstFaceLine": {
+          "$ref": "#/$defs/line"
+        },
+        "secondFaceLine": {
+          "$ref": "#/$defs/line"
+        },
+        "centerLine": {
+          "$ref": "#/$defs/line"
+        },
+        "faceSeparation": {
+          "type": "number",
+          "minimum": 0
+        },
+        "overlapRatio": {
+          "type": "number",
+          "minimum": 0
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "wallId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "decision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scoreBreakdown": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/wallEvidenceScoreBreakdown"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "placementReady": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "requiresReview": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "rejectedAsNoise": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "sourcePrimitiveIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sourceLayers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "wallEvidenceAssessmentDetail": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "wallId",
+        "pageNumber",
+        "bounds",
+        "category",
+        "confidence",
+        "decision",
+        "scoreBreakdown",
+        "placementReady",
+        "requiresReview",
+        "rejectedAsNoise",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "evidence"
+      ],
+      "properties": {
+        "wallId": {
+          "type": "string"
+        },
+        "pageNumber": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "category": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "decision": {
+          "type": "string"
+        },
+        "scoreBreakdown": {
+          "$ref": "#/$defs/wallEvidenceScoreBreakdown"
+        },
+        "placementReady": {
+          "type": "boolean"
+        },
+        "requiresReview": {
+          "type": "boolean"
+        },
+        "rejectedAsNoise": {
+          "type": "boolean"
+        },
+        "sourcePrimitiveIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sourceLayers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "rejectedWallLikeDetail": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Wall candidate rejected by explicit non-wall evidence before topology graphing, exported with coordinates and provenance for QA overlays and downstream audit.",
+      "required": [
+        "id",
+        "wallId",
+        "pageNumber",
+        "bounds",
+        "centerLine",
+        "category",
+        "confidence",
+        "decision",
+        "scoreBreakdown",
+        "segmentIds",
+        "bandIds",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "wallId": {
+          "type": "string"
+        },
+        "pageNumber": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "centerLine": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/line"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "category": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "decision": {
+          "type": "string"
+        },
+        "scoreBreakdown": {
+          "$ref": "#/$defs/wallEvidenceScoreBreakdown"
+        },
+        "segmentIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "bandIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sourcePrimitiveIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sourceLayers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     }

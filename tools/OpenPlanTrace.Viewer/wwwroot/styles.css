@@ -407,13 +407,13 @@ h1 {
 }
 
 .legend-row.wall-exterior .legend-swatch {
-  border-color: #1f5fbf;
-  background: rgba(31, 95, 191, 0.10);
+  border-color: #0f4fb8;
+  background: rgba(15, 79, 184, 0.12);
 }
 
 .legend-row.wall-interior .legend-swatch {
-  border-color: #1f7a4d;
-  background: rgba(31, 122, 77, 0.10);
+  border-color: #0f7a48;
+  background: rgba(15, 122, 72, 0.12);
 }
 
 .legend-row.wall-unknown .legend-swatch,
@@ -1927,52 +1927,112 @@ h1 {
 
 .wall {
   stroke: #7a5f18;
-  stroke-width: 0.78;
+  stroke-width: 1.35;
   stroke-linecap: butt;
   vector-effect: non-scaling-stroke;
   cursor: pointer;
 }
 
+.wall.wall-halo {
+  stroke: #ffffff;
+  stroke-width: 3.9;
+  stroke-opacity: 0.82;
+  stroke-dasharray: none;
+  pointer-events: none;
+}
+
 .wall-exterior {
-  stroke: #1f5fbf;
-  stroke-width: 1.02;
+  stroke: #0f4fb8;
+  stroke-width: 1.9;
+}
+
+.wall.wall-halo.wall-exterior {
+  stroke-width: 4.8;
 }
 
 .wall-interior {
-  stroke: #1f7a4d;
-  stroke-width: 0.92;
+  stroke: #0f7a48;
+  stroke-width: 1.55;
+}
+
+.wall.wall-halo.wall-interior {
+  stroke-width: 4.2;
 }
 
 .wall-unknown {
   stroke: #7a5f18;
-  stroke-width: 0.78;
+  stroke-width: 1.35;
 }
 
 .wall-object-like {
   stroke: var(--amber);
-  stroke-width: 0.58;
+  stroke-width: 1.05;
   stroke-dasharray: 5 4;
 }
 
 .wall-fragment {
   stroke: var(--violet);
-  stroke-width: 0.48;
+  stroke-width: 0.9;
   stroke-dasharray: 3 5;
 }
 
+.wall-topology-span {
+  stroke: #7a5f18;
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  cursor: pointer;
+}
+
+.wall-topology-span-halo {
+  stroke: #ffffff;
+  stroke-width: 4.15;
+  stroke-opacity: 0.84;
+  stroke-dasharray: none;
+  pointer-events: none;
+}
+
+.wall-topology-span-exterior {
+  stroke: #0f4fb8;
+  stroke-width: 1.95;
+}
+
+.wall-topology-span-halo.wall-topology-span-exterior {
+  stroke-width: 5.15;
+}
+
+.wall-topology-span-interior {
+  stroke: #0f7a48;
+  stroke-width: 1.55;
+}
+
+.wall-topology-span-halo.wall-topology-span-interior {
+  stroke-width: 4.5;
+}
+
+.wall-topology-span-review {
+  stroke-dasharray: 3 2;
+}
+
+.wall-topology-span-review-only {
+  stroke: #a65f00;
+  stroke-width: 1.2;
+  stroke-dasharray: 3 3;
+}
+
 .wall-review {
-  stroke-width: 1.18;
+  stroke-width: 2.05;
   stroke-dasharray: 3 2;
 }
 
 .wall-blocked {
   stroke: #a52035;
-  stroke-width: 1.55;
+  stroke-width: 2.1;
   stroke-dasharray: 1 3;
 }
 
 .wall-excluded {
-  stroke-width: 0.42;
+  stroke-width: 0.85;
   stroke-dasharray: 2 6;
 }
 
@@ -2064,6 +2124,16 @@ h1 {
 .visual-snapshot-layer.walls {
   stroke: var(--red);
   fill: rgba(196, 61, 61, 0.045);
+}
+
+.visual-snapshot-layer.wallTopologySpans {
+  stroke: #0f4fb8;
+  fill: rgba(15, 79, 184, 0.045);
+}
+
+.visual-snapshot-layer.wallTopologyReviewSpans {
+  stroke: #a65f00;
+  fill: rgba(166, 95, 0, 0.045);
 }
 
 .visual-snapshot-layer.rooms {

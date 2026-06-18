@@ -106,7 +106,7 @@ public sealed record PlanOverlayPageSnapshot(
         svgOptions ??= new SvgOverlayRenderOptions();
 
         var pageBounds = new PlanRect(0, 0, page.Size.Width, page.Size.Height);
-        var layers = BuildLayers(result, page.Number, pageBounds).ToArray();
+        var layers = BuildLayers(result, page.Number, pageBounds, svgOptions).ToArray();
         var visibleLayerNames = BuildVisibleLayerNames(svgOptions).ToArray();
         var visibleLayerNameSet = visibleLayerNames.ToHashSet(StringComparer.Ordinal);
         var hiddenLayerNames = layers
@@ -168,6 +168,8 @@ public sealed record PlanOverlayPageSnapshot(
         Add(options.IncludeGridBaySpacings, "gridBaySpacings");
         Add(options.IncludeWallComponents, "wallComponents");
         Add(options.IncludeSurfacePatterns, "surfacePatterns");
+        Add(options.IncludeWallTopologySpans, "wallTopologySpans");
+        Add(options.IncludeWallGraphRepairs, "wallGraphRepairs");
         Add(options.IncludeWalls, "walls");
         Add(options.IncludeWallNodes, "wallNodes");
         Add(options.IncludeRooms, "rooms");
@@ -202,7 +204,8 @@ public sealed record PlanOverlayPageSnapshot(
     private static IEnumerable<PlanOverlayLayerSnapshot> BuildLayers(
         PlanScanResult result,
         int pageNumber,
-        PlanRect pageBounds)
+        PlanRect pageBounds,
+        SvgOverlayRenderOptions options)
     {
         PlanOverlayLayerSnapshot Layer<T>(
             string name,
@@ -283,6 +286,28 @@ public sealed record PlanOverlayPageSnapshot(
             result.Walls.Where(item => item.PageNumber == pageNumber),
             item => item.Bounds,
             item => item.Confidence);
+
+        yield return Layer(
+            "wallTopologySpans",
+            WallTopologySpanVisibility.BuildVisibleTopologySpans(result, pageNumber, options),
+            item => item.Bounds,
+            item => item.Confidence);
+
+        yield return Layer(
+            "wallTopologyReviewSpans",
+            WallTopologySpanVisibility.BuildHiddenNonPlacementTopologySpans(result, pageNumber, options),
+            item => item.Bounds,
+            item => item.Confidence);
+
+        yield return Layer(
+            "wallGraphRepairs",
+            result.WallGraph.RepairCandidates.Where(item => item.PageNumber == pageNumber),
+            item => item.Bounds,
+            item => item.Confidence,
+            result.WallGraph.RepairCandidates
+                .Where(item => item.PageNumber == pageNumber)
+                .GroupBy(item => item.Severity.ToString())
+                .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal));
 
         yield return Layer(
             "wallNodes",

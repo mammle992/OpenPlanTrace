@@ -1,0 +1,2381 @@
+{
+  "type": "FeatureCollection",
+  "schemaVersion": "openplantrace.geojson.v1",
+  "coordinateSpace": "OpenPlanTracePageCoordinates",
+  "coordinateNote": "Coordinates are OpenPlanTrace page drawing units, not WGS84 longitude/latitude.",
+  "document": {
+    "id": "semantic-smoke.dxf",
+    "sourceName": "semantic-smoke.dxf",
+    "sourcePath": "samples/golden/semantic-smoke.dxf"
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "id": "page:1",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              0,
+              0
+            ],
+            [
+              728,
+              0
+            ],
+            [
+              728,
+              610
+            ],
+            [
+              0,
+              610
+            ],
+            [
+              0,
+              0
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "page",
+        "pageNumber": 1,
+        "width": 728,
+        "height": 610,
+        "primitiveCount": 24
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "region:page:1:sheet",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              0,
+              0
+            ],
+            [
+              728,
+              0
+            ],
+            [
+              728,
+              610
+            ],
+            [
+              0,
+              610
+            ],
+            [
+              0,
+              0
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "region",
+        "pageNumber": 1,
+        "confidence": 0.9,
+        "openPlanTraceId": "page:1:sheet",
+        "regionKind": "Sheet",
+        "label": "Sheet",
+        "sourcePrimitiveIds": [],
+        "sourceLayers": []
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "region:page:1:title-block",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              502.6625,
+              499.6625
+            ],
+            [
+              713.3375000000001,
+              499.6625
+            ],
+            [
+              713.3375000000001,
+              595.3375
+            ],
+            [
+              502.6625,
+              595.3375
+            ],
+            [
+              502.6625,
+              499.6625
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "region",
+        "pageNumber": 1,
+        "confidence": 0.9,
+        "openPlanTraceId": "page:1:title-block",
+        "regionKind": "TitleBlock",
+        "label": "Title block (bottom-right)",
+        "sourcePrimitiveIds": [
+          "dxf:entity:18:LINE",
+          "dxf:entity:19:LINE",
+          "dxf:entity:20:LINE",
+          "dxf:entity:21:LINE",
+          "dxf:entity:22:TEXT",
+          "dxf:entity:23:TEXT",
+          "dxf:entity:24:TEXT"
+        ],
+        "sourceLayers": [
+          "A-TITLE"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "region:page:1:main-floorplan",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              12,
+              12
+            ],
+            [
+              716,
+              12
+            ],
+            [
+              716,
+              487.6625
+            ],
+            [
+              12,
+              487.6625
+            ],
+            [
+              12,
+              12
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "region",
+        "pageNumber": 1,
+        "confidence": 0.9,
+        "openPlanTraceId": "page:1:main-floorplan",
+        "regionKind": "MainFloorPlan",
+        "label": "Main floorplan area",
+        "sourcePrimitiveIds": [],
+        "sourceLayers": []
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "title-block:page:1:title-block",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              502.6625,
+              499.6625
+            ],
+            [
+              713.3375000000001,
+              499.6625
+            ],
+            [
+              713.3375000000001,
+              595.3375
+            ],
+            [
+              502.6625,
+              595.3375
+            ],
+            [
+              502.6625,
+              499.6625
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "titleBlock",
+        "pageNumber": 1,
+        "confidence": 0.819,
+        "openPlanTraceId": "page:1:title-block",
+        "projectName": "GOLDEN SMOKE PLAN",
+        "sheetNumber": "A-101",
+        "scale": "1:100",
+        "fieldCount": 3,
+        "sourcePrimitiveIds": [
+          "dxf:entity:22:TEXT",
+          "dxf:entity:23:TEXT",
+          "dxf:entity:24:TEXT",
+          "dxf:entity:18:LINE",
+          "dxf:entity:19:LINE",
+          "dxf:entity:20:LINE",
+          "dxf:entity:21:LINE"
+        ],
+        "sourceLayers": [
+          "A-TITLE"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "grid-axis:page:1:grid-axis:1",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            28,
+            80
+          ],
+          [
+            28,
+            500
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "gridAxis",
+        "pageNumber": 1,
+        "confidence": 0.8796,
+        "openPlanTraceId": "page:1:grid-axis:1",
+        "orientation": "Vertical",
+        "label": "A",
+        "coordinate": 28,
+        "sourceRegionId": "page:1:main-floorplan",
+        "labelSourcePrimitiveIds": [
+          "dxf:entity:10:TEXT"
+        ],
+        "evidence": [
+          "grid layer A-GRID classified Grid (0,72)",
+          "Vertical grid axis length 420 drawing units",
+          "matched grid label A"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:9:LINE",
+          "dxf:entity:10:TEXT"
+        ],
+        "sourceLayers": [
+          "A-GRID"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "dimension:page:1:dimension:1",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            48,
+            370
+          ],
+          [
+            448,
+            370
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "dimension",
+        "pageNumber": 1,
+        "confidence": 0.92,
+        "openPlanTraceId": "page:1:dimension:1",
+        "dimensionKind": "Linear",
+        "orientation": "Horizontal",
+        "text": "400 mm",
+        "normalizedText": "400 mm",
+        "unit": "Millimeter",
+        "measuredMillimeters": 400,
+        "drawingLength": 400,
+        "millimetersPerDrawingUnit": 1,
+        "sourceRegionId": "page:1:main-floorplan",
+        "evidence": [
+          "Parsed dimension text as 400 mm.",
+          "Source text: 400 mm",
+          "Matched nearby horizontal dimension line dxf:entity:11:LINE.",
+          "Matched drawing length: 400 units.",
+          "Calibration expected drawing length: 400 units (0% difference)."
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:12:TEXT",
+          "dxf:entity:11:LINE"
+        ],
+        "sourceLayers": [
+          "A-DIM"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "annotation:page:1:annotation:generalnotes:01",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              506,
+              136
+            ],
+            [
+              654,
+              136
+            ],
+            [
+              654,
+              172
+            ],
+            [
+              506,
+              172
+            ],
+            [
+              506,
+              136
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "annotation",
+        "pageNumber": 1,
+        "confidence": 0.74,
+        "openPlanTraceId": "page:1:annotation:generalnotes:01",
+        "annotationKind": "GeneralNotes",
+        "label": "GENERAL NOTES",
+        "itemCount": 2,
+        "referenceCount": 0,
+        "evidence": [
+          "heading \u0022GENERAL NOTES\u0022",
+          "1 marked annotation item(s)",
+          "2 text primitive(s) grouped as GeneralNotes"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:16:TEXT",
+          "dxf:entity:17:TEXT"
+        ],
+        "sourceLayers": [
+          "A-NOTE"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "wall:page:1:wall:1",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            68,
+            50
+          ],
+          [
+            118,
+            50
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "wall",
+        "pageNumber": 1,
+        "confidence": 0.7104166666666667,
+        "openPlanTraceId": "page:1:wall:1",
+        "detectionKind": "SingleLine",
+        "wallType": "Exterior",
+        "wallComponentId": "page:1:wall-component:3",
+        "wallComponentKind": "IsolatedFragment",
+        "excludedFromStructuralTopology": false,
+        "thickness": 4,
+        "drawingLength": 50,
+        "lengthMeters": 0.05,
+        "thicknessMillimeters": 4,
+        "measurementScaleGroupId": "page:1:scale-group:2",
+        "wallEvidenceCategory": "MediumWallBody",
+        "wallEvidenceConfidence": 0.7104166666666667,
+        "wallEvidencePlacementReady": true,
+        "wallEvidenceRequiresReview": false,
+        "wallEvidenceRejectedAsNoise": false,
+        "wallEvidence": [
+          "single wall-length vector run",
+          "layer A-WALL classified Wall (0,9)",
+          "layer evidence: layer name matches \u0027wall\u0027",
+          "layer evidence: mostly long linework",
+          "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+          "wall evidence: medium wall body from wall-like layer, length, or structural context"
+        ],
+        "sourceRegionId": "page:1:main-floorplan",
+        "evidence": [
+          "single wall-length vector run",
+          "layer A-WALL classified Wall (0,9)",
+          "layer evidence: layer name matches \u0027wall\u0027",
+          "layer evidence: mostly long linework",
+          "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+          "wall evidence assessment: MediumWallBody / placement-ready / confidence 0.71"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:13:LINE"
+        ],
+        "sourceLayers": [
+          "A-WALL"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "wall:page:1:wall:2",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            148,
+            50
+          ],
+          [
+            228,
+            50
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "wall",
+        "pageNumber": 1,
+        "confidence": 0.8666666666666667,
+        "openPlanTraceId": "page:1:wall:2",
+        "detectionKind": "SingleLine",
+        "wallType": "Exterior",
+        "wallComponentId": "page:1:wall-component:2",
+        "wallComponentKind": "IsolatedFragment",
+        "excludedFromStructuralTopology": false,
+        "thickness": 4,
+        "drawingLength": 80,
+        "lengthMeters": 0.08,
+        "thicknessMillimeters": 4,
+        "measurementScaleGroupId": "page:1:scale-group:2",
+        "wallEvidenceCategory": "MediumWallBody",
+        "wallEvidenceConfidence": 0.8666666666666667,
+        "wallEvidencePlacementReady": true,
+        "wallEvidenceRequiresReview": false,
+        "wallEvidenceRejectedAsNoise": false,
+        "wallEvidence": [
+          "single wall-length vector run",
+          "layer A-WALL classified Wall (0,9)",
+          "layer evidence: layer name matches \u0027wall\u0027",
+          "layer evidence: mostly long linework",
+          "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+          "wall evidence: medium wall body from wall-like layer, length, or structural context"
+        ],
+        "sourceRegionId": "page:1:main-floorplan",
+        "evidence": [
+          "single wall-length vector run",
+          "layer A-WALL classified Wall (0,9)",
+          "layer evidence: layer name matches \u0027wall\u0027",
+          "layer evidence: mostly long linework",
+          "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+          "wall evidence assessment: MediumWallBody / placement-ready / confidence 0.87"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:14:LINE"
+        ],
+        "sourceLayers": [
+          "A-WALL"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "wall:page:1:wall:3",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            48,
+            120
+          ],
+          [
+            448,
+            120
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "wall",
+        "pageNumber": 1,
+        "confidence": 0.88,
+        "openPlanTraceId": "page:1:wall:3",
+        "detectionKind": "SingleLine",
+        "wallType": "Exterior",
+        "wallComponentId": "page:1:wall-component:1",
+        "wallComponentKind": "MainStructural",
+        "excludedFromStructuralTopology": false,
+        "thickness": 4,
+        "drawingLength": 400,
+        "lengthMeters": 0.4,
+        "thicknessMillimeters": 4,
+        "measurementScaleGroupId": "page:1:scale-group:2",
+        "wallEvidenceCategory": "MediumWallBody",
+        "wallEvidenceConfidence": 0.88,
+        "wallEvidencePlacementReady": true,
+        "wallEvidenceRequiresReview": false,
+        "wallEvidenceRejectedAsNoise": false,
+        "wallEvidence": [
+          "single wall-length vector run",
+          "layer A-WALL classified Wall (0,9)",
+          "layer evidence: layer name matches \u0027wall\u0027",
+          "layer evidence: mostly long linework",
+          "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+          "wall evidence: medium wall body from wall-like layer, length, or structural context"
+        ],
+        "sourceRegionId": "page:1:main-floorplan",
+        "evidence": [
+          "single wall-length vector run",
+          "layer A-WALL classified Wall (0,9)",
+          "layer evidence: layer name matches \u0027wall\u0027",
+          "layer evidence: mostly long linework",
+          "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+          "wall evidence assessment: MediumWallBody / placement-ready / confidence 0.88",
+          "wall type refined exterior: detected room evidence on one side only"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:3:LINE"
+        ],
+        "sourceLayers": [
+          "A-WALL"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "wall:page:1:wall:4",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            48,
+            340
+          ],
+          [
+            448,
+            340
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "wall",
+        "pageNumber": 1,
+        "confidence": 0.88,
+        "openPlanTraceId": "page:1:wall:4",
+        "detectionKind": "SingleLine",
+        "wallType": "Exterior",
+        "wallComponentId": "page:1:wall-component:1",
+        "wallComponentKind": "MainStructural",
+        "excludedFromStructuralTopology": false,
+        "thickness": 4,
+        "drawingLength": 400,
+        "lengthMeters": 0.4,
+        "thicknessMillimeters": 4,
+        "measurementScaleGroupId": "page:1:scale-group:2",
+        "wallEvidenceCategory": "MediumWallBody",
+        "wallEvidenceConfidence": 0.88,
+        "wallEvidencePlacementReady": true,
+        "wallEvidenceRequiresReview": false,
+        "wallEvidenceRejectedAsNoise": false,
+        "wallEvidence": [
+          "single wall-length vector run",
+          "layer A-WALL classified Wall (0,9)",
+          "layer evidence: layer name matches \u0027wall\u0027",
+          "layer evidence: mostly long linework",
+          "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+          "wall evidence: medium wall body from wall-like layer, length, or structural context"
+        ],
+        "sourceRegionId": "page:1:main-floorplan",
+        "evidence": [
+          "single wall-length vector run",
+          "layer A-WALL classified Wall (0,9)",
+          "layer evidence: layer name matches \u0027wall\u0027",
+          "layer evidence: mostly long linework",
+          "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+          "wall evidence assessment: MediumWallBody / placement-ready / confidence 0.88",
+          "wall type refined exterior: detected room evidence on one side only"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:1:LINE"
+        ],
+        "sourceLayers": [
+          "A-WALL"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "wall:page:1:wall:5",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            48,
+            120
+          ],
+          [
+            48,
+            340
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "wall",
+        "pageNumber": 1,
+        "confidence": 0.88,
+        "openPlanTraceId": "page:1:wall:5",
+        "detectionKind": "SingleLine",
+        "wallType": "Exterior",
+        "wallComponentId": "page:1:wall-component:1",
+        "wallComponentKind": "MainStructural",
+        "excludedFromStructuralTopology": false,
+        "thickness": 4,
+        "drawingLength": 220,
+        "lengthMeters": 0.22,
+        "thicknessMillimeters": 4,
+        "measurementScaleGroupId": "page:1:scale-group:2",
+        "wallEvidenceCategory": "MediumWallBody",
+        "wallEvidenceConfidence": 0.88,
+        "wallEvidencePlacementReady": true,
+        "wallEvidenceRequiresReview": false,
+        "wallEvidenceRejectedAsNoise": false,
+        "wallEvidence": [
+          "single wall-length vector run",
+          "layer A-WALL classified Wall (0,9)",
+          "layer evidence: layer name matches \u0027wall\u0027",
+          "layer evidence: mostly long linework",
+          "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+          "wall evidence: medium wall body from wall-like layer, length, or structural context"
+        ],
+        "sourceRegionId": "page:1:main-floorplan",
+        "evidence": [
+          "single wall-length vector run",
+          "layer A-WALL classified Wall (0,9)",
+          "layer evidence: layer name matches \u0027wall\u0027",
+          "layer evidence: mostly long linework",
+          "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+          "wall evidence assessment: MediumWallBody / placement-ready / confidence 0.88",
+          "wall type refined exterior: detected room evidence on one side only"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:4:LINE"
+        ],
+        "sourceLayers": [
+          "A-WALL"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "wall:page:1:wall:6",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            448,
+            120
+          ],
+          [
+            448,
+            340
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "wall",
+        "pageNumber": 1,
+        "confidence": 0.88,
+        "openPlanTraceId": "page:1:wall:6",
+        "detectionKind": "SingleLine",
+        "wallType": "Exterior",
+        "wallComponentId": "page:1:wall-component:1",
+        "wallComponentKind": "MainStructural",
+        "excludedFromStructuralTopology": false,
+        "thickness": 4,
+        "drawingLength": 220,
+        "lengthMeters": 0.22,
+        "thicknessMillimeters": 4,
+        "measurementScaleGroupId": "page:1:scale-group:2",
+        "wallEvidenceCategory": "MediumWallBody",
+        "wallEvidenceConfidence": 0.88,
+        "wallEvidencePlacementReady": true,
+        "wallEvidenceRequiresReview": false,
+        "wallEvidenceRejectedAsNoise": false,
+        "wallEvidence": [
+          "single wall-length vector run",
+          "layer A-WALL classified Wall (0,9)",
+          "layer evidence: layer name matches \u0027wall\u0027",
+          "layer evidence: mostly long linework",
+          "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+          "wall evidence: medium wall body from wall-like layer, length, or structural context"
+        ],
+        "sourceRegionId": "page:1:main-floorplan",
+        "evidence": [
+          "single wall-length vector run",
+          "layer A-WALL classified Wall (0,9)",
+          "layer evidence: layer name matches \u0027wall\u0027",
+          "layer evidence: mostly long linework",
+          "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+          "wall evidence assessment: MediumWallBody / placement-ready / confidence 0.88",
+          "wall type refined exterior: detected room evidence on one side only"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:2:LINE"
+        ],
+        "sourceLayers": [
+          "A-WALL"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "wall-node:page:1:node:1",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          68,
+          50
+        ]
+      },
+      "properties": {
+        "featureType": "wallNode",
+        "pageNumber": 1,
+        "confidence": 0.65,
+        "openPlanTraceId": "page:1:node:1",
+        "nodeKind": "Endpoint",
+        "degree": 1,
+        "directions": [
+          "East"
+        ],
+        "evidence": [
+          "degree 1",
+          "directions East",
+          "classified Endpoint"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "wall-node:page:1:node:2",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          118,
+          50
+        ]
+      },
+      "properties": {
+        "featureType": "wallNode",
+        "pageNumber": 1,
+        "confidence": 0.65,
+        "openPlanTraceId": "page:1:node:2",
+        "nodeKind": "Endpoint",
+        "degree": 1,
+        "directions": [
+          "West"
+        ],
+        "evidence": [
+          "degree 1",
+          "directions West",
+          "classified Endpoint"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "wall-node:page:1:node:3",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          148,
+          50
+        ]
+      },
+      "properties": {
+        "featureType": "wallNode",
+        "pageNumber": 1,
+        "confidence": 0.65,
+        "openPlanTraceId": "page:1:node:3",
+        "nodeKind": "Endpoint",
+        "degree": 1,
+        "directions": [
+          "East"
+        ],
+        "evidence": [
+          "degree 1",
+          "directions East",
+          "classified Endpoint"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "wall-node:page:1:node:4",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          228,
+          50
+        ]
+      },
+      "properties": {
+        "featureType": "wallNode",
+        "pageNumber": 1,
+        "confidence": 0.65,
+        "openPlanTraceId": "page:1:node:4",
+        "nodeKind": "Endpoint",
+        "degree": 1,
+        "directions": [
+          "West"
+        ],
+        "evidence": [
+          "degree 1",
+          "directions West",
+          "classified Endpoint"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "wall-node:page:1:node:5",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          48,
+          120
+        ]
+      },
+      "properties": {
+        "featureType": "wallNode",
+        "pageNumber": 1,
+        "confidence": 0.9,
+        "openPlanTraceId": "page:1:node:5",
+        "nodeKind": "Corner",
+        "degree": 2,
+        "directions": [
+          "East",
+          "South"
+        ],
+        "evidence": [
+          "degree 2",
+          "directions East, South",
+          "position resolved from 2 snapped observations",
+          "classified Corner"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "wall-node:page:1:node:6",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          448,
+          120
+        ]
+      },
+      "properties": {
+        "featureType": "wallNode",
+        "pageNumber": 1,
+        "confidence": 0.9,
+        "openPlanTraceId": "page:1:node:6",
+        "nodeKind": "Corner",
+        "degree": 2,
+        "directions": [
+          "South",
+          "West"
+        ],
+        "evidence": [
+          "degree 2",
+          "directions South, West",
+          "position resolved from 2 snapped observations",
+          "classified Corner"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "wall-node:page:1:node:7",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          48,
+          340
+        ]
+      },
+      "properties": {
+        "featureType": "wallNode",
+        "pageNumber": 1,
+        "confidence": 0.9,
+        "openPlanTraceId": "page:1:node:7",
+        "nodeKind": "Corner",
+        "degree": 2,
+        "directions": [
+          "North",
+          "East"
+        ],
+        "evidence": [
+          "degree 2",
+          "directions North, East",
+          "position resolved from 2 snapped observations",
+          "classified Corner"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "wall-node:page:1:node:8",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          448,
+          340
+        ]
+      },
+      "properties": {
+        "featureType": "wallNode",
+        "pageNumber": 1,
+        "confidence": 0.9,
+        "openPlanTraceId": "page:1:node:8",
+        "nodeKind": "Corner",
+        "degree": 2,
+        "directions": [
+          "North",
+          "West"
+        ],
+        "evidence": [
+          "degree 2",
+          "directions North, West",
+          "position resolved from 2 snapped observations",
+          "classified Corner"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "wall-component:page:1:wall-component:1",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              46,
+              118
+            ],
+            [
+              450,
+              118
+            ],
+            [
+              450,
+              342
+            ],
+            [
+              46,
+              342
+            ],
+            [
+              46,
+              118
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "wallGraphComponent",
+        "pageNumber": 1,
+        "confidence": 0.9,
+        "openPlanTraceId": "page:1:wall-component:1",
+        "componentKind": "MainStructural",
+        "wallCount": 4,
+        "nodeCount": 4,
+        "edgeCount": 4,
+        "drawingLength": 1240,
+        "excludedFromStructuralTopology": false,
+        "wallIds": [
+          "page:1:wall:3",
+          "page:1:wall:4",
+          "page:1:wall:5",
+          "page:1:wall:6"
+        ],
+        "nodeIds": [
+          "page:1:node:5",
+          "page:1:node:6",
+          "page:1:node:7",
+          "page:1:node:8"
+        ],
+        "edgeIds": [
+          "page:1:edge:3",
+          "page:1:edge:4",
+          "page:1:edge:5",
+          "page:1:edge:6"
+        ],
+        "evidence": [
+          "connected component with 4 wall(s), 4 node(s), 4 edge(s)",
+          "drawing length 1240",
+          "largest structural wall component on page"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:1:LINE",
+          "dxf:entity:2:LINE",
+          "dxf:entity:3:LINE",
+          "dxf:entity:4:LINE"
+        ],
+        "sourceLayers": [
+          "A-WALL"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "wall-component:page:1:wall-component:2",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              146,
+              48
+            ],
+            [
+              230,
+              48
+            ],
+            [
+              230,
+              52
+            ],
+            [
+              146,
+              52
+            ],
+            [
+              146,
+              48
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "wallGraphComponent",
+        "pageNumber": 1,
+        "confidence": 0.35,
+        "openPlanTraceId": "page:1:wall-component:2",
+        "componentKind": "IsolatedFragment",
+        "wallCount": 1,
+        "nodeCount": 2,
+        "edgeCount": 1,
+        "drawingLength": 80,
+        "excludedFromStructuralTopology": false,
+        "wallIds": [
+          "page:1:wall:2"
+        ],
+        "nodeIds": [
+          "page:1:node:3",
+          "page:1:node:4"
+        ],
+        "edgeIds": [
+          "page:1:edge:2"
+        ],
+        "evidence": [
+          "connected component with 1 wall(s), 2 node(s), 1 edge(s)",
+          "drawing length 80",
+          "isolated wall graph fragment with weak topology"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:14:LINE"
+        ],
+        "sourceLayers": [
+          "A-WALL"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "wall-component:page:1:wall-component:3",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              66,
+              48
+            ],
+            [
+              120,
+              48
+            ],
+            [
+              120,
+              52
+            ],
+            [
+              66,
+              52
+            ],
+            [
+              66,
+              48
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "wallGraphComponent",
+        "pageNumber": 1,
+        "confidence": 0.35,
+        "openPlanTraceId": "page:1:wall-component:3",
+        "componentKind": "IsolatedFragment",
+        "wallCount": 1,
+        "nodeCount": 2,
+        "edgeCount": 1,
+        "drawingLength": 50,
+        "excludedFromStructuralTopology": false,
+        "wallIds": [
+          "page:1:wall:1"
+        ],
+        "nodeIds": [
+          "page:1:node:1",
+          "page:1:node:2"
+        ],
+        "edgeIds": [
+          "page:1:edge:1"
+        ],
+        "evidence": [
+          "connected component with 1 wall(s), 2 node(s), 1 edge(s)",
+          "drawing length 50",
+          "isolated wall graph fragment with weak topology"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:13:LINE"
+        ],
+        "sourceLayers": [
+          "A-WALL"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "room:page:1:room:1",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              48,
+              120
+            ],
+            [
+              448,
+              120
+            ],
+            [
+              448,
+              340
+            ],
+            [
+              48,
+              340
+            ],
+            [
+              48,
+              120
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "room",
+        "pageNumber": 1,
+        "confidence": 0.9,
+        "openPlanTraceId": "page:1:room:1",
+        "label": "OFFICE",
+        "roomUseKind": "Office",
+        "drawingArea": 88000,
+        "areaSquareMeters": 0.088,
+        "measurementScaleGroupId": "page:1:scale-group:2",
+        "wallIds": [
+          "page:1:wall:3",
+          "page:1:wall:4",
+          "page:1:wall:5",
+          "page:1:wall:6"
+        ],
+        "labelSourcePrimitiveIds": [
+          "dxf:entity:5:TEXT"
+        ],
+        "evidence": [
+          "closed orthogonal cycle from 4 walls",
+          "wall graph orthogonal face",
+          "4 boundary vertices",
+          "matched room label: OFFICE",
+          "room use kind Office",
+          "label evidence matched room-use term \u0027office\u0027"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "room-cluster:page:1:room-cluster:1",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              48,
+              120
+            ],
+            [
+              448,
+              120
+            ],
+            [
+              448,
+              340
+            ],
+            [
+              48,
+              340
+            ],
+            [
+              48,
+              120
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "roomCluster",
+        "pageNumber": 1,
+        "confidence": 0.9,
+        "openPlanTraceId": "page:1:room-cluster:1",
+        "roomIds": [
+          "page:1:room:1"
+        ],
+        "roomLabels": [
+          "OFFICE"
+        ],
+        "clusterKind": "SingleRoom",
+        "drawingArea": 88000,
+        "areaSquareMeters": 0.088,
+        "roomAdjacencyIds": [],
+        "openingIds": [],
+        "evidence": [
+          "singleton room cluster",
+          "0 adjacency edge(s)",
+          "cluster kind SingleRoom"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "opening:page:1:opening:1",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            118,
+            50
+          ],
+          [
+            148,
+            50
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "opening",
+        "pageNumber": 1,
+        "confidence": 0.8,
+        "openPlanTraceId": "page:1:opening:1",
+        "openingType": "Door",
+        "operation": "Hinged",
+        "orientation": "Horizontal",
+        "wallId": "page:1:wall:1",
+        "adjacentWallIds": [
+          "page:1:wall:1",
+          "page:1:wall:2"
+        ],
+        "hostWallIds": [
+          "page:1:wall:1",
+          "page:1:wall:2"
+        ],
+        "connectedRoomIds": [],
+        "connectedRoomLabels": [],
+        "connectedRoomLinkCount": 0,
+        "connectedRoomLinkDistances": [],
+        "connectedRoomLinkConfidences": [],
+        "connectedRoomLinkSides": [],
+        "connectedRoomLinkSignedDistances": [],
+        "connectedRoomLinkRoomSidePoints": [],
+        "connectedRoomLinkNearestBoundaryPoints": [],
+        "roomAdjacencyIds": [],
+        "drawingWidth": 30,
+        "widthMillimeters": 30,
+        "measurementScaleGroupId": "page:1:scale-group:2",
+        "placementHostWallId": "page:1:wall:1",
+        "placementAnchorWallIds": [
+          "page:1:wall:1",
+          "page:1:wall:2"
+        ],
+        "placementStartPoint": [
+          118,
+          50
+        ],
+        "placementEndPoint": [
+          148,
+          50
+        ],
+        "placementReferenceLine": [
+          [
+            68,
+            50
+          ],
+          [
+            228,
+            50
+          ]
+        ],
+        "placementFootprintCorners": [
+          [
+            118,
+            48
+          ],
+          [
+            148,
+            48
+          ],
+          [
+            148,
+            52
+          ],
+          [
+            118,
+            52
+          ]
+        ],
+        "placementStartOffsetDrawingUnits": 50,
+        "placementEndOffsetDrawingUnits": 80,
+        "placementCenterOffsetDrawingUnits": 65,
+        "placementLengthDrawingUnits": 30,
+        "placementStartOffsetMillimeters": 50,
+        "placementEndOffsetMillimeters": 80,
+        "placementCenterOffsetMillimeters": 65,
+        "placementLengthMillimeters": 30,
+        "placementHostWallStartParameter": 0.3125,
+        "placementHostWallEndParameter": 0.5,
+        "placementHostWallCenterParameter": 0.40625,
+        "placementAlongVector": [
+          1,
+          0
+        ],
+        "placementNormalVector": [
+          -0,
+          1
+        ],
+        "placementCrossWallOffsetDrawingUnits": 0,
+        "placementConfidence": 0.88,
+        "placementEvidence": [
+          "placement reference line derived from 2 host wall segment(s)",
+          "opening projected to reference offsets 50 -\u003E 80 drawing units",
+          "opening footprint uses 4 drawing unit wall-normal depth",
+          "placement cross-wall offset 0 drawing units",
+          "placement offsets calibrated with scale group page:1:scale-group:2"
+        ],
+        "hingeSide": "StartJamb",
+        "swingSide": "NegativeCoordinateSide",
+        "swingDirection": "CounterClockwise",
+        "evidence": [
+          "gap width 30 drawing units",
+          "orientation Horizontal",
+          "door swing arc"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:13:LINE",
+          "dxf:entity:14:LINE",
+          "dxf:entity:15:ARC"
+        ],
+        "sourceLayers": [
+          "A-WALL",
+          "A-DOOR"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "object:page:1:object:1",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              223,
+              220
+            ],
+            [
+              233,
+              220
+            ],
+            [
+              233,
+              230
+            ],
+            [
+              223,
+              230
+            ],
+            [
+              223,
+              220
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "object",
+        "pageNumber": 1,
+        "confidence": 0.8200000000000001,
+        "openPlanTraceId": "page:1:object:1",
+        "objectKind": "Symbol",
+        "category": "HVACEquipment",
+        "sourceKind": "CadSymbol",
+        "label": "AHU_SUPPLY_FAN",
+        "symbolName": "AHU_SUPPLY_FAN",
+        "roomId": "page:1:room:1",
+        "roomLabel": "OFFICE",
+        "nearbyText": [
+          "OFFICE"
+        ],
+        "evidence": [
+          "CAD/block symbol primitive",
+          "symbol/layer text matches \u0027hvac\u0027",
+          "assigned to room OFFICE",
+          "nearby text: OFFICE"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:6:INSERT"
+        ],
+        "sourceLayers": [
+          "M-HVAC-EQPM"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "object:page:1:object:2",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              113,
+              250
+            ],
+            [
+              123,
+              250
+            ],
+            [
+              123,
+              260
+            ],
+            [
+              113,
+              260
+            ],
+            [
+              113,
+              250
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "object",
+        "pageNumber": 1,
+        "confidence": 0.56,
+        "openPlanTraceId": "page:1:object:2",
+        "objectKind": "Symbol",
+        "category": "GenericSymbol",
+        "sourceKind": "CadSymbol",
+        "label": "ISO_TAG_71",
+        "symbolName": "ISO_TAG_71",
+        "roomId": "page:1:room:1",
+        "roomLabel": "OFFICE",
+        "nearbyText": [
+          "OFFICE"
+        ],
+        "evidence": [
+          "CAD/block symbol primitive",
+          "assigned to room OFFICE",
+          "nearby text: OFFICE"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:7:INSERT"
+        ],
+        "sourceLayers": [
+          "X-SYMBOLS"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "object:page:1:object:3",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              283,
+              215
+            ],
+            [
+              293,
+              215
+            ],
+            [
+              293,
+              225
+            ],
+            [
+              283,
+              225
+            ],
+            [
+              283,
+              215
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "object",
+        "pageNumber": 1,
+        "confidence": 0.56,
+        "openPlanTraceId": "page:1:object:3",
+        "objectKind": "Symbol",
+        "category": "GenericSymbol",
+        "sourceKind": "CadSymbol",
+        "label": "ISO_TAG_71",
+        "symbolName": "ISO_TAG_71",
+        "roomId": "page:1:room:1",
+        "roomLabel": "OFFICE",
+        "nearbyText": [
+          "OFFICE"
+        ],
+        "evidence": [
+          "CAD/block symbol primitive",
+          "assigned to room OFFICE",
+          "nearby text: OFFICE"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:8:INSERT"
+        ],
+        "sourceLayers": [
+          "X-SYMBOLS"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "object-group:object-group:2",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              283,
+              215
+            ],
+            [
+              293,
+              215
+            ],
+            [
+              293,
+              225
+            ],
+            [
+              283,
+              225
+            ],
+            [
+              283,
+              215
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "objectGroup",
+        "pageNumber": 1,
+        "confidence": 0.56,
+        "openPlanTraceId": "object-group:2",
+        "signature": "symbol:iso_tag_71|category:GenericSymbol|kind:Symbol|layers:x-symbols",
+        "objectKind": "Symbol",
+        "category": "GenericSymbol",
+        "count": 2,
+        "pageNumbers": [
+          1
+        ],
+        "candidateIds": [
+          "page:1:object:3",
+          "page:1:object:2"
+        ],
+        "requiresReview": true,
+        "label": "ISO_TAG_71",
+        "symbolName": "ISO_TAG_71",
+        "detectedTags": [],
+        "nearbyText": [
+          "OFFICE"
+        ],
+        "evidence": [
+          "grouped 2 object candidate(s) by symbol name \u0027ISO_TAG_71\u0027 and source layer set",
+          "category GenericSymbol",
+          "kind Symbol",
+          "source layers: X-SYMBOLS",
+          "nearby text: OFFICE",
+          "review recommended for generic/unknown symbol group"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:8:INSERT",
+          "dxf:entity:7:INSERT"
+        ],
+        "sourceLayers": [
+          "X-SYMBOLS"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "routing-barrier:page:1:wall:1:span:1",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            68,
+            50
+          ],
+          [
+            118,
+            50
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "routingBarrier",
+        "pageNumber": 1,
+        "confidence": 0.7104166666666667,
+        "openPlanTraceId": "routing-barrier:page:1:wall:1:span:1",
+        "sourceId": "page:1:wall:1",
+        "sourceKind": "Wall",
+        "thickness": 4,
+        "drawingLength": 50,
+        "lengthMeters": 0.05,
+        "thicknessMillimeters": 4,
+        "measurementScaleGroupId": "page:1:scale-group:2",
+        "wallComponentId": "page:1:wall-component:3",
+        "wallComponentKind": "IsolatedFragment",
+        "excludedFromStructuralTopology": false,
+        "evidence": [
+          "single wall-length vector run",
+          "layer A-WALL classified Wall (0,9)",
+          "layer evidence: layer name matches \u0027wall\u0027",
+          "layer evidence: mostly long linework",
+          "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+          "wall evidence assessment: MediumWallBody / placement-ready / confidence 0.71",
+          "wall graph span from page:1:node:1 to page:1:node:2",
+          "routing barrier split at hard wall graph junction nodes",
+          "wall graph component page:1:wall-component:3 classified as IsolatedFragment"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:13:LINE"
+        ],
+        "sourceLayers": [
+          "A-WALL"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "routing-barrier:page:1:wall:2:span:1",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            148,
+            50
+          ],
+          [
+            228,
+            50
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "routingBarrier",
+        "pageNumber": 1,
+        "confidence": 0.8666666666666667,
+        "openPlanTraceId": "routing-barrier:page:1:wall:2:span:1",
+        "sourceId": "page:1:wall:2",
+        "sourceKind": "Wall",
+        "thickness": 4,
+        "drawingLength": 80,
+        "lengthMeters": 0.08,
+        "thicknessMillimeters": 4,
+        "measurementScaleGroupId": "page:1:scale-group:2",
+        "wallComponentId": "page:1:wall-component:2",
+        "wallComponentKind": "IsolatedFragment",
+        "excludedFromStructuralTopology": false,
+        "evidence": [
+          "single wall-length vector run",
+          "layer A-WALL classified Wall (0,9)",
+          "layer evidence: layer name matches \u0027wall\u0027",
+          "layer evidence: mostly long linework",
+          "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+          "wall evidence assessment: MediumWallBody / placement-ready / confidence 0.87",
+          "wall graph span from page:1:node:3 to page:1:node:4",
+          "routing barrier split at hard wall graph junction nodes",
+          "wall graph component page:1:wall-component:2 classified as IsolatedFragment"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:14:LINE"
+        ],
+        "sourceLayers": [
+          "A-WALL"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "routing-barrier:page:1:wall:3:span:1",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            48,
+            120
+          ],
+          [
+            448,
+            120
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "routingBarrier",
+        "pageNumber": 1,
+        "confidence": 0.88,
+        "openPlanTraceId": "routing-barrier:page:1:wall:3:span:1",
+        "sourceId": "page:1:wall:3",
+        "sourceKind": "Wall",
+        "thickness": 4,
+        "drawingLength": 400,
+        "lengthMeters": 0.4,
+        "thicknessMillimeters": 4,
+        "measurementScaleGroupId": "page:1:scale-group:2",
+        "wallComponentId": "page:1:wall-component:1",
+        "wallComponentKind": "MainStructural",
+        "excludedFromStructuralTopology": false,
+        "evidence": [
+          "single wall-length vector run",
+          "layer A-WALL classified Wall (0,9)",
+          "layer evidence: layer name matches \u0027wall\u0027",
+          "layer evidence: mostly long linework",
+          "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+          "wall evidence assessment: MediumWallBody / placement-ready / confidence 0.88",
+          "wall type refined exterior: detected room evidence on one side only",
+          "wall graph span from page:1:node:5 to page:1:node:6",
+          "routing barrier split at hard wall graph junction nodes",
+          "wall graph component page:1:wall-component:1 classified as MainStructural"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:3:LINE"
+        ],
+        "sourceLayers": [
+          "A-WALL"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "routing-barrier:page:1:wall:4:span:1",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            48,
+            340
+          ],
+          [
+            448,
+            340
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "routingBarrier",
+        "pageNumber": 1,
+        "confidence": 0.88,
+        "openPlanTraceId": "routing-barrier:page:1:wall:4:span:1",
+        "sourceId": "page:1:wall:4",
+        "sourceKind": "Wall",
+        "thickness": 4,
+        "drawingLength": 400,
+        "lengthMeters": 0.4,
+        "thicknessMillimeters": 4,
+        "measurementScaleGroupId": "page:1:scale-group:2",
+        "wallComponentId": "page:1:wall-component:1",
+        "wallComponentKind": "MainStructural",
+        "excludedFromStructuralTopology": false,
+        "evidence": [
+          "single wall-length vector run",
+          "layer A-WALL classified Wall (0,9)",
+          "layer evidence: layer name matches \u0027wall\u0027",
+          "layer evidence: mostly long linework",
+          "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+          "wall evidence assessment: MediumWallBody / placement-ready / confidence 0.88",
+          "wall type refined exterior: detected room evidence on one side only",
+          "wall graph span from page:1:node:7 to page:1:node:8",
+          "routing barrier split at hard wall graph junction nodes",
+          "wall graph component page:1:wall-component:1 classified as MainStructural"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:1:LINE"
+        ],
+        "sourceLayers": [
+          "A-WALL"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "routing-barrier:page:1:wall:5:span:1",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            48,
+            120
+          ],
+          [
+            48,
+            340
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "routingBarrier",
+        "pageNumber": 1,
+        "confidence": 0.88,
+        "openPlanTraceId": "routing-barrier:page:1:wall:5:span:1",
+        "sourceId": "page:1:wall:5",
+        "sourceKind": "Wall",
+        "thickness": 4,
+        "drawingLength": 220,
+        "lengthMeters": 0.22,
+        "thicknessMillimeters": 4,
+        "measurementScaleGroupId": "page:1:scale-group:2",
+        "wallComponentId": "page:1:wall-component:1",
+        "wallComponentKind": "MainStructural",
+        "excludedFromStructuralTopology": false,
+        "evidence": [
+          "single wall-length vector run",
+          "layer A-WALL classified Wall (0,9)",
+          "layer evidence: layer name matches \u0027wall\u0027",
+          "layer evidence: mostly long linework",
+          "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+          "wall evidence assessment: MediumWallBody / placement-ready / confidence 0.88",
+          "wall type refined exterior: detected room evidence on one side only",
+          "wall graph span from page:1:node:5 to page:1:node:7",
+          "routing barrier split at hard wall graph junction nodes",
+          "wall graph component page:1:wall-component:1 classified as MainStructural"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:4:LINE"
+        ],
+        "sourceLayers": [
+          "A-WALL"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "routing-barrier:page:1:wall:6:span:1",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            448,
+            120
+          ],
+          [
+            448,
+            340
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "routingBarrier",
+        "pageNumber": 1,
+        "confidence": 0.88,
+        "openPlanTraceId": "routing-barrier:page:1:wall:6:span:1",
+        "sourceId": "page:1:wall:6",
+        "sourceKind": "Wall",
+        "thickness": 4,
+        "drawingLength": 220,
+        "lengthMeters": 0.22,
+        "thicknessMillimeters": 4,
+        "measurementScaleGroupId": "page:1:scale-group:2",
+        "wallComponentId": "page:1:wall-component:1",
+        "wallComponentKind": "MainStructural",
+        "excludedFromStructuralTopology": false,
+        "evidence": [
+          "single wall-length vector run",
+          "layer A-WALL classified Wall (0,9)",
+          "layer evidence: layer name matches \u0027wall\u0027",
+          "layer evidence: mostly long linework",
+          "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+          "wall evidence assessment: MediumWallBody / placement-ready / confidence 0.88",
+          "wall type refined exterior: detected room evidence on one side only",
+          "wall graph span from page:1:node:6 to page:1:node:8",
+          "routing barrier split at hard wall graph junction nodes",
+          "wall graph component page:1:wall-component:1 classified as MainStructural"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:2:LINE"
+        ],
+        "sourceLayers": [
+          "A-WALL"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "routing-passage:page:1:opening:1",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            118,
+            50
+          ],
+          [
+            148,
+            50
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "routingPassage",
+        "pageNumber": 1,
+        "confidence": 0.8,
+        "openPlanTraceId": "routing-passage:page:1:opening:1",
+        "sourceId": "page:1:opening:1",
+        "sourceKind": "Opening",
+        "openingType": "Door",
+        "operation": "Hinged",
+        "orientation": "Horizontal",
+        "drawingWidth": 30,
+        "widthMillimeters": 30,
+        "measurementScaleGroupId": "page:1:scale-group:2",
+        "hostWallIds": [
+          "page:1:wall:1",
+          "page:1:wall:2"
+        ],
+        "connectedRoomIds": [],
+        "connectedRoomLabels": [],
+        "connectedRoomLinkCount": 0,
+        "connectedRoomLinkDistances": [],
+        "connectedRoomLinkConfidences": [],
+        "connectedRoomLinkSides": [],
+        "connectedRoomLinkSignedDistances": [],
+        "connectedRoomLinkRoomSidePoints": [],
+        "connectedRoomLinkNearestBoundaryPoints": [],
+        "roomAdjacencyIds": [],
+        "placementHostWallId": "page:1:wall:1",
+        "placementAnchorWallIds": [
+          "page:1:wall:1",
+          "page:1:wall:2"
+        ],
+        "placementStartPoint": [
+          118,
+          50
+        ],
+        "placementEndPoint": [
+          148,
+          50
+        ],
+        "placementReferenceLine": [
+          [
+            68,
+            50
+          ],
+          [
+            228,
+            50
+          ]
+        ],
+        "placementFootprintCorners": [
+          [
+            118,
+            48
+          ],
+          [
+            148,
+            48
+          ],
+          [
+            148,
+            52
+          ],
+          [
+            118,
+            52
+          ]
+        ],
+        "placementStartOffsetDrawingUnits": 50,
+        "placementEndOffsetDrawingUnits": 80,
+        "placementCenterOffsetDrawingUnits": 65,
+        "placementLengthDrawingUnits": 30,
+        "placementStartOffsetMillimeters": 50,
+        "placementEndOffsetMillimeters": 80,
+        "placementCenterOffsetMillimeters": 65,
+        "placementLengthMillimeters": 30,
+        "placementStatus": "Anchored",
+        "readyForCoordinatePlacement": true,
+        "requiresReview": false,
+        "reviewReasons": [],
+        "evidence": [
+          "gap width 30 drawing units",
+          "orientation Horizontal",
+          "door swing arc"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:13:LINE",
+          "dxf:entity:14:LINE",
+          "dxf:entity:15:ARC"
+        ],
+        "sourceLayers": [
+          "A-WALL",
+          "A-DOOR"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "routing-obstacle:page:1:object:1",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              223,
+              220
+            ],
+            [
+              233,
+              220
+            ],
+            [
+              233,
+              230
+            ],
+            [
+              223,
+              230
+            ],
+            [
+              223,
+              220
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "routingObstacle",
+        "pageNumber": 1,
+        "confidence": 0.8200000000000001,
+        "openPlanTraceId": "routing-obstacle:page:1:object:1",
+        "sourceId": "page:1:object:1",
+        "sourceKind": "ObjectCandidate",
+        "obstacleKind": "HardObstacle",
+        "routingInfluence": "HardObstacle",
+        "structuralInfluence": "FixedEquipment",
+        "category": "HVACEquipment",
+        "objectKind": "Symbol",
+        "label": "AHU_SUPPLY_FAN",
+        "roomId": "page:1:room:1",
+        "roomLabel": "OFFICE",
+        "suppressesChildObjects": false,
+        "childObjectIds": [],
+        "evidence": [
+          "CAD/block symbol primitive",
+          "symbol/layer text matches \u0027hvac\u0027",
+          "assigned to room OFFICE",
+          "nearby text: OFFICE"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:6:INSERT"
+        ],
+        "sourceLayers": [
+          "M-HVAC-EQPM"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "routing-room-use:page:1:object:1",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              223,
+              220
+            ],
+            [
+              233,
+              220
+            ],
+            [
+              233,
+              230
+            ],
+            [
+              223,
+              230
+            ],
+            [
+              223,
+              220
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "routingRoomUseHint",
+        "pageNumber": 1,
+        "confidence": 0.8200000000000001,
+        "openPlanTraceId": "routing-room-use:page:1:object:1",
+        "sourceId": "page:1:object:1",
+        "sourceKind": "ObjectCandidate",
+        "roomUseKind": "HVAC",
+        "roomId": "page:1:room:1",
+        "roomLabel": "OFFICE",
+        "evidence": [
+          "CAD/block symbol primitive",
+          "symbol/layer text matches \u0027hvac\u0027",
+          "assigned to room OFFICE",
+          "nearby text: OFFICE"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:6:INSERT"
+        ],
+        "sourceLayers": [
+          "M-HVAC-EQPM"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "routing-room-use:page:1:room:1",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              48,
+              120
+            ],
+            [
+              448,
+              120
+            ],
+            [
+              448,
+              340
+            ],
+            [
+              48,
+              340
+            ],
+            [
+              48,
+              120
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "routingRoomUseHint",
+        "pageNumber": 1,
+        "confidence": 0.9,
+        "openPlanTraceId": "routing-room-use:page:1:room:1",
+        "sourceId": "page:1:room:1",
+        "sourceKind": "Room",
+        "roomUseKind": "Office",
+        "roomId": "page:1:room:1",
+        "roomLabel": "OFFICE",
+        "evidence": [
+          "closed orthogonal cycle from 4 walls",
+          "wall graph orthogonal face",
+          "4 boundary vertices",
+          "matched room label: OFFICE",
+          "room use kind Office",
+          "label evidence matched room-use term \u0027office\u0027"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:5:TEXT"
+        ],
+        "sourceLayers": [
+          "A-ROOM-NAME"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "routing-ignored:page:1:object:2",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              113,
+              250
+            ],
+            [
+              123,
+              250
+            ],
+            [
+              123,
+              260
+            ],
+            [
+              113,
+              260
+            ],
+            [
+              113,
+              250
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "routingIgnoredObject",
+        "pageNumber": 1,
+        "confidence": 0.56,
+        "openPlanTraceId": "routing-ignored:page:1:object:2",
+        "objectCandidateId": "page:1:object:2",
+        "reason": "UnclassifiedReviewCandidate",
+        "routingInfluence": "Unknown",
+        "structuralInfluence": "NonStructural",
+        "candidateCategory": "GenericSymbol",
+        "candidateKind": "Symbol",
+        "candidateSourceKind": "CadSymbol",
+        "candidateLabel": "ISO_TAG_71",
+        "roomId": "page:1:room:1",
+        "roomLabel": "OFFICE",
+        "evidence": [
+          "object candidate page:1:object:2 is GenericSymbol and needs review or a deterministic label before it can affect routing",
+          "candidate category GenericSymbol",
+          "candidate kind Symbol",
+          "inferred routing influence Unknown",
+          "inferred structural influence NonStructural",
+          "symbol ISO_TAG_71",
+          "CAD/block symbol primitive",
+          "assigned to room OFFICE",
+          "nearby text: OFFICE"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:7:INSERT"
+        ],
+        "sourceLayers": [
+          "X-SYMBOLS"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "routing-ignored:page:1:object:3",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              283,
+              215
+            ],
+            [
+              293,
+              215
+            ],
+            [
+              293,
+              225
+            ],
+            [
+              283,
+              225
+            ],
+            [
+              283,
+              215
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "featureType": "routingIgnoredObject",
+        "pageNumber": 1,
+        "confidence": 0.56,
+        "openPlanTraceId": "routing-ignored:page:1:object:3",
+        "objectCandidateId": "page:1:object:3",
+        "reason": "UnclassifiedReviewCandidate",
+        "routingInfluence": "Unknown",
+        "structuralInfluence": "NonStructural",
+        "candidateCategory": "GenericSymbol",
+        "candidateKind": "Symbol",
+        "candidateSourceKind": "CadSymbol",
+        "candidateLabel": "ISO_TAG_71",
+        "roomId": "page:1:room:1",
+        "roomLabel": "OFFICE",
+        "evidence": [
+          "object candidate page:1:object:3 is GenericSymbol and needs review or a deterministic label before it can affect routing",
+          "candidate category GenericSymbol",
+          "candidate kind Symbol",
+          "inferred routing influence Unknown",
+          "inferred structural influence NonStructural",
+          "symbol ISO_TAG_71",
+          "CAD/block symbol primitive",
+          "assigned to room OFFICE",
+          "nearby text: OFFICE"
+        ],
+        "sourcePrimitiveIds": [
+          "dxf:entity:8:INSERT"
+        ],
+        "sourceLayers": [
+          "X-SYMBOLS"
+        ]
+      }
+    }
+  ]
+}

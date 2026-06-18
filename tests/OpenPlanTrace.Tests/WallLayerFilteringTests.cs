@@ -1312,6 +1312,92 @@ public sealed class WallLayerFilteringTests
     }
 
     [Fact]
+    public async Task WallEvidenceRefinement_MarksShortUnlayeredWeaklySupportedParallelPairForReview()
+    {
+        var firstFace = new PlanLineSegment(new PlanPoint(180, 110), new PlanPoint(212, 110));
+        var secondFace = new PlanLineSegment(new PlanPoint(180, 116), new PlanPoint(212, 116));
+        var document = new PlanDocument(
+            "wall-evidence-short-unlayered-pair-review",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(520, 320),
+                    new PlanPrimitive[]
+                    {
+                        Line("host-wall", "A-WALL", new PlanPoint(80, 100), new PlanPoint(420, 100)),
+                        UnlayeredLine("short-detail-face-a", firstFace.Start, firstFace.End),
+                        UnlayeredLine("short-detail-face-b", secondFace.Start, secondFace.End)
+                    })
+            });
+        var context = new ScanContext(
+            document,
+            new ScannerOptions
+            {
+                EnableWallEvidenceNoiseRejection = true,
+                MinWallLength = 24,
+                DefaultWallThickness = 4
+            })
+        {
+            LayerAnalysis = new PlanLayerAnalysis(new[]
+            {
+                Layer("A-WALL", LayerCategory.Wall, Confidence.High)
+            })
+        };
+        context.WallCandidates.Add(new WallSegment(
+            "wall-host",
+            1,
+            new PlanLineSegment(new PlanPoint(80, 100), new PlanPoint(420, 100)),
+            4,
+            Confidence.High)
+        {
+            SourcePrimitiveIds = new[] { "host-wall" },
+            Evidence = new[] { "test structural wall" }
+        });
+        context.WallCandidates.Add(new WallSegment(
+            "wall-short-unlayered-pair",
+            1,
+            new PlanLineSegment(new PlanPoint(180, 113), new PlanPoint(212, 113)),
+            6,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            SourcePrimitiveIds = new[] { "short-detail-face-a", "short-detail-face-b" },
+            PairEvidence = new WallPairEvidence(
+                firstFace,
+                secondFace,
+                FaceSeparation: 6,
+                OverlapRatio: 1,
+                Score: 0.91,
+                FirstFaceFragmentCount: 1,
+                SecondFaceFragmentCount: 1,
+                FirstFaceSourcePrimitiveIds: new[] { "short-detail-face-a" },
+                SecondFaceSourcePrimitiveIds: new[] { "short-detail-face-b" }),
+            Evidence = new[] { "test high-scoring short unlayered pair candidate" }
+        });
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+        await new WallTopologyPreparationStage().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Contains(context.Walls, wall => wall.SourcePrimitiveIds.Contains("host-wall"));
+        Assert.Contains(context.Walls, wall => wall.SourcePrimitiveIds.Contains("short-detail-face-a"));
+
+        var assessment = Assert.Single(
+            context.WallEvidenceMap.WallAssessments,
+            item => item.SourcePrimitiveIds.Contains("short-detail-face-a"));
+        Assert.Equal(WallEvidenceCategory.MediumWallBody, assessment.Category);
+        Assert.Equal(WallEvidenceDecision.Review, assessment.Decision);
+        Assert.False(assessment.PlacementReady);
+        Assert.True(assessment.RequiresReview);
+        Assert.False(assessment.RejectedAsNoise);
+        Assert.Contains(
+            assessment.Evidence,
+            item => item.Contains("short unlayered parallel-face candidate", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("wall-short-unlayered-pair", context.WallTopologyPreparation.ReviewGraphWallIds);
+        Assert.DoesNotContain("wall-short-unlayered-pair", context.WallTopologyPreparation.AutomaticCoordinateRepairWallIds);
+    }
+
+    [Fact]
     public async Task WallEvidenceRefinement_RejectsDimensionGridParallelPairBeforeStrongWallAcceptance()
     {
         var firstFace = new PlanLineSegment(new PlanPoint(140, 185), new PlanPoint(340, 185));

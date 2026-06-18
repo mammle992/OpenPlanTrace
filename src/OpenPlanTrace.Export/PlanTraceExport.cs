@@ -35,7 +35,7 @@ public sealed record PlanTraceExport(
     QualityExport Quality,
     DiagnosticsExport Diagnostics)
 {
-    public const string CurrentSchemaVersion = "openplantrace.scan.v65";
+    public const string CurrentSchemaVersion = "openplantrace.scan.v67";
 
     public static PlanTraceExport From(PlanScanResult result) =>
         Create(result);
@@ -78,7 +78,13 @@ public sealed record PlanTraceExport(
                 wallTopologySpansByWallId.TryGetValue(wall.Id, out var spans) ? spans : Array.Empty<WallGraphTopologySpan>())).ToArray(),
             WallEvidenceExport.From(result.WallEvidenceMap, sourceLookup),
             WallTopologyPreparationExport.From(result.WallTopologyPreparation, sourceLookup),
-            WallGraphExport.From(result.WallGraph, wallTopologySpans, sourceLookup),
+            WallGraphExport.From(
+                result.WallGraph,
+                wallTopologySpans,
+                result.Calibration,
+                sourceLookup,
+                wallComponentLookup,
+                wallEvidenceAssessments),
             result.Rooms.Select(RoomExport.From).ToArray(),
             RoomAdjacencyGraphExport.From(result.RoomAdjacencyGraph),
             result.Openings.Select(opening => OpeningExport.From(opening, sourceLookup)).ToArray(),
@@ -1587,13 +1593,19 @@ public sealed record WallGraphExport(
     public static WallGraphExport From(
         WallGraph graph,
         IReadOnlyList<WallGraphTopologySpan> topologySpans,
-        IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup) =>
+        PlanCalibration calibration,
+        IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup,
+        IReadOnlyDictionary<string, WallGraphComponent> wallComponentLookup,
+        IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceAssessments) =>
         new(
             graph.Nodes.Select(WallNodeExport.From).ToArray(),
             graph.Edges.Select(edge => WallEdgeExport.From(
                 edge,
                 topologySpans.FirstOrDefault(span => string.Equals(span.Id, edge.Id, StringComparison.Ordinal)),
-                sourceLookup)).ToArray(),
+                calibration,
+                sourceLookup,
+                wallComponentLookup,
+                wallEvidenceAssessments)).ToArray(),
             graph.Components.Select(component => WallGraphComponentExport.From(component, sourceLookup)).ToArray(),
             graph.RepairCandidates.Select(candidate => WallGraphRepairCandidateExport.From(candidate, sourceLookup)).ToArray());
 }
@@ -1666,9 +1678,19 @@ public sealed record WallEdgeExport(
     string FromNodeId,
     string ToNodeId,
     string WallId,
+    string? WallComponentId,
+    string? WallComponentKind,
+    bool ExcludedFromStructuralTopology,
     LineExport? Line,
+    LineExport? LineMillimeters,
     RectExport? Bounds,
+    RectExport? BoundsMillimeters,
     double DrawingLength,
+    double? LengthMeters,
+    double ThicknessDrawingUnits,
+    double? ThicknessMillimeters,
+    string? MeasurementScaleGroupId,
+    double? MillimetersPerDrawingUnit,
     double Confidence,
     IReadOnlyList<string> SourcePrimitiveIds,
     IReadOnlyList<string> SourceLayers,
@@ -1677,22 +1699,58 @@ public sealed record WallEdgeExport(
     public static WallEdgeExport From(
         WallEdge edge,
         WallGraphTopologySpan? topologySpan,
-        IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup) =>
+        PlanCalibration calibration,
+        IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup,
+        IReadOnlyDictionary<string, WallGraphComponent> wallComponentLookup,
+        IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceAssessments)
+    {
+        wallComponentLookup.TryGetValue(edge.WallId, out var component);
+        wallEvidenceAssessments.TryGetValue(edge.WallId, out var evidenceAssessment);
+        var scale = PlacementMetricTransform.ResolveMillimetersPerDrawingUnit(
+            calibration,
+            topologySpan?.SourceWall?.MeasurementScaleGroupId);
+        var drawingLength = topologySpan?.DrawingLength ?? 0;
+        var thickness = topologySpan?.Thickness ?? 0;
+        return
         new(
             edge.Id,
             edge.PageNumber,
             edge.FromNodeId,
             edge.ToNodeId,
             edge.WallId,
+            component?.Id,
+            component?.Kind.ToString(),
+            WallStructuralTrust.IsExcludedFromStructuralTopology(component, evidenceAssessment),
             topologySpan is null ? null : LineExport.From(topologySpan.CenterLine),
+            topologySpan is null ? null : PlacementMetricTransform.ScaleLine(topologySpan.CenterLine, scale),
             topologySpan is null ? null : RectExport.From(topologySpan.Bounds),
-            topologySpan?.DrawingLength ?? 0,
+            topologySpan is null ? null : PlacementMetricTransform.ScaleRect(topologySpan.Bounds, scale),
+            drawingLength,
+            scale is > 0 && drawingLength > 0 ? drawingLength * scale.Value / 1000.0 : null,
+            thickness,
+            scale is > 0 && thickness > 0 ? thickness * scale.Value : null,
+            topologySpan?.SourceWall?.MeasurementScaleGroupId,
+            scale,
             edge.Confidence.Value,
             topologySpan?.SourcePrimitiveIds ?? Array.Empty<string>(),
             topologySpan is null
                 ? Array.Empty<string>()
                 : ExportSourceHelpers.SourceLayers(topologySpan.SourcePrimitiveIds, sourceLookup),
-            topologySpan?.Evidence ?? Array.Empty<string>());
+            EdgeEvidence(topologySpan, evidenceAssessment));
+    }
+
+    private static IReadOnlyList<string> EdgeEvidence(
+        WallGraphTopologySpan? topologySpan,
+        WallEvidenceWallAssessment? evidenceAssessment)
+    {
+        var evidence = new List<string>(topologySpan?.Evidence ?? Array.Empty<string>());
+        if (WallStructuralTrust.IsRejectedNonStructural(evidenceAssessment))
+        {
+            evidence.Add($"wall graph edge excluded because wall evidence rejected as non-wall/noise ({evidenceAssessment!.Category})");
+        }
+
+        return evidence.Distinct(StringComparer.Ordinal).ToArray();
+    }
 }
 
 public sealed record WallGraphRepairCandidateExport(
@@ -1885,44 +1943,73 @@ public sealed record OpeningPlacementExport(
         static double? ScaleNullable(double value, double? scale) =>
             scale is > 0 ? value * scale.Value : null;
 
+        var reversed = placement.StartOffsetDrawingUnits > placement.EndOffsetDrawingUnits;
+        var startPoint = reversed ? placement.EndPoint : placement.StartPoint;
+        var endPoint = reversed ? placement.StartPoint : placement.EndPoint;
+        var startJambLine = reversed ? placement.EndJambLine : placement.StartJambLine;
+        var endJambLine = reversed ? placement.StartJambLine : placement.EndJambLine;
+        var footprintCorners = reversed && placement.FootprintCorners.Count == 4
+            ? new[]
+            {
+                placement.FootprintCorners[1],
+                placement.FootprintCorners[0],
+                placement.FootprintCorners[3],
+                placement.FootprintCorners[2]
+            }
+            : placement.FootprintCorners;
+        var startOffset = Math.Min(placement.StartOffsetDrawingUnits, placement.EndOffsetDrawingUnits);
+        var endOffset = Math.Max(placement.StartOffsetDrawingUnits, placement.EndOffsetDrawingUnits);
+        var startParameter = Math.Min(placement.HostWallStartParameter, placement.HostWallEndParameter);
+        var endParameter = Math.Max(placement.HostWallStartParameter, placement.HostWallEndParameter);
+        var length = Math.Abs(endOffset - startOffset);
+        var startOffsetMillimeters = reversed
+            ? placement.EndOffsetMillimeters
+            : placement.StartOffsetMillimeters;
+        var endOffsetMillimeters = reversed
+            ? placement.StartOffsetMillimeters
+            : placement.EndOffsetMillimeters;
+        var evidence = reversed
+            ? placement.Evidence.Append("export normalized reversed opening placement offset order").ToArray()
+            : placement.Evidence;
+
         return new OpeningPlacementExport(
             placement.HostWallId,
             placement.AnchorWallIds,
             LineExport.From(placement.ReferenceLine),
             ScaleLine(placement.ReferenceLine, millimetersPerDrawingUnit),
-            PointExport.From(placement.StartPoint),
-            ScalePoint(placement.StartPoint, millimetersPerDrawingUnit),
-            PointExport.From(placement.EndPoint),
-            ScalePoint(placement.EndPoint, millimetersPerDrawingUnit),
-            placement.StartOffsetDrawingUnits,
-            placement.EndOffsetDrawingUnits,
+            PointExport.From(startPoint),
+            ScalePoint(startPoint, millimetersPerDrawingUnit),
+            PointExport.From(endPoint),
+            ScalePoint(endPoint, millimetersPerDrawingUnit),
+            startOffset,
+            endOffset,
             placement.CenterOffsetDrawingUnits,
-            placement.LengthDrawingUnits,
+            length,
             RectExport.From(placement.FootprintBounds),
             ScaleRect(placement.FootprintBounds, millimetersPerDrawingUnit),
-            placement.FootprintCorners.Select(PointExport.From).ToArray(),
+            footprintCorners.Select(PointExport.From).ToArray(),
             millimetersPerDrawingUnit is > 0
-                ? placement.FootprintCorners.Select(point => ScalePoint(point, millimetersPerDrawingUnit)!).ToArray()
+                ? footprintCorners.Select(point => ScalePoint(point, millimetersPerDrawingUnit)!).ToArray()
                 : null,
-            LineExport.From(placement.StartJambLine),
-            ScaleLine(placement.StartJambLine, millimetersPerDrawingUnit),
-            LineExport.From(placement.EndJambLine),
-            ScaleLine(placement.EndJambLine, millimetersPerDrawingUnit),
+            LineExport.From(startJambLine),
+            ScaleLine(startJambLine, millimetersPerDrawingUnit),
+            LineExport.From(endJambLine),
+            ScaleLine(endJambLine, millimetersPerDrawingUnit),
             placement.DepthDrawingUnits,
             placement.DepthMillimeters ?? ScaleNullable(placement.DepthDrawingUnits, millimetersPerDrawingUnit),
-            placement.StartOffsetMillimeters ?? ScaleNullable(placement.StartOffsetDrawingUnits, millimetersPerDrawingUnit),
-            placement.EndOffsetMillimeters ?? ScaleNullable(placement.EndOffsetDrawingUnits, millimetersPerDrawingUnit),
+            startOffsetMillimeters ?? ScaleNullable(startOffset, millimetersPerDrawingUnit),
+            endOffsetMillimeters ?? ScaleNullable(endOffset, millimetersPerDrawingUnit),
             placement.CenterOffsetMillimeters ?? ScaleNullable(placement.CenterOffsetDrawingUnits, millimetersPerDrawingUnit),
-            placement.LengthMillimeters ?? ScaleNullable(placement.LengthDrawingUnits, millimetersPerDrawingUnit),
-            placement.HostWallStartParameter,
-            placement.HostWallEndParameter,
+            placement.LengthMillimeters ?? ScaleNullable(length, millimetersPerDrawingUnit),
+            startParameter,
+            endParameter,
             placement.HostWallCenterParameter,
             VectorExport.From(placement.AlongVector),
             VectorExport.From(placement.NormalVector),
             placement.CrossWallOffsetDrawingUnits,
             ScaleNullable(placement.CrossWallOffsetDrawingUnits, millimetersPerDrawingUnit),
             placement.Confidence.Value,
-            placement.Evidence);
+            evidence);
     }
 
     private static PointExport? ScalePoint(PlanPoint point, double? millimetersPerDrawingUnit) =>

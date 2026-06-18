@@ -12,7 +12,10 @@ public static class PlanRoutingLayerBuilder
         ArgumentNullException.ThrowIfNull(result);
 
         var wallComponentLookup = BuildWallComponentLookup(result.WallGraph.Components);
-        var protectedRoutingWallIds = BuildProtectedRoutingWallIds(result);
+        var rejectedEvidenceWallIds = BuildRejectedWallEvidenceIds(result);
+        var reviewRequiredEvidenceWallIds = BuildReviewRequiredWallEvidenceIds(result);
+        var routingProtectionBlockedWallIds = BuildRoutingProtectionBlockedWallEvidenceIds(result);
+        var protectedRoutingWallIds = BuildProtectedRoutingWallIds(result, routingProtectionBlockedWallIds);
         var structuralComponentPages = BuildStructuralComponentPages(result.WallGraph.Components);
         var roomSolvedPages = BuildRoomSolvedPages(result.Rooms);
         var denseMinorRoutingDetailPatterns = DetectDenseMinorRoutingDetailPatterns(result);
@@ -23,8 +26,6 @@ public static class PlanRoutingLayerBuilder
             .Where(wall => wall.FragmentEvidence?.RequiresGeometryReview == true)
             .Select(wall => wall.Id)
             .ToHashSet(StringComparer.Ordinal);
-        var rejectedEvidenceWallIds = BuildRejectedWallEvidenceIds(result);
-        var reviewRequiredEvidenceWallIds = BuildReviewRequiredWallEvidenceIds(result);
         var allBarriers = BuildRoutingBarriers(result, wallComponentLookup);
         var suppressedFragmentReviewBarrierCount = allBarriers.Count(barrier =>
             fragmentReviewWallIds.Contains(barrier.SourceId));
@@ -127,6 +128,7 @@ public static class PlanRoutingLayerBuilder
             $"fragment-review wall barriers suppressed: {suppressedFragmentReviewBarrierCount}",
             $"wall-evidence rejected barriers suppressed: {suppressedRejectedEvidenceBarrierCount}",
             $"wall-evidence review barriers suppressed: {suppressedReviewEvidenceBarrierCount}",
+            $"non-trusted wall evidence blocked from routing protection: {routingProtectionBlockedWallIds.Count}",
             $"routing passages from opening evidence: {passages.Length}",
             $"routing obstacles after aggregate suppression: {obstacles.Count}",
             $"suppressed child object candidates: {suppressedObjectIds.Length}",
@@ -165,6 +167,20 @@ public static class PlanRoutingLayerBuilder
             .Select(assessment => assessment.WallId)
             .Where(id => !string.IsNullOrWhiteSpace(id))
             .ToHashSet(StringComparer.Ordinal);
+
+    private static IReadOnlySet<string> BuildRoutingProtectionBlockedWallEvidenceIds(PlanScanResult result) =>
+        result.WallEvidenceMap.WallAssessments
+            .Where(assessment => !IsWallEvidenceTrustedForRoutingProtection(assessment))
+            .Select(assessment => assessment.WallId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.Ordinal);
+
+    private static bool IsWallEvidenceTrustedForRoutingProtection(WallEvidenceWallAssessment assessment) =>
+        !assessment.RejectedAsNoise
+        && assessment.Decision != WallEvidenceDecision.Reject
+        && assessment.Decision != WallEvidenceDecision.Review
+        && !assessment.RequiresReview
+        && assessment.PlacementReady;
 
     private static RoutingBarrier CreateBarrier(
         WallSegment wall,
@@ -983,14 +999,16 @@ public static class PlanRoutingLayerBuilder
             evidence);
     }
 
-    private static IReadOnlySet<string> BuildProtectedRoutingWallIds(PlanScanResult result)
+    private static IReadOnlySet<string> BuildProtectedRoutingWallIds(
+        PlanScanResult result,
+        IReadOnlySet<string> routingProtectionBlockedWallIds)
     {
         var wallIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var room in result.Rooms)
         {
             foreach (var wallId in room.WallIds)
             {
-                AddIfPresent(wallIds, wallId);
+                AddIfRoutingProtectionAllowed(wallIds, wallId, routingProtectionBlockedWallIds);
             }
         }
 
@@ -998,7 +1016,7 @@ public static class PlanRoutingLayerBuilder
         {
             foreach (var wallId in opening.HostWallIds)
             {
-                AddIfPresent(wallIds, wallId);
+                AddIfRoutingProtectionAllowed(wallIds, wallId, routingProtectionBlockedWallIds);
             }
 
             if (opening.Placement is null)
@@ -1006,10 +1024,10 @@ public static class PlanRoutingLayerBuilder
                 continue;
             }
 
-            AddIfPresent(wallIds, opening.Placement.HostWallId);
+            AddIfRoutingProtectionAllowed(wallIds, opening.Placement.HostWallId, routingProtectionBlockedWallIds);
             foreach (var wallId in opening.Placement.AnchorWallIds)
             {
-                AddIfPresent(wallIds, wallId);
+                AddIfRoutingProtectionAllowed(wallIds, wallId, routingProtectionBlockedWallIds);
             }
         }
 
@@ -1063,9 +1081,12 @@ public static class PlanRoutingLayerBuilder
             ? barrier.LengthMeters <= ShortUnreferencedRoutingBarrierLengthMeters
             : barrier.DrawingLength <= ShortUnreferencedRoutingBarrierDrawingLength;
 
-    private static void AddIfPresent(HashSet<string> ids, string? id)
+    private static void AddIfRoutingProtectionAllowed(
+        HashSet<string> ids,
+        string? id,
+        IReadOnlySet<string> routingProtectionBlockedWallIds)
     {
-        if (!string.IsNullOrWhiteSpace(id))
+        if (!string.IsNullOrWhiteSpace(id) && !routingProtectionBlockedWallIds.Contains(id))
         {
             ids.Add(id);
         }

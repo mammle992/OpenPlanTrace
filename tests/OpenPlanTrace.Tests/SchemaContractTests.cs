@@ -38,7 +38,7 @@ public sealed class SchemaContractTests
         using var document = JsonDocument.Parse(schema);
 
         Assert.Equal("https://json-schema.org/draft/2020-12/schema", document.RootElement.GetProperty("$schema").GetString());
-        Assert.Equal("urn:openplantrace:schema:scan:v65", document.RootElement.GetProperty("$id").GetString());
+        Assert.Equal("urn:openplantrace:schema:scan:v67", document.RootElement.GetProperty("$id").GetString());
         Assert.Equal(
             PlanTraceExport.CurrentSchemaVersion,
             document.RootElement.GetProperty("x-openplantrace-schemaVersion").GetString());
@@ -53,6 +53,31 @@ public sealed class SchemaContractTests
 
         await using var stream = new MemoryStream();
         await PlanTraceJsonSchema.WriteCurrentAsync(stream);
+        Assert.Equal(schema, Encoding.UTF8.GetString(stream.ToArray()));
+    }
+
+    [Fact]
+    public async Task EmbeddedCompactScanSchema_MatchesDocumentedSchemaArtifact()
+    {
+        var schema = PlanTraceCompactJsonSchema.ReadCurrent();
+        using var document = JsonDocument.Parse(schema);
+
+        Assert.Equal("https://json-schema.org/draft/2020-12/schema", document.RootElement.GetProperty("$schema").GetString());
+        Assert.Equal("urn:openplantrace:schema:scan-compact:v1", document.RootElement.GetProperty("$id").GetString());
+        Assert.Equal(
+            PlanTraceCompactJsonExporter.CurrentSchemaVersion,
+            document.RootElement.GetProperty("x-openplantrace-schemaVersion").GetString());
+
+        var schemaPath = Path.Combine(
+            FindRepositoryRoot(),
+            "docs",
+            "schemas",
+            $"{PlanTraceCompactJsonExporter.CurrentSchemaVersion}.schema.json");
+        Assert.True(File.Exists(schemaPath), $"Missing documented schema artifact: {schemaPath}");
+        Assert.Equal(Normalize(File.ReadAllText(schemaPath)), Normalize(schema));
+
+        await using var stream = new MemoryStream();
+        await PlanTraceCompactJsonSchema.WriteCurrentAsync(stream);
         Assert.Equal(schema, Encoding.UTF8.GetString(stream.ToArray()));
     }
 
@@ -601,6 +626,7 @@ public sealed class SchemaContractTests
         AssertDefinitionRequires(schemaDocument, "surfacePattern", "id", "pageNumber", "kind", "orientation", "bounds", "sourceRegionId", "lineCount", "horizontalLineCount", "verticalLineCount", "intersectionCount", "horizontalMedianSpacing", "verticalMedianSpacing", "medianSpacing", "excludedFromWallDetection", "excludedFromStructuralTopology", "confidence", "requiresReview", "sourcePrimitiveIds", "sourceLayers", "evidence");
         AssertDefinitionRequires(schemaDocument, "wallPairEvidence", "firstFaceLine", "secondFaceLine", "faceSeparation", "overlapRatio", "score", "firstFaceFragmentCount", "secondFaceFragmentCount", "firstFaceSourcePrimitiveIds", "secondFaceSourcePrimitiveIds");
         AssertDefinitionRequires(schemaDocument, "wallFragmentEvidence", "fragmentCount", "totalHealedGap", "maxHealedGap", "duplicatePrimitiveCount", "gapRatio", "requiresGeometryReview", "evidence");
+        AssertDefinitionRequires(schemaDocument, "wallEdge", "id", "pageNumber", "fromNodeId", "toNodeId", "wallId", "wallComponentId", "wallComponentKind", "excludedFromStructuralTopology", "line", "lineMillimeters", "bounds", "boundsMillimeters", "drawingLength", "lengthMeters", "thicknessDrawingUnits", "thicknessMillimeters", "measurementScaleGroupId", "millimetersPerDrawingUnit", "confidence", "sourcePrimitiveIds", "sourceLayers", "evidence");
         AssertDefinitionRequires(schemaDocument, "wallGraphComponent", "id", "pageNumber", "kind", "bounds", "wallIds", "nodeIds", "edgeIds", "sourcePrimitiveIds", "sourceLayers", "wallCount", "nodeCount", "edgeCount", "drawingLength", "confidence", "excludedFromStructuralTopology", "evidence");
         AssertDefinitionRequires(schemaDocument, "wallGraphRepairCandidate", "id", "pageNumber", "kind", "suggestedAction", "severity", "importImpact", "applicability", "sourceNodeId", "sourcePoint", "targetPoint", "targetNodeId", "hostWallId", "gapDistance", "safeSnapDistance", "reviewDistanceLimit", "excessDistanceBeyondSafeSnap", "repairLine", "bounds", "wallIds", "sourcePrimitiveIds", "sourceLayers", "confidence", "requiresReview", "evidence");
         AssertDefinitionRequires(schemaDocument, "opening", "id", "type", "operation", "centerLine", "hostWallIds", "connectedRoomIds", "connectedRoomLabels", "connectedRoomLinks", "roomAdjacencyIds", "drawingWidth", "widthMillimeters", "measurementScaleGroupId", "placement", "confidence", "sourcePrimitiveIds", "sourceLayers", "evidence");

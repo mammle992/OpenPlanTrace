@@ -3,12 +3,12 @@ using System.Text;
 
 namespace OpenPlanTrace.Export;
 
-public static class PlanTraceJsonSchema
+public static class PlanTraceCompactJsonSchema
 {
-    public const string CurrentSchemaVersion = PlanTraceExport.CurrentSchemaVersion;
+    public const string CurrentSchemaVersion = PlanTraceCompactJsonExporter.CurrentSchemaVersion;
 
     public const string CurrentResourceName =
-        "OpenPlanTrace.Export.Schemas.openplantrace.scan.v67.schema.json";
+        "OpenPlanTrace.Export.Schemas.openplantrace.scan.compact.v1.schema.json";
 
     public static string ReadCurrent()
     {
@@ -29,9 +29,9 @@ public static class PlanTraceJsonSchema
 
     private static Stream OpenCurrentResource()
     {
-        var assembly = typeof(PlanTraceJsonSchema).GetTypeInfo().Assembly;
+        var assembly = typeof(PlanTraceCompactJsonSchema).GetTypeInfo().Assembly;
         return assembly.GetManifestResourceStream(CurrentResourceName)
             ?? throw new InvalidOperationException(
-                $"Embedded OpenPlanTrace scan schema resource '{CurrentResourceName}' was not found.");
+                $"Embedded OpenPlanTrace compact scan schema resource '{CurrentResourceName}' was not found.");
     }
 }

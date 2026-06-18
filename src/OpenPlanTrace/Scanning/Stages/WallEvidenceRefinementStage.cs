@@ -152,6 +152,37 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
             requiresReview = true;
             evidence.Add(pairedDimensionEvidence);
         }
+        else if (TryClassifyOutdoorAreaBoundaryNoise(wall, context, out var outdoorBoundaryEvidence))
+        {
+            category = WallEvidenceCategory.SurfacePatternDetail;
+            confidence = new Confidence(Math.Min(0.95, Math.Max(wall.Confidence.Value, 0.76)));
+            rejected = true;
+            requiresReview = true;
+            evidence.Add(outdoorBoundaryEvidence);
+        }
+        else if (TryClassifyOutdoorAreaBoundaryReview(wall, context, out var outdoorBoundaryReviewEvidence))
+        {
+            category = WallEvidenceCategory.SurfacePatternDetail;
+            confidence = new Confidence(Math.Min(0.88, Math.Max(wall.Confidence.Value, 0.68)));
+            placementReady = false;
+            requiresReview = true;
+            evidence.Add(outdoorBoundaryReviewEvidence);
+        }
+        else if (TryClassifyContinuitySupportedPairedWall(wall, context, out var continuityEvidence))
+        {
+            category = WallEvidenceCategory.StrongWallBody;
+            confidence = new Confidence(Math.Max(wall.Confidence.Value, 0.74));
+            placementReady = true;
+            evidence.Add(continuityEvidence);
+        }
+        else if (TryClassifyShortWeaklySupportedPairedWallReview(wall, context, out var shortPairEvidence))
+        {
+            category = WallEvidenceCategory.MediumWallBody;
+            confidence = new Confidence(Math.Max(wall.Confidence.Value, 0.62));
+            placementReady = false;
+            requiresReview = true;
+            evidence.Add(shortPairEvidence);
+        }
         else if (IsStrongPairedWall(wall))
         {
             category = WallEvidenceCategory.StrongWallBody;
@@ -204,10 +235,30 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
             category = WallEvidenceCategory.WeakSingleLine;
             confidence = new Confidence(Math.Min(wall.Confidence.Value, 0.58));
             requiresReview = true;
-            if (IsShortUnlayeredSingleLineCandidate(wall, context)
-                && CountStructuralEndpointSupport(wall.CenterLine, wall.PageNumber, context.WallCandidates, context.Options) == 1)
+            if (IsShortUnlayeredSingleLineCandidate(wall, context))
             {
-                evidence.Add("wall evidence: short unlayered single-line candidate has only one structural endpoint support; keep for topology but review before exact placement");
+                var structuralEndpointSupportCount = CountStructuralEndpointSupport(
+                    wall.CenterLine,
+                    wall.PageNumber,
+                    context.WallCandidates,
+                    context.Options);
+                var distinctStructuralSupportWallCount = CountDistinctStructuralSupportWalls(
+                    wall.CenterLine,
+                    wall.PageNumber,
+                    context.WallCandidates,
+                    context.Options);
+                if (structuralEndpointSupportCount == 1)
+                {
+                    evidence.Add("wall evidence: short unlayered single-line candidate has only one structural endpoint support; keep for topology but review before exact placement");
+                }
+                else if (structuralEndpointSupportCount >= 2 && distinctStructuralSupportWallCount < 2)
+                {
+                    evidence.Add("wall evidence: short unlayered single-line candidate endpoints are only supported by one distinct structural wall; keep for topology but review before exact placement");
+                }
+                else
+                {
+                    evidence.Add("wall evidence: weak short unlayered single-line wall candidate; keep for topology but review before exact placement");
+                }
             }
             else
             {
@@ -385,6 +436,130 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
         wall.DetectionKind == WallDetectionKind.ParallelLinePair
         && wall.PairEvidence is { Score: >= 0.62, OverlapRatio: >= 0.55 };
 
+    private static bool TryClassifyContinuitySupportedPairedWall(
+        WallSegment wall,
+        ScanContext context,
+        out string evidence)
+    {
+        evidence = string.Empty;
+        if (!IsStrongPairedWall(wall)
+            || wall.PairEvidence is null
+            || wall.FragmentEvidence?.RequiresGeometryReview == true
+            || wall.DrawingLength > ShortWeaklySupportedPairedWallReviewLength(context.Options))
+        {
+            return false;
+        }
+
+        if (wall.WallType == WallType.Unknown && !IsWallLayerBacked(wall, context))
+        {
+            return false;
+        }
+
+        var structuralSupportWallCount = CountDistinctStructuralSupportWalls(
+            wall.CenterLine,
+            wall.PageNumber,
+            context.WallCandidates,
+            context.Options);
+        if (structuralSupportWallCount <= 0)
+        {
+            return false;
+        }
+
+        var continuitySupportCount = CountCollinearContinuitySupportWalls(wall, context);
+        if (continuitySupportCount <= 0)
+        {
+            return false;
+        }
+
+        evidence = $"wall evidence: continuity-supported short paired wall body; {continuitySupportCount.ToString(CultureInfo.InvariantCulture)} collinear structural continuation wall(s)";
+        return true;
+    }
+
+    private static bool TryClassifyShortWeaklySupportedPairedWallReview(
+        WallSegment wall,
+        ScanContext context,
+        out string evidence)
+    {
+        evidence = string.Empty;
+        if (!IsStrongPairedWall(wall)
+            || wall.PairEvidence is null
+            || IsWallLayerBacked(wall, context))
+        {
+            return false;
+        }
+
+        var reviewLength = ShortWeaklySupportedPairedWallReviewLength(context.Options);
+        if (wall.DrawingLength > reviewLength)
+        {
+            return false;
+        }
+
+        var structuralSupportWallCount = CountDistinctStructuralSupportWalls(
+            wall.CenterLine,
+            wall.PageNumber,
+            context.WallCandidates,
+            context.Options);
+        if (structuralSupportWallCount >= 2)
+        {
+            return false;
+        }
+
+        evidence = structuralSupportWallCount == 0
+            ? "wall evidence: short unlayered parallel-face candidate has no distinct structural support; keep for topology but block exact placement until reviewed"
+            : "wall evidence: short unlayered parallel-face candidate is supported by only one distinct structural wall; keep for topology but block exact placement until reviewed";
+        return true;
+    }
+
+    private static double ShortWeaklySupportedPairedWallReviewLength(ScannerOptions options) =>
+        Math.Max(options.MinWallLength * 1.35, options.DefaultWallThickness * 10.0);
+
+    private static int CountCollinearContinuitySupportWalls(
+        WallSegment wall,
+        ScanContext context)
+    {
+        var options = context.Options;
+        var collinearTolerance = Math.Max(options.WallSnapTolerance * 2.0, options.DefaultWallThickness * 1.5);
+        var maxGap = Math.Max(options.MaxOpeningGap * 1.15, options.MinWallLength * 0.65);
+        var minimumSupportLength = Math.Max(options.MinWallLength * 0.75, wall.DrawingLength * 0.9);
+        var supportIds = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var other in context.WallCandidates)
+        {
+            if (string.Equals(other.Id, wall.Id, StringComparison.Ordinal)
+                || other.PageNumber != wall.PageNumber
+                || other.PairEvidence is null
+                || other.DrawingLength < minimumSupportLength
+                || !IsStrongPairedWall(other)
+                || !AreNearParallel(wall.CenterLine, other.CenterLine)
+                || !AreNearCollinear(wall.CenterLine, other.CenterLine, collinearTolerance)
+                || SameLine(wall.CenterLine, other.CenterLine, options.WallSnapTolerance))
+            {
+                continue;
+            }
+
+            if (wall.WallType != WallType.Unknown
+                && other.WallType != WallType.Unknown
+                && other.WallType != wall.WallType)
+            {
+                continue;
+            }
+
+            var overlapRatio = AxisAlignedOverlapRatio(wall.CenterLine, other.CenterLine);
+            if (overlapRatio >= 0.75 && other.DrawingLength <= wall.DrawingLength * 1.25)
+            {
+                continue;
+            }
+
+            var gap = CollinearGap(wall.CenterLine, other.CenterLine);
+            if (gap <= maxGap)
+            {
+                supportIds.Add(other.Id);
+            }
+        }
+
+        return supportIds.Count;
+    }
+
     private static bool IsMediumWallBody(WallSegment wall, ScanContext context)
     {
         if (IsWallLayerBacked(wall, context))
@@ -409,8 +584,17 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
             return false;
         }
 
-        return !IsShortUnlayeredSingleLineCandidate(wall, context)
-            || endpointSupportCount >= 2;
+        if (!IsShortUnlayeredSingleLineCandidate(wall, context))
+        {
+            return true;
+        }
+
+        return endpointSupportCount >= 2
+            && CountDistinctStructuralSupportWalls(
+                wall.CenterLine,
+                wall.PageNumber,
+                context.WallCandidates,
+                context.Options) >= 2;
     }
 
     private static bool IsShortUnlayeredSingleLineCandidate(WallSegment wall, ScanContext context) =>
@@ -580,6 +764,216 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
             context.WallCandidates,
             context.Options) >= 2;
 
+    private static bool TryClassifyOutdoorAreaBoundaryNoise(
+        WallSegment wall,
+        ScanContext context,
+        out string evidence)
+    {
+        evidence = string.Empty;
+        if (wall.WallType != WallType.Exterior
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.PairEvidence is null
+            || IsWallLayerBacked(wall, context)
+            || !HasLocalBoundaryEvidence(wall))
+        {
+            return false;
+        }
+
+        var pair = wall.PairEvidence;
+        var maxDetailSeparation = MaxOutdoorBoundaryDetailSeparation(context.Options);
+        if (pair.FaceSeparation > maxDetailSeparation)
+        {
+            return false;
+        }
+
+        var totalFaceFragments = pair.FirstFaceFragmentCount + pair.SecondFaceFragmentCount;
+        var detailLikeFragmentation = totalFaceFragments >= 6 || wall.SourcePrimitiveIds.Count >= 8;
+        if (!detailLikeFragmentation)
+        {
+            return false;
+        }
+
+        var page = context.Document.Pages.FirstOrDefault(page => page.Number == wall.PageNumber);
+        if (page is null)
+        {
+            return false;
+        }
+
+        foreach (var text in page.Text)
+        {
+            var keyword = OutdoorAreaKeyword(text.Text);
+            if (keyword is null)
+            {
+                continue;
+            }
+
+            if (!OutdoorLabelMatchesWallSpan(text.Bounds, wall, context.Options))
+            {
+                continue;
+            }
+
+            evidence = $"wall evidence: rejected as outdoor covered-area boundary near '{keyword}' label; local outer-boundary evidence is not enough for structural exterior wall placement";
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryClassifyOutdoorAreaBoundaryReview(
+        WallSegment wall,
+        ScanContext context,
+        out string evidence)
+    {
+        evidence = string.Empty;
+        if (wall.WallType != WallType.Exterior
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.PairEvidence is null
+            || IsWallLayerBacked(wall, context)
+            || !HasLocalBoundaryEvidence(wall))
+        {
+            return false;
+        }
+
+        var pair = wall.PairEvidence;
+        var maxDetailSeparation = MaxOutdoorBoundaryDetailSeparation(context.Options);
+        if (pair.FaceSeparation > maxDetailSeparation)
+        {
+            return false;
+        }
+
+        var structuralSupportWallCount = CountDistinctStructuralSupportWalls(
+            wall.CenterLine,
+            wall.PageNumber,
+            context.WallCandidates,
+            context.Options);
+        if (structuralSupportWallCount >= 2)
+        {
+            return false;
+        }
+
+        var page = context.Document.Pages.FirstOrDefault(page => page.Number == wall.PageNumber);
+        if (page is null)
+        {
+            return false;
+        }
+
+        foreach (var text in page.Text)
+        {
+            var keyword = OutdoorAreaKeyword(text.Text);
+            if (keyword is null || !OutdoorLabelMatchesWallSpan(text.Bounds, wall, context.Options))
+            {
+                continue;
+            }
+
+            evidence = structuralSupportWallCount == 0
+                ? $"wall evidence: outdoor covered-area boundary near '{keyword}' is review-only; thin unlayered local-boundary pair has no distinct structural support for placement"
+                : $"wall evidence: outdoor covered-area boundary near '{keyword}' is review-only; thin unlayered local-boundary pair is supported by only one distinct structural wall";
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool HasLocalBoundaryEvidence(WallSegment wall) =>
+        wall.Evidence.Any(item =>
+            item.Contains("local outer boundary", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("floorplan/wall envelope", StringComparison.OrdinalIgnoreCase));
+
+    private static double MaxOutdoorBoundaryDetailSeparation(ScannerOptions options) =>
+        Math.Max(options.DefaultWallThickness * 3.5, options.WallSnapTolerance * 5.0);
+
+    private static PlanRect OutdoorLabelInfluenceBounds(PlanRect bounds, ScannerOptions options)
+    {
+        var xPadding = Math.Max(options.MinWallLength * 4.0, options.DefaultWallThickness * 22.0);
+        var yPadding = Math.Max(options.MinWallLength * 1.8, options.DefaultWallThickness * 12.0);
+        return new PlanRect(
+            bounds.X - xPadding,
+            bounds.Y - yPadding,
+            bounds.Width + (xPadding * 2.0),
+            bounds.Height + (yPadding * 2.0));
+    }
+
+    private static bool OutdoorLabelMatchesWallSpan(
+        PlanRect textBounds,
+        WallSegment wall,
+        ScannerOptions options)
+    {
+        var labelBounds = OutdoorLabelInfluenceBounds(textBounds, options);
+        var tolerance = options.WallSnapTolerance;
+        if (!labelBounds.Intersects(wall.Bounds, tolerance))
+        {
+            return false;
+        }
+
+        if (labelBounds.Contains(wall.CenterLine.Midpoint, tolerance))
+        {
+            return true;
+        }
+
+        var samplesInside = 0;
+        const int sampleCount = 5;
+        for (var index = 0; index < sampleCount; index++)
+        {
+            var t = index / (double)(sampleCount - 1);
+            if (labelBounds.Contains(wall.CenterLine.PointAt(t), tolerance))
+            {
+                samplesInside++;
+            }
+        }
+
+        return samplesInside >= 2;
+    }
+
+    private static string? OutdoorAreaKeyword(string value)
+    {
+        var normalized = NormalizeSearchText(value);
+        if (string.IsNullOrEmpty(normalized))
+        {
+            return null;
+        }
+
+        foreach (var keyword in OutdoorAreaKeywords)
+        {
+            if (normalized.Contains(keyword, StringComparison.Ordinal))
+            {
+                return keyword;
+            }
+        }
+
+        return null;
+    }
+
+    private static string NormalizeSearchText(string value)
+    {
+        Span<char> buffer = value.Length <= 256 ? stackalloc char[value.Length] : new char[value.Length];
+        var length = 0;
+        foreach (var character in value)
+        {
+            if (char.IsLetterOrDigit(character))
+            {
+                buffer[length++] = char.ToLowerInvariant(character);
+            }
+        }
+
+        return new string(buffer[..length]);
+    }
+
+    private static readonly string[] OutdoorAreaKeywords =
+    {
+        "overbygd",
+        "covered",
+        "canopy",
+        "porch",
+        "carport",
+        "terrasse",
+        "terrace",
+        "balkong",
+        "balcony",
+        "veranda",
+        "uteplass",
+        "patio"
+    };
+
     private static bool IsSurfacePatternOverlapNoise(
         WallSegment wall,
         SurfacePatternCandidate pattern,
@@ -736,12 +1130,6 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
             return false;
         }
 
-        var layerCategories = SourceLayerCategories(wall, context).Distinct().ToArray();
-        if (!layerCategories.Any(category => category is LayerCategory.Door or LayerCategory.Window))
-        {
-            return false;
-        }
-
         var page = context.Document.Pages.FirstOrDefault(page => page.Number == wall.PageNumber);
         if (page is null)
         {
@@ -765,16 +1153,25 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
             return false;
         }
 
+        var layerCategories = SourceLayerCategories(wall, context).Distinct().ToArray();
+        var doorLayerBacked = layerCategories.Any(category => category is LayerCategory.Door or LayerCategory.Window);
         var arcSupport = NearbyDoorArcSupport(wall, page, context.Options);
-        var hasSwingArcEvidence = arcSupport.Score >= 0.42;
+        var hasSwingArcEvidence = arcSupport.Score >= (doorLayerBacked ? 0.42 : 0.62);
+        if (!doorLayerBacked && !hasSwingArcEvidence)
+        {
+            return false;
+        }
+
         if (!hasSwingArcEvidence && structuralSupportWallCount > 0)
         {
             return false;
         }
 
-        evidence = hasSwingArcEvidence
-            ? $"wall evidence: rejected as paired door/window frame linework from door/window layer near swing arc {arcSupport.ArcSourceId}"
-            : "wall evidence: rejected as unsupported paired door/window frame linework from door/window layer";
+        evidence = doorLayerBacked
+            ? hasSwingArcEvidence
+                ? $"wall evidence: rejected as paired door/window frame linework from door/window layer near swing arc {arcSupport.ArcSourceId}"
+                : "wall evidence: rejected as unsupported paired door/window frame linework from door/window layer"
+            : $"wall evidence: rejected as unlayered paired door/window frame linework strongly tied to swing arc {arcSupport.ArcSourceId}";
         return true;
     }
 
@@ -952,13 +1349,21 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
                 .Concat(recovered)
                 .Where(wall => wall.PageNumber == page.Number)
                 .ToArray();
+            var shortLineCandidates = PageShortLineCandidates(page, allowedBounds, surfaceSourceIds, usedSourceIds, context)
+                .ToArray();
+            var repeatedShortDetailSourceIds = RepeatedShortDetailSourceIds(
+                shortLineCandidates,
+                pageExistingWalls,
+                context.Options);
+            AddRepeatedShortRecoveryNoiseDiagnostic(context, page.Number, repeatedShortDetailSourceIds);
             var sequence = 1;
 
-            foreach (var candidate in PageShortLineCandidates(page, allowedBounds, surfaceSourceIds, usedSourceIds, context))
+            foreach (var candidate in shortLineCandidates)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (IsRepresentedByExistingWall(candidate.Segment, pageExistingWalls, context.Options)
+                if (repeatedShortDetailSourceIds.Contains(candidate.SourceId)
+                    || IsRepresentedByExistingWall(candidate.Segment, pageExistingWalls, context.Options)
                     || IsRepresentedByExistingWall(candidate.Segment, recovered, context.Options)
                     || IsSurfacePatternRecoveryNoise(candidate.Segment, page.Number, context))
                 {
@@ -1009,6 +1414,130 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
         }
 
         return recovered;
+    }
+
+    private static IReadOnlySet<string> RepeatedShortDetailSourceIds(
+        IReadOnlyList<PrimitiveLineCandidate> candidates,
+        IReadOnlyList<WallSegment> existingWalls,
+        ScannerOptions options)
+    {
+        var suppressed = new HashSet<string>(StringComparer.Ordinal);
+        var coordinateTolerance = Math.Max(options.DefaultWallThickness * 8.0, options.WallSnapTolerance * 8.0);
+        var minimumCoordinateSpan = Math.Max(options.DefaultWallThickness * 3.0, options.WallSnapTolerance * 4.0);
+
+        foreach (var group in candidates
+            .Where(candidate => !IsWallLikeCategory(candidate.LayerCategory))
+            .Where(candidate => CountStructuralEndpointSupport(candidate.Segment, candidate.PageNumber, existingWalls, options) >= 2)
+            .GroupBy(candidate => candidate.Orientation))
+        {
+            if (group.Key == WallOrientation.Unknown)
+            {
+                continue;
+            }
+
+            var ordered = group
+                .OrderBy(candidate => candidate.Coordinate)
+                .ToArray();
+            for (var index = 0; index < ordered.Length; index++)
+            {
+                var seed = ordered[index];
+                var cluster = new List<PrimitiveLineCandidate> { seed };
+                for (var otherIndex = index - 1; otherIndex >= 0; otherIndex--)
+                {
+                    var other = ordered[otherIndex];
+                    if (seed.Coordinate - other.Coordinate > coordinateTolerance)
+                    {
+                        break;
+                    }
+
+                    if (IsRepeatedShortDetailNeighbor(seed, other, options))
+                    {
+                        cluster.Add(other);
+                    }
+                }
+
+                for (var otherIndex = index + 1; otherIndex < ordered.Length; otherIndex++)
+                {
+                    var other = ordered[otherIndex];
+                    if (other.Coordinate - seed.Coordinate > coordinateTolerance)
+                    {
+                        break;
+                    }
+
+                    if (IsRepeatedShortDetailNeighbor(seed, other, options))
+                    {
+                        cluster.Add(other);
+                    }
+                }
+
+                if (cluster.Count < 3 || ShortCandidateCoordinateSpan(cluster) < minimumCoordinateSpan)
+                {
+                    continue;
+                }
+
+                foreach (var candidate in cluster)
+                {
+                    suppressed.Add(candidate.SourceId);
+                }
+            }
+        }
+
+        return suppressed;
+    }
+
+    private static bool IsRepeatedShortDetailNeighbor(
+        PrimitiveLineCandidate first,
+        PrimitiveLineCandidate second,
+        ScannerOptions options)
+    {
+        var alongEndpointTolerance = Math.Max(options.DefaultWallThickness * 1.5, options.WallSnapTolerance * 2.0);
+        if (Math.Abs(first.MinAlong - second.MinAlong) > alongEndpointTolerance
+            || Math.Abs(first.MaxAlong - second.MaxAlong) > alongEndpointTolerance)
+        {
+            return false;
+        }
+
+        var overlap = AxisOverlap(first, second);
+        var overlapRatio = overlap.Length / Math.Max(1, Math.Min(first.Length, second.Length));
+        if (overlapRatio < 0.70)
+        {
+            return false;
+        }
+
+        var lengthRatio = Math.Min(first.Length, second.Length) / Math.Max(1, Math.Max(first.Length, second.Length));
+        return lengthRatio >= 0.70;
+    }
+
+    private static double ShortCandidateCoordinateSpan(IReadOnlyList<PrimitiveLineCandidate> candidates)
+    {
+        var coordinates = candidates.Select(candidate => candidate.Coordinate).ToArray();
+        return coordinates.Length == 0 ? 0 : coordinates.Max() - coordinates.Min();
+    }
+
+    private static void AddRepeatedShortRecoveryNoiseDiagnostic(
+        ScanContext context,
+        int pageNumber,
+        IReadOnlySet<string> suppressedSourceIds)
+    {
+        if (suppressedSourceIds.Count == 0)
+        {
+            return;
+        }
+
+        context.AddDiagnostic(
+            "wall_evidence.short_repeated_slots_suppressed",
+            DiagnosticSeverity.Info,
+            StageName,
+            "Repeated short supported linework was suppressed from recovered walls as likely fixture, shelf, closet, or detail slots.",
+            confidence: Confidence.Medium,
+            scope: DiagnosticScope.Detection,
+            sourcePrimitiveIds: suppressedSourceIds,
+            properties: new Dictionary<string, string>
+            {
+                ["pageNumber"] = pageNumber.ToString(CultureInfo.InvariantCulture),
+                ["suppressedSourceCount"] = suppressedSourceIds.Count.ToString(CultureInfo.InvariantCulture),
+                ["sampleSourceIds"] = string.Join(",", suppressedSourceIds.Order(StringComparer.Ordinal).Take(12))
+            });
     }
 
     private static IEnumerable<PrimitiveLineCandidate> PageShortLineCandidates(
@@ -1841,6 +2370,10 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
         var recoveredShortWallCount = recoveredWalls.Count(wall =>
             wall.PairEvidence is null
             && wall.Evidence.Any(item => item.Contains("short supported wall segment", StringComparison.OrdinalIgnoreCase)));
+        var continuityPromotedAssessments = assessments
+            .Where(assessment => assessment.Evidence.Any(item =>
+                item.Contains("continuity-supported short paired wall body", StringComparison.OrdinalIgnoreCase)))
+            .ToArray();
 
         context.AddDiagnostic(
             "wall_evidence.map_built",
@@ -1868,6 +2401,24 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
                 ["mediumWallBodyCount"] = assessments.Count(item => item.Category == WallEvidenceCategory.MediumWallBody).ToString(CultureInfo.InvariantCulture),
                 ["weakSingleLineCount"] = assessments.Count(item => item.Category == WallEvidenceCategory.WeakSingleLine).ToString(CultureInfo.InvariantCulture)
             });
+
+        if (continuityPromotedAssessments.Length > 0)
+        {
+            context.AddDiagnostic(
+                "wall_evidence.continuity_supported_pairs_promoted",
+                DiagnosticSeverity.Info,
+                StageName,
+                $"{continuityPromotedAssessments.Length} short paired wall candidate(s) were promoted by collinear structural continuity evidence.",
+                region: PlanRect.Union(continuityPromotedAssessments.Select(item => item.Bounds)),
+                confidence: Confidence.Medium,
+                scope: DiagnosticScope.Detection,
+                sourcePrimitiveIds: continuityPromotedAssessments.SelectMany(item => item.SourcePrimitiveIds),
+                properties: new Dictionary<string, string>
+                {
+                    ["promotedWallCount"] = continuityPromotedAssessments.Length.ToString(CultureInfo.InvariantCulture),
+                    ["wallIds"] = string.Join(",", continuityPromotedAssessments.Select(item => item.WallId).Order(StringComparer.Ordinal).Take(20))
+                });
+        }
 
         if (recoveredWalls.Count > 0)
         {

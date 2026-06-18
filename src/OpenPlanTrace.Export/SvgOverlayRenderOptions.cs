@@ -3,7 +3,8 @@ namespace OpenPlanTrace.Export;
 public enum SvgOverlayRenderProfile
 {
     Full,
-    StructuralReview
+    StructuralReview,
+    PlacementReview
 }
 
 public sealed record SvgOverlayRenderOptions
@@ -44,6 +45,12 @@ public sealed record SvgOverlayRenderOptions
 
     public bool IncludeSurfacePatterns { get; init; } = true;
 
+    public bool IncludeWallTopologySpans { get; init; }
+
+    public bool IncludeReviewOnlyWallTopologySpans { get; init; } = true;
+
+    public bool IncludeWallGraphRepairs { get; init; } = true;
+
     public bool IncludeRoutingLayer { get; init; }
 
     public string BackgroundColor { get; init; } = "#ffffff";
@@ -62,8 +69,33 @@ public sealed record SvgOverlayRenderOptions
                 IncludeObjectAggregates = false,
                 IncludeRoutingLayer = false
             },
+            SvgOverlayRenderProfile.PlacementReview => new SvgOverlayRenderOptions
+            {
+                Profile = SvgOverlayRenderProfile.PlacementReview,
+                IncludeLegend = true,
+                IncludeDiagnostics = true,
+                IncludeRegions = false,
+                IncludeDimensions = false,
+                IncludeAnnotations = false,
+                IncludeGridAxes = false,
+                IncludeGridBaySpacings = false,
+                IncludeWalls = false,
+                IncludeWallComponents = false,
+                IncludeWallNodes = false,
+                IncludeRooms = false,
+                IncludeRoomClusters = false,
+                IncludeRoomAdjacency = false,
+                IncludeOpenings = false,
+                IncludeObjects = false,
+                IncludeObjectAggregates = false,
+                IncludeSurfacePatterns = false,
+                IncludeWallTopologySpans = true,
+                IncludeReviewOnlyWallTopologySpans = false,
+                IncludeRoutingLayer = false
+            },
             _ => new SvgOverlayRenderOptions()
             {
+                IncludeWallTopologySpans = true,
                 IncludeRoutingLayer = true
             }
         };
@@ -84,6 +116,13 @@ public sealed record SvgOverlayRenderOptions
             case "geometry":
                 profile = SvgOverlayRenderProfile.StructuralReview;
                 return true;
+            case "placement":
+            case "placementreview":
+            case "cleanwalls":
+            case "topology":
+            case "topologyspans":
+                profile = SvgOverlayRenderProfile.PlacementReview;
+                return true;
             default:
                 profile = SvgOverlayRenderProfile.Full;
                 return false;
@@ -93,6 +132,7 @@ public sealed record SvgOverlayRenderOptions
     public static string ProfileName(SvgOverlayRenderProfile profile) =>
         profile switch
         {
+            SvgOverlayRenderProfile.PlacementReview => "placement-review",
             SvgOverlayRenderProfile.StructuralReview => "structural-review",
             _ => "full"
         };

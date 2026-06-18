@@ -59,6 +59,7 @@ const defaultEnabledLayers = [
   "dimensions",
   "gridAxes",
   "annotations",
+  "wallTopologySpans",
   "rooms",
   "openings",
   "objectAggregates",
@@ -75,6 +76,8 @@ const overlayLegendItems = [
   { key: "annotations", label: "Annotations", stroke: "#2587b4", fill: "rgba(37, 135, 180, 0.055)" },
   { key: "wallComponents", label: "Wall components", stroke: "#c97c18", fill: "rgba(201, 124, 24, 0.06)", dash: "6 4" },
   { key: "walls", label: "Walls", stroke: "#c43d3d", fill: "rgba(196, 61, 61, 0.06)" },
+  { key: "wallTopologySpans", label: "Clean wall spans", stroke: "#0f4fb8", fill: "rgba(15, 79, 184, 0.06)" },
+  { key: "wallTopologyReviewSpans", label: "Non-placement wall spans", stroke: "#a65f00", fill: "rgba(166, 95, 0, 0.055)", dash: "3 3" },
   { key: "nodes", label: "Wall nodes", stroke: "#191a1f", fill: "#ffffff" },
   { key: "rooms", label: "Rooms", stroke: "#3f8f57", fill: "rgba(63, 143, 87, 0.08)" },
   { key: "roomClusters", label: "Room clusters", stroke: "#3f8f57", fill: "rgba(63, 143, 87, 0.05)", dash: "8 5" },
@@ -95,6 +98,8 @@ const overlayLegendItems = [
 
 const placementOverlayLayerKeys = new Set([
   "walls",
+  "wallTopologySpans",
+  "wallTopologyReviewSpans",
   "rooms",
   "openings",
   "objectAggregates",
@@ -2812,6 +2817,78 @@ function drawOverlay() {
     });
   }
 
+  if (state.enabledLayers.has("wallTopologySpans")) {
+    state.scan.walls.filter(onCurrentPage).forEach((wall) => {
+      if (!visibleBySourceLayer(wall)) {
+        return;
+      }
+      if (!shouldDrawWallAsCleanTopologySpan(wall)) {
+        return;
+      }
+
+      wallCleanTopologySpans(wall).forEach((span) => {
+        if (!visibleBySourceLayer(span)) {
+          return;
+        }
+
+        const className = wallTopologySpanClassName(wall);
+        const title = [
+          `${span.id} - clean span for ${wall.id}`,
+          wall.wallType ? `type ${wall.wallType}` : "",
+          span.wallGraphEdgeId ? `edge ${span.wallGraphEdgeId}` : "",
+          Number.isFinite(Number(span.drawingLength)) ? `${formatNumber(span.drawingLength)} units` : "",
+          wallReliabilitySummary(wall)
+        ].filter(Boolean).join(" - ");
+        const inspection = describeItem("clean wall topology span", {
+          ...span,
+          sourceWallId: wall.id,
+          sourceWallType: wall.wallType,
+          sourceWallComponentKind: wall.wallComponentKind,
+          sourceWallReliability: wall.reliability ?? null,
+          sourceWallEvidenceAssessment: wall.evidenceAssessment ?? null
+        });
+        addLine(span.centerLine, `${className} wall-topology-span-halo`, "", 1);
+        addLine(span.centerLine, className, title, confidence(span.confidence ?? wall.confidence), inspection);
+      });
+    });
+  }
+
+  if (state.enabledLayers.has("wallTopologyReviewSpans")) {
+    state.scan.walls.filter(onCurrentPage).forEach((wall) => {
+      if (!visibleBySourceLayer(wall)) {
+        return;
+      }
+      if (!shouldDrawWallAsReviewTopologySpan(wall)) {
+        return;
+      }
+
+      wallCleanTopologySpans(wall).forEach((span) => {
+        if (!visibleBySourceLayer(span)) {
+          return;
+        }
+
+        const className = `${wallTopologySpanClassName(wall)} wall-topology-span-review-only`;
+        const title = [
+          `${span.id} - review span for ${wall.id}`,
+          wall.wallType ? `type ${wall.wallType}` : "",
+          span.wallGraphEdgeId ? `edge ${span.wallGraphEdgeId}` : "",
+          Number.isFinite(Number(span.drawingLength)) ? `${formatNumber(span.drawingLength)} units` : "",
+          wallReliabilitySummary(wall)
+        ].filter(Boolean).join(" - ");
+        const inspection = describeItem("review wall topology span", {
+          ...span,
+          sourceWallId: wall.id,
+          sourceWallType: wall.wallType,
+          sourceWallComponentKind: wall.wallComponentKind,
+          sourceWallReliability: wall.reliability ?? null,
+          sourceWallEvidenceAssessment: wall.evidenceAssessment ?? null
+        });
+        addLine(span.centerLine, `${className} wall-topology-span-halo`, "", 1);
+        addLine(span.centerLine, className, title, confidence(span.confidence ?? wall.confidence), inspection);
+      });
+    });
+  }
+
   if (state.enabledLayers.has("walls")) {
     state.scan.walls.filter(onCurrentPage).forEach((wall) => {
       if (!visibleBySourceLayer(wall)) {
@@ -2832,17 +2909,11 @@ function drawOverlay() {
         `confidence ${wall.confidence.toFixed(2)}`,
         reliability
       ].filter(Boolean).join(" - ");
-      wallVisualDrawLines(wall).forEach((span) => {
-        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-        line.setAttribute("x1", span.centerLine.start.x);
-        line.setAttribute("y1", span.centerLine.start.y);
-        line.setAttribute("x2", span.centerLine.end.x);
-        line.setAttribute("y2", span.centerLine.end.y);
-        line.setAttribute("class", wallClassName(wall));
-        line.setAttribute("opacity", wallDrawOpacity({ ...wall, confidence: span.confidence ?? wall.confidence }));
-        addTitle(line, title);
-        attachInspection(line, inspection);
-        elements.overlay.appendChild(line);
+      wallRawDrawLines(wall).forEach((span) => {
+        const className = wallClassName(wall);
+        const opacity = wallDrawOpacity({ ...wall, confidence: span.confidence ?? wall.confidence });
+        addLine(span.centerLine, `${className} wall-halo`, "", 1);
+        addLine(span.centerLine, className, title, opacity, inspection);
       });
       addWallHitTarget(wall, title, inspection);
     });
@@ -2932,6 +3003,23 @@ function shouldDrawWallInStructuralLayer(wall) {
   }
 
   return !wallCoordinateBlocked(wall);
+}
+
+function wallIsPlacementReady(wall) {
+  const assessment = wall?.evidenceAssessment;
+  if (!assessment) {
+    return true;
+  }
+
+  return assessment.placementReady !== false && assessment.requiresReview !== true;
+}
+
+function shouldDrawWallAsCleanTopologySpan(wall) {
+  return shouldDrawWallInStructuralLayer(wall) && wallIsPlacementReady(wall);
+}
+
+function shouldDrawWallAsReviewTopologySpan(wall) {
+  return shouldDrawWallInStructuralLayer(wall) && !wallIsPlacementReady(wall);
 }
 
 function drawScanReviewQueue(page, options = {}) {
@@ -3128,7 +3216,7 @@ function addLine(line, className, title, opacity, item = null) {
 }
 
 function addWallHitTarget(wall, title, item) {
-  const spans = wallVisualDrawLines(wall);
+  const spans = wallRawDrawLines(wall);
   if (!spans.length) {
     return;
   }
@@ -4165,22 +4253,7 @@ function wallReliabilityReasons(wall) {
   return normalizeStringArray(wall?.evidenceAssessment?.evidence);
 }
 
-function wallVisualDrawLines(wall) {
-  const topologySpans = Array.isArray(wall?.topologySpans)
-    ? wall.topologySpans
-      .filter((span) => span?.centerLine?.start && span?.centerLine?.end)
-      .map((span, index) => ({
-        id: span.id || `${wall.id}:topology-span:${index + 1}`,
-        centerLine: span.centerLine,
-        confidence: span.confidence ?? wall.confidence,
-        wallGraphEdgeId: span.wallGraphEdgeId || null,
-        isTopologySpan: true
-      }))
-    : [];
-  if (topologySpans.length) {
-    return topologySpans;
-  }
-
+function wallRawDrawLines(wall) {
   return wall?.centerLine?.start && wall?.centerLine?.end
     ? [{
       id: wall.id,
@@ -4189,6 +4262,46 @@ function wallVisualDrawLines(wall) {
       isRawWall: true
     }]
     : [];
+}
+
+function wallCleanTopologySpans(wall) {
+  return Array.isArray(wall?.topologySpans)
+    ? wall.topologySpans
+      .filter((span) => span?.centerLine?.start && span?.centerLine?.end)
+      .map((span, index) => ({
+        ...span,
+        id: span.id || `${wall.id}:topology-span:${index + 1}`,
+        centerLine: span.centerLine,
+        confidence: span.confidence ?? wall.confidence,
+        wallGraphEdgeId: span.wallGraphEdgeId || null,
+        isTopologySpan: true
+      }))
+    : [];
+}
+
+function wallVisualDrawLines(wall) {
+  const topologySpans = wallCleanTopologySpans(wall);
+  if (topologySpans.length) {
+    return topologySpans;
+  }
+
+  return wallRawDrawLines(wall);
+}
+
+function wallTopologySpanClassName(wall) {
+  const classes = ["wall-topology-span"];
+
+  if (wall?.wallType === "Exterior") {
+    classes.push("wall-topology-span-exterior");
+  } else if (wall?.wallType === "Interior") {
+    classes.push("wall-topology-span-interior");
+  }
+
+  if (wallRequiresReliabilityReview(wall)) {
+    classes.push("wall-topology-span-review");
+  }
+
+  return classes.join(" ");
 }
 
 function wallReliabilityReviewWalls(scan = state.scan) {
@@ -8978,6 +9091,13 @@ function totalDetectionCount(scan) {
   ].reduce((total, collection) => total + (collection?.length ?? 0), 0);
 }
 
+function wallTopologySpanCount(scan = state.scan, pageNumber = null, predicate = shouldDrawWallAsCleanTopologySpan) {
+  return (scan?.walls ?? [])
+    .filter(predicate)
+    .filter((wall) => pageNumber == null || wall.pageNumber == null || wall.pageNumber === pageNumber)
+    .reduce((total, wall) => total + wallCleanTopologySpans(wall).length, 0);
+}
+
 function routingLayerItemCount(layer) {
   return (layer?.barriers?.length ?? 0)
     + (layer?.passages?.length ?? 0)
@@ -9028,6 +9148,10 @@ function layerTotalForKey(scan, key) {
       return scan.wallComponents?.length ?? 0;
     case "walls":
       return (scan.walls ?? []).filter(shouldDrawWallInStructuralLayer).length;
+    case "wallTopologySpans":
+      return wallTopologySpanCount(scan);
+    case "wallTopologyReviewSpans":
+      return wallTopologySpanCount(scan, null, shouldDrawWallAsReviewTopologySpan);
     case "nodes":
       return scan.nodes?.length ?? 0;
     case "rooms":
@@ -9085,6 +9209,10 @@ function layerCountForKey(scan, key) {
         .filter((wall) => wall.pageNumber == null || wall.pageNumber === state.currentPage)
         .filter(shouldDrawWallInStructuralLayer)
         .length;
+    case "wallTopologySpans":
+      return wallTopologySpanCount(scan, state.currentPage);
+    case "wallTopologyReviewSpans":
+      return wallTopologySpanCount(scan, state.currentPage, shouldDrawWallAsReviewTopologySpan);
     case "nodes":
       return currentPageOnly(scan.nodes);
     case "rooms":
@@ -13551,14 +13679,19 @@ function serializeCurrentOverlaySvg() {
         .annotation{fill:rgba(37,135,180,.055);stroke:#2587b4;stroke-width:.85;stroke-dasharray:3 3;vector-effect:non-scaling-stroke}
         .annotation-reference{fill:rgba(25,105,166,.10);stroke:#1969a6;stroke-width:1;vector-effect:non-scaling-stroke}
         .annotation-reference-link{stroke:#1969a6;stroke-width:.8;stroke-dasharray:4 4;stroke-linecap:round;fill:none;vector-effect:non-scaling-stroke}
-        .wall{stroke:#7a5f18;stroke-width:.78;stroke-linecap:butt;fill:none;vector-effect:non-scaling-stroke}
-        .wall-exterior{stroke:#1f5fbf;stroke-width:1.02}
-        .wall-interior{stroke:#1f7a4d;stroke-width:.92}
-        .wall-unknown{stroke:#7a5f18;stroke-width:.78}
-        .wall-object-like{stroke:#c97c18;stroke-width:.58;stroke-dasharray:5 4}
-        .wall-fragment{stroke:#7854a8;stroke-width:.48;stroke-dasharray:3 5}
-        .wall-review{stroke-width:1.18;stroke-dasharray:3 2}
-        .wall-excluded{stroke-width:.42;stroke-dasharray:2 6}
+        .wall{stroke:#7a5f18;stroke-width:1.35;stroke-linecap:butt;fill:none;vector-effect:non-scaling-stroke}
+        .wall.wall-halo{stroke:#fff;stroke-width:3.9;stroke-opacity:.82;stroke-dasharray:none;pointer-events:none}
+        .wall-exterior{stroke:#0f4fb8;stroke-width:1.9}
+        .wall.wall-halo.wall-exterior{stroke-width:4.8}
+        .wall-interior{stroke:#0f7a48;stroke-width:1.55}
+        .wall.wall-halo.wall-interior{stroke-width:4.2}
+        .wall-unknown{stroke:#7a5f18;stroke-width:1.35}
+        .wall-object-like{stroke:#c97c18;stroke-width:1.05;stroke-dasharray:5 4}
+        .wall-fragment{stroke:#7854a8;stroke-width:.9;stroke-dasharray:3 5}
+        .wall-review{stroke-width:2.05;stroke-dasharray:3 2}
+        .wall-topology-span-review-only{stroke:#a65f00;stroke-width:1.2;stroke-dasharray:3 3}
+        .wall-blocked{stroke:#a52035;stroke-width:2.1;stroke-dasharray:1 3}
+        .wall-excluded{stroke-width:.85;stroke-dasharray:2 6}
         .node{fill:rgba(255,255,255,.65);stroke:#b82f42;stroke-width:.42;vector-effect:non-scaling-stroke}
         .room{fill:rgba(63,143,87,.075);stroke:#3f8f57;stroke-width:.95;vector-effect:non-scaling-stroke}
         .room-cluster{fill:rgba(47,125,104,.035);stroke:#2f7d68;stroke-width:1;stroke-dasharray:9 6;vector-effect:non-scaling-stroke}

@@ -6,6 +6,509 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.086] - 2026-06-17
+
+### Changed
+- Wall Evidence V2 now has a narrow continuity-supported acceptance path for
+  short unlayered paired wall bodies. Candidates that would normally be
+  review-only because they are short can become placement-ready when they have
+  structural support and a same-axis collinear continuation from a stronger wall
+  run. Explicit door/window, surface-pattern, object/fixture, dimension, and
+  outdoor-boundary filters still run before this promotion.
+- Added `wall_evidence.continuity_supported_pairs_promoted` diagnostics so
+  benchmark logs can explain which short paired wall chunks were trusted due to
+  collinear structural continuity.
+
+### Verified
+- Added a regression proving a short exterior paired wall chunk aligned with a
+  stronger shell continuation is accepted instead of left review-only.
+- Focused wall-evidence recovery tests passed with `7` tests.
+- Private medium PDF smoke scan completed with `70` visible clean wall topology
+  spans, `131` hidden non-placement topology spans, and `4` wall graph repair
+  candidates. The pass promoted `3` short paired wall candidates at the wall
+  evidence stage; graph component filtering still excluded object-like geometry
+  after evidence refinement.
+- Private medium scan JSON, compact scan JSON, GeoJSON, and placement JSON all
+  passed CLI validation after regeneration.
+
+## [0.02.085] - 2026-06-17
+
+### Changed
+- Placement-review wall overlays now recover trusted isolated wall fragments
+  when wall evidence marks them as placement-ready `StrongWallBody` or
+  `RecoveredWallBody`. Weak, review-only, object-like, and rejected fragments
+  still stay out of the clean wall view, which lets real short wall chunks come
+  back without reopening dense detail noise.
+- Wall graph classification now demotes compact dense stair/detail-like
+  components from structural topology, so repeated stair treads and similar
+  detail linework do not masquerade as placement-ready walls.
+- The wall graph stage now performs a conservative trusted endpoint-to-wall snap
+  for low-risk gaps between strong host walls and accepted wall endpoints,
+  reducing manual repair candidates while keeping larger gaps in the review
+  layer.
+- Wall graph main-region fallback now handles direct scan contexts without a
+  detected main floorplan region instead of accidentally using a zero-size
+  default bounds value.
+
+### Verified
+- Added focused regressions for dense stair/detail component demotion, trusted
+  endpoint-to-wall auto-snapping, and trusted isolated wall visibility.
+- Focused export and wall-graph topology tests passed with `58` tests.
+- Private medium PDF smoke scan completed with `69` visible clean wall topology
+  spans, `132` hidden non-placement topology spans, and `3` wall graph repair
+  candidates after the fix. The previously reported random stair/detail cluster
+  is gone from the wall-only screenshot, but full wall-body continuity still
+  needs a larger reconstruction pass.
+
+## [0.02.084] - 2026-06-17
+
+### Added
+- Placement-review SVG overlays now include a separate `wall-graph-repairs`
+  layer for endpoint gap and overrun repair candidates. The layer draws the
+  suggested repair line plus source/target markers and keeps severity/import
+  impact in the title evidence, so screenshots show where topology is known to
+  be broken without pretending the clean wall geometry has already been fixed.
+- Visual snapshots now include a `wallGraphRepairs` layer with per-page counts,
+  bounds, confidence summaries, and severity breakdowns for repeatable visual
+  QA and benchmark review.
+
+### Verified
+- Added an export regression proving placement-review SVGs and visual snapshots
+  expose high-severity wall graph repair candidates as a separate QA layer.
+- Export-focused tests passed with `30` tests.
+- Private medium residential PDF smoke scan completed with `87` merged visible
+  clean wall runs, `50` hidden non-placement topology spans, and `5` wall graph
+  repair candidates, including `1` blocking candidate.
+- Private medium scan JSON, deep placement JSON, and visual snapshot validation
+  all passed after regenerating the output.
+- Captured a headless placement-review screenshot showing orange repair markers
+  at the scanner's known topology near-miss points. The next accuracy step is to
+  convert low-risk repair candidates into safer deterministic graph repairs.
+
+## [0.02.083] - 2026-06-17
+
+### Changed
+- Placement-review SVG overlays and visual snapshots now merge visible clean
+  wall topology fragments back into longer source-wall runs before drawing or
+  counting the default `wallTopologySpans` layer. Raw graph spans remain in the
+  scan/placement evidence for diagnostics, but the wall-only QA view is less
+  fragmented and closer to downstream placement geometry.
+- The clean wall-span filter now keeps review-only, topology-excluded,
+  object-like, isolated-fragment, and short dangling non-placement spans out of
+  the default placement-review layer while preserving them in the hidden
+  `wallTopologyReviewSpans` layer for debug review.
+- Opening placement exports now normalize reversed host-wall projections so
+  start/end offsets, host-wall parameters, jamb lines, and footprint corner
+  order stay internally consistent even when the reference wall line runs in
+  the opposite direction from the detected opening symbol.
+
+### Verified
+- Updated export regressions so a dense host wall split into five graph edges is
+  shown as one clean placement run while repeated short detail teeth remain
+  hidden from the clean layer.
+- Export-focused tests passed with `29` tests, and the full solution test suite
+  passed with `516` tests.
+- Private easy residential PDF smoke scan completed with `38` merged visible
+  clean wall runs and `22` hidden non-placement topology spans, down from `116`
+  visible topology fragments before this merge pass.
+- Private medium residential PDF smoke scan completed with `87` merged visible
+  clean wall runs and `50` hidden non-placement topology spans, down from `289`
+  visible topology fragments before this merge pass.
+- The regenerated private medium residential PDF placement export now passes
+  deep placement validation after fixing reversed opening/passage offset order.
+- Captured headless placement-review screenshots for both PDFs. Visual QA shows
+  a cleaner wall-only overlay, but the engine still misses some real wall runs
+  and keeps some non-wall linework, so the next major accuracy step remains true
+  wall-body/envelope reconstruction rather than more display filtering.
+
+## [0.02.082] - 2026-06-17
+
+### Changed
+- Placement-review SVG overlays now draw only placement-ready structural wall
+  topology spans in the clean `wall-topology-spans` layer. Review-only or
+  topology-excluded spans, plus object-like or isolated-fragment component
+  spans, remain available in full/debug output but no longer masquerade as clean
+  downstream wall geometry.
+- Visual snapshots now split hidden non-placement wall topology spans into a
+  separate `wallTopologyReviewSpans` layer count so QA tools can see how much
+  geometry was withheld from the clean placement overlay.
+- The browser viewer now keeps `Clean wall spans` default-on for placement-ready
+  geometry and adds an optional `Non-placement wall spans` debug layer for
+  suspicious or coordinate-blocked wall evidence.
+
+### Verified
+- Added export regressions proving placement-review SVGs omit review-only wall
+  topology spans while visual snapshots still count them as hidden review spans.
+- Export-focused tests passed with `27` tests, and the full solution test suite
+  passed with `514` tests.
+- Private easy residential PDF smoke scan completed with `128` visible
+  placement-ready topology spans and `10` hidden review topology spans before
+  the isolated-fragment cleanup, then `126` visible placement-ready topology
+  spans and `12` hidden non-placement topology spans after the cleanup. Scan
+  JSON, deep placement JSON, and visual snapshot validation all passed.
+- Captured a headless rendered placement-review SVG screenshot for visual QA.
+  The clean layer is less polluted, but the screenshot still shows broken or
+  missing exterior runs and several small hanging center spans, so the next
+  accuracy pass should focus on stronger wall-body reconstruction and exterior
+  continuity.
+
+## [0.02.081] - 2026-06-17
+
+### Changed
+- Wall graph coordinate repair now has a narrow trusted-review support path:
+  high-confidence interior `MediumWallBody` review walls with strong paired-wall
+  band evidence may split/snap topology while still remaining review-required in
+  exported evidence. This helps recover real interior wall junctions from
+  unlayered or dimension-ish source linework without accepting weak/detail
+  walls as placement-ready geometry.
+- Review-gate diagnostics now separate trusted review support from still-gated
+  review walls with `wall_graph.coordinate_repair.trusted_review_support` and
+  trusted/excluded counts on related wall graph diagnostics.
+
+### Verified
+- Added a wall graph regression proving a high-confidence interior review wall
+  can participate in coordinate repair while remaining review-only in topology
+  preparation.
+- Focused wall graph topology tests passed with `26` tests and the full solution
+  test suite passed with `514` tests.
+- Private easy residential PDF smoke scan improved from `133` to `138` clean
+  graph edges, `5` to `6` rooms, and reduced review-gated endpoint candidates
+  from `117` to `54` by trusting only `2` interior review walls for coordinate
+  repair. Placement-review screenshot was captured for wall-only visual QA.
+- Private medium residential PDF smoke scan completed with `5` trusted review
+  support walls out of `28` review walls, and scan/placement JSON validation
+  passed. Placement-review screenshot was captured for wall-only visual QA.
+
+## [0.02.080] - 2026-06-17
+
+### Changed
+- Wall graph normalization now has a paired endpoint-to-wall repair path for
+  repeated parallel wall-face endpoints just beyond the normal single-endpoint
+  snap distance. This closes supported structural wall returns without raising
+  the global snap tolerance that would risk turning door swings into walls.
+- Paired endpoint snapping is vetoed near local door/window/opening evidence,
+  and emits `wall_graph.endpoint_gap.paired_support_snapped` diagnostics with
+  the safe single-endpoint tolerance, paired tolerance, and support separation.
+
+### Verified
+- Added wall graph regressions proving paired wall-face endpoint gaps snap when
+  two supported faces meet the same host wall, while nearby opening evidence
+  prevents the same geometry from auto-snapping.
+- Focused wall graph topology tests passed with `25` tests.
+- Private easy residential PDF smoke scan completed with repair candidates
+  reduced from `7` to `4`, clean graph edges increased from `127` to `133`, and
+  the placement-review screenshot captured for wall-only visual QA.
+
+## [0.02.079] - 2026-06-17
+
+### Changed
+- SVG overlays now expose clean wall graph topology spans as a first-class
+  `wall-topology-spans` layer, separate from raw wall evidence. The new
+  `placement-review` SVG profile draws only the cleaned topology spans so
+  downstream placement geometry can be reviewed without raw wall overrun noise.
+- The CLI now uses `placement-review` as the default SVG profile for scan and
+  batch outputs. `structural-review` and `full` remain available when raw
+  evidence or all diagnostic layers are needed.
+- The browser visualizer now has a default-on `Clean wall spans` layer beside
+  the raw `Walls` layer, making it easier to compare evidence geometry against
+  placement-ready graph spans.
+
+### Verified
+- Added export regressions proving `placement-review` emits cleaned split wall
+  topology spans, hides the raw wall layer, and records the new layer in visual
+  snapshot metadata.
+- Export-focused tests passed with `27` tests, and focused wall topology/export
+  tests passed with `50` tests.
+- Full solution test suite passed with `511` tests.
+- Private easy residential PDF smoke scan completed with `placement-review`
+  SVG output, and scan JSON, placement JSON, GeoJSON, and visual snapshot JSON
+  all passed CLI validation.
+- Captured a headless rendered `placement-review` SVG screenshot for visual QA;
+  the clean span overlay is much easier to inspect, while still showing that
+  topology remains incomplete in several building areas.
+
+## [0.02.078] - 2026-06-17
+
+### Changed
+- Wall Evidence V2 now downgrades clean, thin, unlayered outdoor/covered-area
+  boundary pairs near labels such as `overbygd`, `covered`, `terrace`, or
+  `patio` to review-only evidence when they only have weak structural support.
+  Fragmented outdoor boundary detail is still rejected outright, while thicker
+  supported exterior walls can still become placement-ready.
+
+### Verified
+- Added a regression test proving a clean covered-entry boundary is review-only
+  before it can be accepted as a strong wall body, while a real thick exterior
+  wall remains accepted.
+- Focused wall-evidence recovery tests passed with `6` tests.
+- Full solution test suite passed with `509` tests.
+- Private easy residential PDF smoke scan completed; scan counts stayed stable
+  against `0.02.077`, confirming the new rule did not disturb that benchmark.
+- Scan JSON, placement JSON, and GeoJSON all passed CLI validation.
+- Captured a walls-only rendered SVG/PNG fallback for visual review when the
+  in-app browser was blocked by the managed sandbox.
+
+## [0.02.077] - 2026-06-17
+
+### Changed
+- Routing export now blocks non-trusted wall evidence from protecting routing
+  barriers. Review-required, rejected, or otherwise non-placement-ready walls
+  can still appear in scan diagnostics, but they no longer keep uncertain
+  geometry alive as trusted downstream routing output.
+
+### Verified
+- Added a routing-layer regression test proving review-required wall evidence is
+  suppressed even when room topology references it.
+- Focused routing tests passed with `8` tests.
+- Full solution test suite passed with `508` tests.
+- Private easy residential PDF smoke scan completed with `11` non-trusted wall
+  evidence IDs blocked from routing protection and one additional isolated
+  routing fragment suppressed compared to `0.02.076`.
+- Scan JSON, placement JSON, and GeoJSON all passed CLI validation.
+- Captured readable walls-only visualizer screenshots for review.
+
+## [0.02.076] - 2026-06-17
+
+### Changed
+- Wall Evidence V2 now downgrades short unlayered parallel-face wall candidates
+  with fewer than two distinct structural supports to review-only geometry
+  instead of marking them placement-ready. This keeps uncertain wall-like detail
+  available for diagnostics/topology while blocking automatic exact placement.
+
+### Verified
+- Added a regression test for short weakly supported unlayered parallel-face
+  candidates; focused wall filtering tests passed with `35` tests.
+- Full solution test suite passed with `508` tests.
+- Private easy residential PDF smoke scan completed with `4` short paired walls
+  moved from placement-ready to review-only, reducing accepted wall evidence
+  from `53` to `49`, graph edges from `134` to `127`, and rooms from `5` to
+  `4`.
+- Scan JSON passed validation and placement JSON passed deep validation.
+- Captured a walls-only visualizer screenshot for review.
+
+## [0.02.075] - 2026-06-17
+
+### Fixed
+- Wall Evidence V2 now rejects short unlayered parallel door/window frame
+  linework that is strongly tied to a nearby swing arc before it can be accepted
+  as a strong double-line wall. This targets real-plan middle-area noise where
+  door frame/detail pairs were visually promoted into wall geometry.
+
+### Verified
+- Added a regression test for unlayered paired door-frame linework near a swing
+  arc; focused arc-door wall filtering tests passed with `9` tests.
+- Full solution test suite passed with `507` tests.
+- Private easy residential PDF smoke scan completed, scan JSON passed
+  validation, and placement JSON passed deep validation.
+
+## [0.02.074] - 2026-06-17
+
+### Documentation
+- Clarified in `README.md` that OpenPlanTrace GeoJSON is a
+  GeoJSON-compatible page-coordinate `FeatureCollection`, not WGS84/GPS map
+  GeoJSON, and that `schemaVersion`/`coordinateSpace` are allowed foreign
+  members for the OpenPlanTrace contract.
+
+## [0.02.073] - 2026-06-17
+
+### Added
+- Added public sanitized output examples under `docs/examples`: one full
+  OpenPlanTrace scan JSON artifact and one page-coordinate GeoJSON feature
+  collection generated from the public `semantic-smoke.dxf` fixture.
+- Added `docs/examples/README.md` with regeneration instructions for public
+  output examples.
+- Added documentation-example tests that keep those examples tied to the
+  current scan and GeoJSON schema contracts.
+
+### Changed
+- Pruned historical generated `openplantrace.scan.v*.schema.json` alpha
+  snapshots from the working repository so the current scan contract remains
+  documented without letting old generated schemas dominate the project line
+  count.
+- Documented repository hygiene rules for generated scan outputs and schema
+  artifact retention.
+
+### Tooling
+- Added `tools/clean-local-outputs.ps1` to safely remove ignored local scan,
+  benchmark, coverage, and test-output folders after heavy QA sessions.
+
+### Verified
+- Local ignored QA outputs were cleaned, reclaiming about `3.97 GB`.
+- Repository text-file line count dropped from about `356k` to about `167k`
+  after pruning obsolete generated scan-schema snapshots.
+- Schema contract tests passed with `45` tests.
+- Full solution test suite passed with `504` tests.
+- Public scan and GeoJSON examples both passed CLI validation.
+- Documentation example tests passed with `2` tests.
+
+## [0.02.072] - 2026-06-17
+
+### Added
+- Added `openplantrace.scan.compact.v1`, a lossless compact scan export that
+  dictionary-encodes repeated strings and shape-encodes repeated JSON object
+  patterns while preserving the normal `openplantrace.scan.v67` scan tree for
+  expansion and validation.
+- Added CLI outputs `--compact-scan <path>` and `--compact-scan-gzip <path>`;
+  `scan --out-dir` now writes `scan.compact.json` and
+  `scan.compact.json.gz` beside the full forensic `scan.json`.
+- Added `openplantrace schema scan-compact` and `openplantrace validate`
+  support for compact scan artifacts.
+
+### Verified
+- Focused export and schema tests passed with `70` tests.
+- Full solution test suite passed with `504` tests.
+- Private easy residential PDF smoke scan emitted valid full and compact scan
+  artifacts; minified full scan was `7.38 MB`, compact scan was `2.58 MB`, and
+  gzipped compact scan was `306 KB`.
+- Gzipped compact scan roundtripped back to JSON and passed
+  `openplantrace validate` as `openplantrace.scan.compact.v1`.
+
+## [0.02.071] - 2026-06-17
+
+### Fixed
+- Wall Evidence V2 now rejects thin, fragmented exterior candidates near
+  covered/outdoor area labels before strong paired-wall acceptance, preventing
+  covered-entry, terrace, canopy, porch, balcony, and similar boundary/detail
+  linework from being exported as structural exterior wall placement geometry.
+
+### Verified
+- Focused wall evidence refinement tests passed with `19` tests.
+- Full solution test suite passed with `502` tests.
+- Private easy residential PDF smoke scan emitted `openplantrace.scan.v67`,
+  passed validation, and rejected the covered-entry exterior boundary candidates
+  before placement export.
+- Private easy residential PDF visual QA loaded with Walls-only enabled and no
+  longer drew exterior wall overlay around the covered-entry strip.
+
+## [0.02.070] - 2026-06-17
+
+### Improved
+- Made visualizer wall overlays easier to inspect by drawing a subtle white
+  backing stroke behind each placement wall and increasing exterior/interior
+  wall stroke weights.
+- Matched the wall legend and exported SVG styling to the stronger visualizer
+  wall colors so screenshots, review sessions, and overlay exports read the
+  same way.
+- Added no-cache static-file headers and bumped viewer asset versions so local
+  QA reloads pick up visualizer changes immediately.
+
+### Verified
+- Viewer JavaScript syntax check passed with the bundled Node runtime.
+- Viewer Release build passed.
+- Full solution test suite passed with `501` tests.
+- Private easy residential PDF visual QA loaded with Walls-only enabled and
+  drew matching colored wall lines plus wall backing strokes for every visible
+  wall span.
+
+## [0.02.069] - 2026-06-17
+
+### Fixed
+- Wall Evidence V2 short-wall recovery now suppresses repeated unlayered
+  short supported linework with nearly identical spans, preventing closet,
+  shelf, fixture, and cabinet slot details from being promoted into recovered
+  placement walls.
+
+### Improved
+- Added a `wall_evidence.short_repeated_slots_suppressed` diagnostic so QA can
+  see when short repeated details were held back from wall recovery, including
+  source primitive counts and samples.
+
+### Verified
+- Focused wall evidence, wall layer, and door/detail filtering tests passed
+  with `37` tests.
+- Full solution test suite passed with `501` tests.
+- Private easy residential PDF smoke scan emitted `openplantrace.scan.v67`,
+  passed validation, and reduced repeated recovered-short wall noise from the
+  wall graph.
+- Private hard PDF smoke scan emitted `openplantrace.scan.v67` and passed scan
+  validation.
+
+## [0.02.068] - 2026-06-17
+
+### Fixed
+- Short unlayered single-line candidates now need support from two distinct
+  structural walls before Wall Evidence V2 promotes them to placement-ready
+  medium wall bodies.
+- Detail-like short lines whose endpoints are only near the same structural
+  wall are kept as review-only weak linework instead of being treated as
+  trusted wall placement geometry.
+
+### Improved
+- Wall Evidence V2 now records an explicit reason when a short unlayered
+  candidate has endpoint support but only from one distinct structural wall.
+
+### Verified
+- Focused wall evidence/layer/recovery tests passed with `36` tests.
+- Full solution test suite passed with `500` tests.
+- Private provided PDF smoke scan emitted `openplantrace.scan.v67`, passed scan
+  validation, preserved the cleaner `125` node / `161` edge wall graph, and
+  preserved populated metric fields on `161 / 161` wall graph edges.
+
+## [0.02.067] - 2026-06-17
+
+### Improved
+- Wall graph topology now trust-gates junction splitting: review-required graph
+  walls remain visible for QA, but no longer split accepted/unassessed wall
+  graph geometry before they are confirmed as structural.
+- Added a `wall_graph.junctions.review_trust_gated` diagnostic so scans explain
+  when uncertain walls were prevented from creating topology junctions.
+
+### Fixed
+- Reduced noisy wall graph nodes/edges caused by weak wall-like candidates,
+  such as door/detail lines, touching trusted wall geometry.
+
+### Verified
+- Focused wall topology and structural filtering tests passed with `31` tests.
+- Full solution test suite passed with `499` tests.
+- Private provided PDF smoke scan emitted `openplantrace.scan.v67`, passed scan
+  validation, suppressed `15` review-wall junction pairs, and produced a
+  cleaner wall graph with `125` nodes / `161` edges while preserving populated
+  metric fields on `161 / 161` wall graph edges.
+
+## [0.02.066] - 2026-06-17
+
+### Added
+- Scan JSON schema `openplantrace.scan.v67` now exports metric-ready wall
+  graph edge geometry: `lineMillimeters`, `boundsMillimeters`, `lengthMeters`,
+  `thicknessDrawingUnits`, `thicknessMillimeters`, `measurementScaleGroupId`,
+  and `millimetersPerDrawingUnit`.
+
+### Improved
+- Scan-level wall graph edges now carry the same downstream placement scale
+  context as placement graph edges, making the main scan JSON more useful for
+  consumers that need precise edge coordinates without reading a second
+  placement artifact.
+
+### Verified
+- Focused schema/export tests passed with `68` tests.
+- Full solution test suite passed with `498` tests.
+- Private provided PDF smoke scan emitted `openplantrace.scan.v67`, passed scan
+  validation, and confirmed `184 / 184` wall graph edges included populated
+  metric coordinate fields.
+
+## [0.02.065] - 2026-06-17
+
+### Added
+- Scan JSON schema `openplantrace.scan.v66` now exports wall graph edge
+  structural trust fields: `wallComponentId`, `wallComponentKind`, and
+  `excludedFromStructuralTopology`.
+
+### Fixed
+- Scan-level wall graph edges now use the same shared `WallStructuralTrust`
+  rule as walls, placement exports, GeoJSON, and SVG overlays, so rejected
+  Wall Evidence V2 wall-like details are marked as non-structural directly on
+  graph edges.
+- Wall graph edge evidence now records when an edge was excluded because its
+  source wall evidence was rejected as non-wall/noise, preserving provenance
+  for downstream consumers.
+
+### Verified
+- Focused schema/export tests passed with `68` tests.
+- Full solution test suite passed with `498` tests.
+- Private provided PDF smoke scan emitted `openplantrace.scan.v66`, passed scan
+  validation, and confirmed `184 / 184` wall graph edges included the new trust
+  fields.
+
 ## [0.02.064] - 2026-06-16
 
 ### Fixed

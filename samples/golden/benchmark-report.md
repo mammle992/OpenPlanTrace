@@ -157,7 +157,7 @@ No failing benchmark assertions.
 ## Fixture Details
 
 ### semantic-smoke-dxf
-- Source: `C:\Users\post\Documents\OpenPlanTrace\samples\golden\semantic-smoke.dxf`
+- Source: `samples/golden/semantic-smoke.dxf`
 - Status: PASS
 - Assertions: 117 passed, 0 failed
 - Quality: Strong, confidence 0.881, issues 1, review required False

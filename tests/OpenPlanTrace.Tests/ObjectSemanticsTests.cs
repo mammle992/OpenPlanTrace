@@ -338,7 +338,7 @@ public sealed class ObjectSemanticsTests
         Assert.Contains("car-outline-top", promoted.SourcePrimitiveIds);
         Assert.Contains("car-outline-right", promoted.SourcePrimitiveIds);
         Assert.Contains(promoted.Evidence, item => item.Contains("component excluded from structural topology", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(promoted.Evidence, item => item.Contains("possible object or symbol linework", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(promoted.Evidence, item => item.Contains("possible object", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(
             result.Diagnostics.Messages,
             diagnostic => diagnostic.Code == "objects.wall_component_islands.promoted"

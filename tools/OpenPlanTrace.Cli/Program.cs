@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.IO.Compression;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.ML.OnnxRuntime;
@@ -161,6 +163,8 @@ internal static class OpenPlanTraceCli
         {
             Directory.CreateDirectory(parsed.OutDirectory);
             parsed.JsonPath ??= Path.Combine(parsed.OutDirectory, "scan.json");
+            parsed.CompactScanPath ??= Path.Combine(parsed.OutDirectory, "scan.compact.json");
+            parsed.CompactScanGZipPath ??= Path.Combine(parsed.OutDirectory, "scan.compact.json.gz");
             parsed.GeoJsonPath ??= Path.Combine(parsed.OutDirectory, "scan.geojson");
             parsed.PlacementPath ??= Path.Combine(parsed.OutDirectory, "placement.json");
             parsed.SvgDirectory ??= Path.Combine(parsed.OutDirectory, "overlays");
@@ -195,6 +199,26 @@ internal static class OpenPlanTraceCli
                         result,
                         jsonStream,
                         new PlanTraceJsonExportOptions { WriteIndented = parsed.PrettyJson }).ConfigureAwait(false);
+            }
+
+            if (parsed.CompactScanPath is not null || parsed.CompactScanGZipPath is not null)
+            {
+                var compactJson = PlanTraceCompactJsonExporter.Serialize(result);
+
+                if (parsed.CompactScanPath is not null)
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(parsed.CompactScanPath))!);
+                    await File.WriteAllTextAsync(parsed.CompactScanPath, compactJson).ConfigureAwait(false);
+                }
+
+                if (parsed.CompactScanGZipPath is not null)
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(parsed.CompactScanGZipPath))!);
+                    await using var fileStream = File.Create(parsed.CompactScanGZipPath);
+                    await using var gzipStream = new GZipStream(fileStream, CompressionLevel.SmallestSize);
+                    var bytes = Encoding.UTF8.GetBytes(compactJson);
+                    await gzipStream.WriteAsync(bytes).ConfigureAwait(false);
+                }
             }
 
             if (parsed.ObjectLabelTemplatePath is not null)
@@ -1480,6 +1504,13 @@ internal static class OpenPlanTraceCli
             return new SchemaContent("scan", PlanTraceJsonSchema.ReadCurrent());
         }
 
+        if (string.Equals(schemaName, "scan-compact", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(schemaName, "compact-scan", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(schemaName, "scan.compact", StringComparison.OrdinalIgnoreCase))
+        {
+            return new SchemaContent("scan-compact", PlanTraceCompactJsonSchema.ReadCurrent());
+        }
+
         if (string.Equals(schemaName, "object-review-dataset", StringComparison.OrdinalIgnoreCase)
             || string.Equals(schemaName, "object-review", StringComparison.OrdinalIgnoreCase))
         {
@@ -1619,7 +1650,7 @@ internal static class OpenPlanTraceCli
             {
                 messages.Add(new ArtifactValidationMessage(
                 "error",
-                    "Could not infer artifact kind. Provide --kind scan, object-review-dataset, object-correction-dataset, benchmark-manifest, benchmark-result, benchmark-comparison, viewer-benchmark-review-session, batch-manifest, batch-result, batch-comparison, layer-profile, object-label-profile, kvemo-crops, placement, visual-snapshot, or geojson."));
+                    "Could not infer artifact kind. Provide --kind scan, scan-compact, object-review-dataset, object-correction-dataset, benchmark-manifest, benchmark-result, benchmark-comparison, viewer-benchmark-review-session, batch-manifest, batch-result, batch-comparison, layer-profile, object-label-profile, kvemo-crops, placement, visual-snapshot, or geojson."));
                 return new ArtifactValidationResult(inputPath, "unknown", schemaVersion, false, messages);
             }
 
@@ -3605,6 +3636,9 @@ internal static class OpenPlanTraceCli
                         "scan",
                         messages);
                     break;
+                case "scan-compact":
+                    ValidateCompactScan(root, messages);
+                    break;
                 case "object-review-dataset":
                     ValidateSchemaVersion(
                         root,
@@ -3730,6 +3764,66 @@ internal static class OpenPlanTraceCli
             messages.Add(new ArtifactValidationMessage(
                 "error",
                 $"Unsupported {displayName} schemaVersion '{schemaVersion}'. Expected '{expectedSchemaVersion}'."));
+        }
+    }
+
+    private static void ValidateCompactScan(
+        JsonElement root,
+        ICollection<ArtifactValidationMessage> messages)
+    {
+        ValidateSchemaVersion(
+            root,
+            PlanTraceCompactJsonExporter.CurrentSchemaVersion,
+            "compact scan",
+            messages);
+
+        var sourceSchemaVersion = ReadStringProperty(root, "sourceSchemaVersion");
+        if (!string.Equals(sourceSchemaVersion, PlanTraceExport.CurrentSchemaVersion, StringComparison.Ordinal))
+        {
+            messages.Add(new ArtifactValidationMessage(
+                "error",
+                $"Unsupported compact scan sourceSchemaVersion '{sourceSchemaVersion ?? "(missing)"}'. Expected '{PlanTraceExport.CurrentSchemaVersion}'."));
+        }
+
+        var encoding = ReadStringProperty(root, "encoding");
+        if (!string.Equals(encoding, "shape-string-token-v1", StringComparison.Ordinal))
+        {
+            messages.Add(new ArtifactValidationMessage(
+                "error",
+                $"Unsupported compact scan encoding '{encoding ?? "(missing)"}'. Expected 'shape-string-token-v1'."));
+        }
+
+        if (!root.TryGetProperty("dictionary", out var dictionary)
+            || dictionary.ValueKind != JsonValueKind.Object)
+        {
+            messages.Add(new ArtifactValidationMessage("error", "Compact scan requires object dictionary."));
+            return;
+        }
+
+        ReadArrayProperty(dictionary, "stringPrefixes", "Compact scan dictionary", messages);
+        ReadArrayProperty(dictionary, "strings", "Compact scan dictionary", messages);
+        ReadArrayProperty(dictionary, "shapes", "Compact scan dictionary", messages);
+
+        try
+        {
+            using var output = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(output))
+            {
+                PlanTraceCompactJsonExporter.ExpandToScanJson(root, writer);
+            }
+
+            using var expanded = JsonDocument.Parse(output.ToArray());
+            ValidateSchemaVersion(
+                expanded.RootElement,
+                PlanTraceExport.CurrentSchemaVersion,
+                "expanded compact scan",
+                messages);
+        }
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException or KeyNotFoundException)
+        {
+            messages.Add(new ArtifactValidationMessage(
+                "error",
+                $"Compact scan token tree could not be expanded: {exception.Message}"));
         }
     }
 
@@ -8874,6 +8968,7 @@ internal static class OpenPlanTraceCli
         var schema = kind switch
         {
             "scan" => PlanTraceJsonSchema.ReadCurrent(),
+            "scan-compact" => PlanTraceCompactJsonSchema.ReadCurrent(),
             "object-review-dataset" => ObjectReviewDatasetJsonSchema.ReadCurrent(),
             "object-correction-dataset" => ObjectCorrectionDatasetJsonSchema.ReadCurrent(),
             "benchmark-manifest" => BenchmarkManifestJsonSchema.ReadCurrent(),
@@ -8929,6 +9024,7 @@ internal static class OpenPlanTraceCli
         return schemaVersion?.Trim().ToLowerInvariant() switch
         {
             PlanTraceExport.CurrentSchemaVersion => "scan",
+            PlanTraceCompactJsonExporter.CurrentSchemaVersion => "scan-compact",
             ObjectReviewDataset.CurrentSchemaVersion => "object-review-dataset",
             ObjectCorrectionDataset.CurrentSchemaVersion => "object-correction-dataset",
             BenchmarkManifest.CurrentSchemaVersion => "benchmark-manifest",
@@ -8951,6 +9047,7 @@ internal static class OpenPlanTraceCli
         kind.Trim().ToLowerInvariant() switch
         {
             "scan" => "scan",
+            "scan-compact" or "compact-scan" or "scan.compact" => "scan-compact",
             "object-review-dataset" or "object-review" => "object-review-dataset",
             "object-correction-dataset" or "object-corrections" => "object-correction-dataset",
             "benchmark-manifest" or "benchmark" => "benchmark-manifest",
@@ -9061,6 +9158,13 @@ internal static class OpenPlanTraceCli
             && root.TryGetProperty("diagnostics", out _))
         {
             return "scan";
+        }
+
+        if (root.TryGetProperty("sourceSchemaVersion", out _)
+            && root.TryGetProperty("dictionary", out _)
+            && root.TryGetProperty("data", out _))
+        {
+            return "scan-compact";
         }
 
         if (root.TryGetProperty("coordinateSpace", out _)
@@ -9382,6 +9486,16 @@ internal static class OpenPlanTraceCli
         if (parsed.JsonPath is not null)
         {
             Console.WriteLine($"JSON: {Path.GetFullPath(parsed.JsonPath)}");
+        }
+
+        if (parsed.CompactScanPath is not null)
+        {
+            Console.WriteLine($"Compact scan JSON: {Path.GetFullPath(parsed.CompactScanPath)}");
+        }
+
+        if (parsed.CompactScanGZipPath is not null)
+        {
+            Console.WriteLine($"Compact scan gzip: {Path.GetFullPath(parsed.CompactScanGZipPath)}");
         }
 
         if (parsed.GeoJsonPath is not null)
@@ -9791,6 +9905,7 @@ internal static class OpenPlanTraceCli
         Console.WriteLine("  inspect <input>             Load a source and report normalized primitive counts");
         Console.WriteLine("  formats                     List supported and planned input formats");
         Console.WriteLine("  schema scan                 Print or write the current scan JSON schema");
+        Console.WriteLine("  schema scan-compact         Print or write the compact scan JSON schema");
         Console.WriteLine("  schema object-review-dataset");
         Console.WriteLine("                              Print or write the current object review dataset schema");
         Console.WriteLine("  schema object-correction-dataset");
@@ -9837,13 +9952,15 @@ internal static class OpenPlanTraceCli
         Console.WriteLine();
         Console.WriteLine("Options:");
         Console.WriteLine("  --json <path>             Write schema-versioned scan JSON");
+        Console.WriteLine("  --compact-scan <path>     Write dictionary/shape-encoded compact scan JSON");
+        Console.WriteLine("  --compact-scan-gzip <path> Write gzipped compact scan JSON");
         Console.WriteLine("  --geojson <path>          Write page-coordinate GeoJSON feature collection");
         Console.WriteLine("  --placement <path>        Write compact downstream placement JSON with coordinates, metric transforms, routing, and trust gates");
         Console.WriteLine("  --svg <path>              Write one SVG overlay");
         Console.WriteLine("  --svg-dir <directory>     Write one SVG overlay per page");
-        Console.WriteLine("  --svg-profile <name>      SVG overlay profile: structural-review (default) or full");
+        Console.WriteLine("  --svg-profile <name>      SVG overlay profile: placement-review (default), structural-review, or full");
         Console.WriteLine("  --visual-snapshot <path>  Write visual QA snapshot JSON with per-page overlay counts, bounds, and issues");
-        Console.WriteLine("  --out-dir <directory>     Write scan.json, scan.geojson, placement.json, overlays/page-N.svg, and visual-snapshot.json");
+        Console.WriteLine("  --out-dir <directory>     Write scan.json, scan.compact.json, scan.compact.json.gz, scan.geojson, placement.json, overlays/page-N.svg, and visual-snapshot.json");
         Console.WriteLine("  --page <number>           Page used with --svg, default first page");
         Console.WriteLine("  --compact-json            Disable pretty JSON");
         Console.WriteLine("  --trace-stages            Print scanner stage start/completion timing to stderr");
@@ -9905,7 +10022,7 @@ internal static class OpenPlanTraceCli
         Console.WriteLine("  --geojson                 Write scan.geojson beside each per-file scan.json");
         Console.WriteLine("  --recursive               Recurse into input directories");
         Console.WriteLine("  --no-svg                  Do not write per-page SVG overlays; visual-snapshot.json is still written without SVG links");
-        Console.WriteLine("  --svg-profile <name>      SVG overlay profile: structural-review (default) or full");
+        Console.WriteLine("  --svg-profile <name>      SVG overlay profile: placement-review (default), structural-review, or full");
         Console.WriteLine("  --compact-json            Disable pretty JSON");
         Console.WriteLine("  --parallel <n>            Scan up to n batch items at once; default 1");
         Console.WriteLine("  --retries <n>             Retry failed scan/load attempts n times; default 0");
@@ -10584,7 +10701,7 @@ internal static class OpenPlanTraceCli
         }
 
         throw new ArgumentException(
-            $"Invalid SVG overlay profile '{value}'. Valid profiles: structural-review, full.");
+            $"Invalid SVG overlay profile '{value}'. Valid profiles: placement-review, structural-review, full.");
     }
 }
 
@@ -11356,11 +11473,15 @@ internal sealed class ScanArguments : IVisualAiCliArguments
 
     public string? JsonPath { get; set; }
 
+    public string? CompactScanPath { get; set; }
+
+    public string? CompactScanGZipPath { get; set; }
+
     public string? SvgPath { get; set; }
 
     public string? SvgDirectory { get; set; }
 
-    public SvgOverlayRenderProfile SvgProfile { get; set; } = SvgOverlayRenderProfile.StructuralReview;
+    public SvgOverlayRenderProfile SvgProfile { get; set; } = SvgOverlayRenderProfile.PlacementReview;
 
     public string? GeoJsonPath { get; set; }
 
@@ -11488,6 +11609,13 @@ internal sealed class ScanArguments : IVisualAiCliArguments
             {
                 case "--json":
                     parsed.JsonPath = ReadValue(args, ref index, arg);
+                    break;
+                case "--compact-scan":
+                    parsed.CompactScanPath = ReadValue(args, ref index, arg);
+                    break;
+                case "--compact-scan-gzip":
+                case "--compact-scan-gz":
+                    parsed.CompactScanGZipPath = ReadValue(args, ref index, arg);
                     break;
                 case "--svg":
                     parsed.SvgPath = ReadValue(args, ref index, arg);
@@ -11714,7 +11842,7 @@ internal sealed class BatchArguments : IVisualAiCliArguments
 
     public bool NoSvg { get; set; }
 
-    public SvgOverlayRenderProfile SvgProfile { get; set; } = SvgOverlayRenderProfile.StructuralReview;
+    public SvgOverlayRenderProfile SvgProfile { get; set; } = SvgOverlayRenderProfile.PlacementReview;
 
     public bool GeoJson { get; set; }
 

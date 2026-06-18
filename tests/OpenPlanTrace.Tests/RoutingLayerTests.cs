@@ -217,10 +217,13 @@ public sealed class RoutingLayerTests
         Assert.Contains(
             routing.Evidence,
             item => item == "wall-evidence review barriers suppressed: 1");
+        Assert.Contains(
+            routing.Evidence,
+            item => item == "non-trusted wall evidence blocked from routing protection: 1");
     }
 
     [Fact]
-    public void RoutingLayer_KeepsReviewRequiredWallEvidenceWhenProtectedByRoomTopology()
+    public void RoutingLayer_SuppressesReviewRequiredWallEvidenceEvenWhenReferencedByRoomTopology()
     {
         var reviewWall = Wall("review-wall", 100, 100, 300, 100);
         var result = SyntheticResult(
@@ -231,10 +234,13 @@ public sealed class RoutingLayerTests
 
         var routing = result.RoutingLayer;
 
-        Assert.Contains(routing.Barriers, barrier => barrier.SourceId == reviewWall.Id);
+        Assert.DoesNotContain(routing.Barriers, barrier => barrier.SourceId == reviewWall.Id);
         Assert.Contains(
             routing.Evidence,
-            item => item == "wall-evidence review barriers suppressed: 0");
+            item => item == "wall-evidence review barriers suppressed: 1");
+        Assert.Contains(
+            routing.Evidence,
+            item => item == "non-trusted wall evidence blocked from routing protection: 1");
     }
 
     private static PlanScanResult SyntheticResult(RoomRegion? room, bool includeShortWallInStructuralComponent)

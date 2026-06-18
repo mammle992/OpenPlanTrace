@@ -13,6 +13,9 @@ internal sealed class WallGraphStage : IPipelineStage
         var snappedEndpointGapCount = 0;
         var trimmedEndpointOverrunCount = 0;
         var suppressedEndpointOverrunTailEdgeCount = 0;
+        var suppressedReviewJunctionPairCount = 0;
+        var pairedEndpointSnapJunctionCount = 0;
+        var trustedEndpointSnapJunctionCount = 0;
         var normalizedWallSegmentCount = 0;
         var endpointOverrunReviews = new List<EndpointOverrunReview>();
         var nearTouchTolerance = InferredNearTouchJunctionTolerance(context.Options);
@@ -22,7 +25,10 @@ internal sealed class WallGraphStage : IPipelineStage
             : WallTopologyPreparationStage.Prepare(context);
         var graphInputWallIds = graphInput.GraphWallIds
             .ToHashSet(StringComparer.Ordinal);
+        var trustedReviewCoordinateRepairWallIds = TrustedReviewCoordinateRepairWallIds(context, graphInput)
+            .ToHashSet(StringComparer.Ordinal);
         var automaticCoordinateRepairWallIds = graphInput.AutomaticCoordinateRepairWallIds
+            .Concat(trustedReviewCoordinateRepairWallIds)
             .ToHashSet(StringComparer.Ordinal);
         var coordinateRepairSkippedWallIds = new HashSet<string>(StringComparer.Ordinal);
         var graphWalls = context.Walls
@@ -40,12 +46,55 @@ internal sealed class WallGraphStage : IPipelineStage
             var coordinateRepairSupportWalls = walls
                 .Where(wall => automaticCoordinateRepairWallIds.Contains(wall.Id))
                 .ToArray();
+            var trustedEndpointSnaps = DetectTrustedEndpointToWallSnaps(
+                walls,
+                automaticCoordinateRepairWallIds,
+                context,
+                context.Options);
+            trustedEndpointSnapJunctionCount += trustedEndpointSnaps.Count;
+            var pairedEndpointSnaps = DetectPairedEndpointToWallSnaps(
+                walls,
+                automaticCoordinateRepairWallIds,
+                context,
+                context.Options);
+            pairedEndpointSnapJunctionCount += pairedEndpointSnaps.Count;
+            var endpointSnaps = trustedEndpointSnaps
+                .Concat(pairedEndpointSnaps)
+                .GroupBy(
+                    snap => PointKey(snap.EndpointWallId, snap.HostWallId, snap.JunctionPoint, context.Options.WallSnapTolerance),
+                    StringComparer.Ordinal)
+                .Select(group => group.OrderBy(item => item.GapDistance).First())
+                .ToArray();
+            var pairedEndpointSnapPointsByWallId = BuildEndpointSnapPointLookup(endpointSnaps);
+            foreach (var snap in endpointSnaps)
+            {
+                if (pointsByWallId.TryGetValue(snap.EndpointWallId, out var endpointWallPoints))
+                {
+                    AddPointIfMissing(endpointWallPoints, snap.JunctionPoint, context.Options.WallSnapTolerance);
+                }
+
+                if (pointsByWallId.TryGetValue(snap.HostWallId, out var hostWallPoints))
+                {
+                    AddPointIfMissing(hostWallPoints, snap.JunctionPoint, context.Options.WallSnapTolerance);
+                }
+            }
+
             for (var leftIndex = 0; leftIndex < walls.Length; leftIndex++)
             {
                 for (var rightIndex = leftIndex + 1; rightIndex < walls.Length; rightIndex++)
                 {
                     var leftWall = walls[leftIndex];
                     var rightWall = walls[rightIndex];
+                    if (!CanUsePairForAutomaticJunctions(leftWall, rightWall, automaticCoordinateRepairWallIds))
+                    {
+                        if (WouldCreateAutomaticJunction(leftWall, rightWall, nearTouchTolerance, context.Options))
+                        {
+                            suppressedReviewJunctionPairCount++;
+                        }
+
+                        continue;
+                    }
+
                     if (GeometryOperations.TryIntersect(
                         leftWall.CenterLine,
                         rightWall.CenterLine,
@@ -101,6 +150,7 @@ internal sealed class WallGraphStage : IPipelineStage
                         wall,
                         pointsByWallId,
                         coordinateRepairSupportWalls,
+                        pairedEndpointSnapPointsByWallId,
                         context.Options,
                         out wallSnappedEndpointGapCount);
                     snappedEndpointGapCount += wallSnappedEndpointGapCount;
@@ -231,8 +281,20 @@ internal sealed class WallGraphStage : IPipelineStage
         AddEndpointOverrunDiagnostics(context, endpointOverrunRepairCandidates);
         AddGraphInputRejectionDiagnostics(context, graphInput.RejectedWalls);
         AddCoordinateRepairTrustGateDiagnostics(context, graphInput, graphWalls, coordinateRepairSkippedWallIds);
-        AddCoordinateRepairSupportTrustDiagnostics(context, graphInput, graphWalls);
-        AddEndpointGapReviewTrustDiagnostics(context, graphInput, graphWalls, suppressedReviewEndpointGapCount);
+        AddTrustedReviewCoordinateRepairDiagnostics(context, graphInput, graphWalls, trustedReviewCoordinateRepairWallIds);
+        AddCoordinateRepairSupportTrustDiagnostics(context, graphInput, graphWalls, trustedReviewCoordinateRepairWallIds);
+        AddReviewJunctionTrustGateDiagnostics(
+            context,
+            graphInput,
+            graphWalls,
+            trustedReviewCoordinateRepairWallIds,
+            suppressedReviewJunctionPairCount);
+        AddEndpointGapReviewTrustDiagnostics(
+            context,
+            graphInput,
+            graphWalls,
+            trustedReviewCoordinateRepairWallIds,
+            suppressedReviewEndpointGapCount);
         AddTopologyNormalizationDiagnostics(
             context,
             normalizedCollinearJunctionCount,
@@ -255,6 +317,37 @@ internal sealed class WallGraphStage : IPipelineStage
                 });
         }
 
+        if (pairedEndpointSnapJunctionCount > 0)
+        {
+            context.AddDiagnostic(
+                "wall_graph.endpoint_gap.paired_support_snapped",
+                DiagnosticSeverity.Info,
+                Name,
+                "Endpoint-to-wall gaps just beyond the normal safe snap distance were snapped because paired parallel wall-face evidence supported the same host wall.",
+                properties: new Dictionary<string, string>
+                {
+                    ["pairedEndpointSnapCount"] = pairedEndpointSnapJunctionCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["singleEndpointSafeSnapTolerance"] = nearTouchTolerance.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
+                    ["pairedEndpointSnapTolerance"] = PairedEndpointSnapTolerance(context.Options).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
+                    ["pairedEndpointSupportSeparation"] = PairedEndpointSupportSeparation(context.Options).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
+                });
+        }
+
+        if (trustedEndpointSnapJunctionCount > 0)
+        {
+            context.AddDiagnostic(
+                "wall_graph.endpoint_gap.trusted_endpoint_snapped",
+                DiagnosticSeverity.Info,
+                Name,
+                "Low-risk endpoint-to-wall gaps just beyond the normal safe snap distance were snapped because the host wall had trusted wall-body evidence.",
+                properties: new Dictionary<string, string>
+                {
+                    ["trustedEndpointSnapCount"] = trustedEndpointSnapJunctionCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["singleEndpointSafeSnapTolerance"] = nearTouchTolerance.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
+                    ["trustedEndpointSnapTolerance"] = TrustedEndpointSnapTolerance(context.Options).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
+                });
+        }
+
         if (graphWalls.Length > 0 && graphNodes.Length == 0)
         {
             context.AddDiagnostic(
@@ -268,10 +361,156 @@ internal sealed class WallGraphStage : IPipelineStage
         return ValueTask.CompletedTask;
     }
 
+    private static IReadOnlyList<string> TrustedReviewCoordinateRepairWallIds(
+        ScanContext context,
+        WallTopologyPreparation graphInput)
+    {
+        if (graphInput.ReviewGraphWallCount == 0 || context.WallEvidenceMap.WallAssessments.Count == 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        var bandsByWallId = context.WallEvidenceMap.Bands
+            .Where(band => !string.IsNullOrWhiteSpace(band.WallId))
+            .GroupBy(band => band.WallId!, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+        var wallsById = context.Walls
+            .ToDictionary(wall => wall.Id, StringComparer.Ordinal);
+
+        return context.WallEvidenceMap.WallAssessments
+            .Where(assessment => !string.IsNullOrWhiteSpace(assessment.WallId))
+            .Where(assessment => graphInput.IsReviewGraphWall(assessment.WallId))
+            .Where(assessment => wallsById.TryGetValue(assessment.WallId, out var wall)
+                && IsTrustedReviewCoordinateRepairAssessment(assessment, wall))
+            .Where(assessment => bandsByWallId.TryGetValue(assessment.WallId, out var bands)
+                && bands.Any(IsTrustedReviewCoordinateRepairBand))
+            .Select(assessment => assessment.WallId)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static bool IsTrustedReviewCoordinateRepairAssessment(
+        WallEvidenceWallAssessment assessment,
+        WallSegment wall)
+    {
+        if (assessment.RejectedAsNoise
+            || assessment.Decision != WallEvidenceDecision.Review
+            || assessment.Category != WallEvidenceCategory.MediumWallBody
+            || assessment.Confidence.Value < 0.80)
+        {
+            return false;
+        }
+
+        if (!assessment.Evidence.Any(item => item.Contains("parallel wall-face pair", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        if (assessment.Evidence.Any(IsHardRiskReviewWallEvidence))
+        {
+            return false;
+        }
+
+        if (assessment.Evidence.Any(IsSuspiciousButPotentialInteriorWallEvidence))
+        {
+            return wall.WallType == WallType.Interior
+                || assessment.Evidence.Any(item => item.Contains("wall type interior", StringComparison.OrdinalIgnoreCase));
+        }
+
+        return true;
+    }
+
+    private static bool IsTrustedReviewCoordinateRepairBand(WallEvidenceBand band) =>
+        band.OverlapRatio >= 0.82
+        && band.FaceSeparation >= 3.0
+        && band.FaceSeparation <= 18.0
+        && band.Confidence.Value >= 0.72;
+
+    private static bool IsHardRiskReviewWallEvidence(string evidence)
+    {
+        if (string.IsNullOrWhiteSpace(evidence))
+        {
+            return false;
+        }
+
+        return evidence.Contains("door", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("opening", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("surface pattern", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("outdoor", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("covered-area", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("fixture", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("object", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsSuspiciousButPotentialInteriorWallEvidence(string evidence)
+    {
+        if (string.IsNullOrWhiteSpace(evidence))
+        {
+            return false;
+        }
+
+        return evidence.Contains("dimension", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("annotation", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("one distinct structural wall", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("only one structural endpoint support", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void AddReviewJunctionTrustGateDiagnostics(
+        ScanContext context,
+        WallTopologyPreparation graphInput,
+        IReadOnlyList<WallSegment> graphWalls,
+        IReadOnlySet<string> trustedReviewCoordinateRepairWallIds,
+        int suppressedReviewJunctionPairCount)
+    {
+        if (suppressedReviewJunctionPairCount <= 0)
+        {
+            return;
+        }
+
+        var reviewWalls = graphWalls
+            .Where(wall => graphInput.IsReviewGraphWall(wall.Id))
+            .Where(wall => !trustedReviewCoordinateRepairWallIds.Contains(wall.Id))
+            .OrderBy(wall => wall.PageNumber)
+            .ThenBy(wall => wall.Id, StringComparer.Ordinal)
+            .ToArray();
+        if (reviewWalls.Length == 0)
+        {
+            return;
+        }
+
+        var sourcePrimitiveIds = reviewWalls
+            .SelectMany(wall => wall.SourcePrimitiveIds)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        context.AddDiagnostic(
+            "wall_graph.junctions.review_trust_gated",
+            DiagnosticSeverity.Info,
+            Name,
+            "Review-required graph walls were prevented from splitting trusted wall graph topology; review them before accepting junctions.",
+            confidence: Confidence.Medium,
+            scope: DiagnosticScope.Detection,
+            sourcePrimitiveIds: sourcePrimitiveIds,
+            properties: new Dictionary<string, string>
+            {
+                ["suppressedJunctionPairCount"] = suppressedReviewJunctionPairCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["graphWallCount"] = graphInput.GraphWallCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["acceptedGraphWallCount"] = graphInput.AcceptedGraphWallCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["reviewGraphWallCount"] = graphInput.ReviewGraphWallCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["unassessedGraphWallCount"] = graphInput.UnassessedGraphWallCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["automaticCoordinateRepairWallCount"] = graphInput.AutomaticCoordinateRepairWallCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["trustedReviewCoordinateRepairWallCount"] = trustedReviewCoordinateRepairWallIds.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["wallIds"] = string.Join(",", reviewWalls.Select(wall => wall.Id).Take(30))
+            });
+    }
+
     private void AddEndpointGapReviewTrustDiagnostics(
         ScanContext context,
         WallTopologyPreparation graphInput,
         IReadOnlyList<WallSegment> graphWalls,
+        IReadOnlySet<string> trustedReviewCoordinateRepairWallIds,
         int suppressedReviewEndpointGapCount)
     {
         if (suppressedReviewEndpointGapCount <= 0)
@@ -281,9 +520,15 @@ internal sealed class WallGraphStage : IPipelineStage
 
         var reviewWalls = graphWalls
             .Where(wall => graphInput.IsReviewGraphWall(wall.Id))
+            .Where(wall => !trustedReviewCoordinateRepairWallIds.Contains(wall.Id))
             .OrderBy(wall => wall.PageNumber)
             .ThenBy(wall => wall.Id, StringComparer.Ordinal)
             .ToArray();
+        if (reviewWalls.Length == 0)
+        {
+            return;
+        }
+
         var sourcePrimitiveIds = reviewWalls
             .SelectMany(wall => wall.SourcePrimitiveIds)
             .Distinct(StringComparer.Ordinal)
@@ -303,14 +548,56 @@ internal sealed class WallGraphStage : IPipelineStage
                 ["suppressedEndpointGapCandidateCount"] = suppressedReviewEndpointGapCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["reviewGraphWallCount"] = graphInput.ReviewGraphWallCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["automaticCoordinateRepairWallCount"] = graphInput.AutomaticCoordinateRepairWallCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["trustedReviewCoordinateRepairWallCount"] = trustedReviewCoordinateRepairWallIds.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["wallIds"] = string.Join(",", reviewWalls.Select(wall => wall.Id).Take(30))
+            });
+    }
+
+    private void AddTrustedReviewCoordinateRepairDiagnostics(
+        ScanContext context,
+        WallTopologyPreparation graphInput,
+        IReadOnlyList<WallSegment> graphWalls,
+        IReadOnlySet<string> trustedReviewCoordinateRepairWallIds)
+    {
+        if (trustedReviewCoordinateRepairWallIds.Count == 0)
+        {
+            return;
+        }
+
+        var trustedReviewWalls = graphWalls
+            .Where(wall => trustedReviewCoordinateRepairWallIds.Contains(wall.Id))
+            .OrderBy(wall => wall.PageNumber)
+            .ThenBy(wall => wall.Id, StringComparer.Ordinal)
+            .ToArray();
+        var sourcePrimitiveIds = trustedReviewWalls
+            .SelectMany(wall => wall.SourcePrimitiveIds)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        context.AddDiagnostic(
+            "wall_graph.coordinate_repair.trusted_review_support",
+            DiagnosticSeverity.Info,
+            Name,
+            "High-confidence review wall bodies were allowed to participate in wall graph coordinate repair while remaining review-required in exported evidence.",
+            confidence: Confidence.Medium,
+            scope: DiagnosticScope.Detection,
+            sourcePrimitiveIds: sourcePrimitiveIds,
+            properties: new Dictionary<string, string>
+            {
+                ["trustedReviewCoordinateRepairWallCount"] = trustedReviewCoordinateRepairWallIds.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["reviewGraphWallCount"] = graphInput.ReviewGraphWallCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["automaticCoordinateRepairWallCount"] = graphInput.AutomaticCoordinateRepairWallCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["effectiveAutomaticCoordinateRepairWallCount"] = (graphInput.AutomaticCoordinateRepairWallCount + trustedReviewCoordinateRepairWallIds.Count).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["wallIds"] = string.Join(",", trustedReviewWalls.Select(wall => wall.Id).Take(30))
             });
     }
 
     private void AddCoordinateRepairSupportTrustDiagnostics(
         ScanContext context,
         WallTopologyPreparation graphInput,
-        IReadOnlyList<WallSegment> graphWalls)
+        IReadOnlyList<WallSegment> graphWalls,
+        IReadOnlySet<string> trustedReviewCoordinateRepairWallIds)
     {
         if (graphInput.ReviewGraphWallCount == 0
             || graphInput.AutomaticCoordinateRepairWallCount == 0)
@@ -320,6 +607,7 @@ internal sealed class WallGraphStage : IPipelineStage
 
         var reviewWalls = graphWalls
             .Where(wall => graphInput.IsReviewGraphWall(wall.Id))
+            .Where(wall => !trustedReviewCoordinateRepairWallIds.Contains(wall.Id))
             .OrderBy(wall => wall.PageNumber)
             .ThenBy(wall => wall.Id, StringComparer.Ordinal)
             .ToArray();
@@ -350,6 +638,7 @@ internal sealed class WallGraphStage : IPipelineStage
                 ["reviewGraphWallCount"] = graphInput.ReviewGraphWallCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["unassessedGraphWallCount"] = graphInput.UnassessedGraphWallCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["automaticCoordinateRepairWallCount"] = graphInput.AutomaticCoordinateRepairWallCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["trustedReviewCoordinateRepairWallCount"] = trustedReviewCoordinateRepairWallIds.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["wallIds"] = string.Join(",", reviewWalls.Select(wall => wall.Id).Take(30))
             });
     }
@@ -508,7 +797,14 @@ internal sealed class WallGraphStage : IPipelineStage
                 }
             }
 
-            rawComponents.Add(CreateRawComponent(node.PageNumber, wallIds, nodeIds, edgeIds, wallsById, nodesById));
+            rawComponents.Add(CreateRawComponent(
+                node.PageNumber,
+                wallIds,
+                nodeIds,
+                edgeIds,
+                wallsById,
+                nodesById,
+                context.Options));
         }
 
         var wallIdsWithEdges = edges
@@ -528,7 +824,8 @@ internal sealed class WallGraphStage : IPipelineStage
                 Array.Empty<string>(),
                 Array.Empty<string>(),
                 wallsById,
-                nodesById));
+                nodesById,
+                context.Options));
         }
 
         var components = new List<WallGraphComponent>();
@@ -539,12 +836,12 @@ internal sealed class WallGraphStage : IPipelineStage
         {
             var pageBounds = context.Document.Pages.FirstOrDefault(page => page.Number == pageGroup.Key)?.Bounds
                 ?? PlanRect.Empty;
-            var mainBounds = context.SheetRegions
+            var mainRegion = context.SheetRegions
                 .Where(region => region.PageNumber == pageGroup.Key && region.Kind == RegionKind.MainFloorPlan)
                 .OrderByDescending(region => region.Bounds.Area)
-                .Select(region => region.Bounds)
                 .FirstOrDefault();
-            if (mainBounds.IsEmpty)
+            var mainBounds = mainRegion?.Bounds ?? PlanRect.Empty;
+            if (mainBounds.IsEmpty || mainBounds.Width <= 0 || mainBounds.Height <= 0)
             {
                 mainBounds = pageBounds;
             }
@@ -559,7 +856,7 @@ internal sealed class WallGraphStage : IPipelineStage
             var sequence = 1;
             foreach (var rawComponent in ordered)
             {
-                var kind = ClassifyComponent(rawComponent, mainComponent, mainBounds);
+                var kind = ClassifyComponent(rawComponent, mainComponent, mainBounds, context.Options);
                 var exclusionReason = StructuralTopologyExclusionReason(
                     rawComponent,
                     kind,
@@ -876,7 +1173,8 @@ internal sealed class WallGraphStage : IPipelineStage
         IEnumerable<string> nodeIds,
         IEnumerable<string> edgeIds,
         IReadOnlyDictionary<string, WallSegment> wallsById,
-        IReadOnlyDictionary<string, WallNode> nodesById)
+        IReadOnlyDictionary<string, WallNode> nodesById,
+        ScannerOptions options)
     {
         var componentWallIds = wallIds
             .Where(id => !string.IsNullOrWhiteSpace(id) && wallsById.ContainsKey(id))
@@ -905,6 +1203,14 @@ internal sealed class WallGraphStage : IPipelineStage
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
             .ToArray();
+        var orientationTolerance = Math.Max(1.5, options.WallSnapTolerance);
+        var horizontalWallCount = componentWalls.Count(wall => wall.CenterLine.IsHorizontal(orientationTolerance));
+        var verticalWallCount = componentWalls.Count(wall => wall.CenterLine.IsVertical(orientationTolerance));
+        var diagonalWallCount = componentWalls.Length - horizontalWallCount - verticalWallCount;
+        var shortDetailWallLength = ShortDetailComponentWallLength(options);
+        var shortWallCount = componentWalls.Count(wall => wall.DrawingLength <= shortDetailWallLength);
+        var singleLineWallCount = componentWalls.Count(wall => wall.DetectionKind == WallDetectionKind.SingleLine);
+        var pairedWallCount = componentWalls.Count(wall => wall.DetectionKind == WallDetectionKind.ParallelLinePair);
 
         return new RawWallGraphComponent(
             pageNumber,
@@ -913,13 +1219,20 @@ internal sealed class WallGraphStage : IPipelineStage
             componentEdgeIds,
             sourcePrimitiveIds,
             bounds,
-            drawingLength);
+            drawingLength,
+            horizontalWallCount,
+            verticalWallCount,
+            diagonalWallCount,
+            shortWallCount,
+            singleLineWallCount,
+            pairedWallCount);
     }
 
     private static WallGraphComponentKind ClassifyComponent(
         RawWallGraphComponent component,
         RawWallGraphComponent? mainComponent,
-        PlanRect mainBounds)
+        PlanRect mainBounds,
+        ScannerOptions options)
     {
         if (mainComponent is not null
             && ReferenceEquals(component, mainComponent)
@@ -928,7 +1241,8 @@ internal sealed class WallGraphStage : IPipelineStage
             return WallGraphComponentKind.MainStructural;
         }
 
-        if (LooksLikeObjectIsland(component, mainBounds))
+        if (LooksLikeObjectIsland(component, mainBounds)
+            || LooksLikeDenseDetailOrStairIsland(component, mainBounds, options))
         {
             return WallGraphComponentKind.ObjectLikeIsland;
         }
@@ -950,6 +1264,11 @@ internal sealed class WallGraphStage : IPipelineStage
         if (kind == WallGraphComponentKind.ObjectLikeIsland
             && context.Options.ExcludeObjectLikeWallComponentsFromStructuralTopology)
         {
+            if (LooksLikeDenseDetailOrStairIsland(component, mainComponent?.Bounds ?? PlanRect.Empty, context.Options))
+            {
+                return "compact dense stair/detail-like linework";
+            }
+
             return "compact disconnected object-like linework";
         }
 
@@ -1065,6 +1384,61 @@ internal sealed class WallGraphStage : IPipelineStage
             && componentAreaRatio <= 0.04;
     }
 
+    private static bool LooksLikeDenseDetailOrStairIsland(
+        RawWallGraphComponent component,
+        PlanRect mainBounds,
+        ScannerOptions options)
+    {
+        if (!options.FilterCompactObjectLineworkFromWalls
+            || component.Bounds.IsEmpty
+            || mainBounds.IsEmpty
+            || component.WallIds.Count < 8
+            || component.EdgeIds.Count < 8
+            || component.NodeIds.Count < 8)
+        {
+            return false;
+        }
+
+        var componentWidth = Math.Max(component.Bounds.Width, 0);
+        var componentHeight = Math.Max(component.Bounds.Height, 0);
+        var componentShortSide = Math.Min(componentWidth, componentHeight);
+        var componentExtent = Math.Max(componentWidth, componentHeight);
+        if (componentShortSide <= 0.001 || componentExtent <= 0.001)
+        {
+            return false;
+        }
+
+        var mainShortSide = Math.Max(Math.Min(mainBounds.Width, mainBounds.Height), 1);
+        var componentArea = Math.Max(1, componentWidth * componentHeight);
+        var mainArea = Math.Max(1, mainBounds.Width * mainBounds.Height);
+        var componentAreaRatio = componentArea / mainArea;
+        var lineDensity = component.DrawingLength / componentArea;
+        var aspectRatio = componentExtent / componentShortSide;
+        var diagonalRatio = component.DiagonalWallCount / (double)component.WallIds.Count;
+        var shortWallRatio = component.ShortWallCount / (double)component.WallIds.Count;
+        var compactEnough = componentAreaRatio <= 0.055
+            && componentExtent <= Math.Max(options.MinWallLength * 4.0, mainShortSide * 0.55);
+        if (!compactEnough)
+        {
+            return false;
+        }
+
+        var stairLike = aspectRatio >= 2.0
+            && component.DiagonalWallCount >= 3
+            && diagonalRatio >= 0.18
+            && shortWallRatio >= 0.35
+            && lineDensity >= 0.045;
+        var denseDetailLike = component.WallIds.Count >= 12
+            && shortWallRatio >= 0.6
+            && lineDensity >= 0.07
+            && componentAreaRatio <= 0.04;
+
+        return stairLike || denseDetailLike;
+    }
+
+    private static double ShortDetailComponentWallLength(ScannerOptions options) =>
+        Math.Max(options.MinWallLength * 2.75, options.DefaultWallThickness * 16.0);
+
     private static Confidence ComponentConfidence(WallGraphComponentKind kind) =>
         kind switch
         {
@@ -1084,7 +1458,8 @@ internal sealed class WallGraphStage : IPipelineStage
         var evidence = new List<string>
         {
             $"connected component with {component.WallIds.Count} wall(s), {component.NodeIds.Count} node(s), {component.EdgeIds.Count} edge(s)",
-            $"drawing length {component.DrawingLength.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}"
+            $"drawing length {component.DrawingLength.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}",
+            $"component shape: {component.HorizontalWallCount} horizontal, {component.VerticalWallCount} vertical, {component.DiagonalWallCount} diagonal, {component.ShortWallCount} short-detail wall(s)"
         };
 
         if (kind == WallGraphComponentKind.MainStructural)
@@ -1093,7 +1468,7 @@ internal sealed class WallGraphStage : IPipelineStage
         }
         else if (kind == WallGraphComponentKind.ObjectLikeIsland)
         {
-            evidence.Add("compact disconnected component; review as possible object or symbol linework");
+            evidence.Add("compact disconnected component; review as possible object, stair/detail, or symbol linework");
         }
         else if (kind == WallGraphComponentKind.IsolatedFragment)
         {
@@ -2090,6 +2465,349 @@ internal sealed class WallGraphStage : IPipelineStage
         return Math.Min(Math.Max(autoConnectTolerance + options.WallSnapTolerance, geometryLimit), openingAwareLimit);
     }
 
+    private static IReadOnlyList<PairedEndpointSnap> DetectTrustedEndpointToWallSnaps(
+        IReadOnlyList<WallSegment> walls,
+        IReadOnlySet<string> automaticCoordinateRepairWallIds,
+        ScanContext context,
+        ScannerOptions options)
+    {
+        var safeSnapTolerance = InferredNearTouchJunctionTolerance(options);
+        var trustedSnapTolerance = TrustedEndpointSnapTolerance(options);
+        if (trustedSnapTolerance <= safeSnapTolerance + 0.001)
+        {
+            return Array.Empty<PairedEndpointSnap>();
+        }
+
+        var candidates = new List<PairedEndpointSnapCandidate>();
+        foreach (var endpointWall in walls
+                     .Where(wall => automaticCoordinateRepairWallIds.Contains(wall.Id))
+                     .Where(wall => IsTrustedEndpointSnapEndpointWall(wall))
+                     .Where(wall => !HasOpeningKeywordEvidence(wall)))
+        {
+            foreach (var endpoint in new[] { endpointWall.CenterLine.Start, endpointWall.CenterLine.End })
+            {
+                foreach (var hostWall in walls
+                             .Where(wall => wall.PageNumber == endpointWall.PageNumber)
+                             .Where(wall => !string.Equals(wall.Id, endpointWall.Id, StringComparison.Ordinal))
+                             .Where(wall => automaticCoordinateRepairWallIds.Contains(wall.Id))
+                             .Where(IsTrustedEndpointSnapHostWall)
+                             .Where(wall => !HasOpeningKeywordEvidence(wall)))
+                {
+                    if (!IsNearPerpendicular(endpointWall.CenterLine, hostWall.CenterLine))
+                    {
+                        continue;
+                    }
+
+                    var hostLength = Math.Max(hostWall.CenterLine.Length, 1);
+                    var parameterTolerance = trustedSnapTolerance / hostLength;
+                    var parameter = hostWall.CenterLine.ProjectParameter(endpoint);
+                    if (parameter < -parameterTolerance || parameter > 1 + parameterTolerance)
+                    {
+                        continue;
+                    }
+
+                    var projected = hostWall.CenterLine.PointAt(Math.Clamp(parameter, 0, 1));
+                    var distance = endpoint.DistanceTo(projected);
+                    if (distance <= safeSnapTolerance || distance > trustedSnapTolerance)
+                    {
+                        continue;
+                    }
+
+                    var repairBounds = PlanRect.FromPoints(endpoint, projected)
+                        .Inflate(Math.Max(options.DefaultWallThickness * 2.0, options.WallSnapTolerance * 4.0));
+                    var sourcePrimitiveIds = endpointWall.SourcePrimitiveIds
+                        .Concat(hostWall.SourcePrimitiveIds)
+                        .Where(id => !string.IsNullOrWhiteSpace(id))
+                        .Distinct(StringComparer.Ordinal)
+                        .ToArray();
+                    if (HasNearbyOpeningEvidence(endpointWall.PageNumber, repairBounds, sourcePrimitiveIds, context, options))
+                    {
+                        continue;
+                    }
+
+                    candidates.Add(new PairedEndpointSnapCandidate(
+                        endpointWall,
+                        hostWall,
+                        endpoint,
+                        projected,
+                        distance));
+                }
+            }
+        }
+
+        return candidates
+            .GroupBy(
+                candidate => PointKey(candidate.EndpointWall.Id, "trusted", candidate.Endpoint, options.WallSnapTolerance),
+                StringComparer.Ordinal)
+            .Select(group => group.OrderBy(candidate => candidate.GapDistance).First())
+            .OrderBy(candidate => candidate.EndpointWall.Id, StringComparer.Ordinal)
+            .ThenBy(candidate => candidate.HostWall.Id, StringComparer.Ordinal)
+            .ThenBy(candidate => candidate.GapDistance)
+            .Select(candidate => new PairedEndpointSnap(
+                candidate.EndpointWall.Id,
+                candidate.HostWall.Id,
+                candidate.Endpoint,
+                candidate.JunctionPoint,
+                candidate.GapDistance,
+                new[] { candidate.HostWall.Id }))
+            .ToArray();
+    }
+
+    private static bool IsTrustedEndpointSnapHostWall(WallSegment wall) =>
+        wall.Confidence.Value >= 0.82
+        && (wall.DetectionKind is WallDetectionKind.ParallelLinePair or WallDetectionKind.FragmentMerged
+            || wall.Evidence.Any(item => item.Contains("StrongWallBody", StringComparison.OrdinalIgnoreCase)));
+
+    private static bool IsTrustedEndpointSnapEndpointWall(WallSegment wall) =>
+        wall.Confidence.Value >= 0.65
+        && wall.FragmentEvidence?.RequiresGeometryReview != true
+        && !wall.Evidence.Any(item =>
+            item.Contains("review-only", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("requires review", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("rejected", StringComparison.OrdinalIgnoreCase));
+
+    private static double TrustedEndpointSnapTolerance(ScannerOptions options)
+    {
+        var safeSnapTolerance = InferredNearTouchJunctionTolerance(options);
+        var reviewTolerance = UnresolvedEndpointGapReviewTolerance(options);
+        var lowRiskLimit = safeSnapTolerance + ((reviewTolerance - safeSnapTolerance) * 0.35);
+        return Math.Min(
+            lowRiskLimit,
+            safeSnapTolerance + Math.Max(options.DefaultWallThickness, options.WallSnapTolerance * 2.0));
+    }
+
+    private static IReadOnlyList<PairedEndpointSnap> DetectPairedEndpointToWallSnaps(
+        IReadOnlyList<WallSegment> walls,
+        IReadOnlySet<string> automaticCoordinateRepairWallIds,
+        ScanContext context,
+        ScannerOptions options)
+    {
+        var safeSnapTolerance = InferredNearTouchJunctionTolerance(options);
+        var pairedSnapTolerance = PairedEndpointSnapTolerance(options);
+        if (pairedSnapTolerance <= safeSnapTolerance + 0.001)
+        {
+            return Array.Empty<PairedEndpointSnap>();
+        }
+
+        var rawCandidates = new List<PairedEndpointSnapCandidate>();
+        foreach (var endpointWall in walls
+                     .Where(wall => automaticCoordinateRepairWallIds.Contains(wall.Id))
+                     .Where(wall => !HasOpeningKeywordEvidence(wall)))
+        {
+            foreach (var endpoint in new[] { endpointWall.CenterLine.Start, endpointWall.CenterLine.End })
+            {
+                foreach (var hostWall in walls
+                             .Where(wall => wall.PageNumber == endpointWall.PageNumber)
+                             .Where(wall => !string.Equals(wall.Id, endpointWall.Id, StringComparison.Ordinal))
+                             .Where(wall => automaticCoordinateRepairWallIds.Contains(wall.Id))
+                             .Where(wall => !HasOpeningKeywordEvidence(wall)))
+                {
+                    if (!IsNearPerpendicular(endpointWall.CenterLine, hostWall.CenterLine))
+                    {
+                        continue;
+                    }
+
+                    var hostLength = Math.Max(hostWall.CenterLine.Length, 1);
+                    var parameterTolerance = pairedSnapTolerance / hostLength;
+                    var parameter = hostWall.CenterLine.ProjectParameter(endpoint);
+                    if (parameter < -parameterTolerance || parameter > 1 + parameterTolerance)
+                    {
+                        continue;
+                    }
+
+                    var projected = hostWall.CenterLine.PointAt(Math.Clamp(parameter, 0, 1));
+                    var distance = endpoint.DistanceTo(projected);
+                    if (distance <= safeSnapTolerance || distance > pairedSnapTolerance)
+                    {
+                        continue;
+                    }
+
+                    var repairBounds = PlanRect.FromPoints(endpoint, projected)
+                        .Inflate(Math.Max(options.DefaultWallThickness * 2.0, options.WallSnapTolerance * 4.0));
+                    var sourcePrimitiveIds = endpointWall.SourcePrimitiveIds
+                        .Concat(hostWall.SourcePrimitiveIds)
+                        .Where(id => !string.IsNullOrWhiteSpace(id))
+                        .Distinct(StringComparer.Ordinal)
+                        .ToArray();
+                    if (HasNearbyOpeningEvidence(endpointWall.PageNumber, repairBounds, sourcePrimitiveIds, context, options))
+                    {
+                        continue;
+                    }
+
+                    rawCandidates.Add(
+                        new PairedEndpointSnapCandidate(
+                            endpointWall,
+                            hostWall,
+                            endpoint,
+                            projected,
+                            distance));
+                }
+            }
+        }
+
+        if (rawCandidates.Count < 2)
+        {
+            return Array.Empty<PairedEndpointSnap>();
+        }
+
+        var approved = new List<PairedEndpointSnap>();
+        var approvedKeys = new HashSet<string>(StringComparer.Ordinal);
+        var supportSeparation = PairedEndpointSupportSeparation(options);
+        var supportGapTolerance = Math.Max(options.DefaultWallThickness, options.WallSnapTolerance * 2.0);
+
+        foreach (var candidate in rawCandidates)
+        {
+            var supports = rawCandidates
+                .Where(other => !ReferenceEquals(other, candidate))
+                .Where(other => string.Equals(other.HostWall.Id, candidate.HostWall.Id, StringComparison.Ordinal))
+                .Where(other => !string.Equals(other.EndpointWall.Id, candidate.EndpointWall.Id, StringComparison.Ordinal))
+                .Where(other => IsNearParallel(candidate.EndpointWall.CenterLine, other.EndpointWall.CenterLine))
+                .Where(other => candidate.JunctionPoint.DistanceTo(other.JunctionPoint) <= supportSeparation)
+                .Where(other => Math.Abs(candidate.GapDistance - other.GapDistance) <= supportGapTolerance)
+                .Where(other => EndpointsAreOnSameHostSide(candidate, other))
+                .ToArray();
+            if (supports.Length == 0)
+            {
+                continue;
+            }
+
+            var supportWallIds = supports
+                .Select(item => item.EndpointWall.Id)
+                .Append(candidate.HostWall.Id)
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+            AddApprovedPairedEndpointSnap(candidate, supportWallIds, approvedKeys, approved, options.WallSnapTolerance);
+            foreach (var support in supports)
+            {
+                var reciprocalSupportWallIds = supports
+                    .Where(item => !ReferenceEquals(item, support))
+                    .Select(item => item.EndpointWall.Id)
+                    .Append(candidate.EndpointWall.Id)
+                    .Append(support.HostWall.Id)
+                    .Distinct(StringComparer.Ordinal)
+                    .Order(StringComparer.Ordinal)
+                    .ToArray();
+                AddApprovedPairedEndpointSnap(support, reciprocalSupportWallIds, approvedKeys, approved, options.WallSnapTolerance);
+            }
+        }
+
+        return approved
+            .OrderBy(item => item.EndpointWallId, StringComparer.Ordinal)
+            .ThenBy(item => item.HostWallId, StringComparer.Ordinal)
+            .ThenBy(item => item.GapDistance)
+            .ToArray();
+    }
+
+    private static void AddApprovedPairedEndpointSnap(
+        PairedEndpointSnapCandidate candidate,
+        IReadOnlyList<string> supportWallIds,
+        HashSet<string> approvedKeys,
+        List<PairedEndpointSnap> approved,
+        double duplicateTolerance)
+    {
+        var key = PointKey(candidate.EndpointWall.Id, candidate.HostWall.Id, candidate.JunctionPoint, duplicateTolerance);
+        if (!approvedKeys.Add(key))
+        {
+            return;
+        }
+
+        approved.Add(
+            new PairedEndpointSnap(
+                candidate.EndpointWall.Id,
+                candidate.HostWall.Id,
+                candidate.Endpoint,
+                candidate.JunctionPoint,
+                candidate.GapDistance,
+                supportWallIds));
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<PlanPoint>> BuildEndpointSnapPointLookup(
+        IReadOnlyList<PairedEndpointSnap> snaps)
+    {
+        if (snaps.Count == 0)
+        {
+            return new Dictionary<string, IReadOnlyList<PlanPoint>>(StringComparer.Ordinal);
+        }
+
+        return snaps
+            .GroupBy(snap => snap.EndpointWallId, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<PlanPoint>)group.Select(snap => snap.JunctionPoint).ToArray(),
+                StringComparer.Ordinal);
+    }
+
+    private static bool IsApprovedPairedEndpointSnap(
+        string wallId,
+        PlanPoint junctionPoint,
+        IReadOnlyDictionary<string, IReadOnlyList<PlanPoint>> pairedEndpointSnapPointsByWallId,
+        double tolerance) =>
+        pairedEndpointSnapPointsByWallId.TryGetValue(wallId, out var points)
+        && points.Any(point => point.DistanceTo(junctionPoint) <= Math.Max(tolerance, 0.5));
+
+    private static bool EndpointsAreOnSameHostSide(
+        PairedEndpointSnapCandidate first,
+        PairedEndpointSnapCandidate second)
+    {
+        var firstVector = first.Endpoint - first.JunctionPoint;
+        var secondVector = second.Endpoint - second.JunctionPoint;
+        if (firstVector.Length <= 0.001 || secondVector.Length <= 0.001)
+        {
+            return false;
+        }
+
+        return firstVector.Normalize().Dot(secondVector.Normalize()) >= 0.70;
+    }
+
+    private static bool HasNearbyOpeningEvidence(
+        int pageNumber,
+        PlanRect bounds,
+        IReadOnlyCollection<string> excludedSourcePrimitiveIds,
+        ScanContext context,
+        ScannerOptions options)
+    {
+        var page = context.Document.Pages.FirstOrDefault(page => page.Number == pageNumber);
+        if (page is null)
+        {
+            return false;
+        }
+
+        var searchBounds = bounds.Inflate(Math.Max(options.DefaultWallThickness * 3.0, options.WallSnapTolerance * 6.0));
+        return page.Primitives
+            .Where(primitive => !excludedSourcePrimitiveIds.Contains(primitive.SourceId ?? string.Empty, StringComparer.Ordinal))
+            .Where(primitive => primitive.Bounds.Intersects(searchBounds))
+            .Any(IsOpeningEvidencePrimitive);
+    }
+
+    private static bool HasOpeningKeywordEvidence(WallSegment wall) =>
+        ContainsOpeningKeyword(wall.Id)
+        || wall.SourcePrimitiveIds.Any(ContainsOpeningKeyword)
+        || wall.Evidence.Any(ContainsOpeningKeyword);
+
+    private static double PairedEndpointSnapTolerance(ScannerOptions options) =>
+        Math.Min(
+            UnresolvedEndpointGapReviewTolerance(options),
+            InferredNearTouchJunctionTolerance(options) + Math.Max(options.DefaultWallThickness, options.WallSnapTolerance * 2.0));
+
+    private static double PairedEndpointSupportSeparation(ScannerOptions options) =>
+        Math.Max(options.DefaultWallThickness * 3.5, options.MaxWallFragmentGap * 2.0);
+
+    private static string PointKey(
+        string endpointWallId,
+        string hostWallId,
+        PlanPoint point,
+        double bucketSize)
+    {
+        var bucket = Math.Max(bucketSize, 0.5);
+        return string.Join(
+            ":",
+            endpointWallId,
+            hostWallId,
+            Math.Round(point.X / bucket).ToString(System.Globalization.CultureInfo.InvariantCulture),
+            Math.Round(point.Y / bucket).ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
     private static int AddCollinearWallJunctions(
         WallSegment first,
         WallSegment second,
@@ -2121,6 +2839,54 @@ internal sealed class WallGraphStage : IPipelineStage
         }
 
         return added;
+    }
+
+    private static bool CanUsePairForAutomaticJunctions(
+        WallSegment first,
+        WallSegment second,
+        IReadOnlySet<string> automaticCoordinateRepairWallIds) =>
+        automaticCoordinateRepairWallIds.Contains(first.Id)
+        && automaticCoordinateRepairWallIds.Contains(second.Id);
+
+    private static bool WouldCreateAutomaticJunction(
+        WallSegment first,
+        WallSegment second,
+        double nearTouchTolerance,
+        ScannerOptions options) =>
+        GeometryOperations.TryIntersect(
+            first.CenterLine,
+            second.CenterLine,
+            options.WallSnapTolerance,
+            out _)
+        || InferNearTouchJunctions(
+            first.CenterLine,
+            second.CenterLine,
+            nearTouchTolerance,
+            options.WallSnapTolerance).Count > 0
+        || CanCreateCollinearJunction(first, second, options.WallSnapTolerance);
+
+    private static bool CanCreateCollinearJunction(WallSegment first, WallSegment second, double alignmentTolerance) =>
+        IsNearParallel(first.CenterLine, second.CenterLine)
+        && AreNearCollinear(first.CenterLine, second.CenterLine, alignmentTolerance)
+        && (CanProjectEndpointToSegment(first.CenterLine.Start, second.CenterLine, alignmentTolerance)
+            || CanProjectEndpointToSegment(first.CenterLine.End, second.CenterLine, alignmentTolerance)
+            || CanProjectEndpointToSegment(second.CenterLine.Start, first.CenterLine, alignmentTolerance)
+            || CanProjectEndpointToSegment(second.CenterLine.End, first.CenterLine, alignmentTolerance));
+
+    private static bool CanProjectEndpointToSegment(
+        PlanPoint endpoint,
+        PlanLineSegment host,
+        double alignmentTolerance)
+    {
+        var hostLength = Math.Max(host.Length, 1);
+        var parameterTolerance = alignmentTolerance / hostLength;
+        var parameter = host.ProjectParameter(endpoint);
+        if (parameter < -parameterTolerance || parameter > 1 + parameterTolerance)
+        {
+            return false;
+        }
+
+        return endpoint.DistanceTo(host.PointAt(Math.Clamp(parameter, 0, 1))) <= alignmentTolerance;
     }
 
     private static bool IsNearParallel(PlanLineSegment first, PlanLineSegment second)
@@ -2259,6 +3025,7 @@ internal sealed class WallGraphStage : IPipelineStage
         WallSegment wall,
         IReadOnlyDictionary<string, List<PlanPoint>> pointsByWallId,
         IReadOnlyList<WallSegment> pageWalls,
+        IReadOnlyDictionary<string, IReadOnlyList<PlanPoint>> pairedEndpointSnapPointsByWallId,
         ScannerOptions options,
         out int snappedCount)
     {
@@ -2279,7 +3046,9 @@ internal sealed class WallGraphStage : IPipelineStage
                 normalized[1],
                 pointsByWallId,
                 pageWalls,
+                pairedEndpointSnapPointsByWallId,
                 snapTolerance,
+                PairedEndpointSnapTolerance(options),
                 sharedTolerance))
         {
             normalized.RemoveAt(1);
@@ -2293,7 +3062,9 @@ internal sealed class WallGraphStage : IPipelineStage
                 normalized[^2],
                 pointsByWallId,
                 pageWalls,
+                pairedEndpointSnapPointsByWallId,
                 snapTolerance,
+                PairedEndpointSnapTolerance(options),
                 sharedTolerance))
         {
             normalized.RemoveAt(normalized.Count - 2);
@@ -2380,11 +3151,24 @@ internal sealed class WallGraphStage : IPipelineStage
         PlanPoint originalEndpoint,
         IReadOnlyDictionary<string, List<PlanPoint>> pointsByWallId,
         IReadOnlyList<WallSegment> pageWalls,
+        IReadOnlyDictionary<string, IReadOnlyList<PlanPoint>> pairedEndpointSnapPointsByWallId,
         double snapTolerance,
+        double pairedEndpointSnapTolerance,
         double sharedTolerance)
     {
         var gap = inferredJunctionPoint.DistanceTo(originalEndpoint);
-        if (gap <= 0.001 || gap > snapTolerance)
+        if (gap <= 0.001)
+        {
+            return false;
+        }
+
+        var hasPairedEndpointSnapSupport = IsApprovedPairedEndpointSnap(
+            wall.Id,
+            inferredJunctionPoint,
+            pairedEndpointSnapPointsByWallId,
+            sharedTolerance);
+        if (gap > snapTolerance
+            && (!hasPairedEndpointSnapSupport || gap > pairedEndpointSnapTolerance))
         {
             return false;
         }
@@ -2868,6 +3652,21 @@ internal sealed class WallGraphStage : IPipelineStage
         IReadOnlyList<string> Directions,
         IReadOnlyList<string> Evidence);
 
+    private sealed record PairedEndpointSnapCandidate(
+        WallSegment EndpointWall,
+        WallSegment HostWall,
+        PlanPoint Endpoint,
+        PlanPoint JunctionPoint,
+        double GapDistance);
+
+    private sealed record PairedEndpointSnap(
+        string EndpointWallId,
+        string HostWallId,
+        PlanPoint Endpoint,
+        PlanPoint JunctionPoint,
+        double GapDistance,
+        IReadOnlyList<string> SupportWallIds);
+
     private readonly record struct EndpointTrimSupport(
         bool HasSharedJunction,
         bool HasPerpendicularJunction,
@@ -2893,7 +3692,13 @@ internal sealed class WallGraphStage : IPipelineStage
         IReadOnlyList<string> EdgeIds,
         IReadOnlyList<string> SourcePrimitiveIds,
         PlanRect Bounds,
-        double DrawingLength);
+        double DrawingLength,
+        int HorizontalWallCount,
+        int VerticalWallCount,
+        int DiagonalWallCount,
+        int ShortWallCount,
+        int SingleLineWallCount,
+        int PairedWallCount);
 
     private enum DirectionBucket
     {

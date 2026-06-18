@@ -275,6 +275,91 @@ public sealed class ArcDoorLeafWallFilteringTests
     }
 
     [Fact]
+    public async Task WallEvidenceRefinement_RejectsUnlayeredParallelDoorFrameNearSwingArcBeforeStrongWallAcceptance()
+    {
+        var firstFace = new PlanLineSegment(new PlanPoint(210, 112), new PlanPoint(246, 112));
+        var secondFace = new PlanLineSegment(new PlanPoint(210, 118), new PlanPoint(246, 118));
+        var document = new PlanDocument(
+            "wall-evidence-unlayered-paired-door-frame-filter",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(420, 260),
+                    new PlanPrimitive[]
+                    {
+                        Wall("host-wall", new PlanPoint(80, 100), new PlanPoint(320, 100)),
+                        DoorLeaf("unlayered-frame-face-a", firstFace.Start, firstFace.End),
+                        DoorLeaf("unlayered-frame-face-b", secondFace.Start, secondFace.End),
+                        DoorArc("door-swing", new PlanPoint(200, 100), 36, 0, Math.PI / 2)
+                    })
+            });
+        var context = new ScanContext(
+            document,
+            new ScannerOptions
+            {
+                EnableWallEvidenceNoiseRejection = true,
+                MinOpeningGap = 8,
+                MaxOpeningGap = 60,
+                DefaultWallThickness = 4
+            })
+        {
+            LayerAnalysis = new PlanLayerAnalysis(new[]
+            {
+                Layer("A-WALL", LayerCategory.Wall, Confidence.High),
+                Layer("A-DOOR", LayerCategory.Door, Confidence.High)
+            })
+        };
+        context.WallCandidates.Add(new WallSegment(
+            "wall-host",
+            1,
+            new PlanLineSegment(new PlanPoint(80, 100), new PlanPoint(320, 100)),
+            4,
+            Confidence.High)
+        {
+            SourcePrimitiveIds = new[] { "host-wall" },
+            Evidence = new[] { "test structural wall" }
+        });
+        context.WallCandidates.Add(new WallSegment(
+            "wall-unlayered-frame-pair-noise",
+            1,
+            new PlanLineSegment(new PlanPoint(210, 115), new PlanPoint(246, 115)),
+            6,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            SourcePrimitiveIds = new[] { "unlayered-frame-face-a", "unlayered-frame-face-b" },
+            PairEvidence = new WallPairEvidence(
+                firstFace,
+                secondFace,
+                FaceSeparation: 6,
+                OverlapRatio: 1,
+                Score: 0.90,
+                FirstFaceFragmentCount: 1,
+                SecondFaceFragmentCount: 1,
+                FirstFaceSourcePrimitiveIds: new[] { "unlayered-frame-face-a" },
+                SecondFaceSourcePrimitiveIds: new[] { "unlayered-frame-face-b" }),
+            Evidence = new[] { "test high-scoring unlayered paired door frame" }
+        });
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Contains(context.Walls, wall => wall.SourcePrimitiveIds.Contains("host-wall"));
+        Assert.DoesNotContain(context.Walls, wall => wall.SourcePrimitiveIds.Contains("unlayered-frame-face-a"));
+
+        var rejected = Assert.Single(
+            context.WallEvidenceMap.WallAssessments,
+            assessment => assessment.SourcePrimitiveIds.Contains("unlayered-frame-face-a"));
+        Assert.Equal(WallEvidenceCategory.DoorOrOpeningSymbol, rejected.Category);
+        Assert.Equal(WallEvidenceDecision.Reject, rejected.Decision);
+        Assert.True(rejected.RejectedAsNoise);
+        Assert.True(rejected.ScoreBreakdown.NegativeScore > rejected.ScoreBreakdown.PositiveScore);
+        Assert.Contains(
+            rejected.Evidence,
+            item => item.Contains("unlayered paired door/window frame linework", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task WallEvidenceRefinement_RejectsUnlayeredArcLineWithOnlyOneEndpointSupport()
     {
         var document = new PlanDocument(
@@ -412,6 +497,77 @@ public sealed class ArcDoorLeafWallFilteringTests
         Assert.Contains("wall-short-unlayered-detail", context.WallTopologyPreparation.GraphWallIds);
         Assert.Contains("wall-short-unlayered-detail", context.WallTopologyPreparation.ReviewGraphWallIds);
         Assert.DoesNotContain("wall-short-unlayered-detail", context.WallTopologyPreparation.AutomaticCoordinateRepairWallIds);
+    }
+
+    [Fact]
+    public async Task WallEvidenceRefinement_DowngradesShortUnlayeredCandidateSupportedOnlyByOneDistinctWall()
+    {
+        var document = new PlanDocument(
+            "wall-evidence-short-same-host-support-review",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(420, 260),
+                    new PlanPrimitive[]
+                    {
+                        Wall("host-wall", new PlanPoint(80, 100), new PlanPoint(320, 100)),
+                        DoorLeaf("short-near-host-detail", new PlanPoint(180, 106), new PlanPoint(220, 106))
+                    })
+            });
+        var context = new ScanContext(
+            document,
+            new ScannerOptions
+            {
+                EnableWallEvidenceNoiseRejection = true,
+                MinWallLength = 36,
+                DefaultWallThickness = 4
+            })
+        {
+            LayerAnalysis = new PlanLayerAnalysis(new[]
+            {
+                Layer("A-WALL", LayerCategory.Wall, Confidence.High)
+            })
+        };
+        context.WallCandidates.Add(new WallSegment(
+            "wall-host",
+            1,
+            new PlanLineSegment(new PlanPoint(80, 100), new PlanPoint(320, 100)),
+            4,
+            Confidence.High)
+        {
+            SourcePrimitiveIds = new[] { "host-wall" },
+            Evidence = new[] { "test structural wall" }
+        });
+        context.WallCandidates.Add(new WallSegment(
+            "wall-short-near-host-detail",
+            1,
+            new PlanLineSegment(new PlanPoint(180, 106), new PlanPoint(220, 106)),
+            4,
+            Confidence.Medium)
+        {
+            SourcePrimitiveIds = new[] { "short-near-host-detail" },
+            Evidence = new[] { "test short unlayered line near one structural wall" }
+        });
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+        await new WallTopologyPreparationStage().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Contains(context.Walls, wall => wall.SourcePrimitiveIds.Contains("short-near-host-detail"));
+        var assessment = Assert.Single(
+            context.WallEvidenceMap.WallAssessments,
+            item => item.SourcePrimitiveIds.Contains("short-near-host-detail"));
+
+        Assert.Equal(WallEvidenceCategory.WeakSingleLine, assessment.Category);
+        Assert.Equal(WallEvidenceDecision.Review, assessment.Decision);
+        Assert.False(assessment.PlacementReady);
+        Assert.True(assessment.RequiresReview);
+        Assert.False(assessment.RejectedAsNoise);
+        Assert.Contains(
+            assessment.Evidence,
+            item => item.Contains("one distinct structural wall", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("wall-short-near-host-detail", context.WallTopologyPreparation.ReviewGraphWallIds);
+        Assert.DoesNotContain("wall-short-near-host-detail", context.WallTopologyPreparation.AutomaticCoordinateRepairWallIds);
     }
 
     [Fact]

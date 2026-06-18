@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:openplantrace:schema:scan-compact:v1",
+  "title": "OpenPlanTrace Compact Scan Export",
+  "type": "object",
+  "additionalProperties": false,
+  "x-openplantrace-schemaVersion": "openplantrace.scan.compact.v1",
+  "required": [
+    "schemaVersion",
+    "sourceSchemaVersion",
+    "encoding",
+    "generatedAt",
+    "dictionary",
+    "data",
+    "stats"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "openplantrace.scan.compact.v1"
+    },
+    "sourceSchemaVersion": {
+      "const": "openplantrace.scan.v67"
+    },
+    "encoding": {
+      "const": "shape-string-token-v1"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "dictionary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stringPrefixes",
+        "strings",
+        "shapes"
+      ],
+      "properties": {
+        "stringPrefixes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "strings": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "const": "p"
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "string"
+                  }
+                ],
+                "items": false,
+                "minItems": 3,
+                "maxItems": 3
+              }
+            ]
+          }
+        },
+        "shapes": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "data": {
+      "description": "Compact token tree. Token arrays use tag 0 for shape-backed objects, tag 1 for arrays, and tag 2 for string references.",
+      "type": [
+        "array",
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ]
+    },
+    "stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceUtf8Bytes",
+        "stringCount",
+        "stringPrefixCount",
+        "shapeCount",
+        "encodedObjectCount",
+        "encodedArrayCount",
+        "encodedStringReferenceCount",
+        "topShapeUseCounts"
+      ],
+      "properties": {
+        "sourceUtf8Bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stringCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stringPrefixCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "shapeCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "encodedObjectCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "encodedArrayCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "encodedStringReferenceCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "topShapeUseCounts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "shapeId",
+              "useCount"
+            ],
+            "properties": {
+              "shapeId": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "useCount": {
+                "type": "integer",
+                "minimum": 2
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
