@@ -53,6 +53,11 @@ const supportedKvemoCropSchemaVersions = new Set([
   "openplantrace.kvemo-crops.v1"
 ]);
 const currentObjectReviewDatasetSchemaVersion = "openplantrace.object-review-dataset.v2";
+const viewerCleanWallMinSpanLength = 8.0;
+const viewerCleanWallMergeGap = 12.0;
+const viewerOrthogonalSkewRatio = 0.04;
+const viewerOrthogonalSkewDrawingUnits = 8.0;
+const viewerOffAxisConnectorTolerance = 1.25;
 
 const defaultEnabledLayers = [
   "regions",
@@ -4331,10 +4336,10 @@ function wallRawDrawLines(wall) {
 }
 
 function wallCleanTopologySpans(wall) {
-  return Array.isArray(wall?.topologySpans)
+  const spans = Array.isArray(wall?.topologySpans)
     ? wall.topologySpans
       .filter((span) => span?.centerLine?.start && span?.centerLine?.end)
-      .map((span, index) => ({
+      .map((span, index) => normalizeViewerWallTopologySpan(wall, {
         ...span,
         id: span.id || `${wall.id}:topology-span:${index + 1}`,
         centerLine: span.centerLine,
@@ -4342,7 +4347,233 @@ function wallCleanTopologySpans(wall) {
         wallGraphEdgeId: span.wallGraphEdgeId || null,
         isTopologySpan: true
       }))
+      .filter(Boolean)
     : [];
+
+  return mergeViewerCleanTopologyRuns(wall, spans);
+}
+
+function normalizeViewerWallTopologySpan(wall, span) {
+  const wallLine = normalizeLine(wall?.centerLine ?? wall?.line);
+  const spanLine = normalizeLine(span?.centerLine ?? span?.line);
+  if (!spanLine) {
+    return null;
+  }
+
+  if (!wallLine || lineLength(wallLine) <= 0.001) {
+    return { ...span, centerLine: spanLine };
+  }
+
+  const orientation = dominantOrthogonalLineOrientation(wallLine);
+  if (!orientation) {
+    return { ...span, centerLine: spanLine };
+  }
+
+  const startParameter = viewerSpanSourceParameter(wallLine, spanLine.start, span.sourceWallStartParameter);
+  const endParameter = viewerSpanSourceParameter(wallLine, spanLine.end, span.sourceWallEndParameter);
+  const sourceStart = pointAtLine(wallLine, startParameter);
+  const sourceEnd = pointAtLine(wallLine, endParameter);
+  const axis = orientation === "horizontal"
+    ? (wallLine.start.y + wallLine.end.y) / 2
+    : (wallLine.start.x + wallLine.end.x) / 2;
+  const centerLine = orientation === "horizontal"
+    ? {
+      start: { x: sourceStart.x, y: axis },
+      end: { x: sourceEnd.x, y: axis }
+    }
+    : {
+      start: { x: axis, y: sourceStart.y },
+      end: { x: axis, y: sourceEnd.y }
+    };
+  const length = lineLength(centerLine);
+  if (length <= 0.001) {
+    return null;
+  }
+
+  if (length < viewerCleanWallMinSpanLength && viewerSpanLeavesSourceAxis(spanLine, orientation)) {
+    return null;
+  }
+
+  const axisShift = viewerMaxSourceAxisShift(spanLine, centerLine, orientation);
+  const evidence = axisShift > 0.001
+    ? [
+      ...(span.evidence ?? []),
+      `viewer wall-span cleanup: projected graph span back to source wall axis by up to ${formatNumber(axisShift)} drawing units`
+    ]
+    : (span.evidence ?? []);
+
+  return {
+    ...span,
+    centerLine,
+    bounds: boundsFromLine(centerLine) ?? span.bounds,
+    drawingLength: length,
+    sourceWallStartParameter: startParameter,
+    sourceWallEndParameter: endParameter,
+    sourceWallCenterParameter: (startParameter + endParameter) / 2,
+    sourceWallStartProjectionDistanceDrawingUnits: 0,
+    sourceWallEndProjectionDistanceDrawingUnits: 0,
+    evidence
+  };
+}
+
+function dominantOrthogonalLineOrientation(line) {
+  const dx = Math.abs(Number(line.end.x) - Number(line.start.x));
+  const dy = Math.abs(Number(line.end.y) - Number(line.start.y));
+  if (dy <= 1.5) {
+    return "horizontal";
+  }
+
+  if (dx <= 1.5) {
+    return "vertical";
+  }
+
+  const dominant = Math.max(dx, dy);
+  const minor = Math.min(dx, dy);
+  if (dominant <= 0.001
+    || minor > viewerOrthogonalSkewDrawingUnits
+    || minor / dominant > viewerOrthogonalSkewRatio) {
+    return "";
+  }
+
+  return dx >= dy ? "horizontal" : "vertical";
+}
+
+function viewerSpanSourceParameter(wallLine, point, explicitValue) {
+  const numeric = Number(explicitValue);
+  if (Number.isFinite(numeric)) {
+    return Math.min(1, Math.max(0, numeric));
+  }
+
+  return projectPointParameter(wallLine, point);
+}
+
+function viewerSpanLeavesSourceAxis(spanLine, orientation) {
+  const dx = Math.abs(Number(spanLine.end.x) - Number(spanLine.start.x));
+  const dy = Math.abs(Number(spanLine.end.y) - Number(spanLine.start.y));
+  return orientation === "horizontal"
+    ? dy > viewerOffAxisConnectorTolerance
+    : dx > viewerOffAxisConnectorTolerance;
+}
+
+function viewerMaxSourceAxisShift(spanLine, projectedLine, orientation) {
+  return orientation === "horizontal"
+    ? Math.max(
+      Math.abs(Number(spanLine.start.y) - Number(projectedLine.start.y)),
+      Math.abs(Number(spanLine.end.y) - Number(projectedLine.end.y)))
+    : Math.max(
+      Math.abs(Number(spanLine.start.x) - Number(projectedLine.start.x)),
+      Math.abs(Number(spanLine.end.x) - Number(projectedLine.end.x)));
+}
+
+function mergeViewerCleanTopologyRuns(wall, spans) {
+  if (spans.length <= 1) {
+    return spans;
+  }
+
+  const wallLine = normalizeLine(wall?.centerLine ?? wall?.line);
+  const wallLength = lineLength(wallLine);
+  if (!wallLine || wallLength <= 0.001) {
+    return spans;
+  }
+
+  const orientation = dominantOrthogonalLineOrientation(wallLine);
+  if (!orientation) {
+    return spans;
+  }
+
+  const intervals = spans
+    .map((span) => viewerCleanRunInterval(wallLine, span))
+    .filter((interval) => interval.length >= viewerCleanWallMinSpanLength)
+    .sort((first, second) => first.start - second.start);
+  if (intervals.length <= 1) {
+    return spans;
+  }
+
+  const merged = [];
+  let current = intervals[0];
+  for (let index = 1; index < intervals.length; index += 1) {
+    const next = intervals[index];
+    const gap = Math.max(0, next.start - current.end) * wallLength;
+    if (gap <= viewerCleanWallMergeGap) {
+      current = {
+        ...current,
+        end: Math.max(current.end, next.end),
+        sourceSpanIds: [...new Set([...current.sourceSpanIds, ...next.sourceSpanIds])],
+        evidence: [...new Set([...current.evidence, ...next.evidence])]
+      };
+      continue;
+    }
+
+    merged.push(current);
+    current = next;
+  }
+
+  merged.push(current);
+  return merged.map((interval, index) =>
+    viewerCleanRunSpanFromInterval(wall, wallLine, orientation, wallLength, interval, index + 1));
+}
+
+function viewerCleanRunInterval(wallLine, span) {
+  const spanLine = normalizeLine(span?.centerLine ?? span?.line);
+  const startParameter = viewerSpanSourceParameter(wallLine, spanLine.start, span.sourceWallStartParameter);
+  const endParameter = viewerSpanSourceParameter(wallLine, spanLine.end, span.sourceWallEndParameter);
+  const start = Math.min(startParameter, endParameter);
+  const end = Math.max(startParameter, endParameter);
+  return {
+    span,
+    start,
+    end,
+    length: Math.max(0, end - start) * lineLength(wallLine),
+    sourceSpanIds: [span.id].filter(Boolean),
+    evidence: [
+      ...(span.evidence ?? []),
+      `viewer clean placement run includes source topology span ${span.id || "unknown"}`
+    ]
+  };
+}
+
+function viewerCleanRunSpanFromInterval(wall, wallLine, orientation, wallLength, interval, runIndex) {
+  const centerLine = viewerSourceAxisLine(wallLine, orientation, interval.start, interval.end);
+  const length = lineLength(centerLine);
+  const evidence = [
+    `viewer clean placement run merged ${interval.sourceSpanIds.length} topology span(s)`,
+    ...interval.evidence
+  ];
+
+  return {
+    ...interval.span,
+    id: `${wall.id}:viewer-clean-run:${runIndex}`,
+    wallGraphEdgeId: null,
+    centerLine,
+    bounds: boundsFromLine(centerLine) ?? interval.span.bounds,
+    drawingLength: length,
+    sourceWallStartParameter: interval.start,
+    sourceWallEndParameter: interval.end,
+    sourceWallCenterParameter: (interval.start + interval.end) / 2,
+    sourceWallStartOffsetDrawingUnits: interval.start * wallLength,
+    sourceWallEndOffsetDrawingUnits: interval.end * wallLength,
+    sourceWallProjectedLengthDrawingUnits: length,
+    sourceWallStartProjectionDistanceDrawingUnits: 0,
+    sourceWallEndProjectionDistanceDrawingUnits: 0,
+    evidence: [...new Set(evidence)]
+  };
+}
+
+function viewerSourceAxisLine(wallLine, orientation, startParameter, endParameter) {
+  const sourceStart = pointAtLine(wallLine, startParameter);
+  const sourceEnd = pointAtLine(wallLine, endParameter);
+  const axis = orientation === "horizontal"
+    ? (wallLine.start.y + wallLine.end.y) / 2
+    : (wallLine.start.x + wallLine.end.x) / 2;
+  return orientation === "horizontal"
+    ? {
+      start: { x: sourceStart.x, y: axis },
+      end: { x: sourceEnd.x, y: axis }
+    }
+    : {
+      start: { x: axis, y: sourceStart.y },
+      end: { x: axis, y: sourceEnd.y }
+    };
 }
 
 function wallBodyFootprints(wall) {

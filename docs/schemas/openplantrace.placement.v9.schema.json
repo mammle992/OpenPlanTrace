@@ -1502,6 +1502,7 @@
       "required": [
         "id",
         "wallGraphEdgeId",
+        "sourceWallGraphEdgeIds",
         "pageNumber",
         "wallId",
         "fromNodeId",
@@ -1527,6 +1528,10 @@
         "wallGraphEdgeId": {
           "type": "string",
           "minLength": 1
+        },
+        "sourceWallGraphEdgeIds": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Raw wall graph edge IDs merged into or represented by this clean placement topology span."
         },
         "pageNumber": {
           "type": "integer",

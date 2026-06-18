@@ -8,6 +8,8 @@ internal static class WallTopologySpanVisibility
     private const double MinPlacementRegularizationToleranceDrawingUnits = 1.25;
     private const double MaxPlacementRegularizationToleranceDrawingUnits = 6.0;
     private const double MinPlacementRegularizationClusterLengthDrawingUnits = 60.0;
+    private const double MaxDominantAxisSkewRatio = 0.04;
+    private const double MaxDominantAxisSkewDrawingUnits = 8.0;
 
     public static IReadOnlyList<WallGraphTopologySpan> BuildVisibleTopologySpans(
         PlanScanResult result,
@@ -54,7 +56,7 @@ internal static class WallTopologySpanVisibility
             .Where(span => IsVisibleTopologySpan(span, context, options))
             .ToArray();
 
-        return RegularizeCleanPlacementRuns(spans);
+        return RegularizeCleanPlacementRuns(ProjectSpansToOrthogonalSourceAxes(spans));
     }
 
     public static IReadOnlyList<WallGraphTopologySpan> BuildHiddenNonPlacementTopologySpans(
@@ -151,7 +153,7 @@ internal static class WallTopologySpanVisibility
     private static IReadOnlyList<WallGraphTopologySpan> MergeCleanTopologyRuns(
         IReadOnlyList<WallGraphTopologySpan> spans)
     {
-        if (spans.Count <= 1)
+        if (spans.Count == 0)
         {
             return spans;
         }
@@ -180,7 +182,7 @@ internal static class WallTopologySpanVisibility
 
             if (intervals.Length == 1 && groupSpans.Length == 1)
             {
-                merged.Add(groupSpans[0]);
+                merged.Add(intervals[0].ToSpan(sourceWall, 1));
                 continue;
             }
 
@@ -277,6 +279,154 @@ internal static class WallTopologySpanVisibility
         return spans
             .Select(span => replacements.TryGetValue(span.Id, out var replacement) ? replacement : span)
             .ToArray();
+    }
+
+    private static IReadOnlyList<WallGraphTopologySpan> ProjectSpansToOrthogonalSourceAxes(
+        IReadOnlyList<WallGraphTopologySpan> spans)
+    {
+        if (spans.Count == 0)
+        {
+            return spans;
+        }
+
+        var projected = new List<WallGraphTopologySpan>(spans.Count);
+        foreach (var span in spans)
+        {
+            var replacement = ProjectSpanToOrthogonalSourceAxis(span);
+            if (replacement is not null)
+            {
+                projected.Add(replacement);
+            }
+        }
+
+        return projected;
+    }
+
+    private static WallGraphTopologySpan? ProjectSpanToOrthogonalSourceAxis(WallGraphTopologySpan span)
+    {
+        var sourceWall = span.SourceWall;
+        if (sourceWall is null || sourceWall.CenterLine.Length <= 0.001)
+        {
+            return span;
+        }
+
+        var orientation = ResolveDominantOrthogonalOrientation(sourceWall.CenterLine);
+        if (orientation == PlacementRunOrientation.Unknown)
+        {
+            return span;
+        }
+
+        var sourceLine = sourceWall.CenterLine;
+        var sourceLength = sourceLine.Length;
+        var startParameter = Math.Clamp(span.SourceWallStartParameter ?? sourceLine.ProjectParameter(span.CenterLine.Start), 0, 1);
+        var endParameter = Math.Clamp(span.SourceWallEndParameter ?? sourceLine.ProjectParameter(span.CenterLine.End), 0, 1);
+        var sourceStart = sourceLine.PointAt(startParameter);
+        var sourceEnd = sourceLine.PointAt(endParameter);
+        var centerAxis = orientation == PlacementRunOrientation.Horizontal
+            ? (sourceLine.Start.Y + sourceLine.End.Y) / 2.0
+            : (sourceLine.Start.X + sourceLine.End.X) / 2.0;
+        var centerLine = orientation == PlacementRunOrientation.Horizontal
+            ? new PlanLineSegment(
+                new PlanPoint(sourceStart.X, centerAxis),
+                new PlanPoint(sourceEnd.X, centerAxis))
+            : new PlanLineSegment(
+                new PlanPoint(centerAxis, sourceStart.Y),
+                new PlanPoint(centerAxis, sourceEnd.Y));
+
+        if (centerLine.Length <= 0.001)
+        {
+            return null;
+        }
+
+        if (centerLine.Length < MinCleanRunLengthDrawingUnits
+            && SpanLeavesSourceAxis(span, orientation))
+        {
+            return null;
+        }
+
+        var axisShift = MaxSourceAxisShift(span, orientation, centerLine);
+        var sourceWallStartProjectionDistance = sourceLine.DistanceToPoint(centerLine.Start);
+        var sourceWallEndProjectionDistance = sourceLine.DistanceToPoint(centerLine.End);
+        var centerParameter = (startParameter + endParameter) / 2.0;
+        var bounds = centerLine.Bounds.Inflate(Math.Max(span.Thickness / 2.0, 0.5));
+        var evidence = axisShift > 0.001
+            ? span.Evidence
+                .Append($"clean placement orthogonalization: projected graph span back to source wall axis by up to {axisShift:0.###} drawing units")
+                .Distinct(StringComparer.Ordinal)
+                .ToArray()
+            : span.Evidence;
+
+        return span with
+        {
+            CenterLine = centerLine,
+            Bounds = bounds,
+            DrawingLength = centerLine.Length,
+            SourceWallStartOffsetDrawingUnits = startParameter * sourceLength,
+            SourceWallEndOffsetDrawingUnits = endParameter * sourceLength,
+            SourceWallProjectedLengthDrawingUnits = Math.Abs(endParameter - startParameter) * sourceLength,
+            SourceWallStartParameter = startParameter,
+            SourceWallEndParameter = endParameter,
+            SourceWallCenterParameter = centerParameter,
+            SourceWallStartProjectionDistanceDrawingUnits = sourceWallStartProjectionDistance,
+            SourceWallEndProjectionDistanceDrawingUnits = sourceWallEndProjectionDistance,
+            Evidence = evidence
+        };
+    }
+
+    private static PlacementRunOrientation ResolveDominantOrthogonalOrientation(PlanLineSegment line)
+    {
+        if (line.IsHorizontal())
+        {
+            return PlacementRunOrientation.Horizontal;
+        }
+
+        if (line.IsVertical())
+        {
+            return PlacementRunOrientation.Vertical;
+        }
+
+        var dx = Math.Abs(line.End.X - line.Start.X);
+        var dy = Math.Abs(line.End.Y - line.Start.Y);
+        var dominant = Math.Max(dx, dy);
+        var minor = Math.Min(dx, dy);
+        if (dominant <= 0.001
+            || minor > MaxDominantAxisSkewDrawingUnits
+            || minor / dominant > MaxDominantAxisSkewRatio)
+        {
+            return PlacementRunOrientation.Unknown;
+        }
+
+        return dx >= dy
+            ? PlacementRunOrientation.Horizontal
+            : PlacementRunOrientation.Vertical;
+    }
+
+    private static bool SpanLeavesSourceAxis(
+        WallGraphTopologySpan span,
+        PlacementRunOrientation orientation)
+    {
+        var dx = Math.Abs(span.CenterLine.End.X - span.CenterLine.Start.X);
+        var dy = Math.Abs(span.CenterLine.End.Y - span.CenterLine.Start.Y);
+        return orientation == PlacementRunOrientation.Horizontal
+            ? dy > MinPlacementRegularizationToleranceDrawingUnits
+            : dx > MinPlacementRegularizationToleranceDrawingUnits;
+    }
+
+    private static double MaxSourceAxisShift(
+        WallGraphTopologySpan span,
+        PlacementRunOrientation orientation,
+        PlanLineSegment projectedLine)
+    {
+        if (orientation == PlacementRunOrientation.Horizontal)
+        {
+            return Math.Max(
+                Math.Abs(span.CenterLine.Start.Y - projectedLine.Start.Y),
+                Math.Abs(span.CenterLine.End.Y - projectedLine.End.Y));
+        }
+
+        return Math.Max(
+            Math.Abs(span.CenterLine.Start.X - projectedLine.Start.X),
+            Math.Abs(span.CenterLine.End.X - projectedLine.End.X));
     }
 
     private static WallGraphTopologySpan RegularizePlacementSpan(
@@ -529,7 +679,11 @@ internal static class WallTopologySpanVisibility
                 thickness,
                 Confidence,
                 SourcePrimitiveIds,
-                Evidence.Prepend($"clean placement run merged {SourceSpanIds.Count} topology span(s)").ToArray(),
+                SourceSpanIds,
+                Evidence
+                    .Prepend("clean placement run projected onto source wall centerline")
+                    .Prepend($"clean placement run merged {SourceSpanIds.Count} topology span(s)")
+                    .ToArray(),
                 sourceWall);
         }
     }

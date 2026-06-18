@@ -83,7 +83,7 @@ public sealed record PlanPlacementExport(
             .Build(result.WallGraph, result.Walls)
             .ToArray();
         var wallTopologySpans = WallTopologySpanVisibility
-            .BuildRegularizedPlacementTopologySpans(result)
+            .BuildCleanPlacementTopologySpans(result)
             .ToArray();
         var wallTopologySpansByWallId = wallTopologySpans
             .GroupBy(span => span.WallId, StringComparer.Ordinal)
@@ -1967,6 +1967,7 @@ public sealed record PlacementWallTopologySpanExport(
     double Confidence,
     IReadOnlyList<string> SourcePrimitiveIds,
     IReadOnlyList<string> SourceLayers,
+    IReadOnlyList<string> SourceWallGraphEdgeIds,
     IReadOnlyList<string> Evidence)
 {
     public static PlacementWallTopologySpanExport From(
@@ -2012,6 +2013,7 @@ public sealed record PlacementWallTopologySpanExport(
             span.Confidence.Value,
             span.SourcePrimitiveIds,
             ExportSourceHelpers.SourceLayers(span.SourcePrimitiveIds, sourceLookup),
+            span.SourceWallGraphEdgeIds,
             span.Evidence);
     }
 

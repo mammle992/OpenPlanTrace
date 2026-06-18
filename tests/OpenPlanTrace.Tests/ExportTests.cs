@@ -1355,6 +1355,7 @@ public sealed class ExportTests
         Assert.Equal(wall.GetProperty("id").GetString(), topologySpan.GetProperty("wallId").GetString());
         Assert.True(topologySpan.GetProperty("drawingLength").GetDouble() > 0);
         Assert.Equal(JsonValueKind.Object, topologySpan.GetProperty("centerLine").ValueKind);
+        Assert.Equal(new[] { "page:1:edge:1" }, JsonStrings(topologySpan.GetProperty("sourceWallGraphEdgeIds")));
         var solidSpan = Assert.Single(wall.GetProperty("solidSpans").EnumerateArray());
         var bodyPolygon = solidSpan.GetProperty("bodyPolygon");
         Assert.Equal(5, bodyPolygon.GetArrayLength());
@@ -1385,8 +1386,11 @@ public sealed class ExportTests
             node.GetProperty("id").GetString() == topologySpan.GetProperty("fromNodeId").GetString());
         Assert.Equal(JsonValueKind.Object, graphNode.GetProperty("position").ValueKind);
         Assert.True(graphNode.GetProperty("degree").GetInt32() > 0);
+        Assert.Equal(topologySpan.GetProperty("id").GetString(), topologySpan.GetProperty("wallGraphEdgeId").GetString());
         var graphEdge = Assert.Single(wallGraph.GetProperty("edges").EnumerateArray(), edge =>
-            edge.GetProperty("id").GetString() == topologySpan.GetProperty("wallGraphEdgeId").GetString());
+            edge.GetProperty("fromNodeId").GetString() == topologySpan.GetProperty("fromNodeId").GetString()
+            && edge.GetProperty("toNodeId").GetString() == topologySpan.GetProperty("toNodeId").GetString()
+            && edge.GetProperty("wallId").GetString() == topologySpan.GetProperty("wallId").GetString());
         Assert.Equal(topologySpan.GetProperty("fromNodeId").GetString(), graphEdge.GetProperty("fromNodeId").GetString());
         Assert.Equal(topologySpan.GetProperty("toNodeId").GetString(), graphEdge.GetProperty("toNodeId").GetString());
         Assert.Equal(topologySpan.GetProperty("wallId").GetString(), graphEdge.GetProperty("wallId").GetString());
@@ -2033,17 +2037,79 @@ public sealed class ExportTests
             .EnumerateArray()
             .Single(item => item.GetProperty("id").GetString() == "detail-host");
         var hostTopologySpans = hostWall.GetProperty("topologySpans").EnumerateArray().ToArray();
-        Assert.Equal(5, hostTopologySpans.Length);
-        Assert.Equal("edge-host-1", hostTopologySpans[0].GetProperty("wallGraphEdgeId").GetString());
+        var hostTopologySpan = Assert.Single(hostTopologySpans);
+        Assert.Equal("detail-host:clean-run:1", hostTopologySpan.GetProperty("id").GetString());
+        Assert.Equal("detail-host:clean-run:1", hostTopologySpan.GetProperty("wallGraphEdgeId").GetString());
+        Assert.Equal(200, hostTopologySpan.GetProperty("drawingLength").GetDouble(), precision: 3);
         Assert.Equal(100, hostTopologySpans[0].GetProperty("centerLine").GetProperty("start").GetProperty("x").GetDouble());
-        Assert.Equal(140, hostTopologySpans[0].GetProperty("centerLine").GetProperty("end").GetProperty("x").GetDouble());
+        Assert.Equal(300, hostTopologySpans[0].GetProperty("centerLine").GetProperty("end").GetProperty("x").GetDouble());
         Assert.Equal(1000, hostTopologySpans[0].GetProperty("centerLineMillimeters").GetProperty("start").GetProperty("x").GetDouble());
         Assert.Equal(0, hostTopologySpans[0].GetProperty("sourceWallStartOffsetDrawingUnits").GetDouble(), precision: 3);
-        Assert.Equal(40, hostTopologySpans[0].GetProperty("sourceWallEndOffsetDrawingUnits").GetDouble(), precision: 3);
-        Assert.Equal(400, hostTopologySpans[0].GetProperty("sourceWallEndOffsetMillimeters").GetDouble(), precision: 3);
-        Assert.Equal(0.2, hostTopologySpans[0].GetProperty("sourceWallEndParameter").GetDouble(), precision: 3);
+        Assert.Equal(200, hostTopologySpans[0].GetProperty("sourceWallEndOffsetDrawingUnits").GetDouble(), precision: 3);
+        Assert.Equal(2000, hostTopologySpans[0].GetProperty("sourceWallEndOffsetMillimeters").GetDouble(), precision: 3);
+        Assert.Equal(1, hostTopologySpans[0].GetProperty("sourceWallEndParameter").GetDouble(), precision: 3);
         Assert.Equal(0, hostTopologySpans[0].GetProperty("sourceWallStartProjectionDistanceDrawingUnits").GetDouble(), precision: 3);
         Assert.Equal(0, hostTopologySpans[0].GetProperty("sourceWallEndProjectionDistanceDrawingUnits").GetDouble(), precision: 3);
+        Assert.Equal(
+            new[] { "edge-host-1", "edge-host-2", "edge-host-3", "edge-host-4", "edge-host-5" },
+            JsonStrings(hostTopologySpan.GetProperty("sourceWallGraphEdgeIds")));
+        Assert.Contains(
+            hostTopologySpan.GetProperty("evidence").EnumerateArray(),
+            item => item.GetString()?.Contains("clean placement run merged 5 topology span", StringComparison.Ordinal) == true);
+        var hostGraphEdges = document.RootElement
+            .GetProperty("wallGraph")
+            .GetProperty("edges")
+            .EnumerateArray()
+            .Where(edge => edge.GetProperty("wallId").GetString() == "detail-host")
+            .ToArray();
+        Assert.Equal(5, hostGraphEdges.Length);
+        Assert.Contains(hostGraphEdges, edge => edge.GetProperty("id").GetString() == "edge-host-1");
+    }
+
+    [Fact]
+    public void PlacementExporter_ProjectsOffAxisGraphSpansBackToOrthogonalSourceWall()
+    {
+        var result = CreateOffAxisTopologySpanResult(
+            "orthogonal-source-wall",
+            new PlanPoint(160, 110));
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var wall = Assert.Single(document.RootElement.GetProperty("walls").EnumerateArray());
+        var span = Assert.Single(wall.GetProperty("topologySpans").EnumerateArray());
+        var line = span.GetProperty("centerLine");
+
+        Assert.Equal(100, line.GetProperty("start").GetProperty("y").GetDouble(), precision: 3);
+        Assert.Equal(100, line.GetProperty("end").GetProperty("y").GetDouble(), precision: 3);
+        Assert.Equal(100, line.GetProperty("start").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(160, line.GetProperty("end").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(60, span.GetProperty("drawingLength").GetDouble(), precision: 3);
+        Assert.Equal(0, span.GetProperty("sourceWallStartProjectionDistanceDrawingUnits").GetDouble(), precision: 3);
+        Assert.Equal(0, span.GetProperty("sourceWallEndProjectionDistanceDrawingUnits").GetDouble(), precision: 3);
+        Assert.Equal(new[] { "orthogonal-source-wall:edge-a" }, JsonStrings(span.GetProperty("sourceWallGraphEdgeIds")));
+        Assert.Contains(
+            span.GetProperty("evidence").EnumerateArray(),
+            item => item.GetString()?.Contains("clean placement run projected onto source wall centerline", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public void PlacementExporter_DropsShortOffAxisConnectorSpansFromCleanPlacement()
+    {
+        var result = CreateOffAxisTopologySpanResult(
+            "short-off-axis-connector",
+            new PlanPoint(105, 104));
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var root = document.RootElement;
+        var wall = Assert.Single(root.GetProperty("walls").EnumerateArray());
+
+        Assert.Empty(wall.GetProperty("topologySpans").EnumerateArray());
+        Assert.Equal("no_clean_topology_spans", wall.GetProperty("placementOmission").GetProperty("code").GetString());
+        Assert.Equal(0, root.GetProperty("summary").GetProperty("placementReadyWallCount").GetInt32());
+        Assert.Equal(0, root.GetProperty("summary").GetProperty("wallTopologySpanCount").GetInt32());
     }
 
     [Fact]
@@ -2620,6 +2686,103 @@ public sealed class ExportTests
                 Array.Empty<WallEvidenceBand>(),
                 assessments,
                 walls.Length,
+                0)
+        };
+    }
+
+    private static PlanScanResult CreateOffAxisTopologySpanResult(
+        string id,
+        PlanPoint offAxisEnd)
+    {
+        var wall = SyntheticWall(id, 100, 100, 220, 100) with { WallType = WallType.Interior };
+        var nodes = new[]
+        {
+            SyntheticNode($"{id}:node-a", 100, 100, WallNodeKind.Endpoint),
+            SyntheticNode($"{id}:node-b", offAxisEnd.X, offAxisEnd.Y, WallNodeKind.Endpoint)
+        };
+        var edge = new WallEdge($"{id}:edge-a", 1, nodes[0].Id, nodes[1].Id, wall.Id, Confidence.High);
+        var component = new WallGraphComponent(
+            $"{id}:component",
+            1,
+            WallGraphComponentKind.MainStructural,
+            wall.Bounds.Inflate(16),
+            [wall.Id],
+            nodes.Select(node => node.Id).ToArray(),
+            [edge.Id],
+            wall.SourcePrimitiveIds,
+            wall.DrawingLength,
+            Confidence.High,
+            ["synthetic main structural wall with off-axis graph endpoint"]);
+        var assessment = new WallEvidenceWallAssessment(
+            wall.Id,
+            wall.PageNumber,
+            wall.Bounds,
+            WallEvidenceCategory.StrongWallBody,
+            Confidence.High,
+            PlacementReady: true,
+            RequiresReview: false,
+            RejectedAsNoise: false,
+            wall.SourcePrimitiveIds,
+            ["synthetic accepted wall body evidence"])
+        {
+            Decision = WallEvidenceDecision.Accept
+        };
+        var now = DateTimeOffset.UtcNow;
+
+        return new PlanScanResult(
+            new PlanDocument(
+                id,
+                [
+                    new PlanPage(
+                        1,
+                        new PlanSize(320, 220),
+                        [
+                            WallLine(wall.Id, wall.CenterLine.Start, wall.CenterLine.End)
+                        ])
+                ])
+            {
+                Metadata = new PlanMetadata
+                {
+                    SourceName = $"{id}.pdf",
+                    SourcePath = $@"C:\plans\{id}.pdf",
+                    Properties = new Dictionary<string, string>
+                    {
+                        ["format"] = "pdf",
+                        ["loader"] = "synthetic",
+                        ["sourceKind"] = PlanSourceKind.Pdf.ToString(),
+                        ["effectiveSourceKind"] = PlanSourceKind.Pdf.ToString()
+                    }
+                }
+            },
+            PlanLayerAnalysis.Empty,
+            PlanCalibration.Empty,
+            MeasurementConsistencyReport.Empty,
+            Array.Empty<TitleBlockAnalysis>(),
+            Array.Empty<DimensionAnnotation>(),
+            Array.Empty<PlanAnnotationBlock>(),
+            Array.Empty<GridAxis>(),
+            Array.Empty<GridBaySpacing>(),
+            Array.Empty<SheetRegion>(),
+            Array.Empty<SurfacePatternCandidate>(),
+            [wall],
+            new WallGraph(nodes, [edge], [component]),
+            Array.Empty<RoomRegion>(),
+            RoomAdjacencyGraph.Empty,
+            Array.Empty<OpeningCandidate>(),
+            Array.Empty<ObjectCandidate>(),
+            Array.Empty<ObjectCandidateGroup>(),
+            Array.Empty<ObjectAggregate>(),
+            new PipelineDiagnostics(
+                now,
+                now,
+                Array.Empty<PipelineStageReport>(),
+                Array.Empty<PlanDiagnostic>()))
+        {
+            WallEvidenceMap = new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                [assessment],
+                1,
                 0)
         };
     }

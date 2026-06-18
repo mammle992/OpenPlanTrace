@@ -6,6 +6,130 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.106] - 2026-06-18
+
+### Added
+- Scan and placement wall topology spans now expose structured
+  `sourceWallGraphEdgeIds`, so compact merged clean wall runs can be traced back
+  to every raw wall graph edge that produced them without parsing free-text
+  evidence.
+
+### Changed
+- README placement guidance now documents the raw-edge provenance field for
+  downstream importers that consume compact wall geometry.
+
+### Verified
+- Added schema/export contract coverage for single-edge, projected, and
+  multi-edge merged clean wall topology spans.
+- Focused schema/export tests passed with `84` tests.
+- Full test suite passed with `540` tests.
+- Private medium PDF smoke scan completed with
+  `C:\Users\post\Downloads\A20-102 PLAN 1. ETASJE.pdf`. The placement packet
+  reports `38` clean topology spans and preserves `215` raw wall graph edges;
+  `18` clean spans merge more than one raw edge, with up to `6` raw edge IDs on
+  a single compact span.
+- Deep placement validation passed for
+  `real-pdf-output/private-medium-a20-102-v124/placement.json`.
+- Rendered and inspected the wall-only viewer screenshot
+  `real-pdf-output/private-medium-a20-102-v124/viewer-placement-clean-spans-only.png`.
+  The clean wall layer is much less noisy than raw graph output, but visual QA
+  still shows incomplete wall coverage and one odd vertical non-blue/green span
+  needing future accuracy work. Source-PDF background rendering was unavailable
+  in headless verification because local PDF rendering tools are not installed
+  and Edge's native headless PDF capture returned a blank page.
+
+## [0.02.105] - 2026-06-18
+
+### Changed
+- Compact placement wall `topologySpans` now use the same merged clean
+  source-wall runs as placement-review SVG overlays, instead of exporting many
+  smaller raw graph-edge fragments as downstream wall geometry.
+- Placement exports still preserve raw wall graph edge coordinates and evidence
+  under `wallGraph.edges`, so consumers get cleaner import spans without losing
+  audit/debug provenance.
+- README placement-export guidance now states that wall `topologySpans` are
+  merged clean placement runs and that `wallGraph.edges` is the edge-level audit
+  source.
+
+### Verified
+- Updated placement export regression coverage for merged downstream wall runs
+  and raw graph edge retention.
+- Focused placement/export tests passed with `5` tests.
+- Full test suite passed with `540` tests.
+- Private medium PDF smoke scan completed with
+  `C:\Users\post\Downloads\A20-102 PLAN 1. ETASJE.pdf`. The compact
+  `placement.json` now reports `38` wall topology spans, matching the
+  placement-review SVG clean layer, while retaining `215` raw wall graph edges.
+- Deep placement validation passed for
+  `real-pdf-output/private-medium-a20-102-v123/placement.json`.
+- Rendered and inspected
+  `real-pdf-output/private-medium-a20-102-v123/placement-review-page-1.png`.
+
+## [0.02.104] - 2026-06-18
+
+### Changed
+- The viewer now merges normalized scan-mode clean wall spans into longer
+  source-wall runs before drawing the clean wall-span layer.
+- Walls-only scan review screenshots are less fragmented while raw scan JSON
+  still keeps the original wall graph evidence for audit/debug work.
+
+### Verified
+- Extended viewer contract coverage for clean wall-span run merging.
+- Focused viewer contract tests passed with `2` tests.
+- Full test suite passed with `540` tests.
+- Rendered and inspected
+  `real-pdf-output/private-medium-a20-102-v122/viewer-scan-merged-clean-wall-spans.png`
+  from the medium PDF scan JSON. The clean wall-span layer dropped from `86`
+  drawn spans to `43` merged visual runs.
+- The local viewer was started hidden at `127.0.0.1:5077` for QA and stopped
+  after the screenshot.
+
+## [0.02.103] - 2026-06-18
+
+### Fixed
+- The interactive viewer now normalizes scan-JSON wall topology spans before
+  drawing them, so live PDF scans and full scan JSON no longer show raw off-axis
+  graph fragments as clean wall geometry.
+- Short off-axis scan-mode connector spans are suppressed in the viewer clean
+  wall-span layer, matching the placement-export cleanup path without removing
+  raw audit evidence from scan JSON.
+
+### Verified
+- Added viewer contract coverage for scan-mode wall-span normalization.
+- Focused viewer/export tests passed with `4` tests.
+- Full test suite passed with `540` tests.
+- Rendered and inspected
+  `real-pdf-output/private-medium-a20-102-v122/viewer-scan-clean-wall-spans.png`
+  from `scan.json` with only the clean wall-span layer enabled; the previous
+  off-axis spaghetti pattern is no longer visible in the viewer path.
+- The in-app browser runtime was unavailable in this sandbox, so visual QA used
+  hidden headless Microsoft Edge against the local viewer at `127.0.0.1:5077`.
+
+## [0.02.102] - 2026-06-18
+
+### Fixed
+- Placement wall topology spans are now projected back onto their trusted
+  orthogonal source wall axis when graph endpoints drift off-axis, removing
+  crooked connector chains from placement JSON and the viewer walls-only layer.
+- Ultra-short off-axis connector spans are now dropped from clean placement
+  topology instead of being exported as real wall geometry.
+
+### Verified
+- Added regression coverage for off-axis wall graph span projection and short
+  connector suppression in placement exports.
+- Focused placement export tests passed with `3` tests.
+- Full test suite passed with `539` tests.
+- Private medium PDF smoke scan completed with
+  `C:\Users\post\Downloads\A20-102 PLAN 1. ETASJE.pdf`. Exported placement
+  topology spans dropped from `118` to `81`, with `0` remaining off-axis spans
+  above one drawing unit.
+- Deep placement validation passed for
+  `real-pdf-output/private-medium-a20-102-v122/placement.json`.
+- Rendered and inspected
+  `real-pdf-output/private-medium-a20-102-v122/placement-review-page-1.png`;
+  the previous random loose wall-chain pattern is gone from the walls-only
+  visual review.
+
 ## [0.02.101] - 2026-06-18
 
 ### Changed

@@ -5087,6 +5087,7 @@
       "required": [
         "id",
         "wallGraphEdgeId",
+        "sourceWallGraphEdgeIds",
         "pageNumber",
         "wallId",
         "fromNodeId",
@@ -5106,6 +5107,10 @@
         },
         "wallGraphEdgeId": {
           "$ref": "#/$defs/id"
+        },
+        "sourceWallGraphEdgeIds": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Raw wall graph edge IDs merged into or represented by this topology span."
         },
         "pageNumber": {
           "$ref": "#/$defs/pageNumber"

@@ -1510,6 +1510,7 @@ public sealed record WallTopologySpanExport(
     double Confidence,
     IReadOnlyList<string> SourcePrimitiveIds,
     IReadOnlyList<string> SourceLayers,
+    IReadOnlyList<string> SourceWallGraphEdgeIds,
     IReadOnlyList<string> Evidence)
 {
     public static WallTopologySpanExport From(
@@ -1537,6 +1538,7 @@ public sealed record WallTopologySpanExport(
             span.Confidence.Value,
             span.SourcePrimitiveIds,
             ExportSourceHelpers.SourceLayers(span.SourcePrimitiveIds, sourceLookup),
+            span.SourceWallGraphEdgeIds,
             span.Evidence);
 }
 

@@ -22,6 +22,7 @@ public sealed record WallGraphTopologySpan(
     double Thickness,
     Confidence Confidence,
     IReadOnlyList<string> SourcePrimitiveIds,
+    IReadOnlyList<string> SourceWallGraphEdgeIds,
     IReadOnlyList<string> Evidence,
     WallSegment? SourceWall);
 
@@ -98,6 +99,7 @@ internal static class WallGraphTopologySpanBuilder
                 thickness,
                 edge.Confidence,
                 sourcePrimitiveIds,
+                [edge.Id],
                 evidence.Distinct(StringComparer.Ordinal).ToArray(),
                 wall));
         }
