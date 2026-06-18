@@ -157,6 +157,148 @@ public sealed class WallEvidenceRecoveryTests
     }
 
     [Fact]
+    public async Task WallEvidenceRefinement_KeepsShortUnlayeredRecoveredSegmentsReviewOnly()
+    {
+        var document = new PlanDocument(
+            "wall-evidence-short-unlayered-segment-review",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(260, 220),
+                    new PlanPrimitive[]
+                    {
+                        Line("short-unlayered-segment", new PlanPoint(100, 100), new PlanPoint(122, 100))
+                    })
+            });
+        var context = new ScanContext(
+            document,
+            new ScannerOptions
+            {
+                DefaultWallThickness = 4,
+                MinWallFragmentLength = 4,
+                MinWallLength = 36
+            });
+        context.WallCandidates.Add(HostWall("host-left", new PlanPoint(100, 50), new PlanPoint(100, 180)));
+        context.WallCandidates.Add(HostWall("host-right", new PlanPoint(122, 50), new PlanPoint(122, 180)));
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var recovered = Assert.Single(context.Walls.Where(wall => wall.SourcePrimitiveIds.Contains("short-unlayered-segment")));
+        Assert.Equal(WallDetectionKind.SingleLine, recovered.DetectionKind);
+        Assert.Equal(WallType.Unknown, recovered.WallType);
+        Assert.Contains(recovered.Evidence, item => item.Contains("short supported wall segment", StringComparison.OrdinalIgnoreCase));
+
+        var assessment = Assert.Single(context.WallEvidenceMap.WallAssessments, item => item.WallId == recovered.Id);
+        Assert.Equal(WallEvidenceCategory.RecoveredWallBody, assessment.Category);
+        Assert.Equal(WallEvidenceDecision.Review, assessment.Decision);
+        Assert.False(assessment.PlacementReady);
+        Assert.True(assessment.RequiresReview);
+        Assert.Contains(
+            assessment.Evidence,
+            item => item.Contains("short recovered unlayered/unknown wall segment requires review", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task WallEvidenceRefinement_KeepsShortUnknownFragmentMergedWallsReviewOnly()
+    {
+        var document = new PlanDocument(
+            "wall-evidence-short-fragment-merged-review",
+            new[]
+            {
+                new PlanPage(1, new PlanSize(260, 220), Array.Empty<PlanPrimitive>())
+            });
+        var context = new ScanContext(
+            document,
+            new ScannerOptions
+            {
+                DefaultWallThickness = 4,
+                MinWallLength = 36
+            });
+        var fragmentWall = new WallSegment(
+            "wall-short-unknown-fragment",
+            1,
+            new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(124, 100)),
+            4,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.FragmentMerged,
+            FragmentEvidence = new WallFragmentEvidence(
+                6,
+                8,
+                2,
+                0,
+                0.18,
+                RequiresGeometryReview: false,
+                new[] { "fragment-merged test wall" }),
+            SourcePrimitiveIds = new[] { "fragment-a", "fragment-b" },
+            Evidence = new[] { "merged collinear wall fragments" }
+        };
+        context.WallCandidates.Add(fragmentWall);
+        context.WallCandidates.Add(HostWall("host-left", new PlanPoint(100, 50), new PlanPoint(100, 180)));
+        context.WallCandidates.Add(HostWall("host-right", new PlanPoint(124, 50), new PlanPoint(124, 180)));
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var assessment = Assert.Single(
+            context.WallEvidenceMap.WallAssessments,
+            item => item.WallId == fragmentWall.Id);
+
+        Assert.Equal(WallEvidenceCategory.MediumWallBody, assessment.Category);
+        Assert.Equal(WallEvidenceDecision.Review, assessment.Decision);
+        Assert.False(assessment.PlacementReady);
+        Assert.True(assessment.RequiresReview);
+        Assert.Contains(
+            assessment.Evidence,
+            item => item.Contains("short unknown fragment-merged wall candidate requires review", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task WallEvidenceRefinement_KeepsRepeatedShortUnlayeredLineworkReviewOnly()
+    {
+        var document = new PlanDocument(
+            "wall-evidence-repeated-short-unlayered-detail-review",
+            new[]
+            {
+                new PlanPage(1, new PlanSize(320, 240), Array.Empty<PlanPrimitive>())
+            });
+        var context = new ScanContext(
+            document,
+            new ScannerOptions
+            {
+                DefaultWallThickness = 4,
+                MinWallLength = 36
+            });
+        var detailWalls = new[]
+        {
+            SingleLineWall("detail-slot-a", new PlanPoint(100, 100), new PlanPoint(100, 154)),
+            SingleLineWall("detail-slot-b", new PlanPoint(150, 100), new PlanPoint(150, 154)),
+            SingleLineWall("detail-slot-c", new PlanPoint(200, 100), new PlanPoint(200, 154))
+        };
+        context.WallCandidates.AddRange(detailWalls);
+        context.WallCandidates.Add(HostWall("top-host", new PlanPoint(80, 100), new PlanPoint(220, 100)));
+        context.WallCandidates.Add(HostWall("bottom-host", new PlanPoint(80, 154), new PlanPoint(220, 154)));
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        foreach (var detailWall in detailWalls)
+        {
+            var assessment = Assert.Single(
+                context.WallEvidenceMap.WallAssessments,
+                item => item.WallId == detailWall.Id);
+
+            Assert.Equal(WallEvidenceCategory.ObjectOrFixtureDetail, assessment.Category);
+            Assert.Equal(WallEvidenceDecision.Review, assessment.Decision);
+            Assert.False(assessment.PlacementReady);
+            Assert.True(assessment.RequiresReview);
+            Assert.False(assessment.RejectedAsNoise);
+            Assert.Contains(
+                assessment.Evidence,
+                item => item.Contains("repeated short unlayered vertical linework group", StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    [Fact]
     public async Task WallEvidenceRefinement_DoesNotRecoverRepeatedShortFixtureSlotsAsWalls()
     {
         var document = new PlanDocument(
@@ -501,6 +643,14 @@ public sealed class WallEvidenceRecoveryTests
             DetectionKind = WallDetectionKind.SingleLine,
             SourcePrimitiveIds = new[] { sourceId },
             Evidence = new[] { "test host wall" }
+        };
+
+    private static WallSegment SingleLineWall(string sourceId, PlanPoint start, PlanPoint end) =>
+        new($"wall-{sourceId}", 1, new PlanLineSegment(start, end), 4, Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.SingleLine,
+            SourcePrimitiveIds = new[] { sourceId },
+            Evidence = new[] { "test unlayered single-line wall candidate" }
         };
 
     private static WallSegment PairedWall(

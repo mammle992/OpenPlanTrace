@@ -59,6 +59,7 @@ const defaultEnabledLayers = [
   "dimensions",
   "gridAxes",
   "annotations",
+  "wallBodyFootprints",
   "wallTopologySpans",
   "rooms",
   "openings",
@@ -76,6 +77,7 @@ const overlayLegendItems = [
   { key: "annotations", label: "Annotations", stroke: "#2587b4", fill: "rgba(37, 135, 180, 0.055)" },
   { key: "wallComponents", label: "Wall components", stroke: "#c97c18", fill: "rgba(201, 124, 24, 0.06)", dash: "6 4" },
   { key: "walls", label: "Walls", stroke: "#c43d3d", fill: "rgba(196, 61, 61, 0.06)" },
+  { key: "wallBodyFootprints", label: "Wall body footprints", stroke: "#0f4fb8", fill: "rgba(15, 79, 184, 0.10)" },
   { key: "wallTopologySpans", label: "Clean wall spans", stroke: "#0f4fb8", fill: "rgba(15, 79, 184, 0.06)" },
   { key: "wallTopologyReviewSpans", label: "Non-placement wall spans", stroke: "#a65f00", fill: "rgba(166, 95, 0, 0.055)", dash: "3 3" },
   { key: "nodes", label: "Wall nodes", stroke: "#191a1f", fill: "#ffffff" },
@@ -98,6 +100,7 @@ const overlayLegendItems = [
 
 const placementOverlayLayerKeys = new Set([
   "walls",
+  "wallBodyFootprints",
   "wallTopologySpans",
   "wallTopologyReviewSpans",
   "rooms",
@@ -2817,6 +2820,45 @@ function drawOverlay() {
     });
   }
 
+  if (state.enabledLayers.has("wallBodyFootprints")) {
+    state.scan.walls.filter(onCurrentPage).forEach((wall) => {
+      if (!visibleBySourceLayer(wall)) {
+        return;
+      }
+      if (!shouldDrawWallAsCleanTopologySpan(wall)) {
+        return;
+      }
+
+      wallBodyFootprints(wall).forEach((footprint) => {
+        if (!visibleBySourceLayer(footprint)) {
+          return;
+        }
+
+        const title = [
+          `${footprint.id} - wall body for ${wall.id}`,
+          wall.wallType ? `type ${wall.wallType}` : "",
+          footprint.geometrySource ? `body from ${footprint.geometrySource}` : "",
+          Number.isFinite(Number(footprint.thickness)) ? `${formatNumber(footprint.thickness)} units thick` : "",
+          wallReliabilitySummary(wall)
+        ].filter(Boolean).join(" - ");
+        const inspection = describeItem("wall body footprint", {
+          ...footprint,
+          sourceWallId: wall.id,
+          sourceWallType: wall.wallType,
+          sourceWallComponentKind: wall.wallComponentKind,
+          sourceWallReliability: wall.reliability ?? null,
+          sourceWallEvidenceAssessment: wall.evidenceAssessment ?? null
+        });
+        addPolygon(
+          footprint.bodyPolygon,
+          wallBodyFootprintClassName(wall),
+          title,
+          confidence(footprint.confidence ?? wall.confidence),
+          inspection);
+      });
+    });
+  }
+
   if (state.enabledLayers.has("wallTopologySpans")) {
     state.scan.walls.filter(onCurrentPage).forEach((wall) => {
       if (!visibleBySourceLayer(wall)) {
@@ -4279,6 +4321,180 @@ function wallCleanTopologySpans(wall) {
     : [];
 }
 
+function wallBodyFootprints(wall) {
+  const solidSpans = wallSolidBodySpans(wall);
+  if (solidSpans.length) {
+    return solidSpans;
+  }
+
+  return wallCleanTopologySpans(wall)
+    .map((span, index) => {
+      const body = wallBodyPolygonFromTopologySpan(wall, span);
+      if (!body?.polygon?.length) {
+        return null;
+      }
+
+      return {
+        id: `${span.id || `${wall.id}:topology-span:${index + 1}`}:body-footprint`,
+        pageNumber: span.pageNumber ?? wall.pageNumber,
+        bodyPolygon: body.polygon,
+        bounds: boundsFromPoints(body.polygon),
+        centerLine: span.centerLine,
+        confidence: span.confidence ?? wall.confidence,
+        thickness: Number(span.thickness ?? wall.thickness),
+        geometrySource: body.geometrySource,
+        evidence: [
+          ...(span.evidence ?? []),
+          `Viewer wall body footprint generated from ${body.geometrySource}`
+        ]
+      };
+    })
+    .filter(Boolean);
+}
+
+function wallSolidBodySpans(wall) {
+  return Array.isArray(wall?.solidSpans)
+    ? wall.solidSpans
+      .filter((span) => Array.isArray(span?.bodyPolygon) && span.bodyPolygon.length >= 3)
+      .map((span, index) => ({
+        id: span.id || `${wall.id}:solid-span:${index + 1}:body-footprint`,
+        pageNumber: span.pageNumber ?? wall.pageNumber,
+        bodyPolygon: span.bodyPolygon,
+        bounds: span.bodyBounds ?? boundsFromPoints(span.bodyPolygon),
+        centerLine: span.centerLine ?? span.line ?? null,
+        confidence: span.confidence ?? wall.confidence,
+        thickness: span.thicknessDrawingUnits ?? wall.thickness,
+        geometrySource: solidSpanGeometrySource(span),
+        evidence: span.evidence ?? []
+      }))
+    : [];
+}
+
+function solidSpanGeometrySource(span) {
+  const evidenceText = (span?.evidence ?? [])
+    .map((item) => String(item ?? ""))
+    .find((item) => item.includes("closed wall footprint ring from"));
+  return evidenceText
+    ? evidenceText.replace(/^.*closed wall footprint ring from\s+/i, "").replace(/\.$/, "")
+    : "exported solid span body polygon";
+}
+
+function wallBodyPolygonFromTopologySpan(wall, span) {
+  const pairPolygon = wallBodyPolygonFromPairEvidence(wall, span);
+  if (pairPolygon?.length) {
+    return {
+      polygon: pairPolygon,
+      geometrySource: "detected paired wall-face evidence"
+    };
+  }
+
+  const fallbackPolygon = wallBodyPolygonFromCenterline(wall, span);
+  return fallbackPolygon?.length
+    ? {
+      polygon: fallbackPolygon,
+      geometrySource: "centerline plus wall thickness"
+    }
+    : null;
+}
+
+function wallBodyPolygonFromPairEvidence(wall, span) {
+  const pair = wall?.pairEvidence;
+  const firstFaceLine = normalizeLine(pair?.firstFaceLine);
+  const secondFaceLine = normalizeLine(pair?.secondFaceLine);
+  if (!firstFaceLine || !secondFaceLine) {
+    return null;
+  }
+
+  const startParameter = wallSpanSourceParameter(wall, span, "start");
+  const endParameter = wallSpanSourceParameter(wall, span, "end");
+  if (!Number.isFinite(startParameter) || !Number.isFinite(endParameter)) {
+    return null;
+  }
+
+  const firstStart = pointAtLine(firstFaceLine, startParameter);
+  const firstEnd = pointAtLine(firstFaceLine, endParameter);
+  const secondEnd = pointAtLine(secondFaceLine, endParameter);
+  const secondStart = pointAtLine(secondFaceLine, startParameter);
+  return [firstStart, firstEnd, secondEnd, secondStart, firstStart];
+}
+
+function wallBodyPolygonFromCenterline(wall, span) {
+  const line = normalizeLine(span?.centerLine ?? span?.line);
+  if (!line) {
+    return null;
+  }
+
+  const vector = lineVector(line);
+  const length = Math.hypot(vector.x, vector.y);
+  const thickness = Math.max(0, Number(span?.thickness ?? wall?.thickness ?? 0));
+  if (length <= 0.001 || thickness <= 0) {
+    return null;
+  }
+
+  const normal = {
+    x: -vector.y / length,
+    y: vector.x / length
+  };
+  const offsetX = normal.x * thickness / 2;
+  const offsetY = normal.y * thickness / 2;
+  const startMinus = translatePoint(line.start, -offsetX, -offsetY);
+  const endMinus = translatePoint(line.end, -offsetX, -offsetY);
+  const endPlus = translatePoint(line.end, offsetX, offsetY);
+  const startPlus = translatePoint(line.start, offsetX, offsetY);
+  return [startMinus, endMinus, endPlus, startPlus, startMinus];
+}
+
+function wallSpanSourceParameter(wall, span, endpoint) {
+  const explicitValue = endpoint === "start"
+    ? span?.sourceWallStartParameter
+    : span?.sourceWallEndParameter;
+  const numeric = Number(explicitValue);
+  if (Number.isFinite(numeric)) {
+    return Math.min(1, Math.max(0, numeric));
+  }
+
+  const wallLine = normalizeLine(wall?.centerLine ?? wall?.line);
+  const spanLine = normalizeLine(span?.centerLine ?? span?.line);
+  if (!wallLine || !spanLine) {
+    return null;
+  }
+
+  return projectPointParameter(wallLine, endpoint === "start" ? spanLine.start : spanLine.end);
+}
+
+function pointAtLine(line, parameter) {
+  const t = Math.min(1, Math.max(0, Number(parameter)));
+  return {
+    x: line.start.x + ((line.end.x - line.start.x) * t),
+    y: line.start.y + ((line.end.y - line.start.y) * t)
+  };
+}
+
+function projectPointParameter(line, point) {
+  const vector = lineVector(line);
+  const lengthSquared = (vector.x * vector.x) + (vector.y * vector.y);
+  if (lengthSquared <= 0.000001) {
+    return null;
+  }
+
+  const t = ((point.x - line.start.x) * vector.x + (point.y - line.start.y) * vector.y) / lengthSquared;
+  return Math.min(1, Math.max(0, t));
+}
+
+function lineVector(line) {
+  return {
+    x: Number(line.end.x) - Number(line.start.x),
+    y: Number(line.end.y) - Number(line.start.y)
+  };
+}
+
+function translatePoint(point, dx, dy) {
+  return {
+    x: Number(point.x) + dx,
+    y: Number(point.y) + dy
+  };
+}
+
 function wallVisualDrawLines(wall) {
   const topologySpans = wallCleanTopologySpans(wall);
   if (topologySpans.length) {
@@ -4299,6 +4515,20 @@ function wallTopologySpanClassName(wall) {
 
   if (wallRequiresReliabilityReview(wall)) {
     classes.push("wall-topology-span-review");
+  }
+
+  return classes.join(" ");
+}
+
+function wallBodyFootprintClassName(wall) {
+  const classes = ["wall-body-footprint"];
+
+  if (wall?.wallType === "Interior") {
+    classes.push("wall-body-footprint-interior");
+  }
+
+  if (wallRequiresReliabilityReview(wall)) {
+    classes.push("wall-body-footprint-review");
   }
 
   return classes.join(" ");
@@ -9098,6 +9328,13 @@ function wallTopologySpanCount(scan = state.scan, pageNumber = null, predicate =
     .reduce((total, wall) => total + wallCleanTopologySpans(wall).length, 0);
 }
 
+function wallBodyFootprintCount(scan = state.scan, pageNumber = null) {
+  return (scan?.walls ?? [])
+    .filter(shouldDrawWallAsCleanTopologySpan)
+    .filter((wall) => pageNumber == null || wall.pageNumber == null || wall.pageNumber === pageNumber)
+    .reduce((total, wall) => total + wallBodyFootprints(wall).length, 0);
+}
+
 function routingLayerItemCount(layer) {
   return (layer?.barriers?.length ?? 0)
     + (layer?.passages?.length ?? 0)
@@ -9148,6 +9385,8 @@ function layerTotalForKey(scan, key) {
       return scan.wallComponents?.length ?? 0;
     case "walls":
       return (scan.walls ?? []).filter(shouldDrawWallInStructuralLayer).length;
+    case "wallBodyFootprints":
+      return wallBodyFootprintCount(scan);
     case "wallTopologySpans":
       return wallTopologySpanCount(scan);
     case "wallTopologyReviewSpans":
@@ -9209,6 +9448,8 @@ function layerCountForKey(scan, key) {
         .filter((wall) => wall.pageNumber == null || wall.pageNumber === state.currentPage)
         .filter(shouldDrawWallInStructuralLayer)
         .length;
+    case "wallBodyFootprints":
+      return wallBodyFootprintCount(scan, state.currentPage);
     case "wallTopologySpans":
       return wallTopologySpanCount(scan, state.currentPage);
     case "wallTopologyReviewSpans":
@@ -14156,7 +14397,21 @@ function normalizeWallItem(item) {
 
   return {
     ...normalizePlacementItem(item),
-    topologySpans: normalizeWallTopologySpans(item.topologySpans)
+    pairEvidence: normalizeWallPairEvidence(item.pairEvidence),
+    topologySpans: normalizeWallTopologySpans(item.topologySpans),
+    solidSpans: normalizeWallSolidSpans(item.solidSpans)
+  };
+}
+
+function normalizeWallPairEvidence(pairEvidence) {
+  if (!pairEvidence || typeof pairEvidence !== "object") {
+    return null;
+  }
+
+  return {
+    ...pairEvidence,
+    firstFaceLine: normalizeLine(pairEvidence.firstFaceLine),
+    secondFaceLine: normalizeLine(pairEvidence.secondFaceLine)
   };
 }
 
@@ -14186,6 +14441,41 @@ function normalizeWallTopologySpan(span) {
     sourceLayers: span.sourceLayers ?? [],
     evidence: span.evidence ?? []
   };
+}
+
+function normalizeWallSolidSpans(spans) {
+  return (Array.isArray(spans) ? spans : [])
+    .map(normalizeWallSolidSpan)
+    .filter(Boolean);
+}
+
+function normalizeWallSolidSpan(span) {
+  if (!span || typeof span !== "object") {
+    return null;
+  }
+
+  const centerLine = normalizeLine(span.centerLine ?? span.line);
+  const bodyPolygon = normalizePointArray(span.bodyPolygon);
+  if (!centerLine && bodyPolygon.length < 3) {
+    return null;
+  }
+
+  return {
+    ...span,
+    pageNumber: normalizedPageNumber(span.pageNumber) ?? 1,
+    centerLine,
+    line: centerLine,
+    bodyPolygon,
+    bodyBounds: normalizeRect(span.bodyBounds) ?? (bodyPolygon.length ? boundsFromPoints(bodyPolygon) : null),
+    bounds: normalizeRect(span.bounds) ?? normalizeRect(span.bodyBounds) ?? (bodyPolygon.length ? boundsFromPoints(bodyPolygon) : null),
+    evidence: span.evidence ?? []
+  };
+}
+
+function normalizePointArray(points) {
+  return (Array.isArray(points) ? points : [])
+    .map(normalizePoint)
+    .filter(Boolean);
 }
 
 function normalizePlacementCalibration(calibration = null) {

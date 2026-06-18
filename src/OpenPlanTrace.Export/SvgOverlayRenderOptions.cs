@@ -47,6 +47,8 @@ public sealed record SvgOverlayRenderOptions
 
     public bool IncludeWallTopologySpans { get; init; }
 
+    public bool IncludeWallBodyFootprints { get; init; }
+
     public bool IncludeReviewOnlyWallTopologySpans { get; init; } = true;
 
     public bool IncludeWallGraphRepairs { get; init; } = true;
@@ -54,6 +56,10 @@ public sealed record SvgOverlayRenderOptions
     public bool IncludeRoutingLayer { get; init; }
 
     public string BackgroundColor { get; init; } = "#ffffff";
+
+    public string? BackgroundImageHref { get; init; }
+
+    public double BackgroundImageOpacity { get; init; } = 0.68;
 
     public static SvgOverlayRenderOptions ForProfile(SvgOverlayRenderProfile profile) =>
         profile switch
@@ -90,12 +96,14 @@ public sealed record SvgOverlayRenderOptions
                 IncludeObjectAggregates = false,
                 IncludeSurfacePatterns = false,
                 IncludeWallTopologySpans = true,
+                IncludeWallBodyFootprints = true,
                 IncludeReviewOnlyWallTopologySpans = false,
                 IncludeRoutingLayer = false
             },
             _ => new SvgOverlayRenderOptions()
             {
                 IncludeWallTopologySpans = true,
+                IncludeWallBodyFootprints = true,
                 IncludeRoutingLayer = true
             }
         };

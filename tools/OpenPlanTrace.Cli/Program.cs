@@ -290,7 +290,7 @@ internal static class OpenPlanTraceCli
                     PlanOverlaySvgRenderer.RenderPage(
                         result,
                         pageNumber,
-                        SvgOverlayRenderOptions.ForProfile(parsed.SvgProfile)));
+                        CreateSvgOverlayRenderOptions(parsed, parsed.SvgPath, pageNumber)));
                 svgPathsByPage[pageNumber] = SnapshotArtifactPath(parsed.VisualSnapshotPath, parsed.SvgPath);
             }
 
@@ -305,7 +305,7 @@ internal static class OpenPlanTraceCli
                         PlanOverlaySvgRenderer.RenderPage(
                             result,
                             page.Number,
-                            SvgOverlayRenderOptions.ForProfile(parsed.SvgProfile)));
+                            CreateSvgOverlayRenderOptions(parsed, svgPath, page.Number)));
                     svgPathsByPage[page.Number] = SnapshotArtifactPath(parsed.VisualSnapshotPath, svgPath);
                 }
             }
@@ -9554,6 +9554,61 @@ internal static class OpenPlanTraceCli
             : Path.GetRelativePath(snapshotDirectory, artifactFullPath);
     }
 
+    private static SvgOverlayRenderOptions CreateSvgOverlayRenderOptions(
+        ScanArguments parsed,
+        string svgPath,
+        int pageNumber)
+    {
+        var options = SvgOverlayRenderOptions.ForProfile(parsed.SvgProfile);
+        var backgroundPath = FindSvgBackgroundImagePath(parsed, pageNumber);
+        if (backgroundPath is null)
+        {
+            return options;
+        }
+
+        return options with
+        {
+            BackgroundImageHref = RelativeSvgHref(svgPath, backgroundPath),
+            BackgroundImageOpacity = parsed.SvgBackgroundImageOpacity
+        };
+    }
+
+    private static string? FindSvgBackgroundImagePath(ScanArguments parsed, int pageNumber)
+    {
+        if (parsed.SvgBackgroundImagePath is not null)
+        {
+            return parsed.SvgBackgroundImagePath;
+        }
+
+        if (parsed.SvgBackgroundImageDirectory is null)
+        {
+            return null;
+        }
+
+        foreach (var extension in new[] { ".png", ".jpg", ".jpeg", ".webp" })
+        {
+            var path = Path.Combine(parsed.SvgBackgroundImageDirectory, $"page-{pageNumber}{extension}");
+            if (File.Exists(path))
+            {
+                return path;
+            }
+        }
+
+        return null;
+    }
+
+    private static string RelativeSvgHref(string svgPath, string artifactPath)
+    {
+        var svgDirectory = Path.GetDirectoryName(Path.GetFullPath(svgPath)) ?? Directory.GetCurrentDirectory();
+        var relative = Path.GetRelativePath(svgDirectory, Path.GetFullPath(artifactPath));
+        return string.Join(
+            "/",
+            relative
+                .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                .Where(part => part.Length > 0)
+                .Select(Uri.EscapeDataString));
+    }
+
     private static void WriteInspectSummary(PlanDocumentInspectionResult result)
     {
         Console.WriteLine($"Document: {result.DocumentId}");
@@ -9959,6 +10014,9 @@ internal static class OpenPlanTraceCli
         Console.WriteLine("  --svg <path>              Write one SVG overlay");
         Console.WriteLine("  --svg-dir <directory>     Write one SVG overlay per page");
         Console.WriteLine("  --svg-profile <name>      SVG overlay profile: placement-review (default), structural-review, or full");
+        Console.WriteLine("  --svg-background <path>   Embed one page background image in the SVG for alignment QA");
+        Console.WriteLine("  --svg-background-dir <d>  Embed page-N.png/jpg/webp backgrounds in per-page SVG overlays");
+        Console.WriteLine("  --svg-background-opacity <0..1>  Background image opacity for SVG alignment QA (default 0.68)");
         Console.WriteLine("  --visual-snapshot <path>  Write visual QA snapshot JSON with per-page overlay counts, bounds, and issues");
         Console.WriteLine("  --out-dir <directory>     Write scan.json, scan.compact.json, scan.compact.json.gz, scan.geojson, placement.json, overlays/page-N.svg, and visual-snapshot.json");
         Console.WriteLine("  --page <number>           Page used with --svg, default first page");
@@ -11483,6 +11541,12 @@ internal sealed class ScanArguments : IVisualAiCliArguments
 
     public SvgOverlayRenderProfile SvgProfile { get; set; } = SvgOverlayRenderProfile.PlacementReview;
 
+    public string? SvgBackgroundImagePath { get; set; }
+
+    public string? SvgBackgroundImageDirectory { get; set; }
+
+    public double SvgBackgroundImageOpacity { get; set; } = 0.68;
+
     public string? GeoJsonPath { get; set; }
 
     public string? PlacementPath { get; set; }
@@ -11625,6 +11689,17 @@ internal sealed class ScanArguments : IVisualAiCliArguments
                     break;
                 case "--svg-profile":
                     parsed.SvgProfile = OpenPlanTraceCli.ParseSvgOverlayProfile(ReadValue(args, ref index, arg));
+                    break;
+                case "--svg-background":
+                case "--svg-background-image":
+                    parsed.SvgBackgroundImagePath = ReadValue(args, ref index, arg);
+                    break;
+                case "--svg-background-dir":
+                case "--svg-background-image-dir":
+                    parsed.SvgBackgroundImageDirectory = ReadValue(args, ref index, arg);
+                    break;
+                case "--svg-background-opacity":
+                    parsed.SvgBackgroundImageOpacity = Math.Clamp(ReadDouble(args, ref index, arg), 0, 1);
                     break;
                 case "--geojson":
                     parsed.GeoJsonPath = ReadValue(args, ref index, arg);

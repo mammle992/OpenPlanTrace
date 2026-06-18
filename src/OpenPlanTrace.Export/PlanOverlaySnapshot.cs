@@ -169,6 +169,7 @@ public sealed record PlanOverlayPageSnapshot(
         Add(options.IncludeWallComponents, "wallComponents");
         Add(options.IncludeSurfacePatterns, "surfacePatterns");
         Add(options.IncludeWallTopologySpans, "wallTopologySpans");
+        Add(options.IncludeWallBodyFootprints, "wallBodyFootprints");
         Add(options.IncludeWallGraphRepairs, "wallGraphRepairs");
         Add(options.IncludeWalls, "walls");
         Add(options.IncludeWallNodes, "wallNodes");
@@ -292,6 +293,16 @@ public sealed record PlanOverlayPageSnapshot(
             WallTopologySpanVisibility.BuildVisibleTopologySpans(result, pageNumber, options),
             item => item.Bounds,
             item => item.Confidence);
+
+        yield return Layer(
+            "wallBodyFootprints",
+            WallBodyFootprintBuilder.FromTopologySpans(WallTopologySpanVisibility.BuildVisibleTopologySpans(result, pageNumber, options)),
+            item => item.Bounds,
+            item => item.Confidence,
+            WallBodyFootprintBuilder
+                .FromTopologySpans(WallTopologySpanVisibility.BuildVisibleTopologySpans(result, pageNumber, options))
+                .GroupBy(item => item.GeometrySource)
+                .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal));
 
         yield return Layer(
             "wallTopologyReviewSpans",

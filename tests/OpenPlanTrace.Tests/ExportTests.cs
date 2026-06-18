@@ -633,6 +633,44 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public async Task SvgRenderer_EmbedsBackgroundImageForAlignmentQa()
+    {
+        var result = await CreateScanResultAsync();
+
+        var svg = PlanOverlaySvgRenderer.RenderPage(
+            result,
+            1,
+            SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.PlacementReview) with
+            {
+                BackgroundImageHref = "../backgrounds/page-1.png",
+                BackgroundImageOpacity = 1.25
+            });
+
+        Assert.Contains("class=\"sheet-image\"", svg);
+        Assert.Contains("href=\"../backgrounds/page-1.png\"", svg);
+        Assert.Contains("preserveAspectRatio=\"none\"", svg);
+        Assert.Contains("opacity=\"1\"", svg);
+        Assert.Contains("Source PDF page background for alignment QA", svg);
+    }
+
+    [Fact]
+    public void ScanArguments_ParseSvgBackgroundQaOptions()
+    {
+        var parsed = global::ScanArguments.Parse(new[]
+        {
+            "plan.pdf",
+            "--svg-background-dir",
+            "backgrounds",
+            "--svg-background-opacity",
+            "0.42"
+        });
+
+        Assert.Equal("plan.pdf", parsed.InputPath);
+        Assert.Equal("backgrounds", parsed.SvgBackgroundImageDirectory);
+        Assert.Equal(0.42, parsed.SvgBackgroundImageOpacity);
+    }
+
+    [Fact]
     public async Task SvgRenderer_MarksRejectedWallEvidenceAsTopologyExcluded()
     {
         var result = await CreateScanResultAsync();
@@ -713,9 +751,12 @@ public sealed class ExportTests
             SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.PlacementReview));
 
         Assert.Contains("data-profile=\"placement-review\"", svg);
+        Assert.Contains("id=\"wall-body-footprints\"", svg);
         Assert.Contains("id=\"wall-topology-spans\"", svg);
+        Assert.Contains("wall body footprint detail-host:clean-run:1:body-footprint", svg);
         Assert.Contains("clean wall topology span detail-host:clean-run:1", svg);
         Assert.Contains("x1=\"100\" y1=\"100\" x2=\"300\" y2=\"100\"", svg);
+        Assert.Contains("1 wall body footprints", svg);
         Assert.Contains("1 visible topology spans", svg);
         Assert.Contains("4 hidden non-placement topology spans", svg);
         Assert.DoesNotContain("edge-tooth-1", svg);
@@ -737,15 +778,17 @@ public sealed class ExportTests
 
         var page = Assert.Single(snapshot.Pages);
         Assert.Equal("placement-review", page.SvgProfile);
+        Assert.Contains("wallBodyFootprints", page.VisibleLayerNames);
         Assert.Contains("wallTopologySpans", page.VisibleLayerNames);
         Assert.DoesNotContain("walls", page.VisibleLayerNames);
+        Assert.Equal(1, page.Layers.Single(layer => layer.Name == "wallBodyFootprints").Count);
         Assert.Equal(1, page.Layers.Single(layer => layer.Name == "wallTopologySpans").Count);
         Assert.Equal(4, page.Layers.Single(layer => layer.Name == "wallTopologyReviewSpans").Count);
         Assert.Contains("wallTopologyReviewSpans", page.HiddenLayerNames);
     }
 
     [Fact]
-    public void SvgRenderer_PlacementReviewProfileDrawsTrustedIsolatedFragmentsAsCleanTopologySpans()
+    public void SvgRenderer_PlacementReviewProfileKeepsIsolatedFragmentsOutOfCleanTopologySpans()
     {
         var result = WithPlacementReadyIsolatedFragment(CreateDenseMinorRoutingDetailResult());
 
@@ -754,9 +797,10 @@ public sealed class ExportTests
             1,
             SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.PlacementReview));
 
-        Assert.Contains("2 visible topology spans", svg);
-        Assert.Contains("4 hidden non-placement topology spans", svg);
-        Assert.Contains("clean wall topology span isolated-clean-fragment:clean-run:1", svg);
+        Assert.Contains("1 visible topology spans", svg);
+        Assert.Contains("1 wall body footprints", svg);
+        Assert.Contains("5 hidden non-placement topology spans", svg);
+        Assert.DoesNotContain("clean wall topology span isolated-clean-fragment:clean-run:1", svg);
 
         var snapshot = PlanOverlaySnapshot.From(
             result,
@@ -764,8 +808,9 @@ public sealed class ExportTests
             SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.PlacementReview));
 
         var page = Assert.Single(snapshot.Pages);
-        Assert.Equal(2, page.Layers.Single(layer => layer.Name == "wallTopologySpans").Count);
-        Assert.Equal(4, page.Layers.Single(layer => layer.Name == "wallTopologyReviewSpans").Count);
+        Assert.Equal(1, page.Layers.Single(layer => layer.Name == "wallBodyFootprints").Count);
+        Assert.Equal(1, page.Layers.Single(layer => layer.Name == "wallTopologySpans").Count);
+        Assert.Equal(5, page.Layers.Single(layer => layer.Name == "wallTopologyReviewSpans").Count);
     }
 
     [Fact]
@@ -1182,6 +1227,15 @@ public sealed class ExportTests
         Assert.Equal(wall.GetProperty("id").GetString(), topologySpan.GetProperty("wallId").GetString());
         Assert.True(topologySpan.GetProperty("drawingLength").GetDouble() > 0);
         Assert.Equal(JsonValueKind.Object, topologySpan.GetProperty("centerLine").ValueKind);
+        var solidSpan = Assert.Single(wall.GetProperty("solidSpans").EnumerateArray());
+        var bodyPolygon = solidSpan.GetProperty("bodyPolygon");
+        Assert.Equal(5, bodyPolygon.GetArrayLength());
+        Assert.Equal(bodyPolygon[0].GetRawText(), bodyPolygon[4].GetRawText());
+        Assert.True(solidSpan.GetProperty("bodyBounds").GetProperty("width").GetDouble() > 0);
+        Assert.True(solidSpan.GetProperty("bodyBounds").GetProperty("height").GetDouble() > 0);
+        Assert.Equal(JsonValueKind.Object, solidSpan.GetProperty("alongVector").ValueKind);
+        Assert.Equal(JsonValueKind.Object, solidSpan.GetProperty("normalVector").ValueKind);
+        Assert.True(solidSpan.GetProperty("thicknessDrawingUnits").GetDouble() > 0);
         Assert.True(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
         Assert.True(wall.GetProperty("reliability").GetProperty("reasons").ValueKind == JsonValueKind.Array);
 
@@ -1220,6 +1274,64 @@ public sealed class ExportTests
 
         Assert.True(root.GetProperty("routingLayer").TryGetProperty("barriers", out _));
         Assert.True(root.GetProperty("issues").ValueKind == JsonValueKind.Array);
+    }
+
+    [Fact]
+    public async Task PlacementExporter_UsesPairedFaceEvidenceForSolidSpanBodyPolygon()
+    {
+        var result = await CreateScanResultAsync();
+        var sourceWall = result.Walls.First(wall => wall.CenterLine.IsHorizontal());
+        var line = sourceWall.CenterLine;
+        var firstFace = new PlanLineSegment(
+            new PlanPoint(line.Start.X, line.Start.Y - 3),
+            new PlanPoint(line.End.X, line.End.Y - 3));
+        var secondFace = new PlanLineSegment(
+            new PlanPoint(line.Start.X, line.Start.Y + 7),
+            new PlanPoint(line.End.X, line.End.Y + 7));
+        var wallWithPairEvidence = sourceWall with
+        {
+            Thickness = 10,
+            PairEvidence = new WallPairEvidence(
+                firstFace,
+                secondFace,
+                10,
+                1,
+                0.95,
+                1,
+                1,
+                ["first-face"],
+                ["second-face"])
+        };
+        result = result with
+        {
+            Walls = result.Walls
+                .Select(wall => wall.Id == sourceWall.Id ? wallWithPairEvidence : wall)
+                .ToArray()
+        };
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var wall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == sourceWall.Id);
+        var span = Assert.Single(wall.GetProperty("solidSpans").EnumerateArray());
+        var body = span.GetProperty("bodyPolygon");
+        var evidence = span.GetProperty("evidence").EnumerateArray().Select(item => item.GetString()).ToArray();
+
+        Assert.Equal(5, body.GetArrayLength());
+        Assert.Equal(line.Start.X, body[0].GetProperty("x").GetDouble(), 3);
+        Assert.Equal(line.Start.Y - 3, body[0].GetProperty("y").GetDouble(), 3);
+        Assert.Equal(line.End.X, body[1].GetProperty("x").GetDouble(), 3);
+        Assert.Equal(line.End.Y - 3, body[1].GetProperty("y").GetDouble(), 3);
+        Assert.Equal(line.End.X, body[2].GetProperty("x").GetDouble(), 3);
+        Assert.Equal(line.End.Y + 7, body[2].GetProperty("y").GetDouble(), 3);
+        Assert.Equal(line.Start.X, body[3].GetProperty("x").GetDouble(), 3);
+        Assert.Equal(line.Start.Y + 7, body[3].GetProperty("y").GetDouble(), 3);
+        Assert.Equal(10, span.GetProperty("bodyBounds").GetProperty("height").GetDouble(), 3);
+        Assert.Equal(1, span.GetProperty("normalVector").GetProperty("y").GetDouble(), 3);
+        Assert.Contains(evidence, item => item?.Contains("detected paired wall-face evidence", StringComparison.OrdinalIgnoreCase) == true);
     }
 
     [Fact]

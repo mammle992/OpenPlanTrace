@@ -26,6 +26,7 @@ public static class PlanOverlaySvgRenderer
         builder.AppendLine("<style>");
         builder.AppendLine("""
             .sheet-bg { fill: var(--background, #ffffff); }
+            .sheet-image { image-rendering: auto; }
             .region { fill: rgba(20, 124, 114, 0.045); stroke: #147c72; stroke-width: 1.1; vector-effect: non-scaling-stroke; }
             .region-title { fill: rgba(201, 124, 24, 0.11); stroke: #c97c18; }
             .region-secondary { fill: rgba(120, 84, 168, 0.09); stroke: #7854a8; }
@@ -51,6 +52,10 @@ public static class PlanOverlaySvgRenderer
             .wall-topology-span-review { stroke-dasharray: 3 2; }
             .wall-topology-span-excluded { stroke: #7854a8; stroke-width: 0.85; stroke-dasharray: 2 5; }
             .wall-topology-span-review-only { stroke: #a65f00; stroke-width: 1.05; stroke-dasharray: 3 3; }
+            .wall-body-footprint { fill: rgba(15, 79, 184, 0.10); stroke: #0f4fb8; stroke-width: 0.78; vector-effect: non-scaling-stroke; }
+            .wall-body-footprint-interior { fill: rgba(15, 122, 72, 0.10); stroke: #0f7a48; }
+            .wall-body-footprint-review { fill: rgba(166, 95, 0, 0.075); stroke: #a65f00; stroke-dasharray: 3 3; }
+            .wall-body-footprint-excluded { fill: rgba(120, 84, 168, 0.06); stroke: #7854a8; stroke-dasharray: 2 5; }
             .wall-graph-repair { stroke: #d04b24; stroke-width: 1.35; stroke-linecap: round; stroke-dasharray: 4 3; fill: none; vector-effect: non-scaling-stroke; }
             .wall-graph-repair-low { stroke: #d97706; }
             .wall-graph-repair-medium { stroke: #d04b24; stroke-width: 1.55; }
@@ -82,6 +87,11 @@ public static class PlanOverlaySvgRenderer
         builder.AppendLine("</defs>");
 
         builder.AppendLine($"""<rect class="sheet-bg" x="0" y="0" width="{N(width)}" height="{N(height)}" style="--background:{Esc(options.BackgroundColor)}" />""");
+
+        if (!string.IsNullOrWhiteSpace(options.BackgroundImageHref))
+        {
+            builder.AppendLine($"""<image class="sheet-image" href="{Esc(options.BackgroundImageHref!)}" x="0" y="0" width="{N(width)}" height="{N(height)}" preserveAspectRatio="none" opacity="{N(Math.Clamp(options.BackgroundImageOpacity, 0, 1))}"><title>Source PDF page background for alignment QA</title></image>""");
+        }
 
         if (options.IncludeRooms)
         {
@@ -338,6 +348,27 @@ public static class PlanOverlaySvgRenderer
             builder.AppendLine("</g>");
         }
 
+        if (options.IncludeWallBodyFootprints)
+        {
+            builder.AppendLine("""<g id="wall-body-footprints">""");
+            var componentByWallId = BuildWallComponentLookup(result.WallGraph.Components);
+            var wallEvidenceAssessments = WallEvidenceExportHelpers.BuildAssessmentLookup(result.WallEvidenceMap);
+            var topologySpans = WallTopologySpanVisibility.BuildVisibleTopologySpans(result, page.Number, options);
+            foreach (var footprint in WallBodyFootprintBuilder.FromTopologySpans(topologySpans))
+            {
+                componentByWallId.TryGetValue(footprint.WallId, out var component);
+                wallEvidenceAssessments.TryGetValue(footprint.WallId, out var assessment);
+                var title = WallBodyFootprintTitle(footprint, component, assessment);
+                AppendPolygon(
+                    builder,
+                    footprint.Polygon,
+                    WallBodyFootprintCssClass(footprint, component, assessment),
+                    title,
+                    footprint.Confidence);
+            }
+            builder.AppendLine("</g>");
+        }
+
         if (options.IncludeWallTopologySpans)
         {
             builder.AppendLine("""<g id="wall-topology-spans">""");
@@ -495,6 +526,7 @@ public static class PlanOverlaySvgRenderer
             $"{result.GridBaySpacings.Count(bay => bay.PageNumber == page.Number)} grid bays",
             $"{result.WallGraph.Components.Count(component => component.PageNumber == page.Number)} wall components",
             $"{result.Walls.Count(wall => wall.PageNumber == page.Number)} walls",
+            $"{WallBodyFootprintCount(result, page.Number, options)} wall body footprints",
             $"{visibleTopologySpanCount} visible topology spans",
             $"{hiddenTopologySpanCount} hidden non-placement topology spans",
             $"{TopologyExcludedWallCount(result, page.Number)} topology-excluded walls",
@@ -776,6 +808,48 @@ public static class PlanOverlaySvgRenderer
         return $"clean wall topology span {span.Id}; source wall {span.WallId}; {wallType}; {componentText}; {evidenceText}; length {N(span.DrawingLength)} drawing units{offsets}";
     }
 
+    private static string WallBodyFootprintCssClass(
+        WallBodyFootprint footprint,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? evidenceAssessment)
+    {
+        var classes = new List<string> { "wall-body-footprint" };
+
+        if (footprint.SourceWall.WallType == WallType.Interior)
+        {
+            classes.Add("wall-body-footprint-interior");
+        }
+
+        if (evidenceAssessment?.RequiresReview == true
+            || evidenceAssessment?.Decision == WallEvidenceDecision.Review)
+        {
+            classes.Add("wall-body-footprint-review");
+        }
+
+        if (WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment)
+            || !WallTopologySpanVisibility.IsPlacementReadyStructuralSpan(component, evidenceAssessment))
+        {
+            classes.Add("wall-body-footprint-excluded");
+        }
+
+        return string.Join(" ", classes);
+    }
+
+    private static string WallBodyFootprintTitle(
+        WallBodyFootprint footprint,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? evidenceAssessment)
+    {
+        var componentText = component is null
+            ? "no component"
+            : $"{component.Kind}; component {component.Id}";
+        var evidenceText = evidenceAssessment is null
+            ? "no wall evidence assessment"
+            : $"wall evidence {evidenceAssessment.Decision} {evidenceAssessment.Category}";
+
+        return $"wall body footprint {footprint.Id}; source wall {footprint.WallId}; {footprint.SourceWall.WallType}; {componentText}; {evidenceText}; thickness {N(footprint.ThicknessDrawingUnits)} drawing units; body from {footprint.GeometrySource}";
+    }
+
     private static string WallGraphRepairCssClass(WallGraphRepairCandidate candidate)
     {
         var severity = candidate.Severity.ToString().ToLowerInvariant();
@@ -801,6 +875,14 @@ public static class PlanOverlaySvgRenderer
         int pageNumber,
         SvgOverlayRenderOptions options) =>
         WallTopologySpanVisibility.BuildVisibleTopologySpans(result, pageNumber, options).Count;
+
+    private static int WallBodyFootprintCount(
+        PlanScanResult result,
+        int pageNumber,
+        SvgOverlayRenderOptions options) =>
+        WallBodyFootprintBuilder
+            .FromTopologySpans(WallTopologySpanVisibility.BuildVisibleTopologySpans(result, pageNumber, options))
+            .Count;
 
     private static int HiddenNonPlacementTopologySpanCount(
         PlanScanResult result,

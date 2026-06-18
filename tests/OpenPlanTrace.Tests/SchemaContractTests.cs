@@ -429,7 +429,7 @@ public sealed class SchemaContractTests
         using var document = JsonDocument.Parse(schema);
 
         Assert.Equal("https://json-schema.org/draft/2020-12/schema", document.RootElement.GetProperty("$schema").GetString());
-        Assert.Equal("urn:openplantrace:schema:placement:v6", document.RootElement.GetProperty("$id").GetString());
+        Assert.Equal("urn:openplantrace:schema:placement:v7", document.RootElement.GetProperty("$id").GetString());
         Assert.Equal(
             PlanPlacementExport.CurrentSchemaVersion,
             document.RootElement.GetProperty("x-openplantrace-schemaVersion").GetString());
@@ -539,7 +539,7 @@ public sealed class SchemaContractTests
         AssertDefinitionRequires(schemaDocument, "surfacePattern", "id", "pageNumber", "kind", "orientation", "bounds", "boundsMillimeters", "center", "centerMillimeters", "millimetersPerDrawingUnit", "sourceRegionId", "lineCount", "horizontalLineCount", "verticalLineCount", "intersectionCount", "horizontalMedianSpacing", "verticalMedianSpacing", "medianSpacing", "excludedFromWallDetection", "excludedFromStructuralTopology", "confidence", "requiresReview", "recommendedAction", "sourcePrimitiveIds", "sourceLayers", "evidence");
         AssertDefinitionRequires(schemaDocument, "wall", "id", "pageNumber", "centerLine", "bounds", "drawingLength", "thicknessDrawingUnits", "wallType", "confidence", "fragmentEvidence", "reliability", "wallGraphRepairCandidateIds", "sourcePrimitiveIds", "sourceLayers", "evidence");
         AssertDefinitionRequires(schemaDocument, "wallOpeningCutout", "id", "openingId", "pageNumber", "type", "operation", "centerLine", "startPoint", "endPoint", "startParameter", "endParameter", "centerParameter", "startOffsetDrawingUnits", "endOffsetDrawingUnits", "centerOffsetDrawingUnits", "lengthDrawingUnits", "sourceHostWallId", "anchorWallIds", "crossWallOffsetDrawingUnits", "confidence", "evidence");
-        AssertDefinitionRequires(schemaDocument, "wallSolidSpan", "id", "pageNumber", "wallId", "sequence", "centerLine", "startParameter", "endParameter", "centerParameter", "startOffsetDrawingUnits", "endOffsetDrawingUnits", "centerOffsetDrawingUnits", "drawingLength", "lengthMeters", "adjacentOpeningIds", "evidence");
+        AssertDefinitionRequires(schemaDocument, "wallSolidSpan", "id", "pageNumber", "wallId", "sequence", "centerLine", "centerLineMillimeters", "bodyPolygon", "bodyPolygonMillimeters", "bodyBounds", "bodyBoundsMillimeters", "alongVector", "normalVector", "thicknessDrawingUnits", "thicknessMillimeters", "startParameter", "endParameter", "centerParameter", "startOffsetDrawingUnits", "endOffsetDrawingUnits", "centerOffsetDrawingUnits", "drawingLength", "lengthMeters", "adjacentOpeningIds", "evidence");
         AssertDefinitionRequires(schemaDocument, "wallFragmentEvidence", "fragmentCount", "totalHealedGap", "maxHealedGap", "duplicatePrimitiveCount", "gapRatio", "requiresGeometryReview", "evidence");
         AssertDefinitionRequires(schemaDocument, "room", "id", "pageNumber", "bounds", "center", "boundary", "wallIds", "drawingArea", "confidence", "reliability", "evidence");
         AssertDefinitionRequires(schemaDocument, "opening", "id", "pageNumber", "type", "operation", "orientation", "centerLine", "bounds", "drawingWidth", "placementStatus", "placement", "hostWallIds", "connectedRoomIds", "connectedRoomLabels", "connectedRoomLinks", "roomAdjacencyIds", "confidence", "reliability", "sourcePrimitiveIds", "sourceLayers", "evidence");

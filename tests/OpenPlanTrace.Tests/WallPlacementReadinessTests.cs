@@ -27,6 +27,29 @@ public sealed class WallPlacementReadinessTests
     }
 
     [Fact]
+    public void Evaluate_BlocksIsolatedFragmentFromCoordinatePlacement()
+    {
+        var wall = Wall("wall:isolated-fragment", Confidence.High);
+        var component = Component(
+            WallGraphComponentKind.IsolatedFragment,
+            excludedFromStructuralTopology: false,
+            wall.Id);
+        var evidence = Evidence(wall, WallEvidenceCategory.StrongWallBody, placementReady: true);
+
+        var readiness = WallPlacementReadinessEvaluator.Evaluate(
+            wall,
+            ReliableCalibration(),
+            component,
+            evidence);
+
+        Assert.False(readiness.ReadyForCoordinatePlacement);
+        Assert.False(readiness.ReadyForMetricPlacement);
+        Assert.True(readiness.RequiresReview);
+        Assert.True(readiness.CoordinatePlacementBlocked);
+        Assert.Contains("wall belongs to isolated wall graph fragment", readiness.Reasons);
+    }
+
+    [Fact]
     public void Evaluate_AllowsStrongStructuralWallWithReliableScale()
     {
         var wall = Wall("wall:structural", Confidence.High);

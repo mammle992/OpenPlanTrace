@@ -496,6 +496,30 @@ public sealed class OpeningSemanticsTests
         Assert.Equal(220, solidSpans[0].GetProperty("centerLine").GetProperty("end").GetProperty("x").GetDouble(), 3);
         Assert.Equal(250, solidSpans[1].GetProperty("centerLine").GetProperty("start").GetProperty("x").GetDouble(), 3);
         Assert.Equal(400, solidSpans[1].GetProperty("centerLine").GetProperty("end").GetProperty("x").GetDouble(), 3);
+        var firstSolidBody = solidSpans[0].GetProperty("bodyPolygon");
+        Assert.Equal(5, firstSolidBody.GetArrayLength());
+        Assert.Equal(firstSolidBody[0].GetRawText(), firstSolidBody[4].GetRawText());
+        Assert.Equal(100, firstSolidBody[0].GetProperty("x").GetDouble(), 3);
+        Assert.Equal(98, firstSolidBody[0].GetProperty("y").GetDouble(), 3);
+        Assert.Equal(220, firstSolidBody[1].GetProperty("x").GetDouble(), 3);
+        Assert.Equal(98, firstSolidBody[1].GetProperty("y").GetDouble(), 3);
+        Assert.Equal(220, firstSolidBody[2].GetProperty("x").GetDouble(), 3);
+        Assert.Equal(102, firstSolidBody[2].GetProperty("y").GetDouble(), 3);
+        Assert.Equal(100, solidSpans[0].GetProperty("bodyBounds").GetProperty("x").GetDouble(), 3);
+        Assert.Equal(98, solidSpans[0].GetProperty("bodyBounds").GetProperty("y").GetDouble(), 3);
+        Assert.Equal(120, solidSpans[0].GetProperty("bodyBounds").GetProperty("width").GetDouble(), 3);
+        Assert.Equal(4, solidSpans[0].GetProperty("bodyBounds").GetProperty("height").GetDouble(), 3);
+        Assert.Equal(1200, solidSpans[0].GetProperty("bodyBoundsMillimeters").GetProperty("width").GetDouble(), 3);
+        Assert.Equal(40, solidSpans[0].GetProperty("bodyBoundsMillimeters").GetProperty("height").GetDouble(), 3);
+        Assert.Equal(5, solidSpans[0].GetProperty("bodyPolygonMillimeters").GetArrayLength());
+        Assert.Equal(1000, solidSpans[0].GetProperty("bodyPolygonMillimeters")[0].GetProperty("x").GetDouble(), 3);
+        Assert.Equal(980, solidSpans[0].GetProperty("bodyPolygonMillimeters")[0].GetProperty("y").GetDouble(), 3);
+        Assert.Equal(1, solidSpans[0].GetProperty("alongVector").GetProperty("x").GetDouble(), 3);
+        Assert.Equal(0, solidSpans[0].GetProperty("alongVector").GetProperty("y").GetDouble(), 3);
+        Assert.Equal(0, solidSpans[0].GetProperty("normalVector").GetProperty("x").GetDouble(), 3);
+        Assert.Equal(1, solidSpans[0].GetProperty("normalVector").GetProperty("y").GetDouble(), 3);
+        Assert.Equal(4, solidSpans[0].GetProperty("thicknessDrawingUnits").GetDouble(), 3);
+        Assert.Equal(40, solidSpans[0].GetProperty("thicknessMillimeters").GetDouble(), 3);
         Assert.All(solidSpans, span =>
             Assert.Contains(openingId, span.GetProperty("adjacentOpeningIds").EnumerateArray().Select(item => item.GetString())));
 

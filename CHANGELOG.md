@@ -6,6 +6,141 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.091] - 2026-06-18
+
+### Changed
+- SVG overlays can now embed source page background images for alignment QA.
+  The direct `scan` command accepts `--svg-background`, `--svg-background-dir`,
+  and `--svg-background-opacity`, with per-page directories using
+  `page-N.png`, `page-N.jpg`, `page-N.jpeg`, or `page-N.webp`.
+- The README now documents the background-image workflow for PDF-over-overlay
+  screenshots. The scan, placement, and GeoJSON contracts remain unchanged; the
+  background is only a visual review aid.
+
+### Verified
+- Added renderer coverage for SVG background image embedding and parser
+  coverage for the new scan CLI flags.
+- Focused export tests passed with `33` tests.
+- Full test suite passed with `527` tests.
+- Private medium PDF smoke scan completed with source page background embedded
+  in the placement-review SVG. Rendered and inspected
+  `real-pdf-output/private-medium-a20-102-v104/placement-review-with-background.png`.
+  The background view confirms the current exterior wall alignment is mostly
+  useful, while several interior/detail regions still need stricter
+  source-aware wall promotion before they are professional-grade.
+
+## [0.02.090] - 2026-06-18
+
+### Changed
+- Placement-review SVGs and the viewer now expose a separate wall body
+  footprint layer. The layer draws translucent wall-body polygons from detected
+  paired wall faces when possible and falls back to centerline plus thickness
+  when only a line wall is available.
+- Visual snapshots now report `wallBodyFootprints` as their own overlay layer,
+  so screenshot QA and JSON QA can compare the same wall-body geometry.
+- Wall evidence now marks single-line or fragment-merged duplicate wall-face
+  lines as review-only when they are already represented by a stronger paired
+  wall body. This reduces doubled/offset wall faces in clean placement output
+  without deleting the underlying evidence.
+
+### Verified
+- Added regression coverage proving placement-review SVGs and visual snapshots
+  expose wall body footprints alongside clean topology spans.
+- Focused wall evidence/export tests passed with `45` tests.
+- Viewer JavaScript syntax check passed with the bundled Node.js runtime.
+- Full test suite passed with `525` tests.
+- Private medium PDF smoke scan completed. Clean placement-review wall spans
+  dropped from `48` to `39`, wall body footprints dropped from `48` to `39`,
+  hidden non-placement topology spans rose from `86` to `95`, wall graph edges
+  dropped from `240` to `215`, and routing items dropped from `144` to `117`.
+- Rendered and inspected
+  `real-pdf-output/private-medium-a20-102-v103/placement-review-svg.png`. The
+  duplicate-face cleanup is visible, but the center cluster still needs a
+  PDF-background comparison pass before further aggressive accuracy tuning.
+
+## [0.02.089] - 2026-06-18
+
+### Changed
+- Placement `solidSpans` now prefer detected paired wall-face evidence when
+  building `bodyPolygon` geometry. Single-line or otherwise unpaired walls still
+  fall back to the centerline-plus-thickness rectangle.
+- Solid-span evidence now states whether the body polygon came from detected
+  paired wall faces or from the fallback centerline/thickness path.
+
+### Verified
+- Added a regression proving asymmetric paired wall-face evidence controls the
+  exported solid-span body polygon instead of the fallback centerline rectangle.
+- Focused export, opening semantics, and schema-contract tests passed with `90`
+  tests.
+- Full test suite passed with `525` tests.
+- Private medium PDF smoke scan completed; placement JSON validation passed as
+  `openplantrace.placement.v7`. All `141` solid spans had closed body polygons;
+  `55` used detected paired wall-face evidence and `86` used the fallback path.
+- Scan JSON, compact scan JSON, GeoJSON, and placement JSON validation all
+  passed after regeneration.
+- Rendered and inspected
+  `real-pdf-output/private-medium-a20-102-v101/placement-review-svg.png`. The
+  visible wall-line overlay is unchanged by this data-contract improvement, so a
+  future viewer/SVG wall-body footprint layer is needed to visually inspect the
+  new polygons directly.
+
+## [0.02.088] - 2026-06-18
+
+### Changed
+- Placement JSON is now `openplantrace.placement.v7`.
+- Wall `solidSpans` now export closed wall-body footprint polygons, footprint
+  bounds, along/normal vectors, drawing-unit thickness, and metric thickness
+  when calibration is available. Downstream engines can now use wall rectangles
+  directly instead of reconstructing wall bodies from centerlines.
+- Documented placement v7 in the README and added the v7 JSON Schema artifact.
+
+### Verified
+- Added export/schema/opening regressions for closed solid-span body polygons,
+  footprint bounds, wall direction vectors, and metric-scaled footprint data.
+- Focused export, opening semantics, and schema-contract tests passed with `89`
+  tests.
+- Full test suite passed with `524` tests.
+- Private medium PDF smoke scan completed; all `141` exported wall solid spans
+  include closed body polygons. Scan JSON, placement JSON, compact scan JSON, and
+  GeoJSON validation all passed. The PDF has unreliable calibration, so metric
+  body polygons correctly remain null.
+- Rendered and inspected the placement-review SVG screenshot at
+  `real-pdf-output/private-medium-a20-102-v100/placement-review-svg.png`.
+  The clean wall layer is less noisy than the earlier random-line failure, but
+  still shows suspicious short stubs/disconnected segments that need the next
+  wall-body/envelope reconstruction pass.
+
+## [0.02.087] - 2026-06-18
+
+### Changed
+- Wall Evidence V2 now keeps short unlayered/unknown recovered wall segments
+  review-only instead of promoting them directly to coordinate-ready wall
+  placement. Wall-layer-backed short recovery still remains eligible for
+  placement.
+- Short unknown fragment-merged wall candidates now require review before exact
+  placement, which reduces false walls made from healed door, furniture, or
+  detail fragments.
+- Repeated short unlayered linework groups are now treated as object/detail
+  review candidates instead of placement-ready walls. This targets visual soup
+  such as repeated furniture, stair, shelf, or window/detail strokes riding
+  inside the main structural wall graph.
+- Placement-review SVG visibility now follows the stricter placement-readiness
+  contract and keeps isolated wall graph fragments out of the clean wall layer.
+
+### Verified
+- Added regressions for review-only short unlayered recovered walls, review-only
+  short unknown fragment-merged walls, repeated short unlayered detail groups,
+  isolated-fragment placement blocking, and clean SVG topology visibility.
+- Focused wall evidence/export/readiness tests passed with `44` tests.
+- Full test suite passed with `524` tests.
+- Private medium PDF smoke scan completed with `48` visible clean wall topology
+  spans, `86` hidden non-placement topology spans, and `3` wall graph repair
+  candidates after the fix. The wall-only screenshot is materially cleaner:
+  repeated bottom furniture/detail tails and several isolated recovered fragments
+  no longer appear in the clean placement layer.
+- Private medium scan JSON, compact scan JSON, GeoJSON, and placement JSON all
+  passed CLI validation after regeneration.
+
 ## [0.02.086] - 2026-06-17
 
 ### Changed

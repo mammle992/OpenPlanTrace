@@ -5,7 +5,6 @@ internal static class WallTopologySpanVisibility
     private const double MaxCleanDanglingSpanLength = 36.0;
     private const double MaxCleanRunJoinGapDrawingUnits = 12.0;
     private const double MinCleanRunLengthDrawingUnits = 8.0;
-    private const double MinTrustedIsolatedFragmentConfidence = 0.72;
 
     public static IReadOnlyList<WallGraphTopologySpan> BuildVisibleTopologySpans(
         PlanScanResult result,
@@ -54,35 +53,12 @@ internal static class WallTopologySpanVisibility
             return false;
         }
 
-        if (component?.Kind == WallGraphComponentKind.ObjectLikeIsland)
+        if (component?.Kind is WallGraphComponentKind.ObjectLikeIsland or WallGraphComponentKind.IsolatedFragment)
         {
             return false;
-        }
-
-        if (component?.Kind == WallGraphComponentKind.IsolatedFragment)
-        {
-            return IsTrustedPlacementReadyIsolatedFragment(component, assessment);
         }
 
         return assessment is null || assessment.PlacementReady;
-    }
-
-    private static bool IsTrustedPlacementReadyIsolatedFragment(
-        WallGraphComponent component,
-        WallEvidenceWallAssessment? assessment)
-    {
-        if (assessment is null
-            || !assessment.PlacementReady
-            || assessment.RequiresReview
-            || WallStructuralTrust.IsRejectedNonStructural(assessment)
-            || assessment.Confidence.Value < MinTrustedIsolatedFragmentConfidence
-            || component.ExcludedFromStructuralTopology)
-        {
-            return false;
-        }
-
-        return assessment.Category is WallEvidenceCategory.StrongWallBody
-            or WallEvidenceCategory.RecoveredWallBody;
     }
 
     private static bool IsVisibleTopologySpan(
@@ -102,8 +78,7 @@ internal static class WallTopologySpanVisibility
             return false;
         }
 
-        return !IsShortDanglingTopologySpan(span, context.NodeDegreeById)
-            || (component is not null && IsTrustedPlacementReadyIsolatedFragment(component, assessment));
+        return !IsShortDanglingTopologySpan(span, context.NodeDegreeById);
     }
 
     private static WallTopologySpanVisibilityContext BuildContext(PlanScanResult result) =>

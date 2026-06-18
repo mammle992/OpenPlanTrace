@@ -114,11 +114,14 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
 
         if (wall.Evidence.Any(item => item.Contains("recovered by wall evidence map", StringComparison.OrdinalIgnoreCase)))
         {
+            var shortUnlayeredRecoveredSegment = IsShortUnlayeredRecoveredSegment(wall, context);
             category = WallEvidenceCategory.RecoveredWallBody;
             confidence = new Confidence(Math.Max(wall.Confidence.Value, 0.68));
-            placementReady = confidence.Value >= 0.72;
+            placementReady = !shortUnlayeredRecoveredSegment && confidence.Value >= 0.72;
             requiresReview = !placementReady;
-            evidence.Add("wall evidence: recovered wall body from unclaimed parallel-face evidence");
+            evidence.Add(shortUnlayeredRecoveredSegment
+                ? "wall evidence: short recovered unlayered/unknown wall segment requires review before exact placement"
+                : "wall evidence: recovered wall body from unclaimed parallel-face evidence");
         }
         else if (TryClassifyPairedDoorOrOpeningSymbolNoise(wall, context, out var pairedDoorEvidence))
         {
@@ -222,12 +225,34 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
             requiresReview = true;
             evidence.Add(dimensionEvidence);
         }
+        else if (TryClassifyRepeatedShortUnlayeredDetailReview(wall, context, out var repeatedDetailEvidence))
+        {
+            category = WallEvidenceCategory.ObjectOrFixtureDetail;
+            confidence = new Confidence(Math.Min(0.88, Math.Max(wall.Confidence.Value, 0.68)));
+            placementReady = false;
+            requiresReview = true;
+            evidence.Add(repeatedDetailEvidence);
+        }
+        else if (TryClassifyDuplicateWallFaceReview(wall, context, out var duplicateWallFaceEvidence))
+        {
+            category = WallEvidenceCategory.MediumWallBody;
+            confidence = new Confidence(Math.Min(0.88, Math.Max(wall.Confidence.Value, 0.66)));
+            placementReady = false;
+            requiresReview = true;
+            evidence.Add(duplicateWallFaceEvidence);
+        }
         else if (IsMediumWallBody(wall, context))
         {
             category = WallEvidenceCategory.MediumWallBody;
             confidence = new Confidence(Math.Max(wall.Confidence.Value, 0.62));
             placementReady = wall.FragmentEvidence?.RequiresGeometryReview != true;
             requiresReview = !placementReady;
+            if (placementReady && IsShortUnknownFragmentMergedWall(wall, context))
+            {
+                placementReady = false;
+                requiresReview = true;
+                evidence.Add("wall evidence: short unknown fragment-merged wall candidate requires review before exact placement");
+            }
             evidence.Add("wall evidence: medium wall body from wall-like layer, length, or structural context");
         }
         else
@@ -597,6 +622,20 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
                 context.Options) >= 2;
     }
 
+    private static bool IsShortUnlayeredRecoveredSegment(WallSegment wall, ScanContext context) =>
+        wall.WallType == WallType.Unknown
+        && !IsWallLayerBacked(wall, context)
+        && wall.Evidence.Any(item => item.Contains("short supported wall segment", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsShortUnknownFragmentMergedWall(WallSegment wall, ScanContext context) =>
+        wall.WallType == WallType.Unknown
+        && !IsWallLayerBacked(wall, context)
+        && wall.DetectionKind == WallDetectionKind.FragmentMerged
+        && wall.DrawingLength < ShortUnknownFragmentMergedReviewLength(context.Options);
+
+    private static double ShortUnknownFragmentMergedReviewLength(ScannerOptions options) =>
+        Math.Max(options.MinWallLength, options.DefaultWallThickness * 10.0);
+
     private static bool IsShortUnlayeredSingleLineCandidate(WallSegment wall, ScanContext context) =>
         wall.DetectionKind == WallDetectionKind.SingleLine
         && wall.PairEvidence is null
@@ -606,6 +645,141 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
 
     private static double ShortUnlayeredSingleLineReviewLength(ScannerOptions options) =>
         Math.Max(options.MinWallLength * 1.5, options.DefaultWallThickness * 12.0);
+
+    private static bool TryClassifyRepeatedShortUnlayeredDetailReview(
+        WallSegment wall,
+        ScanContext context,
+        out string evidence)
+    {
+        evidence = string.Empty;
+        if (wall.PairEvidence is not null
+            || IsWallLayerBacked(wall, context)
+            || wall.DetectionKind is not (WallDetectionKind.SingleLine or WallDetectionKind.FragmentMerged))
+        {
+            return false;
+        }
+
+        var orientation = ResolveAxisOrientation(wall.CenterLine);
+        if (orientation == WallOrientation.Unknown
+            || wall.DrawingLength > RepeatedShortUnlayeredDetailReviewLength(context.Options))
+        {
+            return false;
+        }
+
+        var similarCandidates = context.WallCandidates
+            .Where(candidate => !string.Equals(candidate.Id, wall.Id, StringComparison.Ordinal))
+            .Where(candidate => candidate.PageNumber == wall.PageNumber)
+            .Where(candidate => candidate.PairEvidence is null)
+            .Where(candidate => candidate.DetectionKind is WallDetectionKind.SingleLine or WallDetectionKind.FragmentMerged)
+            .Where(candidate => candidate.DrawingLength <= RepeatedShortUnlayeredDetailReviewLength(context.Options))
+            .Where(candidate => !IsWallLayerBacked(candidate, context))
+            .Where(candidate => ResolveAxisOrientation(candidate.CenterLine) == orientation)
+            .Where(candidate => LooksLikeRepeatedShortDetailNeighbor(wall.CenterLine, candidate.CenterLine, context.Options))
+            .Take(4)
+            .ToArray();
+
+        if (similarCandidates.Length < 2)
+        {
+            return false;
+        }
+
+        evidence =
+            $"wall evidence: repeated short unlayered {orientation.ToString().ToLowerInvariant()} linework group has {similarCandidates.Length + 1} similar candidates; review as detail/object linework before exact wall placement";
+        return true;
+    }
+
+    private static double RepeatedShortUnlayeredDetailReviewLength(ScannerOptions options) =>
+        Math.Max(options.MinWallLength * 1.85, options.DefaultWallThickness * 14.0);
+
+    private static bool TryClassifyDuplicateWallFaceReview(
+        WallSegment wall,
+        ScanContext context,
+        out string evidence)
+    {
+        evidence = string.Empty;
+        if (wall.DetectionKind == WallDetectionKind.ParallelLinePair
+            || wall.PairEvidence is not null
+            || wall.FragmentEvidence?.RequiresGeometryReview == true)
+        {
+            return false;
+        }
+
+        var collinearityTolerance = Math.Max(
+            context.Options.WallSnapTolerance * 2.5,
+            context.Options.DefaultWallThickness * 1.35);
+        foreach (var other in context.WallCandidates)
+        {
+            if (string.Equals(other.Id, wall.Id, StringComparison.Ordinal)
+                || other.PageNumber != wall.PageNumber
+                || other.PairEvidence is null
+                || !IsStrongPairedWall(other)
+                || !AreNearParallel(wall.CenterLine, other.CenterLine)
+                || other.DrawingLength < Math.Max(wall.DrawingLength * 0.65, context.Options.MinWallLength))
+            {
+                continue;
+            }
+
+            if (LooksLikeDuplicateWallFaceLine(wall.CenterLine, other.PairEvidence.FirstFaceLine, collinearityTolerance)
+                || LooksLikeDuplicateWallFaceLine(wall.CenterLine, other.PairEvidence.SecondFaceLine, collinearityTolerance))
+            {
+                evidence = $"wall evidence: duplicate wall-face line already represented by stronger paired wall body {other.Id}; keep for review but block exact placement";
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool LooksLikeDuplicateWallFaceLine(
+        PlanLineSegment candidate,
+        PlanLineSegment faceLine,
+        double collinearityTolerance)
+    {
+        if (!AreNearParallel(candidate, faceLine)
+            || !AreNearCollinear(candidate, faceLine, collinearityTolerance))
+        {
+            return false;
+        }
+
+        var overlapRatio = AxisAlignedOverlapRatio(candidate, faceLine);
+        if (overlapRatio >= 0.52)
+        {
+            return true;
+        }
+
+        var lengthRatio = Math.Min(candidate.Length, faceLine.Length)
+            / Math.Max(1, Math.Max(candidate.Length, faceLine.Length));
+        return overlapRatio >= 0.38 && lengthRatio <= 0.45;
+    }
+
+    private static bool LooksLikeRepeatedShortDetailNeighbor(
+        PlanLineSegment first,
+        PlanLineSegment second,
+        ScannerOptions options)
+    {
+        if (!AreNearParallel(first, second))
+        {
+            return false;
+        }
+
+        if (AxisAlignedOverlapRatio(first, second) < 0.68)
+        {
+            return false;
+        }
+
+        var spacingLimit = Math.Max(options.MinWallLength * 6.0, options.DefaultWallThickness * 30.0);
+        if (first.IsVertical() && second.IsVertical())
+        {
+            return Math.Abs(first.Midpoint.X - second.Midpoint.X) <= spacingLimit;
+        }
+
+        if (first.IsHorizontal() && second.IsHorizontal())
+        {
+            return Math.Abs(first.Midpoint.Y - second.Midpoint.Y) <= spacingLimit;
+        }
+
+        return false;
+    }
 
     private static bool TryClassifySurfacePatternNoise(
         WallSegment wall,

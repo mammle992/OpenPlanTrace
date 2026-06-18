@@ -66,7 +66,7 @@ public sealed record PlanPlacementExport(
     PlacementRoutingLayerExport RoutingLayer,
     IReadOnlyList<PlacementIssueExport> Issues)
 {
-    public const string CurrentSchemaVersion = "openplantrace.placement.v6";
+    public const string CurrentSchemaVersion = "openplantrace.placement.v7";
 
     public static PlanPlacementExport From(PlanScanResult result)
     {
@@ -1395,6 +1395,14 @@ public sealed record PlacementWallSolidSpanExport(
     int Sequence,
     LineExport CenterLine,
     LineExport? CenterLineMillimeters,
+    IReadOnlyList<PointExport> BodyPolygon,
+    IReadOnlyList<PointExport>? BodyPolygonMillimeters,
+    RectExport BodyBounds,
+    RectExport? BodyBoundsMillimeters,
+    VectorExport AlongVector,
+    VectorExport NormalVector,
+    double ThicknessDrawingUnits,
+    double? ThicknessMillimeters,
     double StartParameter,
     double EndParameter,
     double CenterParameter,
@@ -1474,6 +1482,16 @@ public sealed record PlacementWallSolidSpanExport(
         var startPoint = wall.CenterLine.PointAt(startParameter);
         var endPoint = wall.CenterLine.PointAt(endParameter);
         var line = new PlanLineSegment(startPoint, endPoint);
+        var bodyFootprint = WallBodyFootprintBuilder.Build(
+            wall,
+            startParameter,
+            endParameter,
+            $"{wall.Id}:solid-span:{sequence}:body",
+            wall.Confidence,
+            wall.Evidence);
+        var bodyPolygonMillimeters = ScalePoints(bodyFootprint.Polygon, millimetersPerDrawingUnit);
+        var thicknessMillimeters = wall.ThicknessMillimeters
+            ?? (millimetersPerDrawingUnit is > 0 ? wall.Thickness * millimetersPerDrawingUnit.Value : null);
         var startOffset = startParameter * wallLength;
         var endOffset = endParameter * wallLength;
         var centerOffset = ((startParameter + endParameter) / 2.0) * wallLength;
@@ -1491,6 +1509,14 @@ public sealed record PlacementWallSolidSpanExport(
             sequence,
             LineExport.From(line),
             ScaleLine(line, millimetersPerDrawingUnit),
+            bodyFootprint.Polygon.Select(PointExport.From).ToArray(),
+            bodyPolygonMillimeters,
+            RectExport.From(bodyFootprint.Bounds),
+            ScaleRect(bodyFootprint.Bounds, millimetersPerDrawingUnit),
+            VectorExport.From(bodyFootprint.AlongVector),
+            VectorExport.From(bodyFootprint.NormalVector),
+            wall.Thickness,
+            thicknessMillimeters,
             startParameter,
             endParameter,
             (startParameter + endParameter) / 2.0,
@@ -1501,9 +1527,22 @@ public sealed record PlacementWallSolidSpanExport(
             millimetersPerDrawingUnit is > 0 ? line.Length * millimetersPerDrawingUnit.Value / 1000.0 : null,
             adjacentOpeningIds,
             adjacentOpeningIds.Length == 0
-                ? ["Wall has no anchored opening cutouts; full centerline is usable as one solid span."]
-                : ["Wall solid span was trimmed around anchored opening cutouts."]);
+                ? [
+                    "Wall has no anchored opening cutouts; full centerline is usable as one solid span.",
+                    $"Solid span body polygon is a closed wall footprint ring from {bodyFootprint.GeometrySource}."
+                ]
+                : [
+                    "Wall solid span was trimmed around anchored opening cutouts.",
+                    $"Solid span body polygon is a closed wall footprint ring from {bodyFootprint.GeometrySource}."
+                ]);
     }
+
+    private static IReadOnlyList<PointExport>? ScalePoints(
+        IReadOnlyList<PlanPoint> points,
+        double? millimetersPerDrawingUnit) =>
+        millimetersPerDrawingUnit is > 0
+            ? points.Select(point => ScalePoint(point, millimetersPerDrawingUnit)!).ToArray()
+            : null;
 
     private static IEnumerable<string> EndpointAdjacentOpeningIds(
         WallSegment wall,
