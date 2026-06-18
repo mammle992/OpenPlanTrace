@@ -5,6 +5,9 @@ internal static class WallTopologySpanVisibility
     private const double MaxCleanDanglingSpanLength = 36.0;
     private const double MaxCleanRunJoinGapDrawingUnits = 12.0;
     private const double MinCleanRunLengthDrawingUnits = 8.0;
+    private const double MinPlacementRegularizationToleranceDrawingUnits = 1.25;
+    private const double MaxPlacementRegularizationToleranceDrawingUnits = 6.0;
+    private const double MinPlacementRegularizationClusterLengthDrawingUnits = 60.0;
 
     public static IReadOnlyList<WallGraphTopologySpan> BuildVisibleTopologySpans(
         PlanScanResult result,
@@ -19,7 +22,39 @@ internal static class WallTopologySpanVisibility
 
         return options.IncludeReviewOnlyWallTopologySpans
             ? spans
-            : MergeCleanTopologyRuns(spans);
+            : BuildCleanPlacementTopologySpans(spans);
+    }
+
+    public static IReadOnlyList<WallGraphTopologySpan> BuildCleanPlacementTopologySpans(
+        IReadOnlyList<WallGraphTopologySpan> spans) =>
+        RegularizeCleanPlacementRuns(MergeCleanTopologyRuns(spans));
+
+    public static IReadOnlyList<WallGraphTopologySpan> BuildCleanPlacementTopologySpans(
+        PlanScanResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        var options = SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.PlacementReview);
+        var context = BuildContext(result);
+        var spans = context.Spans
+            .Where(span => IsVisibleTopologySpan(span, context, options))
+            .ToArray();
+
+        return BuildCleanPlacementTopologySpans(spans);
+    }
+
+    public static IReadOnlyList<WallGraphTopologySpan> BuildRegularizedPlacementTopologySpans(
+        PlanScanResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        var options = SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.PlacementReview);
+        var context = BuildContext(result);
+        var spans = context.Spans
+            .Where(span => IsVisibleTopologySpan(span, context, options))
+            .ToArray();
+
+        return RegularizeCleanPlacementRuns(spans);
     }
 
     public static IReadOnlyList<WallGraphTopologySpan> BuildHiddenNonPlacementTopologySpans(
@@ -143,6 +178,12 @@ internal static class WallTopologySpanVisibility
                 continue;
             }
 
+            if (intervals.Length == 1 && groupSpans.Length == 1)
+            {
+                merged.Add(groupSpans[0]);
+                continue;
+            }
+
             var current = intervals[0];
             var runIndex = 1;
             for (var index = 1; index < intervals.Length; index++)
@@ -169,6 +210,164 @@ internal static class WallTopologySpanVisibility
             .ThenBy(span => span.WallId, StringComparer.Ordinal)
             .ToArray();
     }
+
+    private static IReadOnlyList<WallGraphTopologySpan> RegularizeCleanPlacementRuns(
+        IReadOnlyList<WallGraphTopologySpan> spans)
+    {
+        if (spans.Count <= 1)
+        {
+            return spans;
+        }
+
+        var replacements = new Dictionary<string, WallGraphTopologySpan>(StringComparer.Ordinal);
+        foreach (var group in spans
+            .Where(IsAxisAlignedPlacementSpan)
+            .GroupBy(span => new PlacementRegularizationKey(
+                span.PageNumber,
+                span.SourceWall?.WallType ?? WallType.Unknown,
+                ResolveAxisOrientation(span.CenterLine))))
+        {
+            var axisTolerance = PlacementRegularizationTolerance(group);
+            var ordered = group
+                .OrderBy(AxisCoordinate)
+                .ThenBy(span => AxisMin(span.CenterLine))
+                .ToArray();
+            var clusters = new List<List<WallGraphTopologySpan>>();
+            foreach (var span in ordered)
+            {
+                var current = clusters.Count == 0 ? null : clusters[^1];
+                if (current is null
+                    || Math.Abs(AxisCoordinate(span) - WeightedAxisCoordinate(current)) > axisTolerance)
+                {
+                    clusters.Add([span]);
+                    continue;
+                }
+
+                current.Add(span);
+            }
+
+            foreach (var cluster in clusters)
+            {
+                var totalLength = cluster.Sum(span => span.DrawingLength);
+                if (cluster.Count < 2
+                    || totalLength < MinPlacementRegularizationClusterLengthDrawingUnits)
+                {
+                    continue;
+                }
+
+                var targetCoordinate = WeightedAxisCoordinate(cluster);
+                foreach (var span in cluster)
+                {
+                    var shift = Math.Abs(AxisCoordinate(span) - targetCoordinate);
+                    if (shift <= 0.001 || shift > axisTolerance)
+                    {
+                        continue;
+                    }
+
+                    replacements[span.Id] = RegularizePlacementSpan(span, targetCoordinate, shift);
+                }
+            }
+        }
+
+        if (replacements.Count == 0)
+        {
+            return spans;
+        }
+
+        return spans
+            .Select(span => replacements.TryGetValue(span.Id, out var replacement) ? replacement : span)
+            .ToArray();
+    }
+
+    private static WallGraphTopologySpan RegularizePlacementSpan(
+        WallGraphTopologySpan span,
+        double targetCoordinate,
+        double shift)
+    {
+        var line = ResolveAxisOrientation(span.CenterLine) switch
+        {
+            PlacementRunOrientation.Horizontal => new PlanLineSegment(
+                new PlanPoint(span.CenterLine.Start.X, targetCoordinate),
+                new PlanPoint(span.CenterLine.End.X, targetCoordinate)),
+            PlacementRunOrientation.Vertical => new PlanLineSegment(
+                new PlanPoint(targetCoordinate, span.CenterLine.Start.Y),
+                new PlanPoint(targetCoordinate, span.CenterLine.End.Y)),
+            _ => span.CenterLine
+        };
+        var bounds = line.Bounds.Inflate(Math.Max(span.Thickness / 2.0, 0.5));
+        var evidence = span.Evidence
+            .Append($"clean placement regularization: snapped nearly-collinear run by {shift:0.###} drawing units")
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        return span with
+        {
+            CenterLine = line,
+            Bounds = bounds,
+            DrawingLength = line.Length,
+            SourceWallStartProjectionDistanceDrawingUnits = MaxNullable(
+                span.SourceWallStartProjectionDistanceDrawingUnits,
+                shift),
+            SourceWallEndProjectionDistanceDrawingUnits = MaxNullable(
+                span.SourceWallEndProjectionDistanceDrawingUnits,
+                shift),
+            Evidence = evidence
+        };
+    }
+
+    private static double PlacementRegularizationTolerance(IEnumerable<WallGraphTopologySpan> spans)
+    {
+        var thicknesses = spans
+            .Select(span => span.Thickness)
+            .Where(thickness => thickness > 0)
+            .OrderBy(thickness => thickness)
+            .ToArray();
+        var medianThickness = thicknesses.Length == 0
+            ? 4.0
+            : thicknesses[thicknesses.Length / 2];
+
+        return Math.Clamp(
+            medianThickness * 0.75,
+            MinPlacementRegularizationToleranceDrawingUnits,
+            MaxPlacementRegularizationToleranceDrawingUnits);
+    }
+
+    private static bool IsAxisAlignedPlacementSpan(WallGraphTopologySpan span) =>
+        ResolveAxisOrientation(span.CenterLine) is not PlacementRunOrientation.Unknown;
+
+    private static PlacementRunOrientation ResolveAxisOrientation(PlanLineSegment line)
+    {
+        if (line.IsHorizontal())
+        {
+            return PlacementRunOrientation.Horizontal;
+        }
+
+        if (line.IsVertical())
+        {
+            return PlacementRunOrientation.Vertical;
+        }
+
+        return PlacementRunOrientation.Unknown;
+    }
+
+    private static double AxisCoordinate(WallGraphTopologySpan span) =>
+        ResolveAxisOrientation(span.CenterLine) == PlacementRunOrientation.Horizontal
+            ? (span.CenterLine.Start.Y + span.CenterLine.End.Y) / 2.0
+            : (span.CenterLine.Start.X + span.CenterLine.End.X) / 2.0;
+
+    private static double AxisMin(PlanLineSegment line) =>
+        ResolveAxisOrientation(line) == PlacementRunOrientation.Horizontal
+            ? Math.Min(line.Start.X, line.End.X)
+            : Math.Min(line.Start.Y, line.End.Y);
+
+    private static double WeightedAxisCoordinate(IReadOnlyList<WallGraphTopologySpan> spans)
+    {
+        var totalLength = spans.Sum(span => Math.Max(span.DrawingLength, 0.001));
+        return spans.Sum(span => AxisCoordinate(span) * Math.Max(span.DrawingLength, 0.001)) / totalLength;
+    }
+
+    private static double MaxNullable(double? existing, double candidate) =>
+        Math.Max(existing ?? 0, candidate);
 
     private static IReadOnlyDictionary<string, WallGraphComponent> BuildWallComponentLookup(
         IReadOnlyList<WallGraphComponent> components)
@@ -239,6 +438,18 @@ internal static class WallTopologySpanVisibility
         IReadOnlyDictionary<string, int> NodeDegreeById,
         IReadOnlySet<string> TopologyImportBlockedWallIds);
 
+    private readonly record struct PlacementRegularizationKey(
+        int PageNumber,
+        WallType WallType,
+        PlacementRunOrientation Orientation);
+
+    private enum PlacementRunOrientation
+    {
+        Unknown,
+        Horizontal,
+        Vertical
+    }
+
     private sealed record CleanRunInterval(
         string WallId,
         int PageNumber,
@@ -249,6 +460,8 @@ internal static class WallTopologySpanVisibility
         IReadOnlyList<string> SourcePrimitiveIds,
         IReadOnlyList<string> Evidence,
         WallSegment SourceWall,
+        string SourceFromNodeId,
+        string SourceToNodeId,
         IReadOnlyList<string> SourceSpanIds)
     {
         public double LengthDrawingUnits => (EndParameter - StartParameter) * SourceWall.CenterLine.Length;
@@ -269,6 +482,8 @@ internal static class WallTopologySpanVisibility
                 span.SourcePrimitiveIds,
                 span.Evidence.Append($"merged clean placement run includes source topology span {span.Id}").ToArray(),
                 span.SourceWall!,
+                span.FromNodeId,
+                span.ToNodeId,
                 [span.Id]);
         }
 
@@ -280,6 +495,7 @@ internal static class WallTopologySpanVisibility
                 Thickness = Math.Max(Thickness, next.Thickness),
                 SourcePrimitiveIds = SourcePrimitiveIds.Concat(next.SourcePrimitiveIds).Distinct(StringComparer.Ordinal).ToArray(),
                 Evidence = Evidence.Concat(next.Evidence).Distinct(StringComparer.Ordinal).ToArray(),
+                SourceToNodeId = next.SourceToNodeId,
                 SourceSpanIds = SourceSpanIds.Concat(next.SourceSpanIds).Distinct(StringComparer.Ordinal).ToArray()
             };
 
@@ -297,8 +513,8 @@ internal static class WallTopologySpanVisibility
                 $"{WallId}:clean-run:{runIndex}",
                 PageNumber,
                 WallId,
-                SourceSpanIds.FirstOrDefault() ?? $"{WallId}:clean-run-start",
-                SourceSpanIds.LastOrDefault() ?? $"{WallId}:clean-run-end",
+                SourceFromNodeId,
+                SourceToNodeId,
                 centerLine,
                 bounds,
                 centerLine.Length,

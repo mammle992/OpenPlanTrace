@@ -273,6 +273,7 @@ internal sealed class WallGraphStage : IPipelineStage
             .ThenBy(candidate => candidate.GapDistance)
             .ThenBy(candidate => candidate.SourceNodeId, StringComparer.Ordinal)
             .ToArray();
+        PromoteMainStructuralMediumWallEvidence(context, components, graphEdges, graphNodes, repairCandidates);
         context.WallGraph = new WallGraph(graphNodes, graphEdges, components, repairCandidates);
 
         AddComponentDiagnostics(context, components);
@@ -987,6 +988,267 @@ internal sealed class WallGraphStage : IPipelineStage
                     .Select(component => component.Id)
                     .Take(20))
             });
+    }
+
+    private static void PromoteMainStructuralMediumWallEvidence(
+        ScanContext context,
+        IReadOnlyList<WallGraphComponent> components,
+        IReadOnlyList<WallEdge> graphEdges,
+        IReadOnlyList<WallNode> graphNodes,
+        IReadOnlyList<WallGraphRepairCandidate> repairCandidates)
+    {
+        if (context.WallEvidenceMap.WallAssessments.Count == 0 || components.Count == 0)
+        {
+            return;
+        }
+
+        var mainStructuralComponents = components
+            .Where(component => component.Kind == WallGraphComponentKind.MainStructural)
+            .Where(component => !component.ExcludedFromStructuralTopology)
+            .Where(component => component.WallIds.Count > 0)
+            .ToArray();
+        if (mainStructuralComponents.Length == 0)
+        {
+            return;
+        }
+
+        var componentByWallId = mainStructuralComponents
+            .SelectMany(component => component.WallIds.Select(wallId => new { WallId = wallId, Component = component }))
+            .GroupBy(item => item.WallId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First().Component, StringComparer.Ordinal);
+        var wallsById = context.Walls.ToDictionary(wall => wall.Id, StringComparer.Ordinal);
+        var edgesByWallId = graphEdges
+            .GroupBy(edge => edge.WallId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+        var nodeDegreeById = graphNodes.ToDictionary(node => node.Id, node => node.Degree, StringComparer.Ordinal);
+        var topologyImportBlockedWallIds = BuildTopologyImportBlockedWallIds(repairCandidates);
+        var promotedWallIds = new HashSet<string>(StringComparer.Ordinal);
+        var promotedAssessments = context.WallEvidenceMap.WallAssessments
+            .Select(assessment =>
+            {
+                if (!componentByWallId.TryGetValue(assessment.WallId, out var component)
+                    || !wallsById.TryGetValue(assessment.WallId, out var wall)
+                    || !edgesByWallId.TryGetValue(assessment.WallId, out var wallEdges))
+                {
+                    return assessment;
+                }
+
+                if (topologyImportBlockedWallIds.Contains(assessment.WallId))
+                {
+                    return assessment;
+                }
+
+                var supportedEndpointCount = CountSupportedTopologyEndpoints(wallEdges, nodeDegreeById);
+                if (!IsTrustedMainStructuralMediumWallAssessment(assessment, wall, supportedEndpointCount))
+                {
+                    return assessment;
+                }
+
+                promotedWallIds.Add(assessment.WallId);
+                return PromoteMainStructuralMediumWallAssessment(
+                    assessment,
+                    component,
+                    supportedEndpointCount);
+            })
+            .ToArray();
+
+        if (promotedWallIds.Count == 0)
+        {
+            return;
+        }
+
+        context.WallEvidenceMap = context.WallEvidenceMap with
+        {
+            WallAssessments = promotedAssessments
+        };
+
+        for (var index = 0; index < context.Walls.Count; index++)
+        {
+            var wall = context.Walls[index];
+            if (!promotedWallIds.Contains(wall.Id) || !componentByWallId.TryGetValue(wall.Id, out var component))
+            {
+                continue;
+            }
+
+            context.Walls[index] = wall with
+            {
+                Evidence = AppendEvidence(
+                    wall.Evidence,
+                    new[]
+                    {
+                        $"wall evidence assessment: medium wall body promoted to placement-ready by main structural graph component {component.Id}"
+                    })
+            };
+        }
+
+        context.AddDiagnostic(
+            "wall_evidence.main_structural_medium_walls_promoted",
+            DiagnosticSeverity.Info,
+            "wall-graph",
+            $"{promotedWallIds.Count} medium wall body assessment(s) were promoted to placement-ready by main structural graph continuity.",
+            confidence: Confidence.Medium,
+            scope: DiagnosticScope.Detection,
+            sourcePrimitiveIds: context.Walls
+                .Where(wall => promotedWallIds.Contains(wall.Id))
+                .SelectMany(wall => wall.SourcePrimitiveIds)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray(),
+            properties: new Dictionary<string, string>
+            {
+                ["promotedWallCount"] = promotedWallIds.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["wallIds"] = string.Join(",", promotedWallIds.OrderBy(id => id, StringComparer.Ordinal).Take(20))
+            });
+    }
+
+    private static IReadOnlySet<string> BuildTopologyImportBlockedWallIds(
+        IReadOnlyList<WallGraphRepairCandidate> repairCandidates)
+    {
+        var wallIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var candidate in repairCandidates.Where(candidate =>
+            candidate.ImportImpact == WallGraphRepairImportImpact.TopologyImportBlocked))
+        {
+            foreach (var wallId in candidate.WallIds.Where(id => !string.IsNullOrWhiteSpace(id)))
+            {
+                wallIds.Add(wallId);
+            }
+
+            if (!string.IsNullOrWhiteSpace(candidate.HostWallId))
+            {
+                wallIds.Add(candidate.HostWallId);
+            }
+        }
+
+        return wallIds;
+    }
+
+    private static bool IsTrustedMainStructuralMediumWallAssessment(
+        WallEvidenceWallAssessment assessment,
+        WallSegment wall,
+        int supportedEndpointCount)
+    {
+        if (assessment.RejectedAsNoise
+            || assessment.Decision != WallEvidenceDecision.Review
+            || assessment.Category != WallEvidenceCategory.MediumWallBody
+            || assessment.PlacementReady
+            || assessment.Confidence.Value < 0.82
+            || supportedEndpointCount < 2)
+        {
+            return false;
+        }
+
+        if (wall.WallType == WallType.Unknown)
+        {
+            return false;
+        }
+
+        if (wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            && !assessment.Evidence.Any(item => item.Contains("parallel wall-face pair", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        if (wall.FragmentEvidence?.RequiresGeometryReview == true)
+        {
+            return false;
+        }
+
+        if (assessment.Evidence.Any(IsHardRiskReviewWallEvidence)
+            || assessment.Evidence.Any(IsMainStructuralPromotionBlockedEvidence))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsMainStructuralPromotionBlockedEvidence(string evidence)
+    {
+        if (string.IsNullOrWhiteSpace(evidence))
+        {
+            return false;
+        }
+
+        return evidence.Contains("duplicate wall-face", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("already represented", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("topology import", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("repair candidate", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("endpoint-to-wall snap", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("fragment geometry requires review", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("unknown fragment-merged", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int CountSupportedTopologyEndpoints(
+        IReadOnlyList<WallEdge> wallEdges,
+        IReadOnlyDictionary<string, int> nodeDegreeById)
+    {
+        var supportedNodeIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var edge in wallEdges)
+        {
+            Count(edge.FromNodeId);
+            Count(edge.ToNodeId);
+        }
+
+        return supportedNodeIds.Count;
+
+        void Count(string nodeId)
+        {
+            if (nodeDegreeById.TryGetValue(nodeId, out var degree) && degree > 1)
+            {
+                supportedNodeIds.Add(nodeId);
+            }
+        }
+    }
+
+    private static WallEvidenceWallAssessment PromoteMainStructuralMediumWallAssessment(
+        WallEvidenceWallAssessment assessment,
+        WallGraphComponent component,
+        int supportedEndpointCount)
+    {
+        var evidence = AppendEvidence(
+            assessment.Evidence,
+            new[]
+            {
+                $"wall evidence: promoted to placement-ready by main structural graph component {component.Id}",
+                $"wall evidence: {supportedEndpointCount.ToString(System.Globalization.CultureInfo.InvariantCulture)} topology-supported endpoint(s) in main structural component"
+            });
+        return assessment with
+        {
+            PlacementReady = true,
+            RequiresReview = false,
+            Decision = WallEvidenceDecision.Accept,
+            ScoreBreakdown = PromoteMainStructuralMediumWallScore(assessment.ScoreBreakdown),
+            Evidence = evidence
+        };
+    }
+
+    private static WallEvidenceScoreBreakdown PromoteMainStructuralMediumWallScore(
+        WallEvidenceScoreBreakdown score)
+    {
+        var structuralScore = RoundScore(Math.Max(score.StructuralSupportScore, 0.20));
+        var positiveScore = RoundScore(Math.Min(1, Math.Max(score.PositiveScore, score.PairSupportScore + score.LayerSupportScore + structuralScore + score.RecoverySupportScore)));
+        var negativeEvidence = score.NegativeEvidence
+            .Where(item => !item.Contains("not placement-ready", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var decisionScore = RoundScore(Math.Max(-1, Math.Min(1, positiveScore - score.NegativeScore)));
+        var positiveEvidence = AppendEvidence(
+            score.PositiveEvidence,
+            new[]
+            {
+                "main structural graph continuity"
+            });
+
+        return new WallEvidenceScoreBreakdown(
+            positiveScore,
+            score.NegativeScore,
+            decisionScore,
+            score.PairSupportScore,
+            score.LayerSupportScore,
+            structuralScore,
+            score.RecoverySupportScore,
+            score.NoisePenalty,
+            score.FragmentReviewPenalty,
+            positiveEvidence,
+            negativeEvidence);
     }
 
     private void SynchronizeWallEvidenceGeometry(

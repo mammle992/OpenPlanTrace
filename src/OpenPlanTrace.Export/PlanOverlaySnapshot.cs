@@ -288,19 +288,22 @@ public sealed record PlanOverlayPageSnapshot(
             item => item.Bounds,
             item => item.Confidence);
 
+        var visibleTopologySpans = WallTopologySpanVisibility.BuildVisibleTopologySpans(result, pageNumber, options);
         yield return Layer(
             "wallTopologySpans",
-            WallTopologySpanVisibility.BuildVisibleTopologySpans(result, pageNumber, options),
+            visibleTopologySpans,
             item => item.Bounds,
             item => item.Confidence);
 
+        var wallBodyFootprints = WallBodyFootprintBuilder.FromPlacementSolidSpans(result, visibleTopologySpans)
+            .Where(item => item.PageNumber == pageNumber)
+            .ToArray();
         yield return Layer(
             "wallBodyFootprints",
-            WallBodyFootprintBuilder.FromTopologySpans(WallTopologySpanVisibility.BuildVisibleTopologySpans(result, pageNumber, options)),
+            wallBodyFootprints,
             item => item.Bounds,
             item => item.Confidence,
-            WallBodyFootprintBuilder
-                .FromTopologySpans(WallTopologySpanVisibility.BuildVisibleTopologySpans(result, pageNumber, options))
+            wallBodyFootprints
                 .GroupBy(item => item.GeometrySource)
                 .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal));
 

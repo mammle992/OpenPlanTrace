@@ -6,6 +6,9 @@ namespace OpenPlanTrace.Export;
 
 public static class PlanOverlaySvgRenderer
 {
+    private const double QaPanelGap = 16.0;
+    private const double QaPanelMargin = 12.0;
+
     public static string RenderPage(
         PlanScanResult result,
         int pageNumber,
@@ -17,8 +20,16 @@ public static class PlanOverlaySvgRenderer
         var page = result.Document.Pages.FirstOrDefault(candidate => candidate.Number == pageNumber)
             ?? throw new ArgumentOutOfRangeException(nameof(pageNumber), $"Page {pageNumber} was not found.");
 
-        var width = page.Size.Width;
-        var height = page.Size.Height;
+        var pageWidth = page.Size.Width;
+        var pageHeight = page.Size.Height;
+        var sidePanelWidth = QaSidePanelWidth(page);
+        var reservesQaPanel = options.IncludeLegend || options.IncludeDiagnostics;
+        var width = reservesQaPanel
+            ? pageWidth + QaPanelGap + sidePanelWidth + QaPanelMargin
+            : pageWidth;
+        var height = reservesQaPanel
+            ? Math.Max(pageHeight, QaPanelRequiredHeight(result, page, options))
+            : pageHeight;
         var builder = new StringBuilder();
 
         builder.AppendLine($"""<svg xmlns="http://www.w3.org/2000/svg" width="{N(width)}" height="{N(height)}" viewBox="0 0 {N(width)} {N(height)}" role="img" aria-label="OpenPlanTrace overlay for page {page.Number}" data-profile="{Esc(SvgOverlayRenderOptions.ProfileName(options.Profile))}">""");
@@ -90,7 +101,7 @@ public static class PlanOverlaySvgRenderer
 
         if (!string.IsNullOrWhiteSpace(options.BackgroundImageHref))
         {
-            builder.AppendLine($"""<image class="sheet-image" href="{Esc(options.BackgroundImageHref!)}" x="0" y="0" width="{N(width)}" height="{N(height)}" preserveAspectRatio="none" opacity="{N(Math.Clamp(options.BackgroundImageOpacity, 0, 1))}"><title>Source PDF page background for alignment QA</title></image>""");
+            builder.AppendLine($"""<image class="sheet-image" href="{Esc(options.BackgroundImageHref!)}" x="0" y="0" width="{N(pageWidth)}" height="{N(pageHeight)}" preserveAspectRatio="none" opacity="{N(Math.Clamp(options.BackgroundImageOpacity, 0, 1))}"><title>Source PDF page background for alignment QA</title></image>""");
         }
 
         if (options.IncludeRooms)
@@ -354,7 +365,8 @@ public static class PlanOverlaySvgRenderer
             var componentByWallId = BuildWallComponentLookup(result.WallGraph.Components);
             var wallEvidenceAssessments = WallEvidenceExportHelpers.BuildAssessmentLookup(result.WallEvidenceMap);
             var topologySpans = WallTopologySpanVisibility.BuildVisibleTopologySpans(result, page.Number, options);
-            foreach (var footprint in WallBodyFootprintBuilder.FromTopologySpans(topologySpans))
+            foreach (var footprint in WallBodyFootprintBuilder.FromPlacementSolidSpans(result, topologySpans)
+                .Where(footprint => footprint.PageNumber == page.Number))
             {
                 componentByWallId.TryGetValue(footprint.WallId, out var component);
                 wallEvidenceAssessments.TryGetValue(footprint.WallId, out var assessment);
@@ -430,7 +442,7 @@ public static class PlanOverlaySvgRenderer
 
         if (options.IncludeDiagnostics)
         {
-            AppendDiagnostics(builder, result, page);
+            AppendDiagnostics(builder, result, page, options);
         }
 
         builder.AppendLine("</svg>");
@@ -477,11 +489,10 @@ public static class PlanOverlaySvgRenderer
         var lineHeight = 18.0;
         var rows = LegendRows(result, page, options);
 
-        var legendWidth = 220.0;
+        var legendWidth = Math.Min(260.0, QaSidePanelWidth(page));
         var legendHeight = 18 + (rows.Length * lineHeight);
-        var legendPosition = BestPanelPosition(result, page, legendWidth, legendHeight);
-        var x = legendPosition.X;
-        var y = legendPosition.Y;
+        var x = QaSidePanelX(page);
+        var y = QaPanelMargin;
         builder.AppendLine($"""<g id="legend" transform="translate({N(x)} {N(y)})">""");
         builder.AppendLine($"""<rect class="legend-bg" x="0" y="0" width="{N(legendWidth)}" height="{N(legendHeight)}" rx="6" />""");
 
@@ -512,6 +523,7 @@ public static class PlanOverlaySvgRenderer
 
         var visibleTopologySpanCount = WallTopologySpanCount(result, page.Number, options);
         var hiddenTopologySpanCount = HiddenNonPlacementTopologySpanCount(result, page.Number, options);
+        var wallReadiness = WallPlacementReadinessSummary.From(result, page.Number);
         var repairCandidateCount = result.WallGraph.RepairCandidates.Count(candidate => candidate.PageNumber == page.Number);
         var blockingRepairCandidateCount = result.WallGraph.RepairCandidates.Count(candidate =>
             candidate.PageNumber == page.Number
@@ -526,6 +538,8 @@ public static class PlanOverlaySvgRenderer
             $"{result.GridBaySpacings.Count(bay => bay.PageNumber == page.Number)} grid bays",
             $"{result.WallGraph.Components.Count(component => component.PageNumber == page.Number)} wall components",
             $"{result.Walls.Count(wall => wall.PageNumber == page.Number)} walls",
+            $"{wallReadiness.PlacementReadyWallCount} placement-ready walls",
+            $"{wallReadiness.PlacementOmittedWallCount} omitted/review walls",
             $"{WallBodyFootprintCount(result, page.Number, options)} wall body footprints",
             $"{visibleTopologySpanCount} visible topology spans",
             $"{hiddenTopologySpanCount} hidden non-placement topology spans",
@@ -541,124 +555,16 @@ public static class PlanOverlaySvgRenderer
             $"{RoutingItemCount(result.RoutingLayer, page.Number)} routing items",
             CalibrationLabel(result.Calibration)
         });
+        rows.AddRange(wallReadiness.TopOmissionRows(maxRows: 3));
 
         return rows.ToArray();
     }
 
-    private static PlanPoint BestPanelPosition(
+    private static void AppendDiagnostics(
+        StringBuilder builder,
         PlanScanResult result,
         PlanPage page,
-        double panelWidth,
-        double panelHeight)
-    {
-        const double margin = 12;
-        var candidates = new[]
-        {
-            new PlanPoint(margin, margin),
-            new PlanPoint(Math.Max(margin, page.Size.Width - panelWidth - margin), margin),
-            new PlanPoint(margin, Math.Max(margin, page.Size.Height - panelHeight - margin)),
-            new PlanPoint(Math.Max(margin, page.Size.Width - panelWidth - margin), Math.Max(margin, page.Size.Height - panelHeight - margin))
-        };
-        var contentBounds = LegendAvoidanceBounds(result, page).ToArray();
-
-        return candidates
-            .OrderBy(point => PanelOverlapScore(new PlanRect(point.X, point.Y, panelWidth, panelHeight), contentBounds))
-            .ThenBy(point => point.Y)
-            .ThenBy(point => point.X)
-            .First();
-    }
-
-    private static PlanRect LegendPanelBounds(PlanScanResult result, PlanPage page)
-    {
-        const double lineHeight = 18.0;
-        const double legendWidth = 220.0;
-        var legendHeight = 18 + (LegendRows(result, page, SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.Full)).Length * lineHeight);
-        var legendPosition = BestPanelPosition(result, page, legendWidth, legendHeight);
-        return new PlanRect(legendPosition.X, legendPosition.Y, legendWidth, legendHeight);
-    }
-
-    private static PlanPoint BestDiagnosticsPanelPosition(
-        PlanScanResult result,
-        PlanPage page,
-        double panelWidth,
-        double panelHeight)
-    {
-        const double margin = 12;
-        var candidates = new[]
-        {
-            new PlanPoint(margin, margin),
-            new PlanPoint(Math.Max(margin, page.Size.Width - panelWidth - margin), margin),
-            new PlanPoint(margin, Math.Max(margin, page.Size.Height - panelHeight - margin)),
-            new PlanPoint(Math.Max(margin, page.Size.Width - panelWidth - margin), Math.Max(margin, page.Size.Height - panelHeight - margin))
-        };
-        var contentBounds = LegendAvoidanceBounds(result, page)
-            .Append(LegendPanelBounds(result, page))
-            .ToArray();
-
-        return candidates
-            .OrderBy(point => PanelOverlapScore(new PlanRect(point.X, point.Y, panelWidth, panelHeight), contentBounds))
-            .ThenByDescending(point => point.Y)
-            .ThenBy(point => point.X)
-            .First();
-    }
-
-    private static IEnumerable<PlanRect> LegendAvoidanceBounds(PlanScanResult result, PlanPage page)
-    {
-        foreach (var region in result.SheetRegions.Where(region =>
-            region.PageNumber == page.Number
-            && region.Kind is RegionKind.MainFloorPlan or RegionKind.TitleBlock or RegionKind.Dimensions))
-        {
-            yield return region.Bounds;
-        }
-
-        foreach (var wall in result.Walls.Where(wall => wall.PageNumber == page.Number))
-        {
-            yield return wall.Bounds;
-        }
-
-        foreach (var room in result.Rooms.Where(room => room.PageNumber == page.Number))
-        {
-            yield return room.Bounds;
-        }
-
-        foreach (var opening in result.Openings.Where(opening => opening.PageNumber == page.Number))
-        {
-            yield return opening.Bounds;
-        }
-
-        foreach (var aggregate in result.ObjectAggregates.Where(aggregate => aggregate.PageNumber == page.Number))
-        {
-            yield return aggregate.Bounds;
-        }
-
-        foreach (var obstacle in result.RoutingLayer.Obstacles.Where(obstacle => obstacle.PageNumber == page.Number))
-        {
-            yield return obstacle.Bounds;
-        }
-
-        foreach (var hint in result.RoutingLayer.RoomUseHints.Where(hint => hint.PageNumber == page.Number))
-        {
-            yield return hint.Bounds;
-        }
-    }
-
-    private static double PanelOverlapScore(PlanRect panel, IReadOnlyList<PlanRect> contentBounds)
-    {
-        var score = 0.0;
-        foreach (var bounds in contentBounds)
-        {
-            if (bounds.IsEmpty || !panel.Intersects(bounds))
-            {
-                continue;
-            }
-
-            score += panel.OverlapArea(bounds);
-        }
-
-        return score;
-    }
-
-    private static void AppendDiagnostics(StringBuilder builder, PlanScanResult result, PlanPage page)
+        SvgOverlayRenderOptions options)
     {
         var messages = result.Diagnostics.Messages
             .Where(message => message.PageNumber is null || message.PageNumber == page.Number)
@@ -670,21 +576,53 @@ public static class PlanOverlaySvgRenderer
             return;
         }
 
-        var panelWidth = Math.Min(520, Math.Max(180, page.Size.Width - 24));
+        var panelWidth = QaSidePanelWidth(page);
         var panelHeight = 18 + (messages.Length * 16);
-        var position = BestDiagnosticsPanelPosition(result, page, panelWidth, panelHeight);
-        var x = position.X;
-        var y = position.Y;
+        var x = QaSidePanelX(page);
+        var y = options.IncludeLegend
+            ? QaPanelMargin + 18 + (LegendRows(result, page, options).Length * 18.0) + QaPanelMargin
+            : QaPanelMargin;
         builder.AppendLine($"""<g id="diagnostics" transform="translate({N(x)} {N(y)})">""");
         builder.AppendLine($"""<rect class="diagnostic-bg" x="0" y="0" width="{N(panelWidth)}" height="{N(panelHeight)}" rx="6" />""");
 
         for (var index = 0; index < messages.Length; index++)
         {
-            var message = Shorten($"{messages[index].Severity}: {messages[index].Stage} - {messages[index].Message}", 96);
+            var message = Shorten($"{messages[index].Severity}: {messages[index].Stage} - {messages[index].Message}", 62);
             builder.AppendLine($"""<text class="diagnostic" x="10" y="{N(22 + (index * 16))}">{Esc(message)}</text>""");
         }
 
         builder.AppendLine("</g>");
+    }
+
+    private static double QaSidePanelX(PlanPage page) =>
+        page.Size.Width + QaPanelGap;
+
+    private static double QaSidePanelWidth(PlanPage page) =>
+        Math.Clamp(page.Size.Width * 0.28, 240.0, 360.0);
+
+    private static double QaPanelRequiredHeight(
+        PlanScanResult result,
+        PlanPage page,
+        SvgOverlayRenderOptions options)
+    {
+        var height = QaPanelMargin;
+
+        if (options.IncludeLegend)
+        {
+            height += 18 + (LegendRows(result, page, options).Length * 18.0) + QaPanelMargin;
+        }
+
+        if (options.IncludeDiagnostics)
+        {
+            var messageCount = result.Diagnostics.Messages
+                .Count(message => message.PageNumber is null || message.PageNumber == page.Number);
+            if (messageCount > 0)
+            {
+                height += 18 + (Math.Min(messageCount, 4) * 16.0) + QaPanelMargin;
+            }
+        }
+
+        return height;
     }
 
     private static string Shorten(string value, int maxLength) =>
@@ -881,8 +819,8 @@ public static class PlanOverlaySvgRenderer
         int pageNumber,
         SvgOverlayRenderOptions options) =>
         WallBodyFootprintBuilder
-            .FromTopologySpans(WallTopologySpanVisibility.BuildVisibleTopologySpans(result, pageNumber, options))
-            .Count;
+            .FromPlacementSolidSpans(result, WallTopologySpanVisibility.BuildVisibleTopologySpans(result, pageNumber, options))
+            .Count(footprint => footprint.PageNumber == pageNumber);
 
     private static int HiddenNonPlacementTopologySpanCount(
         PlanScanResult result,
@@ -903,6 +841,196 @@ public static class PlanOverlaySvgRenderer
                 return WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, assessment);
             });
     }
+
+    private sealed record WallPlacementReadinessSummary(
+        int PlacementReadyWallCount,
+        int PlacementOmittedWallCount,
+        IReadOnlyDictionary<string, int> OmissionCounts)
+    {
+        public static WallPlacementReadinessSummary From(PlanScanResult result, int pageNumber)
+        {
+            var componentByWallId = BuildWallComponentLookup(result.WallGraph.Components);
+            var wallEvidenceAssessments = WallEvidenceExportHelpers.BuildAssessmentLookup(result.WallEvidenceMap);
+            var reviewReasonsByWallId = BuildWallReviewReasons(result.Diagnostics.Messages);
+            var repairCandidatesByWallId = BuildWallGraphRepairCandidateLookup(result.WallGraph.RepairCandidates);
+            var topologySpansByWallId = WallTopologySpanVisibility
+                .BuildRegularizedPlacementTopologySpans(result)
+                .Where(span => span.PageNumber == pageNumber)
+                .GroupBy(span => span.WallId, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+            var omissionCodes = new List<string>();
+            var readyCount = 0;
+
+            foreach (var wall in result.Walls.Where(wall => wall.PageNumber == pageNumber))
+            {
+                componentByWallId.TryGetValue(wall.Id, out var component);
+                wallEvidenceAssessments.TryGetValue(wall.Id, out var assessment);
+                var repairCandidates = repairCandidatesByWallId.TryGetValue(wall.Id, out var wallRepairCandidates)
+                    ? wallRepairCandidates
+                    : Array.Empty<WallGraphRepairCandidate>();
+                var reviewReasons = reviewReasonsByWallId.TryGetValue(wall.Id, out var wallReviewReasons)
+                    ? wallReviewReasons
+                    : Array.Empty<string>();
+                var combinedReviewReasons = reviewReasons
+                    .Concat(repairCandidates.Where(candidate => candidate.RequiresReview).Select(WallGraphRepairReviewReason))
+                    .Where(reason => !string.IsNullOrWhiteSpace(reason))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray();
+                var topologySpans = topologySpansByWallId.TryGetValue(wall.Id, out var spans)
+                    ? spans
+                    : Array.Empty<WallGraphTopologySpan>();
+                var excludedFromStructuralTopology =
+                    WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, assessment);
+                var reliability = PlacementReliability.ForWall(
+                    wall,
+                    result.Calibration,
+                    component,
+                    assessment,
+                    combinedReviewReasons);
+                var omission = PlacementWallOmissionExport.From(
+                    wall,
+                    component,
+                    assessment,
+                    reliability,
+                    topologySpans,
+                    excludedFromStructuralTopology,
+                    repairCandidates,
+                    combinedReviewReasons);
+
+                if (omission is null && reliability.ReadyForCoordinatePlacement)
+                {
+                    readyCount++;
+                }
+                else if (omission is not null)
+                {
+                    omissionCodes.Add(omission.Code);
+                }
+            }
+
+            var omissionCounts = omissionCodes
+                .GroupBy(code => code, StringComparer.Ordinal)
+                .OrderBy(group => group.Key, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+
+            return new WallPlacementReadinessSummary(readyCount, omissionCodes.Count, omissionCounts);
+        }
+
+        public IEnumerable<string> TopOmissionRows(int maxRows) =>
+            OmissionCounts
+                .OrderByDescending(pair => pair.Value)
+                .ThenBy(pair => pair.Key, StringComparer.Ordinal)
+                .Take(maxRows)
+                .Select(pair => $"omit: {OmissionLabel(pair.Key)} {pair.Value}");
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<string>> BuildWallReviewReasons(
+        IReadOnlyList<PlanDiagnostic> diagnostics)
+    {
+        var reasons = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var diagnostic in diagnostics.Where(message => string.Equals(
+                     message.Code,
+                     "wall_graph.surface_pattern_wall_overlap.review",
+                     StringComparison.Ordinal)))
+        {
+            if (!diagnostic.Properties.TryGetValue("wallId", out var wallId)
+                || string.IsNullOrWhiteSpace(wallId))
+            {
+                continue;
+            }
+
+            if (!reasons.TryGetValue(wallId, out var wallReasons))
+            {
+                wallReasons = new List<string>();
+                reasons[wallId] = wallReasons;
+            }
+
+            var surfacePatternId = diagnostic.Properties.TryGetValue("surfacePatternId", out var patternId)
+                && !string.IsNullOrWhiteSpace(patternId)
+                    ? patternId
+                    : "unknown";
+            var overlap = diagnostic.Properties.TryGetValue("wallOverlapRatio", out var ratio)
+                && !string.IsNullOrWhiteSpace(ratio)
+                    ? $" at wall overlap ratio {ratio}"
+                    : string.Empty;
+            wallReasons.Add($"wall overlaps non-structural surface/detail pattern {surfacePatternId}{overlap}");
+        }
+
+        return reasons.ToDictionary(
+            pair => pair.Key,
+            pair => (IReadOnlyList<string>)pair.Value.Distinct(StringComparer.Ordinal).ToArray(),
+            StringComparer.Ordinal);
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<WallGraphRepairCandidate>> BuildWallGraphRepairCandidateLookup(
+        IReadOnlyList<WallGraphRepairCandidate> candidates)
+    {
+        var lookup = new Dictionary<string, List<WallGraphRepairCandidate>>(StringComparer.Ordinal);
+        foreach (var candidate in candidates)
+        {
+            foreach (var wallId in WallGraphRepairCandidateWallIds(candidate).Distinct(StringComparer.Ordinal))
+            {
+                if (!lookup.TryGetValue(wallId, out var wallCandidates))
+                {
+                    wallCandidates = new List<WallGraphRepairCandidate>();
+                    lookup[wallId] = wallCandidates;
+                }
+
+                wallCandidates.Add(candidate);
+            }
+        }
+
+        return lookup.ToDictionary(
+            pair => pair.Key,
+            pair => (IReadOnlyList<WallGraphRepairCandidate>)pair.Value
+                .DistinctBy(candidate => candidate.Id, StringComparer.Ordinal)
+                .OrderBy(candidate => candidate.Id, StringComparer.Ordinal)
+                .ToArray(),
+            StringComparer.Ordinal);
+    }
+
+    private static IEnumerable<string> WallGraphRepairCandidateWallIds(WallGraphRepairCandidate candidate)
+    {
+        foreach (var wallId in candidate.WallIds)
+        {
+            if (!string.IsNullOrWhiteSpace(wallId))
+            {
+                yield return wallId;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(candidate.HostWallId))
+        {
+            yield return candidate.HostWallId;
+        }
+    }
+
+    private static string WallGraphRepairReviewReason(WallGraphRepairCandidate candidate)
+    {
+        var action = candidate.SuggestedAction switch
+        {
+            WallGraphRepairAction.TrimEndpointOverrun => "endpoint-overrun trim",
+            WallGraphRepairAction.SnapEndpointToWall => "endpoint-to-wall snap",
+            WallGraphRepairAction.SnapEndpointToEndpoint => "endpoint-to-endpoint snap",
+            _ => candidate.SuggestedAction.ToString()
+        };
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"wall graph repair candidate {candidate.Id} requires review for {action} ({candidate.Kind}, {candidate.ImportImpact}, {candidate.GapDistance:0.###} drawing units)");
+    }
+
+    private static string OmissionLabel(string code) =>
+        code switch
+        {
+            "duplicate_wall_face" => "duplicate faces",
+            "isolated_fragment" => "isolated fragments",
+            "no_clean_topology_spans" => "no clean spans",
+            "object_like_linework" => "object linework",
+            "rejected_wall_evidence" => "rejected evidence",
+            "topology_import_blocked" => "blocked repairs",
+            "wall_evidence_review_required" => "review evidence",
+            _ => code.Replace('_', ' ')
+        };
 
     private static int RoutingItemCount(PlanRoutingLayer routingLayer, int pageNumber) =>
         routingLayer.Barriers.Count(item => item.PageNumber == pageNumber)

@@ -24,7 +24,7 @@
       Include="..\..\docs\schemas\openplantrace.visual-snapshot.v3.schema.json"
       LogicalName="OpenPlanTrace.Export.Schemas.openplantrace.visual-snapshot.v3.schema.json" />
     <EmbeddedResource
-      Include="..\..\docs\schemas\openplantrace.placement.v7.schema.json"
-      LogicalName="OpenPlanTrace.Export.Schemas.openplantrace.placement.v7.schema.json" />
+      Include="..\..\docs\schemas\openplantrace.placement.v9.schema.json"
+      LogicalName="OpenPlanTrace.Export.Schemas.openplantrace.placement.v9.schema.json" />
   </ItemGroup>
 </Project>

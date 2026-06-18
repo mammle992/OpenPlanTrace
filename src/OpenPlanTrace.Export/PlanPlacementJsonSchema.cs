@@ -8,7 +8,7 @@ public static class PlanPlacementJsonSchema
     public const string CurrentSchemaVersion = PlanPlacementExport.CurrentSchemaVersion;
 
     public const string CurrentResourceName =
-        "OpenPlanTrace.Export.Schemas.openplantrace.placement.v7.schema.json";
+        "OpenPlanTrace.Export.Schemas.openplantrace.placement.v9.schema.json";
 
     public static string ReadCurrent()
     {

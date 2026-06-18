@@ -305,6 +305,83 @@ public sealed class WallGraphTopologyTests
     }
 
     [Fact]
+    public async Task WallGraphStage_PromotesTrustedMainStructuralMediumPairedWallsForPlacement()
+    {
+        var top = DetectedWall("wall-top", new PlanPoint(100, 100), new PlanPoint(320, 100)) with { WallType = WallType.Exterior };
+        var bottom = DetectedWall("wall-bottom", new PlanPoint(100, 220), new PlanPoint(320, 220)) with { WallType = WallType.Exterior };
+        var reviewPartition = DetectedWall("wall-review-short-paired", new PlanPoint(200, 100), new PlanPoint(200, 220)) with { WallType = WallType.Interior };
+        var context = new ScanContext(
+            Document("wall-main-structural-medium-promotion"),
+            new ScannerOptions());
+        context.Walls.AddRange(new[] { top, bottom, reviewPartition });
+        context.WallEvidenceMap = new WallEvidenceMap(
+            Array.Empty<WallEvidenceSegment>(),
+            new[]
+            {
+                TrustedReviewBand(reviewPartition)
+            },
+            new[]
+            {
+                Assessment(top, WallEvidenceDecision.Accept, WallEvidenceCategory.StrongWallBody, Confidence.High),
+                Assessment(bottom, WallEvidenceDecision.Accept, WallEvidenceCategory.StrongWallBody, Confidence.High),
+                MediumPairedReviewAssessment(reviewPartition)
+            });
+
+        await new WallTopologyPreparationStage().ExecuteAsync(context, CancellationToken.None);
+        await new WallGraphStage().ExecuteAsync(context, CancellationToken.None);
+
+        var promoted = Assert.Single(context.WallEvidenceMap.WallAssessments, assessment => assessment.WallId == reviewPartition.Id);
+        Assert.True(promoted.PlacementReady);
+        Assert.False(promoted.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Accept, promoted.Decision);
+        Assert.Contains(
+            promoted.Evidence,
+            item => item.Contains("promoted to placement-ready by main structural graph component", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "wall_evidence.main_structural_medium_walls_promoted"
+                && diagnostic.Properties["promotedWallCount"] == "1"
+                && diagnostic.Properties["wallIds"] == reviewPartition.Id);
+    }
+
+    [Fact]
+    public async Task WallGraphStage_DoesNotPromoteDuplicateMainStructuralMediumWallForPlacement()
+    {
+        var top = DetectedWall("wall-top", new PlanPoint(100, 100), new PlanPoint(320, 100)) with { WallType = WallType.Exterior };
+        var bottom = DetectedWall("wall-bottom", new PlanPoint(100, 220), new PlanPoint(320, 220)) with { WallType = WallType.Exterior };
+        var duplicateReview = DetectedWall("wall-duplicate-review", new PlanPoint(200, 100), new PlanPoint(200, 220)) with { WallType = WallType.Interior };
+        var context = new ScanContext(
+            Document("wall-main-structural-medium-promotion-blocked"),
+            new ScannerOptions());
+        context.Walls.AddRange(new[] { top, bottom, duplicateReview });
+        context.WallEvidenceMap = new WallEvidenceMap(
+            Array.Empty<WallEvidenceSegment>(),
+            new[]
+            {
+                TrustedReviewBand(duplicateReview)
+            },
+            new[]
+            {
+                Assessment(top, WallEvidenceDecision.Accept, WallEvidenceCategory.StrongWallBody, Confidence.High),
+                Assessment(bottom, WallEvidenceDecision.Accept, WallEvidenceCategory.StrongWallBody, Confidence.High),
+                MediumPairedReviewAssessment(
+                    duplicateReview,
+                    "wall evidence: duplicate wall-face line already represented by stronger paired wall body wall-top; keep for review but block exact placement")
+            });
+
+        await new WallTopologyPreparationStage().ExecuteAsync(context, CancellationToken.None);
+        await new WallGraphStage().ExecuteAsync(context, CancellationToken.None);
+
+        var retainedReview = Assert.Single(context.WallEvidenceMap.WallAssessments, assessment => assessment.WallId == duplicateReview.Id);
+        Assert.False(retainedReview.PlacementReady);
+        Assert.True(retainedReview.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Review, retainedReview.Decision);
+        Assert.DoesNotContain(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "wall_evidence.main_structural_medium_walls_promoted");
+    }
+
+    [Fact]
     public async Task WallGraphStage_DoesNotUseReviewRequiredWallsAsAutoRepairSupport()
     {
         var reviewHostWall = DetectedWall("wall-review-host", new PlanPoint(100, 100), new PlanPoint(320, 100));
@@ -1074,6 +1151,50 @@ public sealed class WallGraphTopologyTests
             evidence)
         {
             Decision = decision
+        };
+    }
+
+    private static WallEvidenceWallAssessment MediumPairedReviewAssessment(
+        WallSegment wall,
+        params string[] extraEvidence)
+    {
+        var evidence = new[]
+        {
+            "parallel wall-face pair",
+            "face separation 6 drawing units",
+            "pair score 0.85",
+            "overlap ratio 1",
+            "wall type interior: supported wall evidence inside exterior envelope",
+            "wall evidence: short unlayered parallel-face candidate has clustered support but fewer than two distinct structural wall connections"
+        }
+            .Concat(extraEvidence)
+            .ToArray();
+
+        return new WallEvidenceWallAssessment(
+            wall.Id,
+            wall.PageNumber,
+            wall.Bounds,
+            WallEvidenceCategory.MediumWallBody,
+            new Confidence(0.85),
+            PlacementReady: false,
+            RequiresReview: true,
+            RejectedAsNoise: false,
+            wall.SourcePrimitiveIds,
+            evidence)
+        {
+            Decision = WallEvidenceDecision.Review,
+            ScoreBreakdown = new WallEvidenceScoreBreakdown(
+                0.52,
+                0,
+                0.52,
+                0.32,
+                0,
+                0.20,
+                0,
+                0,
+                0,
+                new[] { "parallel-face wall pair", "both endpoints supported by structural context" },
+                new[] { "not placement-ready without review" })
         };
     }
 

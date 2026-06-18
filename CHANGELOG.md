@@ -6,6 +6,149 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.101] - 2026-06-18
+
+### Changed
+- Placement-review SVG overlays now show wall import-readiness directly in the
+  right QA rail: placement-ready wall count, omitted/review wall count, and the
+  top wall omission causes.
+- The SVG legend now mirrors the placement v9 wall-readiness contract so visual
+  screenshots immediately reveal whether noisy wall-like geometry is clean
+  import geometry or review-only evidence.
+
+### Verified
+- Added regression coverage for placement-review legend rows that expose
+  placement-ready and omitted/review wall counts.
+- Focused placement-review SVG tests passed with `3` tests.
+- Focused export/schema/CLI placement validation tests passed with `96` tests.
+- Full test suite passed with `537` tests.
+- Private medium PDF smoke scan completed with
+  `C:\Users\post\Downloads\A20-102 PLAN 1. ETASJE.pdf`. The placement-review
+  SVG now reports `39` placement-ready walls, `85` omitted/review walls, and top
+  omission categories: rejected evidence, isolated fragments, and duplicate
+  faces.
+- Deep placement validation passed for
+  `real-pdf-output/private-medium-a20-102-v121/placement.json`.
+- Rendered and inspected
+  `real-pdf-output/private-medium-a20-102-v121/placement-review-page-1.png`.
+
+## [0.02.100] - 2026-06-18
+
+### Changed
+- Placement JSON now uses `openplantrace.placement.v9` and reports
+  document/page wall-readiness summary fields: placement-ready wall count,
+  placement-omitted wall count, clean wall topology span count, solid wall span
+  count, and omission-code totals.
+- Placement validation now checks those summary fields against the actual wall
+  array, so import-readiness numbers cannot drift away from the emitted wall
+  geometry and omission evidence.
+
+### Verified
+- Added regression coverage for placement-ready/omitted wall summary fields,
+  page summary mirrors, placement omission code totals, and the placement v9
+  schema artifact.
+- Focused export/schema/CLI placement validation tests passed with `96` tests.
+- Full test suite passed with `537` tests.
+- Private medium PDF smoke scan completed with
+  `C:\Users\post\Downloads\A20-102 PLAN 1. ETASJE.pdf`. The placement summary
+  reported `124` walls, `39` placement-ready walls, `85` omitted/review walls,
+  `118` clean topology spans, and `141` solid wall spans.
+- Deep placement validation passed for
+  `real-pdf-output/private-medium-a20-102-v120/placement.json`.
+- Rendered and inspected
+  `real-pdf-output/private-medium-a20-102-v120/placement-review-page-1.png`;
+  visual geometry is intentionally unchanged from the prior pass, while
+  readiness totals are now available directly in placement JSON.
+
+## [0.02.099] - 2026-06-18
+
+### Changed
+- Placement JSON now uses `openplantrace.placement.v8` and exports structured
+  wall `placementOmission` objects for walls that are not clean
+  coordinate-placement topology. Omission codes distinguish topology-import
+  blockers, duplicate wall faces, rejected evidence, object-like linework,
+  isolated fragments, fragment-geometry review, wall-evidence review, and
+  missing clean topology spans.
+- Wall omission records include recommended actions, linked wall IDs, repair
+  candidate IDs, and evidence so downstream importers can skip noisy wall-like
+  linework without parsing free-text diagnostics.
+
+### Verified
+- Added regression coverage for placement-ready walls with no omission,
+  review-required wall evidence omissions, topology-import-blocked repair
+  omissions, and the placement v8 schema artifact.
+- Focused export/schema tests passed with `82` tests.
+- Full test suite passed with `537` tests.
+- Private medium PDF smoke scan completed with
+  `C:\Users\post\Downloads\A20-102 PLAN 1. ETASJE.pdf`. The scan exported
+  `124` walls: `39` placement-ready walls with no omission and `85`
+  review/omitted walls with structured omission codes.
+- Deep placement validation passed for
+  `real-pdf-output/private-medium-a20-102-v119/placement.json`.
+- Rendered and inspected
+  `real-pdf-output/private-medium-a20-102-v119/placement-review-page-1.png`.
+  The view now separates placement-ready spans from blocked/review repair
+  evidence; detector-level wall recovery and remaining missing/false walls are
+  still the next accuracy target.
+
+## [0.02.098] - 2026-06-18
+
+### Changed
+- Placement-review wall body footprints now reuse placement solid spans with
+  anchored opening cutouts. Door/window cutouts no longer render as a single
+  uninterrupted wall body in visual QA or snapshot counts.
+- Wall evidence refinement now has a late graph-aware promotion pass for trusted
+  `MediumWallBody` candidates inside a main structural component. The pass only
+  promotes paired wall bodies with two supported graph endpoints and blocks
+  duplicates, hard-risk evidence, and topology-import-blocking repair
+  candidates.
+
+### Verified
+- Added regression coverage for cutout-aware SVG wall body footprints, trusted
+  main-structural medium wall promotion, and duplicate/review wall promotion
+  blocking.
+- Focused wall graph/export tests passed with `4` tests.
+- Full test suite passed with `537` tests.
+- Private medium PDF smoke scan completed with
+  `C:\Users\post\Downloads\A20-102 PLAN 1. ETASJE.pdf`. The repair-aware
+  promotion safely moved `page:1:wall:105` into placement-ready output while
+  leaving the risky `page:1:wall:111` endpoint-repair wall review-only.
+- Rendered and inspected
+  `real-pdf-output/private-medium-a20-102-v115/placement-review-background-side-rail.png`
+  and
+  `real-pdf-output/private-medium-a20-102-v115-walls-only/placement-review-side-rail.png`.
+  The walls-only view gained one aligned interior wall and kept the risky
+  endpoint-repair wall hidden; larger missing-wall recovery remains the next
+  accuracy target.
+
+## [0.02.097] - 2026-06-18
+
+### Changed
+- Placement-review SVG overlays now reserve a right-side QA rail for legends and
+  diagnostics instead of drawing those panels over plan geometry. Source PDF
+  backgrounds stay constrained to the real page area so exported page
+  coordinates remain visually honest.
+- Clean placement topology spans now regularize nearly-collinear horizontal and
+  vertical runs onto a shared centerline. This reduces tiny coordinate wobbles
+  that made walls look like random kinked line chains in wall-only screenshots.
+- Placement JSON now uses graph-faithful but coordinate-regularized placement
+  spans for wall import geometry while keeping raw wall graph edge geometry
+  available for diagnostics.
+
+### Verified
+- Added regression coverage for off-page SVG QA panels, page-bound background
+  images, regularized placement-review spans, and placement JSON clean-span
+  export.
+- Focused export and placement contract tests passed with `7` tests.
+- Private medium PDF fixture smoke scan completed outside the repo. The scan
+  regularized `55` placement spans across `20` walls while preserving raw graph
+  diagnostics.
+- Rendered and inspected
+  `real-pdf-output/private-medium-a20-102-v112/placement-review-background-side-rail.png`
+  and `real-pdf-output/private-medium-a20-102-v112-walls-only/placement-review-side-rail.png`;
+  the previous long random kink chain is reduced, but missing wall recovery and
+  false door/detail wall fragments still need detector-level work.
+
 ## [0.02.096] - 2026-06-18
 
 ### Changed

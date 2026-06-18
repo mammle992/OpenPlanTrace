@@ -71,6 +71,116 @@ internal static class WallBodyFootprintBuilder
             .Select(footprint => footprint!)
             .ToArray();
 
+    public static IReadOnlyList<WallBodyFootprint> FromPlacementSolidSpans(
+        PlanScanResult result,
+        IEnumerable<WallGraphTopologySpan> topologySpans)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        var visibleWallIds = topologySpans
+            .Select(span => span.WallId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToHashSet(StringComparer.Ordinal);
+        if (visibleWallIds.Count == 0)
+        {
+            return Array.Empty<WallBodyFootprint>();
+        }
+
+        var openingsByWallId = BuildOpeningLookup(result.Openings);
+        var footprints = new List<WallBodyFootprint>();
+        foreach (var wall in result.Walls.Where(wall => visibleWallIds.Contains(wall.Id)))
+        {
+            var openings = openingsByWallId.TryGetValue(wall.Id, out var wallOpenings)
+                ? wallOpenings
+                : Array.Empty<OpeningCandidate>();
+            var cutouts = openings
+                .Select((opening, index) => PlacementWallOpeningCutoutExport.From(
+                    wall,
+                    opening,
+                    millimetersPerDrawingUnit: null,
+                    index + 1))
+                .Where(cutout => cutout is not null)
+                .Select(cutout => cutout!)
+                .DistinctBy(cutout => cutout.OpeningId, StringComparer.Ordinal)
+                .OrderBy(cutout => cutout.StartParameter)
+                .ThenBy(cutout => cutout.EndParameter)
+                .ThenBy(cutout => cutout.OpeningId, StringComparer.Ordinal)
+                .ToArray();
+            var solidSpans = PlacementWallSolidSpanExport.From(
+                wall,
+                millimetersPerDrawingUnit: null,
+                cutouts,
+                openings);
+
+            foreach (var solidSpan in solidSpans)
+            {
+                var polygon = solidSpan.BodyPolygon
+                    .Select(point => new PlanPoint(point.X, point.Y))
+                    .ToArray();
+                var centerLine = new PlanLineSegment(
+                    new PlanPoint(solidSpan.CenterLine.Start.X, solidSpan.CenterLine.Start.Y),
+                    new PlanPoint(solidSpan.CenterLine.End.X, solidSpan.CenterLine.End.Y));
+                footprints.Add(new WallBodyFootprint(
+                    $"{solidSpan.Id}:body-footprint",
+                    solidSpan.PageNumber,
+                    solidSpan.WallId,
+                    polygon,
+                    new PlanRect(
+                        solidSpan.BodyBounds.X,
+                        solidSpan.BodyBounds.Y,
+                        solidSpan.BodyBounds.Width,
+                        solidSpan.BodyBounds.Height),
+                    centerLine,
+                    new PlanVector(solidSpan.AlongVector.X, solidSpan.AlongVector.Y),
+                    new PlanVector(solidSpan.NormalVector.X, solidSpan.NormalVector.Y),
+                    solidSpan.ThicknessDrawingUnits,
+                    wall.Confidence,
+                    "placement solid span with anchored opening cutouts",
+                    wall,
+                    solidSpan.Evidence));
+            }
+        }
+
+        return footprints
+            .OrderBy(footprint => footprint.PageNumber)
+            .ThenBy(footprint => footprint.Bounds.Y)
+            .ThenBy(footprint => footprint.Bounds.X)
+            .ThenBy(footprint => footprint.Id, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static IReadOnlyDictionary<string, OpeningCandidate[]> BuildOpeningLookup(
+        IReadOnlyList<OpeningCandidate> openings)
+    {
+        var lookup = new Dictionary<string, List<OpeningCandidate>>(StringComparer.Ordinal);
+        foreach (var opening in openings)
+        {
+            foreach (var wallId in opening.HostWallIds
+                .Concat(opening.AdjacentWallIds)
+                .Append(opening.WallId)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Select(id => id!)
+                .Distinct(StringComparer.Ordinal))
+            {
+                if (!lookup.TryGetValue(wallId, out var wallOpenings))
+                {
+                    wallOpenings = new List<OpeningCandidate>();
+                    lookup[wallId] = wallOpenings;
+                }
+
+                wallOpenings.Add(opening);
+            }
+        }
+
+        return lookup.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value
+                .DistinctBy(opening => opening.Id, StringComparer.Ordinal)
+                .ToArray(),
+            StringComparer.Ordinal);
+    }
+
     private static WallBodyFootprint? FromTopologySpan(WallGraphTopologySpan span)
     {
         if (span.SourceWall is null)

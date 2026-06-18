@@ -2036,6 +2036,11 @@ internal static class OpenPlanTraceCli
         var structuralWalls = walls
             .Where(wall => ReadBooleanProperty(wall, "excludedFromStructuralTopology") != true)
             .ToArray();
+        var placementReadyWallCount = PlacementReadyWallCount(walls);
+        var placementOmittedWallCount = PlacementOmittedWallCount(walls);
+        var wallTopologySpanCount = WallSpanCount(walls, "topologySpans");
+        var wallSolidSpanCount = WallSpanCount(walls, "solidSpans");
+        var wallPlacementOmissionCounts = WallPlacementOmissionCounts(walls);
         var reliabilityTrackedEntityCount = walls.Length + rooms.Length + openings.Length + objectAggregates.Length;
         var coordinateReadyEntityCount = ReliabilityCount(walls, "readyForCoordinatePlacement")
             + ReliabilityCount(rooms, "readyForCoordinatePlacement")
@@ -2055,6 +2060,11 @@ internal static class OpenPlanTraceCli
         AddExpectedIntegerMessage(Prefix, "wallCount", walls.Length, summary, messages);
         AddExpectedIntegerMessage(Prefix, "structuralWallCount", structuralWalls.Length, summary, messages);
         AddExpectedIntegerMessage(Prefix, "excludedWallCount", walls.Length - structuralWalls.Length, summary, messages);
+        AddExpectedIntegerMessage(Prefix, "placementReadyWallCount", placementReadyWallCount, summary, messages);
+        AddExpectedIntegerMessage(Prefix, "placementOmittedWallCount", placementOmittedWallCount, summary, messages);
+        AddExpectedIntegerMessage(Prefix, "wallTopologySpanCount", wallTopologySpanCount, summary, messages);
+        AddExpectedIntegerMessage(Prefix, "wallSolidSpanCount", wallSolidSpanCount, summary, messages);
+        ValidateExpectedIntegerMap(Prefix, "wallPlacementOmissionCounts", wallPlacementOmissionCounts, summary, messages);
         AddExpectedIntegerMessage(Prefix, "roomCount", rooms.Length, summary, messages);
         AddExpectedIntegerMessage(Prefix, "openingCount", openings.Length, summary, messages);
         AddExpectedIntegerMessage(Prefix, "anchoredOpeningCount", openings.Count(HasPlacementObject), summary, messages);
@@ -2186,6 +2196,11 @@ internal static class OpenPlanTraceCli
         var pageStructuralWalls = pageWalls
             .Where(wall => ReadBooleanProperty(wall, "excludedFromStructuralTopology") != true)
             .ToArray();
+        var placementReadyWallCount = PlacementReadyWallCount(pageWalls);
+        var placementOmittedWallCount = PlacementOmittedWallCount(pageWalls);
+        var wallTopologySpanCount = WallSpanCount(pageWalls, "topologySpans");
+        var wallSolidSpanCount = WallSpanCount(pageWalls, "solidSpans");
+        var wallPlacementOmissionCounts = WallPlacementOmissionCounts(pageWalls);
         var pageRooms = rooms.Where(item => ReadInt32Property(item, "pageNumber") == pageNumber.Value).ToArray();
         var pageOpenings = openings.Where(item => ReadInt32Property(item, "pageNumber") == pageNumber.Value).ToArray();
         var pageObjectAggregates = objectAggregates.Where(item => ReadInt32Property(item, "pageNumber") == pageNumber.Value).ToArray();
@@ -2198,6 +2213,11 @@ internal static class OpenPlanTraceCli
         AddExpectedIntegerMessage(prefix, "wallCount", pageWalls.Length, summary, messages);
         AddExpectedIntegerMessage(prefix, "structuralWallCount", pageStructuralWalls.Length, summary, messages);
         AddExpectedIntegerMessage(prefix, "excludedWallCount", pageWalls.Length - pageStructuralWalls.Length, summary, messages);
+        AddExpectedIntegerMessage(prefix, "placementReadyWallCount", placementReadyWallCount, summary, messages);
+        AddExpectedIntegerMessage(prefix, "placementOmittedWallCount", placementOmittedWallCount, summary, messages);
+        AddExpectedIntegerMessage(prefix, "wallTopologySpanCount", wallTopologySpanCount, summary, messages);
+        AddExpectedIntegerMessage(prefix, "wallSolidSpanCount", wallSolidSpanCount, summary, messages);
+        ValidateExpectedIntegerMap(prefix, "wallPlacementOmissionCounts", wallPlacementOmissionCounts, summary, messages);
         AddExpectedIntegerMessage(prefix, "roomCount", pageRooms.Length, summary, messages);
         AddExpectedIntegerMessage(prefix, "openingCount", pageOpenings.Length, summary, messages);
         AddExpectedIntegerMessage(prefix, "anchoredOpeningCount", pageOpenings.Count(HasPlacementObject), summary, messages);
@@ -2216,6 +2236,45 @@ internal static class OpenPlanTraceCli
             item.TryGetProperty("reliability", out var reliability)
             && reliability.ValueKind == JsonValueKind.Object
             && ReadBooleanProperty(reliability, propertyName) == true);
+
+    private static int PlacementReadyWallCount(JsonElement[] walls) =>
+        walls.Count(wall => !HasPlacementOmission(wall)
+            && wall.TryGetProperty("reliability", out var reliability)
+            && reliability.ValueKind == JsonValueKind.Object
+            && ReadBooleanProperty(reliability, "readyForCoordinatePlacement") == true);
+
+    private static int PlacementOmittedWallCount(JsonElement[] walls) =>
+        walls.Count(HasPlacementOmission);
+
+    private static int WallSpanCount(JsonElement[] walls, string propertyName) =>
+        walls.Sum(wall =>
+            wall.TryGetProperty(propertyName, out var spans) && spans.ValueKind == JsonValueKind.Array
+                ? spans.GetArrayLength()
+                : 0);
+
+    private static IReadOnlyDictionary<string, int> WallPlacementOmissionCounts(JsonElement[] walls) =>
+        walls
+            .Select(PlacementOmissionCode)
+            .OfType<string>()
+            .GroupBy(code => code, StringComparer.Ordinal)
+            .OrderBy(group => group.Key, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+
+    private static bool HasPlacementOmission(JsonElement wall) =>
+        wall.TryGetProperty("placementOmission", out var omission)
+        && omission.ValueKind == JsonValueKind.Object;
+
+    private static string? PlacementOmissionCode(JsonElement wall)
+    {
+        if (!HasPlacementOmission(wall))
+        {
+            return null;
+        }
+
+        var omission = wall.GetProperty("placementOmission");
+        var code = ReadStringProperty(omission, "code");
+        return string.IsNullOrWhiteSpace(code) ? "(missing)" : code;
+    }
 
     private static bool HasPlacementObject(JsonElement opening) =>
         opening.TryGetProperty("placement", out var placement)
@@ -8960,6 +9019,58 @@ internal static class OpenPlanTraceCli
             messages.Add(new ArtifactValidationMessage(
                 "error",
                 $"{fixturePrefix} {fieldName} should be {expected}."));
+        }
+    }
+
+    private static void ValidateExpectedIntegerMap(
+        string fixturePrefix,
+        string fieldName,
+        IReadOnlyDictionary<string, int> expected,
+        JsonElement root,
+        ICollection<ArtifactValidationMessage> messages)
+    {
+        if (!root.TryGetProperty(fieldName, out var value) || value.ValueKind != JsonValueKind.Object)
+        {
+            messages.Add(new ArtifactValidationMessage(
+                "error",
+                $"{fixturePrefix} requires object {fieldName}."));
+            return;
+        }
+
+        var actual = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var property in value.EnumerateObject())
+        {
+            if (property.Value.ValueKind != JsonValueKind.Number
+                || !property.Value.TryGetInt32(out var count)
+                || count < 0)
+            {
+                messages.Add(new ArtifactValidationMessage(
+                    "error",
+                    $"{fixturePrefix} {fieldName}.{property.Name} must be a non-negative integer."));
+                continue;
+            }
+
+            actual[property.Name] = count;
+        }
+
+        foreach (var pair in expected)
+        {
+            if (!actual.TryGetValue(pair.Key, out var actualCount) || actualCount != pair.Value)
+            {
+                messages.Add(new ArtifactValidationMessage(
+                    "error",
+                    $"{fixturePrefix} {fieldName}.{pair.Key} should be {pair.Value}."));
+            }
+        }
+
+        foreach (var pair in actual)
+        {
+            if (!expected.ContainsKey(pair.Key))
+            {
+                messages.Add(new ArtifactValidationMessage(
+                    "error",
+                    $"{fixturePrefix} {fieldName}.{pair.Key} is not expected from wall placement omissions."));
+            }
         }
     }
 

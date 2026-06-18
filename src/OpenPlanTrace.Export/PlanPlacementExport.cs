@@ -66,7 +66,7 @@ public sealed record PlanPlacementExport(
     PlacementRoutingLayerExport RoutingLayer,
     IReadOnlyList<PlacementIssueExport> Issues)
 {
-    public const string CurrentSchemaVersion = "openplantrace.placement.v7";
+    public const string CurrentSchemaVersion = "openplantrace.placement.v9";
 
     public static PlanPlacementExport From(PlanScanResult result)
     {
@@ -79,7 +79,12 @@ public sealed record PlanPlacementExport(
         var wallComponentLookup = BuildWallComponentLookup(result.WallGraph.Components);
         var wallReviewReasons = BuildWallReviewReasons(result.Diagnostics.Messages);
         var routingLayer = result.RoutingLayer;
-        var wallTopologySpans = WallGraphTopologySpanBuilder.Build(result.WallGraph, result.Walls).ToArray();
+        var rawWallTopologySpans = WallGraphTopologySpanBuilder
+            .Build(result.WallGraph, result.Walls)
+            .ToArray();
+        var wallTopologySpans = WallTopologySpanVisibility
+            .BuildRegularizedPlacementTopologySpans(result)
+            .ToArray();
         var wallTopologySpansByWallId = wallTopologySpans
             .GroupBy(span => span.WallId, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
@@ -118,7 +123,7 @@ public sealed record PlanPlacementExport(
             .ToArray();
         var placementWallGraph = PlacementWallGraphExport.From(
             result.WallGraph,
-            wallTopologySpans,
+            rawWallTopologySpans,
             result.Calibration,
             sourceLookup,
             wallComponentLookup,
@@ -319,6 +324,11 @@ public sealed record PlacementSummaryExport(
     int WallCount,
     int StructuralWallCount,
     int ExcludedWallCount,
+    int PlacementReadyWallCount,
+    int PlacementOmittedWallCount,
+    int WallTopologySpanCount,
+    int WallSolidSpanCount,
+    IReadOnlyDictionary<string, int> WallPlacementOmissionCounts,
     int RoomCount,
     int OpeningCount,
     int AnchoredOpeningCount,
@@ -365,6 +375,11 @@ public sealed record PlacementSummaryExport(
         var structuralWalls = walls
             .Where(wall => !wall.ExcludedFromStructuralTopology)
             .ToArray();
+        var placementReadyWallCount = CountPlacementReadyWalls(walls);
+        var placementOmittedWallCount = walls.Count(wall => wall.PlacementOmission is not null);
+        var wallTopologySpanCount = walls.Sum(wall => wall.TopologySpans.Count);
+        var wallSolidSpanCount = walls.Sum(wall => wall.SolidSpans.Count);
+        var wallPlacementOmissionCounts = BuildWallPlacementOmissionCounts(walls);
         var reliabilityTrackedEntityCount = walls.Count + rooms.Count + openings.Count + objectAggregates.Count;
         var coordinateReadyEntityCount =
             walls.Count(item => item.Reliability.ReadyForCoordinatePlacement)
@@ -411,6 +426,11 @@ public sealed record PlacementSummaryExport(
             walls.Count,
             walls.Count(wall => !wall.ExcludedFromStructuralTopology),
             walls.Count(wall => wall.ExcludedFromStructuralTopology),
+            placementReadyWallCount,
+            placementOmittedWallCount,
+            wallTopologySpanCount,
+            wallSolidSpanCount,
+            wallPlacementOmissionCounts,
             rooms.Count,
             openings.Count,
             openings.Count(opening => opening.Placement is not null),
@@ -459,7 +479,7 @@ public sealed record PlacementSummaryExport(
                     routingLayer,
                     issues))
                 .ToArray(),
-            BuildEvidence(result, reliabilityTrackedEntityCount, coordinateReadyEntityCount, metricReadyEntityCount, reviewRequiredEntityCount, issues));
+            BuildEvidence(result, reliabilityTrackedEntityCount, coordinateReadyEntityCount, metricReadyEntityCount, reviewRequiredEntityCount, placementReadyWallCount, placementOmittedWallCount, issues));
     }
 
     private static int CountRoutingItems(PlacementRoutingLayerExport routingLayer) =>
@@ -471,6 +491,17 @@ public sealed record PlacementSummaryExport(
 
     private static double Ratio(int value, int total) =>
         total == 0 ? 1.0 : Math.Round(value / (double)total, 6);
+
+    internal static int CountPlacementReadyWalls(IEnumerable<PlacementWallExport> walls) =>
+        walls.Count(wall => wall.PlacementOmission is null && wall.Reliability.ReadyForCoordinatePlacement);
+
+    internal static IReadOnlyDictionary<string, int> BuildWallPlacementOmissionCounts(
+        IEnumerable<PlacementWallExport> walls) =>
+        walls
+            .Where(wall => wall.PlacementOmission is not null)
+            .GroupBy(wall => wall.PlacementOmission!.Code, StringComparer.Ordinal)
+            .OrderBy(group => group.Key, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
 
     private static IEnumerable<string> SourcePrimitiveIds(
         IReadOnlyList<PlacementSurfacePatternExport> surfacePatterns,
@@ -522,13 +553,17 @@ public sealed record PlacementSummaryExport(
         int coordinateReadyEntityCount,
         int metricReadyEntityCount,
         int reviewRequiredEntityCount,
+        int placementReadyWallCount,
+        int placementOmittedWallCount,
         IReadOnlyList<PlacementIssueExport> issues)
     {
         var evidence = new List<string>
         {
             $"placement summary covers {result.Document.Pages.Count} page(s)",
             $"coordinate-ready entities {coordinateReadyEntityCount}/{reliabilityTrackedEntityCount}",
-            $"metric-ready entities {metricReadyEntityCount}/{reliabilityTrackedEntityCount}"
+            $"metric-ready entities {metricReadyEntityCount}/{reliabilityTrackedEntityCount}",
+            $"placement-ready walls {placementReadyWallCount}/{result.Walls.Count}",
+            $"placement-omitted walls {placementOmittedWallCount}/{result.Walls.Count}"
         };
 
         if (reviewRequiredEntityCount > 0)
@@ -640,6 +675,11 @@ public sealed record PlacementPageSummaryExport(
     int WallCount,
     int StructuralWallCount,
     int ExcludedWallCount,
+    int PlacementReadyWallCount,
+    int PlacementOmittedWallCount,
+    int WallTopologySpanCount,
+    int WallSolidSpanCount,
+    IReadOnlyDictionary<string, int> WallPlacementOmissionCounts,
     int RoomCount,
     int OpeningCount,
     int AnchoredOpeningCount,
@@ -668,6 +708,11 @@ public sealed record PlacementPageSummaryExport(
         var pageSurfacePatterns = surfacePatterns.Where(pattern => pattern.PageNumber == page.PageNumber).ToArray();
         var pageWalls = walls.Where(wall => wall.PageNumber == page.PageNumber).ToArray();
         var pageStructuralWalls = pageWalls.Where(wall => !wall.ExcludedFromStructuralTopology).ToArray();
+        var placementReadyWallCount = PlacementSummaryExport.CountPlacementReadyWalls(pageWalls);
+        var placementOmittedWallCount = pageWalls.Count(wall => wall.PlacementOmission is not null);
+        var wallTopologySpanCount = pageWalls.Sum(wall => wall.TopologySpans.Count);
+        var wallSolidSpanCount = pageWalls.Sum(wall => wall.SolidSpans.Count);
+        var wallPlacementOmissionCounts = PlacementSummaryExport.BuildWallPlacementOmissionCounts(pageWalls);
         var pageRooms = rooms.Where(room => room.PageNumber == page.PageNumber).ToArray();
         var pageOpenings = openings.Where(opening => opening.PageNumber == page.PageNumber).ToArray();
         var pageObjectAggregates = objectAggregates.Where(aggregate => aggregate.PageNumber == page.PageNumber).ToArray();
@@ -697,6 +742,11 @@ public sealed record PlacementPageSummaryExport(
             pageWalls.Length,
             pageWalls.Count(wall => !wall.ExcludedFromStructuralTopology),
             pageWalls.Count(wall => wall.ExcludedFromStructuralTopology),
+            placementReadyWallCount,
+            placementOmittedWallCount,
+            wallTopologySpanCount,
+            wallSolidSpanCount,
+            wallPlacementOmissionCounts,
             pageRooms.Length,
             pageOpenings.Length,
             pageOpenings.Count(opening => opening.Placement is not null),
@@ -1055,6 +1105,266 @@ public sealed record PlacementReliabilityExport(
     double Confidence,
     IReadOnlyList<string> Reasons);
 
+public sealed record PlacementWallOmissionExport(
+    string Code,
+    string Category,
+    string Message,
+    string RecommendedAction,
+    IReadOnlyList<string> LinkedWallIds,
+    IReadOnlyList<string> RepairCandidateIds,
+    IReadOnlyList<string> Evidence)
+{
+    public static PlacementWallOmissionExport? From(
+        WallSegment wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? evidenceAssessment,
+        PlacementReliabilityExport reliability,
+        IReadOnlyList<WallGraphTopologySpan> topologySpans,
+        bool excludedFromStructuralTopology,
+        IReadOnlyList<WallGraphRepairCandidate> repairCandidates,
+        IReadOnlyList<string> reviewReasons)
+    {
+        ArgumentNullException.ThrowIfNull(wall);
+        ArgumentNullException.ThrowIfNull(reliability);
+
+        if (reliability.ReadyForCoordinatePlacement
+            && topologySpans.Count > 0
+            && !excludedFromStructuralTopology)
+        {
+            return null;
+        }
+
+        var repairCandidateIds = repairCandidates
+            .Select(candidate => candidate.Id)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+        var combinedEvidence = BuildEvidence(wall, component, evidenceAssessment, reliability, repairCandidates, reviewReasons);
+        var linkedWallIds = ExtractLinkedWallIds(wall.Id, combinedEvidence, repairCandidates);
+        var classification = Classify(
+            evidenceAssessment,
+            component,
+            wall,
+            reliability,
+            topologySpans,
+            excludedFromStructuralTopology,
+            repairCandidates,
+            combinedEvidence);
+
+        return new PlacementWallOmissionExport(
+            classification.Code,
+            classification.Category,
+            classification.Message,
+            classification.RecommendedAction,
+            linkedWallIds,
+            repairCandidateIds,
+            combinedEvidence);
+    }
+
+    private static PlacementWallOmissionClassification Classify(
+        WallEvidenceWallAssessment? evidenceAssessment,
+        WallGraphComponent? component,
+        WallSegment wall,
+        PlacementReliabilityExport reliability,
+        IReadOnlyList<WallGraphTopologySpan> topologySpans,
+        bool excludedFromStructuralTopology,
+        IReadOnlyList<WallGraphRepairCandidate> repairCandidates,
+        IReadOnlyList<string> evidence)
+    {
+        if (repairCandidates.Any(candidate => candidate.ImportImpact == WallGraphRepairImportImpact.TopologyImportBlocked))
+        {
+            return new PlacementWallOmissionClassification(
+                "topology_import_blocked",
+                "TopologyRepairBlocked",
+                "Wall is omitted from clean placement topology because one or more wall graph repair candidates block import.",
+                "Resolve or manually review the wall graph repair candidate before importing this wall as clean topology.");
+        }
+
+        if (ContainsEvidence(evidence, "duplicate wall-face")
+            || ContainsEvidence(evidence, "already represented by stronger paired wall body"))
+        {
+            return new PlacementWallOmissionClassification(
+                "duplicate_wall_face",
+                "DuplicateWallFace",
+                "Wall is omitted from clean placement topology because it appears to be a duplicate face of a stronger paired wall body.",
+                "Use the linked stronger wall body for placement and keep this wall as review evidence only.");
+        }
+
+        if (evidenceAssessment?.RejectedAsNoise == true
+            || evidenceAssessment?.Decision == WallEvidenceDecision.Reject)
+        {
+            return new PlacementWallOmissionClassification(
+                "rejected_wall_evidence",
+                "RejectedWallEvidence",
+                "Wall is omitted from clean placement topology because wall evidence rejected it as noise or non-wall geometry.",
+                "Do not import this wall unless a reviewer explicitly corrects the classification.");
+        }
+
+        if (component?.Kind == WallGraphComponentKind.ObjectLikeIsland)
+        {
+            return new PlacementWallOmissionClassification(
+                "object_like_linework",
+                "NonStructuralComponent",
+                "Wall-like linework is omitted from clean placement topology because the graph component is object-like detail.",
+                "Treat this as object/detail evidence, not a wall, unless a reviewer promotes it.");
+        }
+
+        if (component?.Kind == WallGraphComponentKind.IsolatedFragment)
+        {
+            return new PlacementWallOmissionClassification(
+                "isolated_fragment",
+                "NonStructuralComponent",
+                "Wall-like linework is omitted from clean placement topology because it is an isolated fragment.",
+                "Keep it for opening/object review, but do not import it as a structural wall without correction.");
+        }
+
+        if (excludedFromStructuralTopology)
+        {
+            return new PlacementWallOmissionClassification(
+                "structural_topology_excluded",
+                "NonStructuralComponent",
+                "Wall is omitted from clean placement topology because the structural topology filter excluded it.",
+                "Review the component evidence before using this wall for exact placement.");
+        }
+
+        if (wall.FragmentEvidence?.RequiresGeometryReview == true
+            || ContainsEvidence(evidence, "fragment geometry requires review"))
+        {
+            return new PlacementWallOmissionClassification(
+                "fragment_geometry_review",
+                "FragmentGeometryReview",
+                "Wall is omitted from clean placement topology because healed or fragmented geometry needs review.",
+                "Confirm the wall endpoints and thickness before importing exact coordinates.");
+        }
+
+        if (evidenceAssessment is not null
+            && (!evidenceAssessment.PlacementReady
+                || evidenceAssessment.RequiresReview
+                || evidenceAssessment.Decision == WallEvidenceDecision.Review))
+        {
+            return new PlacementWallOmissionClassification(
+                "wall_evidence_review_required",
+                "WallEvidenceReview",
+                "Wall is omitted from clean placement topology because wall evidence requires review before exact placement.",
+                "Review the source linework and evidence before using this wall for exact placement.");
+        }
+
+        if (topologySpans.Count == 0)
+        {
+            return new PlacementWallOmissionClassification(
+                "no_clean_topology_spans",
+                "TopologyUnavailable",
+                "Wall is omitted from clean placement topology because no clean wall graph span was available.",
+                "Use the raw wall only for QA, or repair the wall graph before importing exact placement.");
+        }
+
+        if (reliability.RequiresReview)
+        {
+            return new PlacementWallOmissionClassification(
+                "coordinate_review_required",
+                "CoordinateReview",
+                "Wall is omitted from clean placement topology because coordinate placement requires review.",
+                "Resolve the review reasons before importing this wall as placement-ready geometry.");
+        }
+
+        return new PlacementWallOmissionClassification(
+            "not_placement_ready",
+            "PlacementNotReady",
+            "Wall is omitted from clean placement topology because it is not placement-ready.",
+            "Review wall evidence and graph topology before importing exact placement.");
+    }
+
+    private static IReadOnlyList<string> BuildEvidence(
+        WallSegment wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? evidenceAssessment,
+        PlacementReliabilityExport reliability,
+        IReadOnlyList<WallGraphRepairCandidate> repairCandidates,
+        IReadOnlyList<string> reviewReasons)
+    {
+        return reliability.Reasons
+            .Concat(reviewReasons)
+            .Concat(evidenceAssessment?.Evidence ?? Array.Empty<string>())
+            .Concat(wall.Evidence)
+            .Concat(component?.Evidence ?? Array.Empty<string>())
+            .Concat(repairCandidates.SelectMany(candidate => candidate.Evidence))
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Distinct(StringComparer.Ordinal)
+            .Take(12)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<string> ExtractLinkedWallIds(
+        string wallId,
+        IReadOnlyList<string> evidence,
+        IReadOnlyList<WallGraphRepairCandidate> repairCandidates)
+    {
+        var linkedWallIds = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var candidate in repairCandidates)
+        {
+            foreach (var candidateWallId in candidate.WallIds)
+            {
+                AddWallId(candidateWallId, allowAnyRepairWallId: true);
+            }
+        }
+
+        foreach (var text in evidence)
+        {
+            foreach (var token in text.Split(
+                         new[] { ' ', '\t', '\r', '\n', ',', ';', '(', ')', '[', ']', '{', '}', '"', '\'' },
+                         StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                AddWallId(token.Trim('.', ',', ';', ':'), allowAnyRepairWallId: false);
+            }
+        }
+
+        return linkedWallIds.ToArray();
+
+        void AddWallId(string? candidateWallId, bool allowAnyRepairWallId)
+        {
+            if (string.IsNullOrWhiteSpace(candidateWallId))
+            {
+                return;
+            }
+
+            var trimmed = candidateWallId.Trim();
+            if (string.Equals(trimmed, wallId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (trimmed.Contains("wall-graph-repair", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(trimmed, "wall-face", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(trimmed, "wall-body", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(trimmed, "wall-evidence", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(trimmed, "wall-graph", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            var looksLikeFreeTextWallId =
+                trimmed.Contains(":wall:", StringComparison.OrdinalIgnoreCase)
+                || ((trimmed.StartsWith("wall-", StringComparison.OrdinalIgnoreCase)
+                        || trimmed.StartsWith("wall_", StringComparison.OrdinalIgnoreCase))
+                    && trimmed.Any(char.IsDigit));
+            if (allowAnyRepairWallId || looksLikeFreeTextWallId)
+            {
+                linkedWallIds.Add(trimmed);
+            }
+        }
+    }
+
+    private static bool ContainsEvidence(IReadOnlyList<string> evidence, string text) =>
+        evidence.Any(item => item.Contains(text, StringComparison.OrdinalIgnoreCase));
+
+    private sealed record PlacementWallOmissionClassification(
+        string Code,
+        string Category,
+        string Message,
+        string RecommendedAction);
+}
+
 public sealed record PlacementSurfacePatternExport(
     string Id,
     int PageNumber,
@@ -1142,6 +1452,7 @@ public sealed record PlacementWallExport(
     WallFragmentEvidenceExport? FragmentEvidence,
     WallEvidenceAssessmentExport? EvidenceAssessment,
     PlacementReliabilityExport Reliability,
+    PlacementWallOmissionExport? PlacementOmission,
     IReadOnlyList<string> WallGraphRepairCandidateIds,
     IReadOnlyList<string> SourcePrimitiveIds,
     IReadOnlyList<string> SourceLayers,
@@ -1182,6 +1493,16 @@ public sealed record PlacementWallExport(
         var solidSpans = PlacementWallSolidSpanExport.From(wall, scale, cutouts, openings);
         var excludedFromStructuralTopology =
             WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment);
+        var reliability = PlacementReliability.ForWall(wall, calibration, component, evidenceAssessment, combinedReviewReasons);
+        var placementOmission = PlacementWallOmissionExport.From(
+            wall,
+            component,
+            evidenceAssessment,
+            reliability,
+            topologySpans,
+            excludedFromStructuralTopology,
+            repairCandidates,
+            combinedReviewReasons);
 
         return new PlacementWallExport(
             wall.Id,
@@ -1209,7 +1530,8 @@ public sealed record PlacementWallExport(
             wall.Confidence.Value,
             wall.FragmentEvidence is null ? null : WallFragmentEvidenceExport.From(wall.FragmentEvidence),
             evidenceAssessment is null ? null : WallEvidenceAssessmentExport.From(evidenceAssessment),
-            PlacementReliability.ForWall(wall, calibration, component, evidenceAssessment, combinedReviewReasons),
+            reliability,
+            placementOmission,
             wallGraphRepairCandidateIds,
             wall.SourcePrimitiveIds,
             ExportSourceHelpers.SourceLayers(wall.SourcePrimitiveIds, sourceLookup),
