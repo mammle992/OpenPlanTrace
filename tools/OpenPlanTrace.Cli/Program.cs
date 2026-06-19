@@ -9665,7 +9665,7 @@ internal static class OpenPlanTraceCli
             : Path.GetRelativePath(snapshotDirectory, artifactFullPath);
     }
 
-    private static SvgOverlayRenderOptions CreateSvgOverlayRenderOptions(
+    internal static SvgOverlayRenderOptions CreateSvgOverlayRenderOptions(
         ScanArguments parsed,
         string svgPath,
         int pageNumber)
@@ -9679,7 +9679,9 @@ internal static class OpenPlanTraceCli
 
         return options with
         {
-            BackgroundImageHref = RelativeSvgHref(svgPath, backgroundPath),
+            BackgroundImageHref = parsed.EmbedSvgBackgroundImage
+                ? SvgBackgroundDataUri(backgroundPath)
+                : RelativeSvgHref(svgPath, backgroundPath),
             BackgroundImageOpacity = parsed.SvgBackgroundImageOpacity
         };
     }
@@ -9706,6 +9708,20 @@ internal static class OpenPlanTraceCli
         }
 
         return null;
+    }
+
+    private static string SvgBackgroundDataUri(string artifactPath)
+    {
+        var mediaType = Path.GetExtension(artifactPath).ToLowerInvariant() switch
+        {
+            ".png" => "image/png",
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".webp" => "image/webp",
+            ".svg" => "image/svg+xml",
+            _ => "application/octet-stream"
+        };
+        var bytes = File.ReadAllBytes(artifactPath);
+        return $"data:{mediaType};base64,{Convert.ToBase64String(bytes)}";
     }
 
     private static string RelativeSvgHref(string svgPath, string artifactPath)
@@ -10127,6 +10143,7 @@ internal static class OpenPlanTraceCli
         Console.WriteLine("  --svg-profile <name>      SVG overlay profile: placement-review (default), structural-review, or full");
         Console.WriteLine("  --svg-background <path>   Embed one page background image in the SVG for alignment QA");
         Console.WriteLine("  --svg-background-dir <d>  Embed page-N.png/jpg/webp backgrounds in per-page SVG overlays");
+        Console.WriteLine("  --svg-background-embed    Store SVG background images as data URIs for portable/headless QA screenshots");
         Console.WriteLine("  --svg-background-opacity <0..1>  Background image opacity for SVG alignment QA (default 0.68)");
         Console.WriteLine("  --visual-snapshot <path>  Write visual QA snapshot JSON with per-page overlay counts, bounds, and issues");
         Console.WriteLine("  --out-dir <directory>     Write scan.json, scan.compact.json, scan.compact.json.gz, scan.geojson, placement.json, overlays/page-N.svg, and visual-snapshot.json");
@@ -11656,6 +11673,8 @@ internal sealed class ScanArguments : IVisualAiCliArguments
 
     public string? SvgBackgroundImageDirectory { get; set; }
 
+    public bool EmbedSvgBackgroundImage { get; set; }
+
     public double SvgBackgroundImageOpacity { get; set; } = 0.68;
 
     public string? GeoJsonPath { get; set; }
@@ -11808,6 +11827,10 @@ internal sealed class ScanArguments : IVisualAiCliArguments
                 case "--svg-background-dir":
                 case "--svg-background-image-dir":
                     parsed.SvgBackgroundImageDirectory = ReadValue(args, ref index, arg);
+                    break;
+                case "--svg-background-embed":
+                case "--embed-svg-background":
+                    parsed.EmbedSvgBackgroundImage = true;
                     break;
                 case "--svg-background-opacity":
                     parsed.SvgBackgroundImageOpacity = Math.Clamp(ReadDouble(args, ref index, arg), 0, 1);

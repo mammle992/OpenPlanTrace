@@ -117,6 +117,9 @@ public static class WallPlacementReadinessEvaluator
         || component?.Kind is WallGraphComponentKind.ObjectLikeIsland or WallGraphComponentKind.IsolatedFragment;
 
     private static bool IsCoordinateBlockingReviewReason(string reason) =>
-        reason.Contains("wall graph repair candidate", StringComparison.OrdinalIgnoreCase)
-        && reason.Contains(nameof(WallGraphRepairImportImpact.TopologyImportBlocked), StringComparison.OrdinalIgnoreCase);
+        (reason.Contains("wall graph repair candidate", StringComparison.OrdinalIgnoreCase)
+        && reason.Contains(nameof(WallGraphRepairImportImpact.TopologyImportBlocked), StringComparison.OrdinalIgnoreCase))
+        || reason.Contains(
+            WallPlacementContextGuards.SecondaryStructuralWithoutRoomBoundarySupportReason,
+            StringComparison.OrdinalIgnoreCase);
 }

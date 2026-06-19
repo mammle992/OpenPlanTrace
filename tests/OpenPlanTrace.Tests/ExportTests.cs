@@ -737,13 +737,50 @@ public sealed class ExportTests
             "plan.pdf",
             "--svg-background-dir",
             "backgrounds",
+            "--svg-background-embed",
             "--svg-background-opacity",
             "0.42"
         });
 
         Assert.Equal("plan.pdf", parsed.InputPath);
         Assert.Equal("backgrounds", parsed.SvgBackgroundImageDirectory);
+        Assert.True(parsed.EmbedSvgBackgroundImage);
         Assert.Equal(0.42, parsed.SvgBackgroundImageOpacity);
+    }
+
+    [Fact]
+    public void ScanArguments_CreateSvgOverlayOptionsEmbedsBackgroundDataUri()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"openplantrace-svg-bg-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var backgroundPath = Path.Combine(directory, "page-1.png");
+            var bytes = new byte[] { 1, 2, 3, 4 };
+            File.WriteAllBytes(backgroundPath, bytes);
+            var parsed = global::ScanArguments.Parse(new[]
+            {
+                "plan.pdf",
+                "--svg",
+                Path.Combine(directory, "page-1.svg"),
+                "--svg-background",
+                backgroundPath,
+                "--svg-background-embed"
+            });
+
+            var options = global::OpenPlanTraceCli.CreateSvgOverlayRenderOptions(
+                parsed,
+                parsed.SvgPath!,
+                pageNumber: 1);
+
+            Assert.Equal(
+                $"data:image/png;base64,{Convert.ToBase64String(bytes)}",
+                options.BackgroundImageHref);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     [Fact]
@@ -1566,6 +1603,47 @@ public sealed class ExportTests
         Assert.DoesNotContain(
             "placement.review.wall_evidence_requires_review",
             JsonStrings(importReadiness.GetProperty("reviewIssueCodes")));
+    }
+
+    [Fact]
+    public async Task PlacementExporter_ExplainsSecondaryStructuralOmissionWithoutRoomBoundarySupport()
+    {
+        var result = WithUnsupportedSecondaryStructuralComponent(await CreateScanResultAsync());
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var wall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == "unsupported-secondary-a");
+
+        var reliability = wall.GetProperty("reliability");
+        Assert.False(reliability.GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.True(reliability.GetProperty("requiresReview").GetBoolean());
+        Assert.Contains(
+            reliability.GetProperty("reasons").EnumerateArray(),
+            reason => reason.GetString()?.Contains(
+                WallPlacementContextGuards.SecondaryStructuralWithoutRoomBoundarySupportReason,
+                StringComparison.OrdinalIgnoreCase) == true);
+
+        var placementOmission = wall.GetProperty("placementOmission");
+        Assert.Equal("secondary_without_room_boundary_support", placementOmission.GetProperty("code").GetString());
+        Assert.Equal("SecondaryStructuralReview", placementOmission.GetProperty("category").GetString());
+        Assert.Contains(
+            placementOmission.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains(
+                WallPlacementContextGuards.SecondaryStructuralWithoutRoomBoundarySupportReason,
+                StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Contains("room", placementOmission.GetProperty("message").GetString(), StringComparison.OrdinalIgnoreCase);
+
+        var summary = document.RootElement.GetProperty("summary");
+        Assert.Equal(
+            2,
+            summary.GetProperty("wallPlacementOmissionCounts")
+                .GetProperty("secondary_without_room_boundary_support")
+                .GetInt32());
     }
 
     [Fact]
@@ -3231,6 +3309,70 @@ public sealed class ExportTests
                 result.WallEvidenceMap.Bands,
                 result.WallEvidenceMap.WallAssessments.Append(assessment).ToArray(),
                 result.WallEvidenceMap.SourceCandidateWallCount,
+                result.WallEvidenceMap.RecoveredCandidateWallCount)
+        };
+    }
+
+    private static PlanScanResult WithUnsupportedSecondaryStructuralComponent(PlanScanResult result)
+    {
+        var walls = new[]
+        {
+            SyntheticWall("unsupported-secondary-a", 360, 80, 360, 170),
+            SyntheticWall("unsupported-secondary-b", 360, 170, 360, 260)
+        };
+        var nodes = new[]
+        {
+            SyntheticNode("node-unsupported-secondary-a", 360, 80, WallNodeKind.Endpoint),
+            SyntheticNode("node-unsupported-secondary-b", 360, 170, WallNodeKind.TJunction),
+            SyntheticNode("node-unsupported-secondary-c", 360, 260, WallNodeKind.Endpoint)
+        };
+        var edges = new[]
+        {
+            new WallEdge("edge-unsupported-secondary-a", 1, nodes[0].Id, nodes[1].Id, walls[0].Id, Confidence.High),
+            new WallEdge("edge-unsupported-secondary-b", 1, nodes[1].Id, nodes[2].Id, walls[1].Id, Confidence.High)
+        };
+        var component = new WallGraphComponent(
+            "component-unsupported-secondary",
+            1,
+            WallGraphComponentKind.SecondaryStructural,
+            PlanRect.Union(walls.Select(wall => wall.Bounds)),
+            walls.Select(wall => wall.Id).ToArray(),
+            nodes.Select(node => node.Id).ToArray(),
+            edges.Select(edge => edge.Id).ToArray(),
+            walls.SelectMany(wall => wall.SourcePrimitiveIds).ToArray(),
+            walls.Sum(wall => wall.DrawingLength),
+            Confidence.High,
+            ["synthetic secondary structural component without room boundary support"]);
+        var assessments = walls
+            .Select(wall => new WallEvidenceWallAssessment(
+                wall.Id,
+                wall.PageNumber,
+                wall.Bounds,
+                WallEvidenceCategory.StrongWallBody,
+                wall.Confidence,
+                PlacementReady: true,
+                RequiresReview: false,
+                RejectedAsNoise: false,
+                wall.SourcePrimitiveIds,
+                ["synthetic accepted secondary wall evidence"])
+            {
+                Decision = WallEvidenceDecision.Accept
+            })
+            .ToArray();
+
+        return result with
+        {
+            Walls = result.Walls.Concat(walls).ToArray(),
+            WallGraph = new WallGraph(
+                result.WallGraph.Nodes.Concat(nodes).ToArray(),
+                result.WallGraph.Edges.Concat(edges).ToArray(),
+                result.WallGraph.Components.Append(component).ToArray(),
+                result.WallGraph.RepairCandidates),
+            WallEvidenceMap = new WallEvidenceMap(
+                result.WallEvidenceMap.Segments,
+                result.WallEvidenceMap.Bands,
+                result.WallEvidenceMap.WallAssessments.Concat(assessments).ToArray(),
+                result.WallEvidenceMap.SourceCandidateWallCount + walls.Length,
                 result.WallEvidenceMap.RecoveredCandidateWallCount)
         };
     }

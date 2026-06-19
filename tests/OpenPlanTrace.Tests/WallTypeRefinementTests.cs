@@ -343,6 +343,123 @@ public sealed class WallTypeRefinementTests
     }
 
     [Fact]
+    public async Task WallTypeRefinement_DoesNotPromoteRecoveredDuplicateWallBody()
+    {
+        var wall = new WallSegment(
+            "wall-room-confirmed-recovered-duplicate",
+            1,
+            new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(100, 300)),
+            6,
+            Confidence.High)
+        {
+            WallType = WallType.Interior,
+            Evidence = new[] { "recovered by wall evidence map from unclaimed parallel wall-face evidence" }
+        };
+        var context = CreateContext("room-confirmed-recovered-duplicate-stays-review");
+        context.Walls.Add(wall);
+        context.Rooms.Add(Room("room-a", RoomUseKind.Office, wall.Id));
+        context.Rooms.Add(Room("room-b", RoomUseKind.Office, wall.Id));
+        context.WallGraph = GraphFor(wall);
+        context.RoomAdjacencyGraph = new RoomAdjacencyGraph(
+            new[]
+            {
+                new RoomAdjacencyEdge(
+                    "adjacency:room-a:room-b",
+                    1,
+                    "room-a",
+                    "Room A",
+                    "room-b",
+                    "Room B",
+                    RoomAdjacencyKind.BoundaryAdjacent,
+                    RoomAdjacencyDirection.East,
+                    RoomAdjacencyDirection.West,
+                    200,
+                    wall.CenterLine,
+                    Confidence.High,
+                    new[] { wall.Id },
+                    Array.Empty<string>(),
+                    new[] { "test adjacency shares the wall" })
+            },
+            Array.Empty<RoomCluster>());
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.MediumWallBody,
+            placementReady: false,
+            requiresReview: true,
+            rejectedAsNoise: false,
+            new[]
+            {
+                "recovered by wall evidence map from unclaimed parallel wall-face evidence",
+                "wall evidence: recovered duplicate wall body already represented by stronger nearby paired wall body wall-stronger; keep for review but block exact placement",
+                "parallel wall-face pair"
+            });
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var retained = Assert.Single(context.WallEvidenceMap.WallAssessments);
+        Assert.False(retained.PlacementReady);
+        Assert.True(retained.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Review, retained.Decision);
+        Assert.Contains(
+            retained.Evidence,
+            item => item.Contains("recovered duplicate wall body", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(
+            retained.Evidence,
+            item => item.Contains("room-confirmed wall body promoted", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task WallTypeRefinement_PromotesShortStructuralReturnWithRoomAndSupportedEndpoints()
+    {
+        var wall = new WallSegment(
+            "wall-short-room-return",
+            1,
+            new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(100, 145)),
+            6,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Interior,
+            Evidence = new[]
+            {
+                "wall type interior: supported wall evidence inside exterior envelope",
+                "parallel wall-face pair",
+                "pair score 0.852"
+            }
+        };
+        var context = CreateContext("room-confirmed-short-return-promotion");
+        context.Walls.Add(wall);
+        context.Rooms.Add(Room("room-a", RoomUseKind.Office, wall.Id));
+        context.WallGraph = SupportedEndpointGraphFor(wall);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.MediumWallBody,
+            placementReady: false,
+            requiresReview: true,
+            rejectedAsNoise: false,
+            new[]
+            {
+                "wall evidence assessment: MediumWallBody / review / confidence 0.84",
+                "parallel wall-face pair",
+                "pair score 0.852",
+                "wall evidence: short unlayered parallel-face candidate has only one structurally supported endpoint and short paired wall evidence; keep for topology but block exact placement until reviewed"
+            });
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var promoted = Assert.Single(context.WallEvidenceMap.WallAssessments);
+        Assert.True(promoted.PlacementReady);
+        Assert.False(promoted.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Accept, promoted.Decision);
+        Assert.Contains(
+            promoted.Evidence,
+            item => item.Contains("short structural return promoted", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            promoted.Evidence,
+            item => item.Contains("topology-supported endpoints 2", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task WallTypeRefinement_DoesNotPromoteOneSidedRoomReference()
     {
         var wall = new WallSegment(
@@ -406,6 +523,55 @@ public sealed class WallTypeRefinementTests
                     wall.DrawingLength,
                 Confidence.High,
                 Array.Empty<string>())
+            });
+
+    private static WallGraph SupportedEndpointGraphFor(WallSegment wall) =>
+        new(
+            new[]
+            {
+                new WallNode(
+                    "node-start",
+                    wall.PageNumber,
+                    wall.CenterLine.Start,
+                    WallNodeKind.Corner,
+                    2,
+                    Array.Empty<string>(),
+                    Confidence.High,
+                    Array.Empty<string>()),
+                new WallNode(
+                    "node-end",
+                    wall.PageNumber,
+                    wall.CenterLine.End,
+                    WallNodeKind.Corner,
+                    2,
+                    Array.Empty<string>(),
+                    Confidence.High,
+                    Array.Empty<string>())
+            },
+            new[]
+            {
+                new WallEdge(
+                    "edge-wall",
+                    wall.PageNumber,
+                    "node-start",
+                    "node-end",
+                    wall.Id,
+                    Confidence.High)
+            },
+            new[]
+            {
+                new WallGraphComponent(
+                    "component-main",
+                    wall.PageNumber,
+                    WallGraphComponentKind.MainStructural,
+                    wall.Bounds,
+                    new[] { wall.Id },
+                    new[] { "node-start", "node-end" },
+                    new[] { "edge-wall" },
+                    wall.SourcePrimitiveIds,
+                    wall.DrawingLength,
+                    Confidence.High,
+                    Array.Empty<string>())
             });
 
     private static RoomRegion Room(string id, RoomUseKind useKind, params string[] wallIds) =>

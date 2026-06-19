@@ -16,6 +16,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         var roomIdsByWallId = BuildRoomIdsByWallId(context.Rooms);
         var sharedWallIds = BuildSharedWallIds(context.RoomAdjacencyGraph);
         var componentsByWallId = BuildComponentsByWallId(context.WallGraph);
+        var supportedTopologyEndpointCountsByWallId = BuildSupportedTopologyEndpointCounts(context.WallGraph);
         var evidenceByWallId = BuildEvidenceByWallId(context.WallEvidenceMap);
         var rejectedEvidenceByWallId = BuildRejectedEvidenceByWallId(context.WallEvidenceMap);
         var roomsById = context.Rooms
@@ -115,6 +116,9 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
                     component,
                     wallRoomIds.Length,
                     sharedWallIds.Contains(wall.Id),
+                    supportedTopologyEndpointCountsByWallId.TryGetValue(wall.Id, out var supportedEndpointCount)
+                        ? supportedEndpointCount
+                        : 0,
                     hasOutdoorRoomReference,
                     sideEvidence,
                     out var promotedAssessment,
@@ -199,6 +203,43 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         }
 
         return result;
+    }
+
+    private static Dictionary<string, int> BuildSupportedTopologyEndpointCounts(WallGraph graph)
+    {
+        if (graph.Edges.Count == 0 || graph.Nodes.Count == 0)
+        {
+            return new Dictionary<string, int>(StringComparer.Ordinal);
+        }
+
+        var nodeDegreeById = graph.Nodes.ToDictionary(node => node.Id, node => node.Degree, StringComparer.Ordinal);
+        var supportedNodeIdsByWallId = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        foreach (var edge in graph.Edges.Where(edge => !string.IsNullOrWhiteSpace(edge.WallId)))
+        {
+            Count(edge.WallId, edge.FromNodeId);
+            Count(edge.WallId, edge.ToNodeId);
+        }
+
+        return supportedNodeIdsByWallId.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value.Count,
+            StringComparer.Ordinal);
+
+        void Count(string wallId, string nodeId)
+        {
+            if (!nodeDegreeById.TryGetValue(nodeId, out var degree) || degree <= 1)
+            {
+                return;
+            }
+
+            if (!supportedNodeIdsByWallId.TryGetValue(wallId, out var nodeIds))
+            {
+                nodeIds = new HashSet<string>(StringComparer.Ordinal);
+                supportedNodeIdsByWallId[wallId] = nodeIds;
+            }
+
+            nodeIds.Add(nodeId);
+        }
     }
 
     private static Dictionary<string, WallEvidenceWallAssessment> BuildRejectedEvidenceByWallId(WallEvidenceMap evidenceMap) =>
@@ -338,6 +379,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         WallGraphComponent? component,
         int roomReferenceCount,
         bool isSharedByRoomAdjacency,
+        int supportedTopologyEndpointCount,
         bool hasOutdoorRoomReference,
         RoomSideEvidence sideEvidence,
         out WallEvidenceWallAssessment promotedAssessment,
@@ -371,11 +413,20 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             return false;
         }
 
+        if (HasRoomConfirmedPromotionBlocker(wall, assessment))
+        {
+            return false;
+        }
+
         var hasStrongRoomConfirmation =
             isSharedByRoomAdjacency
             || roomReferenceCount >= 2
             || sideEvidence.HasRoomsOnBothSides;
-        if (!hasStrongRoomConfirmation)
+        var hasShortStructuralReturnConfirmation =
+            roomReferenceCount >= 1
+            && supportedTopologyEndpointCount >= 2
+            && IsTrustedShortStructuralReturnWall(wall, assessment);
+        if (!hasStrongRoomConfirmation && !hasShortStructuralReturnConfirmation)
         {
             return false;
         }
@@ -388,8 +439,12 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         promotionEvidence = new[]
         {
             "wall evidence: room-confirmed wall body promoted to placement-ready after room adjacency refinement",
-            $"wall evidence: room references {roomReferenceCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}, shared adjacency {isSharedByRoomAdjacency.ToString(System.Globalization.CultureInfo.InvariantCulture)}, two-sided room evidence {sideEvidence.HasRoomsOnBothSides.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
-        };
+            $"wall evidence: room references {roomReferenceCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}, shared adjacency {isSharedByRoomAdjacency.ToString(System.Globalization.CultureInfo.InvariantCulture)}, two-sided room evidence {sideEvidence.HasRoomsOnBothSides.ToString(System.Globalization.CultureInfo.InvariantCulture)}, topology-supported endpoints {supportedTopologyEndpointCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+        }
+        .Concat(hasShortStructuralReturnConfirmation
+            ? new[] { "wall evidence: short structural return promoted by room boundary and two supported topology endpoints" }
+            : Array.Empty<string>())
+        .ToArray();
         promotedAssessment = assessment with
         {
             PlacementReady = true,
@@ -398,6 +453,96 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             Evidence = AppendEvidence(assessment.Evidence, promotionEvidence)
         };
         return true;
+    }
+
+    private static bool IsTrustedShortStructuralReturnWall(
+        WallSegment wall,
+        WallEvidenceWallAssessment assessment)
+    {
+        if (wall.DrawingLength > 90
+            || assessment.Category != WallEvidenceCategory.MediumWallBody
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair)
+        {
+            return false;
+        }
+
+        var evidence = assessment.Evidence
+            .Concat(wall.Evidence)
+            .ToArray();
+        if (!evidence.Any(item => item.Contains("short paired wall evidence", StringComparison.OrdinalIgnoreCase))
+            || !evidence.Any(item => item.Contains("only one structurally supported endpoint", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        return TryReadPairScore(evidence, out var pairScore)
+            && pairScore >= 0.82;
+    }
+
+    private static bool TryReadPairScore(IEnumerable<string> evidence, out double pairScore)
+    {
+        foreach (var item in evidence)
+        {
+            const string marker = "pair score";
+            var index = item.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (index < 0)
+            {
+                continue;
+            }
+
+            var valueStart = index + marker.Length;
+            while (valueStart < item.Length && char.IsWhiteSpace(item[valueStart]))
+            {
+                valueStart++;
+            }
+
+            var valueEnd = valueStart;
+            while (valueEnd < item.Length
+                && (char.IsDigit(item[valueEnd]) || item[valueEnd] == '.' || item[valueEnd] == ','))
+            {
+                valueEnd++;
+            }
+
+            if (valueEnd == valueStart)
+            {
+                continue;
+            }
+
+            var value = item[valueStart..valueEnd].Replace(',', '.');
+            if (double.TryParse(
+                    value,
+                    System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out pairScore))
+            {
+                return true;
+            }
+        }
+
+        pairScore = 0;
+        return false;
+    }
+
+    private static bool HasRoomConfirmedPromotionBlocker(
+        WallSegment wall,
+        WallEvidenceWallAssessment assessment) =>
+        assessment.Evidence
+            .Concat(wall.Evidence)
+            .Any(IsRoomConfirmedPromotionBlockerEvidence);
+
+    private static bool IsRoomConfirmedPromotionBlockerEvidence(string evidence)
+    {
+        if (string.IsNullOrWhiteSpace(evidence))
+        {
+            return false;
+        }
+
+        return evidence.Contains("recovered duplicate wall body", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("already represented", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("rejected as non-wall", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("object/fixture detail", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("surface pattern", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("door/opening", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool HasWallBodyEvidence(WallSegment wall, WallEvidenceWallAssessment assessment)

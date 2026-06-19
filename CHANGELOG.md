@@ -6,6 +6,132 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.130] - 2026-06-19
+
+### Added
+- CLI scans now support `--svg-background-embed`, which stores alignment-QA
+  background page images as SVG data URIs. This makes placement-review overlays
+  portable for headless screenshot rendering, benchmark review, and visual
+  wall-alignment triage without manually patching SVG image paths.
+
+### Verified
+- Added parser and render-option regression coverage for embedded SVG
+  background images.
+- Focused export/CLI tests passed with `46` tests.
+- Full test suite passed with `578` tests.
+- Rescanned the ignored local medium PDF fixture using
+  `--svg-background-embed`; detector totals stayed stable at `124` walls, `10`
+  rooms, and `31` openings, with `33` placement-ready walls and `91`
+  omitted/review walls.
+- Rendered the generated SVG directly with a headless rasterizer and confirmed
+  the source PDF page appears behind the placement-review wall overlay without
+  manual data-URI editing.
+
+## [0.02.129] - 2026-06-19
+
+### Improved
+- Wall Evidence V2 room-adjacency refinement can now promote a short structural
+  return when one room boundary, two supported topology endpoints, and a strong
+  parallel-face pair prove it is a real wall body. Duplicate recovered wall
+  bodies, door/opening evidence, surface/detail patterns, object details, and
+  explicit non-wall evidence still stay review-only.
+- Secondary structural components without room-boundary support remain blocked
+  by default, but long, thin chains of accepted high-confidence parallel-face
+  wall bodies are now allowed through. This recovers real stair-side/exterior
+  wall runs in plans where room detection misses the adjacent room boundary,
+  without accepting ordinary secondary fragments.
+
+### Verified
+- Added regression coverage for short structural return promotion and trusted
+  paired secondary wall-body chain import.
+- Focused wall refinement, scan-quality, and export tests passed with `77`
+  tests.
+- Full test suite passed with `577` tests.
+- Rescanned the ignored local medium PDF fixture and rendered source-backed
+  placement-review screenshots. Detector totals stayed stable at `124` walls,
+  `10` rooms, and `31` openings; clean placement output improved to `33`
+  placement-ready walls and `91` omitted/review walls.
+- Visual review confirmed the newly accepted stair-side wall chain lands on the
+  source grey wall body, while duplicate recovered wall evidence and unrelated
+  stair/detail linework remain omitted from the clean placement layer.
+
+## [0.02.128] - 2026-06-19
+
+### Fixed
+- Room-adjacency wall refinement no longer promotes recovered duplicate wall
+  bodies into placement-ready geometry when Wall Evidence V2 already said the
+  wall is represented by a stronger nearby paired wall and must stay
+  review-only. This prevents recovered duplicate fragments from reappearing as
+  random clean wall lines in placement-review overlays and downstream placement
+  JSON.
+
+### Verified
+- Added regression coverage proving room-confirmed adjacency cannot override a
+  recovered duplicate wall-body blocker.
+- Focused wall refinement, wall recovery, export, and scan-quality tests passed
+  with `89` tests.
+- Full test suite passed with `575` tests.
+- Rescanned the ignored private medium PDF fixture. Detector totals stayed
+  stable at `124` walls, `10` rooms, and `31` openings; clean placement output
+  changed from `31` to `30` placement-ready walls and from `93` to `94`
+  omitted/review walls.
+- Rendered and inspected the ignored private walls-only overlay screenshot. The
+  recovered duplicate wall `page:1:wall-evidence-recovered:001` is now omitted
+  with `wall_evidence_review_required` and no longer appears as a clean topology
+  span or wall-body footprint.
+
+## [0.02.127] - 2026-06-19
+
+### Improved
+- Placement JSON now gives unsupported secondary structural walls a dedicated
+  omission code, `secondary_without_room_boundary_support`, instead of only
+  reporting a generic coordinate-review omission. This makes downstream import
+  and viewer QA more explainable when strong-looking secondary wall pairs are
+  withheld because no detected room boundary uses them.
+- Placement-review SVG legends now show up to five wall omission buckets, so
+  smaller but important review categories such as `secondary no room` are
+  visible during screenshot review.
+
+### Verified
+- Added export regression coverage for the new secondary structural omission
+  code, category, evidence, and summary count.
+- Focused scan-quality/export tests passed with `67` tests.
+- Broader wall/export/benchmark/schema test slice passed with `202` tests.
+- Full test suite passed with `574` tests.
+- Rescanned the ignored private medium PDF fixture. Detector totals stayed
+  stable at `124` walls, `10` rooms, and `31` openings; clean placement output
+  stayed at `31` placement-ready walls, `93` omitted/review walls, and `31`
+  clean topology spans.
+- Rendered and inspected the ignored private walls-only overlay screenshot. The
+  side legend now exposes `omit: secondary no room 4`, matching the placement
+  JSON omission summary.
+
+## [0.02.126] - 2026-06-19
+
+### Fixed
+- Import readiness now uses the wall placement-readiness evaluator instead of
+  confidence-only wall counts. Review-only wall evidence and topology/component
+  blockers now correctly lower coordinate/metric readiness and can block
+  geometry import instead of claiming the scan is placement-safe too early.
+- Secondary structural wall components now need room-boundary support before
+  they can become coordinate-placement-ready once rooms have been detected. This
+  keeps strong-looking but isolated secondary wall pairs in review output rather
+  than clean placement JSON or placement-review SVGs.
+
+### Verified
+- Added regression coverage for review-required wall evidence blocking geometry
+  import and for secondary structural components without room-boundary support.
+- Focused scan-quality/export tests passed with `66` tests.
+- Broader wall/export/benchmark/schema test slice passed with `201` tests.
+- Full test suite passed with `573` tests.
+- Rescanned the ignored private medium PDF fixture. Detector totals stayed
+  stable at `124` walls, `10` rooms, and `31` openings; placement-ready walls
+  dropped from `33` to `31`, removing the isolated secondary vertical pair from
+  clean placement output while preserving it as review evidence.
+- Rendered and inspected the ignored private walls-only overlay screenshot. The
+  long stray secondary vertical pair is no longer shown in clean placement
+  output; remaining gaps are still visible accuracy work for the next cycle.
+
 ## [0.02.125] - 2026-06-19
 
 ### Fixed

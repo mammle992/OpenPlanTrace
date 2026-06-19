@@ -111,7 +111,21 @@ internal static class WallTopologySpanVisibility
 
         context.ComponentByWallId.TryGetValue(span.WallId, out var component);
         context.WallEvidenceAssessments.TryGetValue(span.WallId, out var assessment);
+        var reviewReasons = context.ReviewReasonsByWallId.TryGetValue(span.WallId, out var reasons)
+            ? reasons
+            : Array.Empty<string>();
         if (!IsPlacementReadyStructuralSpan(component, assessment))
+        {
+            return false;
+        }
+
+        if (span.SourceWall is not null
+            && !WallPlacementReadinessEvaluator.Evaluate(
+                span.SourceWall,
+                context.Calibration,
+                component,
+                assessment,
+                reviewReasons).ReadyForCoordinatePlacement)
         {
             return false;
         }
@@ -130,7 +144,9 @@ internal static class WallTopologySpanVisibility
             BuildWallComponentLookup(result.WallGraph.Components),
             WallEvidenceExportHelpers.BuildAssessmentLookup(result.WallEvidenceMap),
             BuildNodeIncidentLookup(result.WallGraph.Edges),
-            BuildTopologyImportBlockedWallIds(result.WallGraph.RepairCandidates));
+            BuildTopologyImportBlockedWallIds(result.WallGraph.RepairCandidates),
+            WallPlacementContextGuards.BuildReviewReasons(result),
+            result.Calibration);
 
     private static bool IsShortDanglingTopologySpan(
         WallGraphTopologySpan span,
@@ -661,7 +677,9 @@ internal static class WallTopologySpanVisibility
         IReadOnlyDictionary<string, WallGraphComponent> ComponentByWallId,
         IReadOnlyDictionary<string, WallEvidenceWallAssessment> WallEvidenceAssessments,
         IReadOnlyDictionary<string, int> NodeDegreeById,
-        IReadOnlySet<string> TopologyImportBlockedWallIds);
+        IReadOnlySet<string> TopologyImportBlockedWallIds,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> ReviewReasonsByWallId,
+        PlanCalibration Calibration);
 
     private readonly record struct PlacementRegularizationKey(
         int PageNumber,

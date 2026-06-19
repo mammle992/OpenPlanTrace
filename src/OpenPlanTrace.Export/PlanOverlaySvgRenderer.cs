@@ -555,7 +555,7 @@ public static class PlanOverlaySvgRenderer
             $"{RoutingItemCount(result.RoutingLayer, page.Number)} routing items",
             CalibrationLabel(result.Calibration)
         });
-        rows.AddRange(wallReadiness.TopOmissionRows(maxRows: 3));
+        rows.AddRange(wallReadiness.TopOmissionRows(maxRows: 5));
 
         return rows.ToArray();
     }
@@ -851,7 +851,9 @@ public static class PlanOverlaySvgRenderer
         {
             var componentByWallId = BuildWallComponentLookup(result.WallGraph.Components);
             var wallEvidenceAssessments = WallEvidenceExportHelpers.BuildAssessmentLookup(result.WallEvidenceMap);
-            var reviewReasonsByWallId = BuildWallReviewReasons(result.Diagnostics.Messages);
+            var reviewReasonsByWallId = WallReviewReasonMerger.Merge(
+                BuildWallReviewReasons(result.Diagnostics.Messages),
+                WallPlacementContextGuards.BuildReviewReasons(result));
             var repairCandidatesByWallId = BuildWallGraphRepairCandidateLookup(result.WallGraph.RepairCandidates);
             var topologySpansByWallId = WallTopologySpanVisibility
                 .BuildRegularizedPlacementTopologySpans(result)
@@ -1027,6 +1029,7 @@ public static class PlanOverlaySvgRenderer
             "no_clean_topology_spans" => "no clean spans",
             "object_like_linework" => "object linework",
             "rejected_wall_evidence" => "rejected evidence",
+            "secondary_without_room_boundary_support" => "secondary no room",
             "topology_import_blocked" => "blocked repairs",
             "wall_evidence_review_required" => "review evidence",
             _ => code.Replace('_', ' ')

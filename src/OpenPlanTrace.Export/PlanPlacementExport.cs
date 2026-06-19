@@ -77,7 +77,9 @@ public sealed record PlanPlacementExport(
             .Where(source => !string.IsNullOrWhiteSpace(source.SourceId))
             .ToDictionary(source => source.SourceId, StringComparer.Ordinal);
         var wallComponentLookup = BuildWallComponentLookup(result.WallGraph.Components);
-        var wallReviewReasons = BuildWallReviewReasons(result.Diagnostics.Messages);
+        var wallReviewReasons = WallReviewReasonMerger.Merge(
+            BuildWallReviewReasons(result.Diagnostics.Messages),
+            WallPlacementContextGuards.BuildReviewReasons(result));
         var routingLayer = result.RoutingLayer;
         var rawWallTopologySpans = WallGraphTopologySpanBuilder
             .Build(result.WallGraph, result.Walls)
@@ -1217,6 +1219,17 @@ public sealed record PlacementWallOmissionExport(
                 "NonStructuralComponent",
                 "Wall-like linework is omitted from clean placement topology because it is an isolated fragment.",
                 "Keep it for opening/object review, but do not import it as a structural wall without correction.");
+        }
+
+        if (ContainsEvidence(
+            evidence,
+            WallPlacementContextGuards.SecondaryStructuralWithoutRoomBoundarySupportReason))
+        {
+            return new PlacementWallOmissionClassification(
+                "secondary_without_room_boundary_support",
+                "SecondaryStructuralReview",
+                "Wall is omitted from clean placement topology because its secondary structural component is not used by any detected room boundary.",
+                "Review the wall against the source PDF and promote it only if it is a real room or exterior boundary.");
         }
 
         if (excludedFromStructuralTopology)

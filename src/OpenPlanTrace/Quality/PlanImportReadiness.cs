@@ -65,17 +65,33 @@ public sealed record PlanImportReadiness(
         ArgumentNullException.ThrowIfNull(result);
 
         var structuralWalls = StructuralWallSelector.Select(result);
+        var componentsByWallId = BuildComponentsByWallId(result.WallGraph);
+        var reviewReasonsByWallId = WallPlacementContextGuards.BuildReviewReasons(result);
+        var assessmentsByWallId = result.WallEvidenceMap.WallAssessments
+            .Where(assessment => !string.IsNullOrWhiteSpace(assessment.WallId))
+            .GroupBy(assessment => assessment.WallId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
         var wallReady = 0;
         var wallReview = 0;
         foreach (var wall in structuralWalls)
         {
-            var ready = wall.Confidence.Value >= 0.5;
-            if (ready)
+            componentsByWallId.TryGetValue(wall.Id, out var component);
+            assessmentsByWallId.TryGetValue(wall.Id, out var evidenceAssessment);
+            var reviewReasons = reviewReasonsByWallId.TryGetValue(wall.Id, out var wallReviewReasons)
+                ? wallReviewReasons
+                : Array.Empty<string>();
+            var readiness = WallPlacementReadinessEvaluator.Evaluate(
+                wall,
+                result.Calibration,
+                component,
+                evidenceAssessment,
+                reviewReasons);
+            if (readiness.ReadyForCoordinatePlacement)
             {
                 wallReady++;
             }
 
-            if (wall.Confidence.Value < 0.5)
+            if (readiness.RequiresReview)
             {
                 wallReview++;
             }
@@ -87,7 +103,6 @@ public sealed record PlanImportReadiness(
             opening.Confidence.Value >= 0.5
             && ScanReviewQueueSummary.OpeningPlacementIsCoordinateReady(opening));
         var openingReview = result.Openings.Count(ScanReviewQueueSummary.NeedsOpeningReview);
-        var wallEvidenceReview = ScanReviewQueueSummary.QueuedWallEvidenceReviews(result.WallEvidenceMap).Count;
         var aggregateReady = result.ObjectAggregates.Count(aggregate => aggregate.Confidence.Value >= 0.5);
         var coordinateReadyEntityCount = wallReady + roomReady + openingReady + aggregateReady;
         var reliabilityTrackedEntityCount =
@@ -96,7 +111,6 @@ public sealed record PlanImportReadiness(
             ? coordinateReadyEntityCount
             : 0;
         var reviewRequiredEntityCount = wallReview + roomReview + openingReview;
-        reviewRequiredEntityCount += wallEvidenceReview;
 
         return FromCounts(
             result,
@@ -108,6 +122,23 @@ public sealed record PlanImportReadiness(
             Ratio(metricReadyEntityCount, reliabilityTrackedEntityCount),
             reviewRequiredEntityCount,
             IssuesFromScanResult(result).ToArray());
+    }
+
+    private static IReadOnlyDictionary<string, WallGraphComponent> BuildComponentsByWallId(WallGraph graph)
+    {
+        var result = new Dictionary<string, WallGraphComponent>(StringComparer.Ordinal);
+        foreach (var component in graph.Components)
+        {
+            foreach (var wallId in component.WallIds)
+            {
+                if (!string.IsNullOrWhiteSpace(wallId))
+                {
+                    result[wallId] = component;
+                }
+            }
+        }
+
+        return result;
     }
 
     public static PlanImportReadiness FromCounts(
