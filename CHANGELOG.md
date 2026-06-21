@@ -6,6 +6,122 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.145] - 2026-06-21
+
+### Improved
+- Clean placement topology now canonicalizes close, mostly-overlapping exterior
+  wall face traces into one centered exterior wall axis. This reduces duplicate
+  exterior wall geometry while preserving raw scanner candidates and source
+  evidence for diagnostics.
+- Exterior-only contained duplicate suppression now removes partial face
+  fragments near a canonical exterior wall axis. Close parallel interior runs
+  remain separate so real interior partitions are not merged blindly.
+
+### Verified
+- Added regression coverage for exterior face-axis canonicalization and for
+  keeping close parallel interior runs separate.
+- Export-focused tests passed with `57` tests.
+- Full test suite passed with `603` tests.
+- Rescanned an ignored local medium-difficulty PDF fixture and rendered a
+  wall-only QA screenshot with the source background. Clean placement topology
+  spans dropped from `32` to `31`, placement-ready walls dropped from `28` to
+  `27`, and the right-side exterior wall now exports as a single centered
+  canonical axis instead of stacked parallel face traces.
+
+## [0.02.144] - 2026-06-21
+
+### Improved
+- Clean placement topology now suppresses mostly-contained duplicate wall spans
+  on the same axis. Raw wall candidates remain available for diagnostics, but
+  SVG wall-QA and placement JSON no longer export redundant centerlines when a
+  shorter accepted span sits directly inside a longer structural run.
+
+### Verified
+- Added regression coverage for contained duplicate clean placement runs.
+- Export-focused tests passed with `55` tests.
+- Full test suite passed with `601` tests.
+- Rescanned an ignored local medium-difficulty PDF fixture and rendered a
+  wall-only QA screenshot with the source background. Clean placement topology
+  spans dropped from `38` to `32`; a contained duplicate right-side exterior
+  wall span was removed from placement output. Remaining wall-QA issues are now
+  mostly canonical wall-body axis choice on thick exterior walls and dense
+  door/window/detail interpretation.
+
+## [0.02.143] - 2026-06-21
+
+### Improved
+- Shared door-swing polyline recovery is now used by both opening detection and
+  wall filtering. Door leaves and frame/detail lines near recovered polyline
+  swing arcs are less likely to survive as placement wall candidates.
+- Clean placement topology export now suppresses tiny wall pieces that are only
+  created as opening-adjacent split leftovers. This removes short door/window
+  slivers from wall-only QA and downstream placement JSON without hiding normal
+  wall runs.
+
+### Verified
+- Added regression coverage for polyline door-swing wall filtering and for
+  suppressing tiny opening-adjacent topology pieces while preserving healthy
+  split wall runs.
+- Focused export/opening/wall filtering tests passed with `81` tests.
+- Full test suite passed with `600` tests.
+- Rescanned an ignored local medium-difficulty PDF fixture and rendered a
+  wall-only QA screenshot with the source background. Clean placement topology
+  spans dropped from `41` to `38`; the shortest visible placement line increased
+  from `10.5` to `25.5` drawing units. Remaining visual problems are now mostly
+  wall-body centerline choice and dense door/window/detail interpretation, not
+  tiny opening-split slivers.
+
+## [0.02.142] - 2026-06-21
+
+### Improved
+- Clean placement topology spans are now split around anchored door/opening
+  cutouts, so downstream placement JSON no longer exports one continuous wall
+  centerline through a recognized doorway.
+- Door detection now recovers swing arcs from open Bezier/polyline curve
+  approximations. This helps CAD/PDF exports where door swings are stored as
+  sampled polylines instead of true arc primitives.
+- Wall-only visual QA now shows the medium private PDF with substantially less
+  "random line soup" in door-heavy areas because door swings can become actual
+  opening evidence before wall topology is exported.
+
+### Verified
+- Added regression coverage for topology-span splitting around anchored door
+  cutouts and hinged-door recovery from polyline/Bezier swing arcs.
+- Focused opening/export tests passed with `17` tests.
+- Full test suite passed with `597` tests.
+- Rescanned an ignored local medium-difficulty PDF fixture and rendered a
+  wall-only QA screenshot with the source background. Door/opening recognition
+  improved from `32` fixed-window openings to `16` fixed windows and `9` hinged
+  doors. Clean placement topology spans increased from `38` to `39` because
+  recognized doors now split wall runs instead of leaving continuous centerlines
+  across openings.
+
+## [0.02.141] - 2026-06-21
+
+### Fixed
+- Room solving now suppresses skinny enclosed wall-graph faces that look like
+  wall/detail offsets instead of usable rooms. Suppressed candidates are reported
+  through `rooms.sliver_faces.suppressed` diagnostics with bounds, span, aspect
+  ratio, and source wall evidence.
+- Wall evidence now rejects unlayered, non-exterior wall candidates that align
+  geometrically with detected dimension lines, even when the PDF has no useful
+  dimension layer names. This prevents dimension strings such as long room-width
+  measurements from becoming placement-ready interior walls.
+
+### Verified
+- Added regression coverage for wall-graph sliver room suppression and
+  unlayered dimension-line wall rejection.
+- Focused room/wall filtering tests passed with `52` tests.
+- Full test suite passed with `595` tests.
+- Rescanned the ignored local medium-difficulty PDF fixture and rendered a
+  wall-only QA screenshot with the source background. Compared with `0.02.140`,
+  total walls dropped from `124` to `122`, accepted placement-ready wall
+  evidence dropped from `39` to `38`, rejected dimension/annotation wall
+  evidence increased from `0` to `2`, and solved room candidates dropped from
+  `13` to `4`. Visual review confirmed the obvious false wall lying on the
+  `6 100` dimension line was removed; remaining issues are mostly opening-cut
+  and span-splitting accuracy work.
+
 ## [0.02.140] - 2026-06-21
 
 ### Improved

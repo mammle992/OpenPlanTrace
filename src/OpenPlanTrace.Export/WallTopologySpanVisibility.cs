@@ -6,6 +6,13 @@ internal static class WallTopologySpanVisibility
     private const double MinTrustedShortStructuralDanglingSpanLength = 18.0;
     private const double MaxCleanRunJoinGapDrawingUnits = 12.0;
     private const double MinCleanRunLengthDrawingUnits = 8.0;
+    private const double MinOpeningAdjacentCleanRunLengthDrawingUnits = 20.0;
+    private const double MaxContainedDuplicateAxisDistanceDrawingUnits = 1.25;
+    private const double MinContainedDuplicateOverlapRatio = 0.92;
+    private const double MinExteriorFacePairAxisDistanceDrawingUnits = 2.0;
+    private const double MaxExteriorFacePairAxisDistanceDrawingUnits = 18.0;
+    private const double MinExteriorFacePairOverlapRatio = 0.88;
+    private const double MinExteriorFacePairSpanLengthDrawingUnits = 80.0;
     private const double MinPlacementRegularizationToleranceDrawingUnits = 1.25;
     private const double MaxPlacementRegularizationToleranceDrawingUnits = 6.0;
     private const double MinPlacementRegularizationClusterLengthDrawingUnits = 60.0;
@@ -25,12 +32,20 @@ internal static class WallTopologySpanVisibility
 
         return options.IncludeReviewOnlyWallTopologySpans
             ? spans
-            : BuildCleanPlacementTopologySpans(spans);
+            : BuildCleanPlacementTopologySpans(spans, result.Openings);
     }
 
     public static IReadOnlyList<WallGraphTopologySpan> BuildCleanPlacementTopologySpans(
         IReadOnlyList<WallGraphTopologySpan> spans) =>
-        RegularizeCleanPlacementRuns(MergeCleanTopologyRuns(spans));
+        FinalizeCleanPlacementSpans(RegularizeCleanPlacementRuns(MergeCleanTopologyRuns(spans)));
+
+    private static IReadOnlyList<WallGraphTopologySpan> BuildCleanPlacementTopologySpans(
+        IReadOnlyList<WallGraphTopologySpan> spans,
+        IReadOnlyList<OpeningCandidate> openings)
+    {
+        var merged = MergeCleanTopologyRuns(spans);
+        return FinalizeCleanPlacementSpans(RegularizeCleanPlacementRuns(SplitCleanTopologyRunsAroundOpenings(merged, openings)));
+    }
 
     public static IReadOnlyList<WallGraphTopologySpan> BuildCleanPlacementTopologySpans(
         PlanScanResult result)
@@ -43,7 +58,7 @@ internal static class WallTopologySpanVisibility
             .Where(span => IsVisibleTopologySpan(span, context, options))
             .ToArray();
 
-        return BuildCleanPlacementTopologySpans(spans);
+        return BuildCleanPlacementTopologySpans(spans, result.Openings);
     }
 
     public static IReadOnlyList<WallGraphTopologySpan> BuildRegularizedPlacementTopologySpans(
@@ -57,7 +72,8 @@ internal static class WallTopologySpanVisibility
             .Where(span => IsVisibleTopologySpan(span, context, options))
             .ToArray();
 
-        return RegularizeCleanPlacementRuns(ProjectSpansToOrthogonalSourceAxes(spans));
+        var projected = ProjectSpansToOrthogonalSourceAxes(spans);
+        return FinalizeCleanPlacementSpans(RegularizeCleanPlacementRuns(SplitCleanTopologyRunsAroundOpenings(projected, result.Openings)));
     }
 
     public static IReadOnlyList<WallGraphTopologySpan> BuildHiddenNonPlacementTopologySpans(
@@ -372,6 +388,480 @@ internal static class WallTopologySpanVisibility
             .ToArray();
     }
 
+    private static IReadOnlyList<WallGraphTopologySpan> FinalizeCleanPlacementSpans(
+        IReadOnlyList<WallGraphTopologySpan> spans) =>
+        SuppressContainedDuplicatePlacementSpans(CanonicalizeExteriorParallelFaceSpans(spans));
+
+    private static IReadOnlyList<WallGraphTopologySpan> CanonicalizeExteriorParallelFaceSpans(
+        IReadOnlyList<WallGraphTopologySpan> spans)
+    {
+        if (spans.Count <= 1)
+        {
+            return spans;
+        }
+
+        var replacements = new Dictionary<string, WallGraphTopologySpan>(StringComparer.Ordinal);
+        var suppressedSpanIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var group in spans
+            .Where(span => span.SourceWall?.WallType == WallType.Exterior)
+            .Where(IsAxisAlignedPlacementSpan)
+            .GroupBy(span => new PlacementRegularizationKey(
+                span.PageNumber,
+                WallType.Exterior,
+                ResolveAxisOrientation(span.CenterLine))))
+        {
+            var ordered = group
+                .OrderByDescending(span => span.DrawingLength)
+                .ThenByDescending(span => span.Confidence.Value)
+                .ThenBy(span => span.Id, StringComparer.Ordinal)
+                .ToArray();
+
+            foreach (var primary in ordered)
+            {
+                if (suppressedSpanIds.Contains(primary.Id) || replacements.ContainsKey(primary.Id))
+                {
+                    continue;
+                }
+
+                var partner = ordered
+                    .Where(candidate => candidate.Id != primary.Id)
+                    .Where(candidate => !suppressedSpanIds.Contains(candidate.Id))
+                    .Where(candidate => !replacements.ContainsKey(candidate.Id))
+                    .Where(candidate => IsExteriorFacePairCandidate(primary, candidate))
+                    .OrderBy(candidate => Math.Abs(AxisCoordinate(candidate) - AxisCoordinate(primary)))
+                    .ThenByDescending(candidate => candidate.DrawingLength)
+                    .FirstOrDefault();
+                if (partner is null)
+                {
+                    continue;
+                }
+
+                replacements[primary.Id] = CreateCanonicalExteriorFaceSpan(primary, partner);
+                suppressedSpanIds.Add(partner.Id);
+            }
+        }
+
+        if (replacements.Count == 0 && suppressedSpanIds.Count == 0)
+        {
+            return spans;
+        }
+
+        return spans
+            .Where(span => !suppressedSpanIds.Contains(span.Id))
+            .Select(span => replacements.TryGetValue(span.Id, out var replacement) ? replacement : span)
+            .ToArray();
+    }
+
+    private static bool IsExteriorFacePairCandidate(
+        WallGraphTopologySpan first,
+        WallGraphTopologySpan second)
+    {
+        if (first.DrawingLength < MinExteriorFacePairSpanLengthDrawingUnits
+            || second.DrawingLength < MinExteriorFacePairSpanLengthDrawingUnits
+            || ResolveAxisOrientation(first.CenterLine) != ResolveAxisOrientation(second.CenterLine)
+            || first.WallId == second.WallId)
+        {
+            return false;
+        }
+
+        var axisDistance = Math.Abs(AxisCoordinate(first) - AxisCoordinate(second));
+        if (axisDistance < MinExteriorFacePairAxisDistanceDrawingUnits
+            || axisDistance > MaxExteriorFacePairAxisDistanceDrawingUnits)
+        {
+            return false;
+        }
+
+        var overlap = Math.Min(AxisMax(first.CenterLine), AxisMax(second.CenterLine))
+            - Math.Max(AxisMin(first.CenterLine), AxisMin(second.CenterLine));
+        if (overlap <= 0)
+        {
+            return false;
+        }
+
+        var shorterLength = Math.Max(Math.Min(first.DrawingLength, second.DrawingLength), 0.001);
+        return overlap / shorterLength >= MinExteriorFacePairOverlapRatio;
+    }
+
+    private static WallGraphTopologySpan CreateCanonicalExteriorFaceSpan(
+        WallGraphTopologySpan primary,
+        WallGraphTopologySpan partner)
+    {
+        var orientation = ResolveAxisOrientation(primary.CenterLine);
+        var targetCoordinate = (AxisCoordinate(primary) + AxisCoordinate(partner)) / 2.0;
+        var start = Math.Min(AxisMin(primary.CenterLine), AxisMin(partner.CenterLine));
+        var end = Math.Max(AxisMax(primary.CenterLine), AxisMax(partner.CenterLine));
+        var line = orientation == PlacementRunOrientation.Horizontal
+            ? new PlanLineSegment(new PlanPoint(start, targetCoordinate), new PlanPoint(end, targetCoordinate))
+            : new PlanLineSegment(new PlanPoint(targetCoordinate, start), new PlanPoint(targetCoordinate, end));
+        var axisDistance = Math.Abs(AxisCoordinate(primary) - AxisCoordinate(partner));
+        var shift = Math.Abs(AxisCoordinate(primary) - targetCoordinate);
+        var bounds = line.Bounds.Inflate(Math.Max(Math.Max(primary.Thickness, partner.Thickness) / 2.0, 0.5));
+        var evidence = primary.Evidence
+            .Concat(partner.Evidence)
+            .Append(
+                "clean placement exterior face canonicalization: centered between close parallel exterior face spans "
+                + $"{primary.WallId} and {partner.WallId}; face separation {axisDistance:0.###} drawing units")
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        return primary with
+        {
+            CenterLine = line,
+            Bounds = bounds,
+            DrawingLength = line.Length,
+            SourceWallStartProjectionDistanceDrawingUnits = MaxNullable(
+                primary.SourceWallStartProjectionDistanceDrawingUnits,
+                shift),
+            SourceWallEndProjectionDistanceDrawingUnits = MaxNullable(
+                primary.SourceWallEndProjectionDistanceDrawingUnits,
+                shift),
+            Thickness = Math.Max(primary.Thickness, partner.Thickness),
+            Confidence = new Confidence(Math.Min(primary.Confidence.Value, partner.Confidence.Value)),
+            SourcePrimitiveIds = primary.SourcePrimitiveIds
+                .Concat(partner.SourcePrimitiveIds)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray(),
+            SourceWallGraphEdgeIds = primary.SourceWallGraphEdgeIds
+                .Concat(partner.SourceWallGraphEdgeIds)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray(),
+            Evidence = evidence
+        };
+    }
+
+    private static IReadOnlyList<WallGraphTopologySpan> SuppressContainedDuplicatePlacementSpans(
+        IReadOnlyList<WallGraphTopologySpan> spans)
+    {
+        if (spans.Count <= 1)
+        {
+            return spans;
+        }
+
+        var suppressedSpanIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var group in spans
+            .Where(IsAxisAlignedPlacementSpan)
+            .GroupBy(span => new PlacementRegularizationKey(
+                span.PageNumber,
+                span.SourceWall?.WallType ?? WallType.Unknown,
+                ResolveAxisOrientation(span.CenterLine))))
+        {
+            var kept = new List<WallGraphTopologySpan>();
+            foreach (var span in group
+                .OrderByDescending(span => span.DrawingLength)
+                .ThenByDescending(span => span.Confidence.Value)
+                .ThenBy(span => span.Id, StringComparer.Ordinal))
+            {
+                if (IsContainedDuplicatePlacementSpan(span, kept))
+                {
+                    suppressedSpanIds.Add(span.Id);
+                    continue;
+                }
+
+                kept.Add(span);
+            }
+        }
+
+        if (suppressedSpanIds.Count == 0)
+        {
+            return spans;
+        }
+
+        return spans
+            .Where(span => !suppressedSpanIds.Contains(span.Id))
+            .ToArray();
+    }
+
+    private static bool IsContainedDuplicatePlacementSpan(
+        WallGraphTopologySpan candidate,
+        IReadOnlyList<WallGraphTopologySpan> keptSpans)
+    {
+        if (candidate.DrawingLength <= 0.001)
+        {
+            return true;
+        }
+
+        var candidateOrientation = ResolveAxisOrientation(candidate.CenterLine);
+        if (candidateOrientation == PlacementRunOrientation.Unknown)
+        {
+            return false;
+        }
+
+        var candidateMin = AxisMin(candidate.CenterLine);
+        var candidateMax = AxisMax(candidate.CenterLine);
+        foreach (var kept in keptSpans)
+        {
+            var maxAxisDistance = ContainedDuplicateAxisDistance(candidate, kept);
+            if (ResolveAxisOrientation(kept.CenterLine) != candidateOrientation
+                || Math.Abs(AxisCoordinate(candidate) - AxisCoordinate(kept)) > maxAxisDistance)
+            {
+                continue;
+            }
+
+            var overlap = Math.Min(candidateMax, AxisMax(kept.CenterLine)) - Math.Max(candidateMin, AxisMin(kept.CenterLine));
+            if (overlap <= 0)
+            {
+                continue;
+            }
+
+            var overlapRatio = overlap / Math.Max(candidate.DrawingLength, 0.001);
+            if (overlapRatio >= MinContainedDuplicateOverlapRatio)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static double ContainedDuplicateAxisDistance(WallGraphTopologySpan candidate, WallGraphTopologySpan kept) =>
+        candidate.SourceWall?.WallType == WallType.Exterior && kept.SourceWall?.WallType == WallType.Exterior
+            ? MaxExteriorFacePairAxisDistanceDrawingUnits
+            : MaxContainedDuplicateAxisDistanceDrawingUnits;
+
+    private static IReadOnlyList<WallGraphTopologySpan> SplitCleanTopologyRunsAroundOpenings(
+        IReadOnlyList<WallGraphTopologySpan> spans,
+        IReadOnlyList<OpeningCandidate> openings)
+    {
+        if (spans.Count == 0 || openings.Count == 0)
+        {
+            return spans;
+        }
+
+        var split = new List<WallGraphTopologySpan>(spans.Count);
+        foreach (var span in spans)
+        {
+            split.AddRange(SplitCleanTopologyRunAroundOpenings(span, openings));
+        }
+
+        return split.ToArray();
+    }
+
+    private static IReadOnlyList<WallGraphTopologySpan> SplitCleanTopologyRunAroundOpenings(
+        WallGraphTopologySpan span,
+        IReadOnlyList<OpeningCandidate> openings)
+    {
+        var sourceWall = span.SourceWall;
+        if (sourceWall is null || sourceWall.CenterLine.Length <= 0.001)
+        {
+            return [span];
+        }
+
+        var spanStart = Math.Clamp(
+            Math.Min(
+                span.SourceWallStartParameter ?? sourceWall.CenterLine.ProjectParameter(span.CenterLine.Start),
+                span.SourceWallEndParameter ?? sourceWall.CenterLine.ProjectParameter(span.CenterLine.End)),
+            0,
+            1);
+        var spanEnd = Math.Clamp(
+            Math.Max(
+                span.SourceWallStartParameter ?? sourceWall.CenterLine.ProjectParameter(span.CenterLine.Start),
+                span.SourceWallEndParameter ?? sourceWall.CenterLine.ProjectParameter(span.CenterLine.End)),
+            0,
+            1);
+        if (spanEnd - spanStart <= 0.001)
+        {
+            return [span];
+        }
+
+        var cutouts = BuildTopologyOpeningCutouts(sourceWall, openings)
+            .Where(cutout => cutout.EndParameter > spanStart + 0.001
+                && cutout.StartParameter < spanEnd - 0.001)
+            .OrderBy(cutout => cutout.StartParameter)
+            .ThenBy(cutout => cutout.EndParameter)
+            .ToArray();
+        if (cutouts.Length == 0)
+        {
+            return [span];
+        }
+
+        var pieces = new List<WallGraphTopologySpan>();
+        var cursor = spanStart;
+        var sequence = 1;
+        string? previousOpeningId = null;
+        foreach (var cutout in cutouts)
+        {
+            var start = Math.Max(spanStart, cutout.StartParameter);
+            var end = Math.Min(spanEnd, cutout.EndParameter);
+            if (end <= start + 0.001 || end <= cursor + 0.001)
+            {
+                continue;
+            }
+
+            AddSplitPiece(
+                pieces,
+                span,
+                sourceWall,
+                cursor,
+                Math.Min(start, spanEnd),
+                ref sequence,
+                previousOpeningId,
+                cutout.OpeningId);
+            cursor = Math.Max(cursor, end);
+            previousOpeningId = cutout.OpeningId;
+        }
+
+        AddSplitPiece(
+            pieces,
+            span,
+            sourceWall,
+            cursor,
+            spanEnd,
+            ref sequence,
+            previousOpeningId,
+            nextOpeningId: null);
+
+        return pieces.Count == 0 ? Array.Empty<WallGraphTopologySpan>() : pieces.ToArray();
+    }
+
+    private static void AddSplitPiece(
+        List<WallGraphTopologySpan> pieces,
+        WallGraphTopologySpan span,
+        WallSegment sourceWall,
+        double startParameter,
+        double endParameter,
+        ref int sequence,
+        string? previousOpeningId,
+        string? nextOpeningId)
+    {
+        var length = (endParameter - startParameter) * sourceWall.CenterLine.Length;
+        var minimumLength = previousOpeningId is not null || nextOpeningId is not null
+            ? MinOpeningAdjacentCleanRunLengthDrawingUnits
+            : MinCleanRunLengthDrawingUnits;
+        if (length < minimumLength)
+        {
+            return;
+        }
+
+        pieces.Add(CreateOpeningSplitSpan(
+            span,
+            sourceWall,
+            startParameter,
+            endParameter,
+            sequence++,
+            previousOpeningId,
+            nextOpeningId));
+    }
+
+    private static WallGraphTopologySpan CreateOpeningSplitSpan(
+        WallGraphTopologySpan span,
+        WallSegment sourceWall,
+        double startParameter,
+        double endParameter,
+        int sequence,
+        string? previousOpeningId,
+        string? nextOpeningId)
+    {
+        var placementAxis = WallBodyFootprintBuilder.BuildPlacementAxis(sourceWall, startParameter, endParameter);
+        var centerLine = placementAxis.CenterLine;
+        var thickness = Math.Max(span.Thickness, sourceWall.Thickness);
+        var bounds = centerLine.Bounds.Inflate(Math.Max(thickness / 2.0, 0.5));
+        var sourceLength = sourceWall.CenterLine.Length;
+        var evidence = span.Evidence
+            .Append("clean placement topology span split around anchored door/opening cutouts");
+        if (!string.IsNullOrWhiteSpace(previousOpeningId))
+        {
+            evidence = evidence.Append($"previous adjacent opening cutout {previousOpeningId}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(nextOpeningId))
+        {
+            evidence = evidence.Append($"next adjacent opening cutout {nextOpeningId}");
+        }
+
+        if (placementAxis.UsesPairedFaceEvidence)
+        {
+            evidence = evidence.Append($"split topology span centered between paired wall faces using {placementAxis.GeometrySource}");
+        }
+
+        return span with
+        {
+            Id = $"{span.Id}:opening-piece:{sequence}",
+            CenterLine = centerLine,
+            Bounds = bounds,
+            DrawingLength = centerLine.Length,
+            SourceWallStartOffsetDrawingUnits = startParameter * sourceLength,
+            SourceWallEndOffsetDrawingUnits = endParameter * sourceLength,
+            SourceWallProjectedLengthDrawingUnits = (endParameter - startParameter) * sourceLength,
+            SourceWallStartParameter = startParameter,
+            SourceWallEndParameter = endParameter,
+            SourceWallCenterParameter = (startParameter + endParameter) / 2.0,
+            SourceWallStartProjectionDistanceDrawingUnits = sourceWall.CenterLine.DistanceToPoint(centerLine.Start),
+            SourceWallEndProjectionDistanceDrawingUnits = sourceWall.CenterLine.DistanceToPoint(centerLine.End),
+            Thickness = thickness,
+            Evidence = evidence
+                .Where(item => !string.IsNullOrWhiteSpace(item))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray()
+        };
+    }
+
+    private static IReadOnlyList<PlacementWallOpeningCutoutExport> BuildTopologyOpeningCutouts(
+        WallSegment wall,
+        IReadOnlyList<OpeningCandidate> openings)
+    {
+        var cutouts = new List<PlacementWallOpeningCutoutExport>();
+        var sequence = 1;
+        foreach (var opening in openings)
+        {
+            if (!ShouldSplitTopologyForOpening(opening))
+            {
+                continue;
+            }
+
+            var cutout = PlacementWallOpeningCutoutExport.From(wall, opening, millimetersPerDrawingUnit: null, sequence++);
+            if (cutout is not null)
+            {
+                cutouts.Add(cutout);
+            }
+        }
+
+        return MergeTopologyOpeningCutouts(cutouts);
+    }
+
+    private static bool ShouldSplitTopologyForOpening(OpeningCandidate opening) =>
+        opening.Type is OpeningType.Door or OpeningType.GenericOpening
+        || opening.Operation is OpeningOperation.PassThrough
+            or OpeningOperation.Hinged
+            or OpeningOperation.DoubleSwing
+            or OpeningOperation.Sliding
+            or OpeningOperation.PocketSliding;
+
+    private static IReadOnlyList<PlacementWallOpeningCutoutExport> MergeTopologyOpeningCutouts(
+        IReadOnlyList<PlacementWallOpeningCutoutExport> cutouts)
+    {
+        if (cutouts.Count <= 1)
+        {
+            return cutouts;
+        }
+
+        var merged = new List<PlacementWallOpeningCutoutExport>();
+        foreach (var cutout in cutouts.OrderBy(item => item.StartParameter).ThenBy(item => item.EndParameter))
+        {
+            if (merged.Count == 0
+                || cutout.StartParameter > merged[^1].EndParameter + 0.001)
+            {
+                merged.Add(cutout);
+                continue;
+            }
+
+            var previous = merged[^1];
+            if (cutout.EndParameter > previous.EndParameter)
+            {
+                merged[^1] = previous with
+                {
+                    EndParameter = cutout.EndParameter,
+                    CenterParameter = (previous.StartParameter + cutout.EndParameter) / 2.0,
+                    EndOffsetDrawingUnits = cutout.EndOffsetDrawingUnits,
+                    CenterOffsetDrawingUnits = (previous.StartOffsetDrawingUnits + cutout.EndOffsetDrawingUnits) / 2.0,
+                    LengthDrawingUnits = cutout.EndOffsetDrawingUnits - previous.StartOffsetDrawingUnits,
+                    Evidence = previous.Evidence.Concat(cutout.Evidence).Distinct(StringComparer.Ordinal).ToArray()
+                };
+            }
+        }
+
+        return merged;
+    }
+
     private static IReadOnlyList<WallGraphTopologySpan> ProjectSpansToOrthogonalSourceAxes(
         IReadOnlyList<WallGraphTopologySpan> spans)
     {
@@ -600,6 +1090,11 @@ internal static class WallTopologySpanVisibility
         ResolveAxisOrientation(line) == PlacementRunOrientation.Horizontal
             ? Math.Min(line.Start.X, line.End.X)
             : Math.Min(line.Start.Y, line.End.Y);
+
+    private static double AxisMax(PlanLineSegment line) =>
+        ResolveAxisOrientation(line) == PlacementRunOrientation.Horizontal
+            ? Math.Max(line.Start.X, line.End.X)
+            : Math.Max(line.Start.Y, line.End.Y);
 
     private static double WeightedAxisCoordinate(IReadOnlyList<WallGraphTopologySpan> spans)
     {

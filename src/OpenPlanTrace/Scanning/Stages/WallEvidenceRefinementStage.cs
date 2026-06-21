@@ -228,6 +228,14 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
             requiresReview = true;
             evidence.Add(objectEvidence);
         }
+        else if (TryClassifyDimensionGeometryNoise(wall, context, out var dimensionGeometryEvidence))
+        {
+            category = WallEvidenceCategory.DimensionOrAnnotation;
+            confidence = new Confidence(Math.Min(0.92, Math.Max(wall.Confidence.Value, 0.70)));
+            rejected = true;
+            requiresReview = true;
+            evidence.Add(dimensionGeometryEvidence);
+        }
         else if (TryClassifyDimensionOrAnnotationNoise(wall, context, out var dimensionEvidence))
         {
             category = WallEvidenceCategory.DimensionOrAnnotation;
@@ -1700,6 +1708,75 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
         return false;
     }
 
+    private static bool TryClassifyDimensionGeometryNoise(
+        WallSegment wall,
+        ScanContext context,
+        out string evidence)
+    {
+        evidence = string.Empty;
+        if (wall.DetectionKind == WallDetectionKind.ParallelLinePair
+            || wall.WallType == WallType.Exterior
+            || IsWallLayerBacked(wall, context))
+        {
+            return false;
+        }
+
+        var orientation = ResolveAxisOrientation(wall.CenterLine);
+        if (orientation == WallOrientation.Unknown)
+        {
+            return false;
+        }
+
+        var maxDistance = Math.Max(context.Options.DefaultWallThickness * 4.0, context.Options.WallSnapTolerance * 5.0);
+        foreach (var dimension in context.Dimensions.Where(dimension => dimension.PageNumber == wall.PageNumber))
+        {
+            if (dimension.DimensionLine is not { } dimensionLine
+                || !DimensionOrientationMatches(dimension.Orientation, orientation)
+                || ResolveAxisOrientation(dimensionLine) != orientation)
+            {
+                continue;
+            }
+
+            var distance = AxisPerpendicularDistance(wall.CenterLine, dimensionLine, orientation);
+            if (distance > maxDistance)
+            {
+                continue;
+            }
+
+            var overlapRatio = AxisAlignedOverlapRatio(wall.CenterLine, dimensionLine);
+            if (overlapRatio < 0.72)
+            {
+                continue;
+            }
+
+            var lengthRatio = Math.Min(wall.CenterLine.Length, dimensionLine.Length)
+                / Math.Max(1, Math.Max(wall.CenterLine.Length, dimensionLine.Length));
+            if (lengthRatio < 0.70)
+            {
+                continue;
+            }
+
+            evidence = "wall evidence: rejected as unlayered wall candidate aligned with detected dimension "
+                + $"'{dimension.Text}' ({Math.Round(distance, 2).ToString(CultureInfo.InvariantCulture)} drawing units away, "
+                + $"{Math.Round(overlapRatio, 2).ToString(CultureInfo.InvariantCulture)} overlap)";
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool DimensionOrientationMatches(DimensionOrientation dimensionOrientation, WallOrientation wallOrientation) =>
+        (dimensionOrientation == DimensionOrientation.Horizontal && wallOrientation == WallOrientation.Horizontal)
+        || (dimensionOrientation == DimensionOrientation.Vertical && wallOrientation == WallOrientation.Vertical);
+
+    private static double AxisPerpendicularDistance(
+        PlanLineSegment first,
+        PlanLineSegment second,
+        WallOrientation orientation) =>
+        orientation == WallOrientation.Horizontal
+            ? Math.Abs(first.Midpoint.Y - second.Midpoint.Y)
+            : Math.Abs(first.Midpoint.X - second.Midpoint.X);
+
     private static IReadOnlyList<WallSegment> RecoverMissingWalls(
         ScanContext context,
         CancellationToken cancellationToken)
@@ -2520,7 +2597,8 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
 
         for (var index = 0; index < page.Primitives.Count; index++)
         {
-            if (page.Primitives[index] is not ArcPrimitive arc
+            var primitive = page.Primitives[index];
+            if (!TryResolveDoorSwingArcPrimitive(primitive, options, out var arc)
                 || !arc.Bounds.Intersects(searchBounds)
                 || arc.Radius < options.MinOpeningGap * 0.35
                 || arc.Radius > options.MaxOpeningGap * 1.35)
@@ -2557,7 +2635,7 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
             {
                 best = new NearbyArcSupport(
                     Math.Min(score, 0.98),
-                    page.Primitives[index].SourceId ?? page.Primitives[index].Source.SourceId ?? $"p{page.Number}:primitive:{index}",
+                    primitive.SourceId ?? primitive.Source.SourceId ?? $"p{page.Number}:primitive:{index}",
                     arc.Bounds);
             }
         }
@@ -2575,7 +2653,8 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
 
         for (var index = 0; index < page.Primitives.Count; index++)
         {
-            if (page.Primitives[index] is not ArcPrimitive arc
+            var primitive = page.Primitives[index];
+            if (!TryResolveDoorSwingArcPrimitive(primitive, options, out var arc)
                 || !arc.Bounds.Intersects(searchBounds)
                 || !IsPlausibleDoorSwingArc(arc, options))
             {
@@ -2596,7 +2675,7 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
             {
                 best = new NearbyArcSupport(
                     Math.Min(score, 0.98),
-                    page.Primitives[index].SourceId ?? page.Primitives[index].Source.SourceId ?? $"p{page.Number}:primitive:{index}",
+                    primitive.SourceId ?? primitive.Source.SourceId ?? $"p{page.Number}:primitive:{index}",
                     arc.Bounds);
             }
         }
@@ -2639,12 +2718,30 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
     }
 
     private static bool IsPlausibleDoorSwingArc(ArcPrimitive arc, ScannerOptions options)
+        => DoorSwingArcRecovery.IsPlausibleDoorSwingArc(arc, options);
+
+    private static bool TryResolveDoorSwingArcPrimitive(
+        PlanPrimitive primitive,
+        ScannerOptions options,
+        out ArcPrimitive arc)
     {
-        var sweep = Math.Abs(arc.SweepAngleRadians);
-        return arc.Radius >= Math.Max(1, options.MinOpeningGap * 0.35)
-            && arc.Radius <= Math.Max(options.MaxOpeningGap * 1.75, options.MinWallLength * 3.0)
-            && sweep >= Math.PI / 8.0
-            && sweep <= Math.PI * 1.15;
+        if (primitive is ArcPrimitive directArc)
+        {
+            arc = directArc;
+            return true;
+        }
+
+        if (primitive is PolylinePrimitive polyline)
+        {
+            return DoorSwingArcRecovery.TryRecoverFromPolyline(
+                polyline,
+                options,
+                DoorSwingArcRecoveryProfile.WallNoiseRejection,
+                out arc);
+        }
+
+        arc = default!;
+        return false;
     }
 
     private static IEnumerable<LayerCategory> SourceLayerCategories(WallSegment wall, ScanContext context)

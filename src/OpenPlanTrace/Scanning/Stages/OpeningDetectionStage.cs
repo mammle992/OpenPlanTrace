@@ -868,7 +868,20 @@ internal sealed class OpeningDetectionStage : IPipelineStage
     {
         for (var index = 0; index < page.Primitives.Count; index++)
         {
-            if (page.Primitives[index] is not ArcPrimitive arc)
+            var primitive = page.Primitives[index];
+            var sourceId = context.PrimitiveId(page.Number, index, primitive);
+            ArcPrimitive? arc = primitive switch
+            {
+                ArcPrimitive directArc => directArc,
+                PolylinePrimitive polyline when DoorSwingArcRecovery.TryRecoverFromPolyline(
+                    polyline,
+                    context.Options,
+                    DoorSwingArcRecoveryProfile.OpeningDetection,
+                    out var recoveredArc) => recoveredArc,
+                _ => null
+            };
+
+            if (arc is null)
             {
                 continue;
             }
@@ -881,7 +894,7 @@ internal sealed class OpeningDetectionStage : IPipelineStage
                 continue;
             }
 
-            yield return new OpeningSymbolArc(arc, context.PrimitiveId(page.Number, index, arc));
+            yield return new OpeningSymbolArc(arc, sourceId);
         }
     }
 
@@ -1113,6 +1126,17 @@ internal sealed class OpeningDetectionStage : IPipelineStage
                         && line.Segment.Length >= context.Options.MinOpeningGap * 0.4
                         && centerLine.DistanceToPoint(line.Segment.Midpoint) <= context.Options.MaxOpeningGap:
                     yield return new NearbyPrimitive(primitive, context.PrimitiveId(page.Number, index, primitive));
+                    break;
+
+                case PolylinePrimitive polyline
+                    when DoorSwingArcRecovery.TryRecoverFromPolyline(
+                            polyline,
+                            context.Options,
+                            DoorSwingArcRecoveryProfile.OpeningDetection,
+                            out var recoveredArc)
+                        && LooksLikeOpeningSource(polyline)
+                        && centerLine.DistanceToPoint(recoveredArc.Center) <= context.Options.MaxOpeningGap:
+                    yield return new NearbyPrimitive(recoveredArc, context.PrimitiveId(page.Number, index, primitive));
                     break;
 
                 case SymbolPrimitive symbol when LooksLikeOpeningHint(symbol.Name):

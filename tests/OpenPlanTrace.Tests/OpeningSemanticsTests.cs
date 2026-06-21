@@ -61,6 +61,36 @@ public sealed class OpeningSemanticsTests
     }
 
     [Fact]
+    public async Task ScanAsync_RecoversHingedDoorSwingFromBezierPolyline()
+    {
+        var document = new PlanDocument(
+            "hinged-door-polyline",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(600, 400),
+                    new PlanPrimitive[]
+                    {
+                        Wall("wall-left-run", new PlanPoint(100, 100), new PlanPoint(220, 100)),
+                        Wall("wall-right-run", new PlanPoint(250, 100), new PlanPoint(400, 100)),
+                        DoorArcPolyline("door-swing-polyline", new PlanPoint(220, 100), 30, 0, Math.PI / 2)
+                    })
+            });
+
+        var result = await new OpenPlanTraceScanner().ScanAsync(document);
+        var opening = Assert.Single(result.Openings);
+
+        Assert.Equal(OpeningType.Door, opening.Type);
+        Assert.Equal(OpeningOperation.Hinged, opening.Operation);
+        Assert.Equal(OpeningOrientation.Horizontal, opening.Orientation);
+        Assert.Equal(new PlanPoint(220, 100), opening.HingePoint);
+        Assert.Equal(30, opening.DrawingWidth, 3);
+        Assert.Contains("door-swing-polyline", opening.SourcePrimitiveIds);
+        Assert.Contains(opening.Evidence, item => item.Contains("door swing arc", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task ScanAsync_ClassifiesSlidingDoorFromDoorLayerTrackLine()
     {
         var document = new PlanDocument(
@@ -757,6 +787,29 @@ public sealed class OpeningSemanticsTests
             SourceId = sourceId,
             Layer = "A-DOOR",
             Source = Source(sourceId, "ARC", "A-DOOR")
+        };
+
+    private static PolylinePrimitive DoorArcPolyline(
+        string sourceId,
+        PlanPoint center,
+        double radius,
+        double startAngleRadians,
+        double sweepAngleRadians) =>
+        new(
+            Enumerable.Range(0, 7)
+                .Select(index =>
+                {
+                    var angle = startAngleRadians + (sweepAngleRadians * (index / 6.0));
+                    return new PlanPoint(
+                        center.X + (Math.Cos(angle) * radius),
+                        center.Y + (Math.Sin(angle) * radius));
+                })
+                .ToArray(),
+            Closed: false)
+        {
+            SourceId = sourceId,
+            Layer = "A-DOOR",
+            Source = Source(sourceId, "POLYLINE", "A-DOOR")
         };
 
     private static PrimitiveSourceMetadata Source(string sourceId, string entityType, string layer) =>

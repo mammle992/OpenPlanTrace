@@ -1479,6 +1479,81 @@ public sealed class WallLayerFilteringTests
     }
 
     [Fact]
+    public async Task WallEvidenceRefinement_RejectsUnlayeredWallCandidateAlignedWithDetectedDimensionLine()
+    {
+        var dimensionLine = new PlanLineSegment(new PlanPoint(140, 190), new PlanPoint(340, 190));
+        var document = new PlanDocument(
+            "wall-evidence-unlayered-dimension-geometry-filter",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(520, 320),
+                    new PlanPrimitive[]
+                    {
+                        UnlayeredLine("dimension-line-source", dimensionLine.Start, dimensionLine.End),
+                        UnlayeredText("dimension-text-source", "6 100", new PlanRect(210, 196, 56, 16))
+                    })
+            });
+        var context = new ScanContext(
+            document,
+            new ScannerOptions
+            {
+                EnableWallEvidenceNoiseRejection = true
+            });
+        context.Dimensions.Add(new DimensionAnnotation(
+            "page:1:dimension:1",
+            1,
+            DimensionKind.Linear,
+            DimensionOrientation.Horizontal,
+            "6 100",
+            "6100 mm",
+            new PlanRect(136, 186, 208, 30),
+            PlanMeasurementUnit.Millimeter,
+            6100,
+            dimensionLine,
+            200,
+            30.5,
+            Confidence.High,
+            null,
+            new[] { "dimension-line-source", "dimension-text-source" },
+            new[] { "test detected dimension line" }));
+        context.WallCandidates.Add(new WallSegment(
+            "wall-unlayered-dimension-fragment",
+            1,
+            new PlanLineSegment(new PlanPoint(140, 188), new PlanPoint(340, 188)),
+            4,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.FragmentMerged,
+            SourcePrimitiveIds = new[] { "wall-fragment-a", "wall-fragment-b" },
+            FragmentEvidence = new WallFragmentEvidence(
+                FragmentCount: 2,
+                TotalHealedGap: 0,
+                MaxHealedGap: 0,
+                DuplicatePrimitiveCount: 0,
+                GapRatio: 0,
+                RequiresGeometryReview: false,
+                Evidence: Array.Empty<string>()),
+            Evidence = new[] { "test unlayered fragment-merged dimension candidate" }
+        });
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.DoesNotContain(context.Walls, wall => wall.Id == "wall-unlayered-dimension-fragment");
+
+        var rejected = Assert.Single(
+            context.WallEvidenceMap.WallAssessments,
+            assessment => assessment.WallId == "wall-unlayered-dimension-fragment");
+        Assert.Equal(WallEvidenceCategory.DimensionOrAnnotation, rejected.Category);
+        Assert.Equal(WallEvidenceDecision.Reject, rejected.Decision);
+        Assert.True(rejected.RejectedAsNoise);
+        Assert.Contains(
+            rejected.Evidence,
+            item => item.Contains("aligned with detected dimension", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task WallEvidenceRefinement_RejectsSurfacePatternLayerLineworkAsSurfacePatternDetail()
     {
         var document = new PlanDocument(
@@ -1631,12 +1706,102 @@ public sealed class WallLayerFilteringTests
             item => item.Contains("paired hatch/surface-pattern linework", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public async Task WallEvidenceRefinement_RejectsDoorLeafLineworkNearRecoveredPolylineSwingArc()
+    {
+        var document = new PlanDocument(
+            "wall-evidence-polyline-door-leaf-filter",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(520, 320),
+                    new PlanPrimitive[]
+                    {
+                        Line("host-wall", "A-WALL", new PlanPoint(100, 100), new PlanPoint(400, 100)),
+                        DoorArcPolyline("door-swing-polyline", new PlanPoint(220, 100), 30, 0, Math.PI / 2),
+                        Line("door-leaf-line", "A-DOOR", new PlanPoint(220, 100), new PlanPoint(220, 130))
+                    })
+            });
+        var context = new ScanContext(
+            document,
+            new ScannerOptions
+            {
+                EnableWallEvidenceNoiseRejection = true
+            })
+        {
+            LayerAnalysis = new PlanLayerAnalysis(new[]
+            {
+                Layer("A-WALL", LayerCategory.Wall, Confidence.High),
+                Layer("A-DOOR", LayerCategory.Door, Confidence.High)
+            })
+        };
+        context.WallCandidates.Add(new WallSegment(
+            "wall-host",
+            1,
+            new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(400, 100)),
+            4,
+            Confidence.High)
+        {
+            SourcePrimitiveIds = new[] { "host-wall" },
+            Evidence = new[] { "test structural wall" }
+        });
+        context.WallCandidates.Add(new WallSegment(
+            "wall-door-leaf-noise",
+            1,
+            new PlanLineSegment(new PlanPoint(220, 100), new PlanPoint(220, 130)),
+            3,
+            Confidence.Medium)
+        {
+            SourcePrimitiveIds = new[] { "door-leaf-line" },
+            Evidence = new[] { "test recovered door leaf linework" }
+        });
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Contains(context.Walls, wall => wall.SourcePrimitiveIds.Contains("host-wall"));
+        Assert.DoesNotContain(context.Walls, wall => wall.SourcePrimitiveIds.Contains("door-leaf-line"));
+
+        var rejected = Assert.Single(
+            context.WallEvidenceMap.WallAssessments,
+            assessment => assessment.SourcePrimitiveIds.Contains("door-leaf-line"));
+        Assert.Equal(WallEvidenceCategory.DoorOrOpeningSymbol, rejected.Category);
+        Assert.Equal(WallEvidenceDecision.Reject, rejected.Decision);
+        Assert.True(rejected.RejectedAsNoise);
+        Assert.Contains(
+            rejected.Evidence,
+            item => item.Contains("radial swing arc door-swing-polyline", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static LinePrimitive Line(string sourceId, string layer, PlanPoint start, PlanPoint end) =>
         new(new PlanLineSegment(start, end))
         {
             SourceId = sourceId,
             Layer = layer,
             Source = Source(sourceId, "LINE", layer)
+        };
+
+    private static PolylinePrimitive DoorArcPolyline(
+        string sourceId,
+        PlanPoint center,
+        double radius,
+        double startAngleRadians,
+        double sweepAngleRadians) =>
+        new(
+            Enumerable.Range(0, 7)
+                .Select(index =>
+                {
+                    var angle = startAngleRadians + (sweepAngleRadians * (index / 6.0));
+                    return new PlanPoint(
+                        center.X + (Math.Cos(angle) * radius),
+                        center.Y + (Math.Sin(angle) * radius));
+                })
+                .ToArray(),
+            Closed: false)
+        {
+            SourceId = sourceId,
+            Layer = "A-DOOR",
+            Source = Source(sourceId, "POLYLINE", "A-DOOR")
         };
 
     private static LinePrimitive UnlayeredLine(string sourceId, PlanPoint start, PlanPoint end) =>

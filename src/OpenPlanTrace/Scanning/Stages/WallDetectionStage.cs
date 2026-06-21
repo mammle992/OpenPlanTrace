@@ -1052,18 +1052,38 @@ internal sealed class WallDetectionStage : IPipelineStage
         }
 
         return primitives
-            .OfType<ArcPrimitive>()
+            .Select(primitive => TryResolveDoorSwingArcPrimitive(primitive, options, out var arc) ? arc : null)
+            .Where(arc => arc is not null)
+            .Select(arc => arc!)
             .Where(arc => IsPlausibleDoorSwingArc(arc, options))
             .Any(arc => IsRadialDoorLeafForArc(wall.CenterLine, arc, options));
     }
 
     private static bool IsPlausibleDoorSwingArc(ArcPrimitive arc, ScannerOptions options)
+        => DoorSwingArcRecovery.IsPlausibleDoorSwingArc(arc, options);
+
+    private static bool TryResolveDoorSwingArcPrimitive(
+        PlanPrimitive primitive,
+        ScannerOptions options,
+        out ArcPrimitive arc)
     {
-        var sweep = Math.Abs(arc.SweepAngleRadians);
-        return arc.Radius >= Math.Max(1, options.MinOpeningGap * 0.35)
-            && arc.Radius <= Math.Max(options.MaxOpeningGap * 1.75, options.MinWallLength * 3.0)
-            && sweep >= Math.PI / 8.0
-            && sweep <= Math.PI * 1.15;
+        if (primitive is ArcPrimitive directArc)
+        {
+            arc = directArc;
+            return true;
+        }
+
+        if (primitive is PolylinePrimitive polyline)
+        {
+            return DoorSwingArcRecovery.TryRecoverFromPolyline(
+                polyline,
+                options,
+                DoorSwingArcRecoveryProfile.WallNoiseRejection,
+                out arc);
+        }
+
+        arc = default!;
+        return false;
     }
 
     private static bool IsRadialDoorLeafForArc(

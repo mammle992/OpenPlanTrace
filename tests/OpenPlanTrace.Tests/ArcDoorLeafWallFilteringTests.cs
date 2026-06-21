@@ -35,6 +35,38 @@ public sealed class ArcDoorLeafWallFilteringTests
     }
 
     [Fact]
+    public async Task ScanAsync_SuppressesPolylineDoorLeafLineworkFromWalls()
+    {
+        var document = new PlanDocument(
+            "polyline-door-leaf-wall-filter",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(600, 400),
+                    new PlanPrimitive[]
+                    {
+                        Wall("room-top", new PlanPoint(100, 100), new PlanPoint(400, 100)),
+                        Wall("room-right", new PlanPoint(400, 100), new PlanPoint(400, 300)),
+                        Wall("room-bottom", new PlanPoint(400, 300), new PlanPoint(100, 300)),
+                        Wall("room-left", new PlanPoint(100, 300), new PlanPoint(100, 100)),
+                        Wall("real-short-partition", new PlanPoint(300, 100), new PlanPoint(300, 158)),
+                        DoorLeaf("door-leaf-noise", new PlanPoint(220, 100), new PlanPoint(220, 130)),
+                        DoorArcPolyline("door-swing-polyline", new PlanPoint(220, 100), 30, 0, Math.PI / 2)
+                    })
+            });
+
+        var result = await new OpenPlanTraceScanner().ScanAsync(document);
+
+        Assert.DoesNotContain(result.Walls, wall => wall.SourcePrimitiveIds.Contains("door-leaf-noise"));
+        Assert.Contains(result.Walls, wall => wall.SourcePrimitiveIds.Contains("real-short-partition"));
+        Assert.Contains(result.Openings, opening => opening.SourcePrimitiveIds.Contains("door-swing-polyline"));
+        var diagnostic = Assert.Single(result.Diagnostics.Messages.Where(
+            message => message.Code == "walls.door_detail_symbol_walls_filtered"));
+        Assert.Contains("door-leaf-noise", diagnostic.SourcePrimitiveIds);
+    }
+
+    [Fact]
     public async Task WallEvidenceRefinement_RejectsRadialDoorLeafEvenWithWallEndpointSupport()
     {
         var document = new PlanDocument(
@@ -800,6 +832,36 @@ public sealed class ArcDoorLeafWallFilteringTests
                 SourceFormat = "test",
                 SourceId = sourceId,
                 EntityType = "ARC",
+                Layer = "A-DOOR",
+                DrawingSpace = SourceDrawingSpace.Model
+            }
+        };
+
+    private static PolylinePrimitive DoorArcPolyline(
+        string sourceId,
+        PlanPoint center,
+        double radius,
+        double startAngleRadians,
+        double sweepAngleRadians) =>
+        new(
+            Enumerable.Range(0, 7)
+                .Select(index =>
+                {
+                    var angle = startAngleRadians + (sweepAngleRadians * (index / 6.0));
+                    return new PlanPoint(
+                        center.X + (Math.Cos(angle) * radius),
+                        center.Y + (Math.Sin(angle) * radius));
+                })
+                .ToArray(),
+            Closed: false)
+        {
+            SourceId = sourceId,
+            Layer = "A-DOOR",
+            Source = new PrimitiveSourceMetadata
+            {
+                SourceFormat = "test",
+                SourceId = sourceId,
+                EntityType = "POLYLINE",
                 Layer = "A-DOOR",
                 DrawingSpace = SourceDrawingSpace.Model
             }

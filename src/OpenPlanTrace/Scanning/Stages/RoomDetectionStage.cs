@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace OpenPlanTrace;
 
 internal sealed class RoomDetectionStage : IPipelineStage
@@ -112,6 +114,7 @@ internal sealed class RoomDetectionStage : IPipelineStage
 
         var components = grid.FindInteriorComponents(context.Options.MaxRoomCandidatesPerPage + 1).ToArray();
         var added = 0;
+        var suppressed = new List<SuppressedRoomCandidate>();
 
         foreach (var component in components)
         {
@@ -148,9 +151,13 @@ internal sealed class RoomDetectionStage : IPipelineStage
                 continue;
             }
 
-            AddRoom(page, pageNumber, bounds, boundary, wallIds, "wall graph orthogonal face", context);
-            added++;
+            if (AddRoom(page, pageNumber, bounds, boundary, wallIds, "wall graph orthogonal face", context, suppressed))
+            {
+                added++;
+            }
         }
+
+        AddSliverRoomSuppressionDiagnostic(pageNumber, suppressed, context);
 
         if (added > 0)
         {
@@ -202,6 +209,7 @@ internal sealed class RoomDetectionStage : IPipelineStage
         var horizontal = axisWalls.Where(axis => axis.Orientation == WallOrientation.Horizontal).ToArray();
         var vertical = axisWalls.Where(axis => axis.Orientation == WallOrientation.Vertical).ToArray();
         var addedForPage = 0;
+        var suppressed = new List<SuppressedRoomCandidate>();
 
         for (var h1Index = 0; h1Index < horizontal.Length; h1Index++)
         {
@@ -258,11 +266,14 @@ internal sealed class RoomDetectionStage : IPipelineStage
                             .Distinct(StringComparer.Ordinal)
                             .ToArray();
 
-                        AddRoom(page, pageNumber, roomBounds, boundary, wallIds, "rectangular wall coverage fallback", context);
-                        addedForPage++;
+                        if (AddRoom(page, pageNumber, roomBounds, boundary, wallIds, "rectangular wall coverage fallback", context, suppressed))
+                        {
+                            addedForPage++;
+                        }
 
                         if (addedForPage >= context.Options.MaxRoomCandidatesPerPage)
                         {
+                            AddSliverRoomSuppressionDiagnostic(pageNumber, suppressed, context);
                             AddRoomLimitDiagnostic(pageNumber, addedForPage, context);
                             return addedForPage;
                         }
@@ -271,20 +282,28 @@ internal sealed class RoomDetectionStage : IPipelineStage
             }
         }
 
+        AddSliverRoomSuppressionDiagnostic(pageNumber, suppressed, context);
         return addedForPage;
     }
 
-    private void AddRoom(
+    private bool AddRoom(
         PlanPage page,
         int pageNumber,
         PlanRect bounds,
         IReadOnlyList<PlanPoint> boundary,
         IReadOnlyList<string> wallIds,
         string solverEvidence,
-        ScanContext context)
+        ScanContext context,
+        ICollection<SuppressedRoomCandidate> suppressed)
     {
         var label = MatchRoomLabel(page, bounds, boundary, context);
         var useClassification = ClassifyRoomUse(label?.Text, bounds);
+        if (ShouldSuppressSliverRoom(bounds, wallIds, label, useClassification, context, out var suppression))
+        {
+            suppressed.Add(suppression);
+            return false;
+        }
+
         var averageConfidence = wallIds
             .Select(id => context.Walls.First(wall => wall.Id == id).Confidence.Value)
             .DefaultIfEmpty(0.5)
@@ -315,6 +334,94 @@ internal sealed class RoomDetectionStage : IPipelineStage
                     .ToArray(),
                 AreaSquareMeters = context.Calibration.ToSquareMeters(drawingArea, scaleGroup),
                 MeasurementScaleGroupId = scaleGroup?.Id
+            });
+        return true;
+    }
+
+    private static bool ShouldSuppressSliverRoom(
+        PlanRect bounds,
+        IReadOnlyList<string> wallIds,
+        RoomLabelMatch? label,
+        RoomUseClassification useClassification,
+        ScanContext context,
+        out SuppressedRoomCandidate suppression)
+    {
+        var minorSpan = Math.Min(bounds.Width, bounds.Height);
+        var majorSpan = Math.Max(bounds.Width, bounds.Height);
+        var aspectRatio = AspectRatio(bounds);
+        var sliverSpanThreshold = SliverRoomSpanThreshold(context.Options);
+        var hasTrustedSemanticLabel = label is not null
+            && useClassification.Kind != RoomUseKind.Unknown
+            && LabelHasLetters(label.Text);
+
+        var isOffsetFace = minorSpan <= sliverSpanThreshold
+            && aspectRatio >= 2.75
+            && majorSpan >= sliverSpanThreshold * 1.25;
+        var isSevereThreadFace = minorSpan <= sliverSpanThreshold * 0.6
+            && aspectRatio >= 2.0
+            && majorSpan >= sliverSpanThreshold;
+
+        if (!hasTrustedSemanticLabel && (isOffsetFace || isSevereThreadFace))
+        {
+            suppression = new SuppressedRoomCandidate(
+                bounds,
+                wallIds.ToArray(),
+                label?.Text,
+                Math.Round(minorSpan, 3),
+                Math.Round(majorSpan, 3),
+                Math.Round(aspectRatio, 3));
+            return true;
+        }
+
+        suppression = default;
+        return false;
+    }
+
+    private static double SliverRoomSpanThreshold(ScannerOptions options) =>
+        Math.Max(options.MaxWallPairSeparation, options.DefaultWallThickness * 8.0);
+
+    private static bool LabelHasLetters(string text) =>
+        text.Any(char.IsLetter);
+
+    private static void AddSliverRoomSuppressionDiagnostic(
+        int pageNumber,
+        IReadOnlyList<SuppressedRoomCandidate> suppressed,
+        ScanContext context)
+    {
+        if (suppressed.Count == 0)
+        {
+            return;
+        }
+
+        var sourcePrimitiveIds = suppressed
+            .SelectMany(candidate => candidate.WallIds)
+            .Select(id => context.Walls.FirstOrDefault(wall => wall.Id == id))
+            .Where(wall => wall is not null)
+            .SelectMany(wall => wall!.SourcePrimitiveIds)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var exampleBounds = suppressed
+            .Take(5)
+            .Select(candidate => $"{Math.Round(candidate.Bounds.Left, 1)},{Math.Round(candidate.Bounds.Top, 1)} {Math.Round(candidate.Bounds.Width, 1)}x{Math.Round(candidate.Bounds.Height, 1)}")
+            .ToArray();
+
+        context.AddDiagnostic(
+            "rooms.sliver_faces.suppressed",
+            DiagnosticSeverity.Info,
+            StageName,
+            $"Suppressed {suppressed.Count} skinny room face(s) that look like wall/detail offsets rather than usable rooms.",
+            pageNumber,
+            PlanRect.Union(suppressed.Select(candidate => candidate.Bounds)),
+            Confidence.Medium,
+            scope: DiagnosticScope.Detection,
+            sourcePrimitiveIds: sourcePrimitiveIds,
+            properties: new Dictionary<string, string>
+            {
+                ["suppressedRoomCandidateCount"] = suppressed.Count.ToString(),
+                ["maxMinorSpan"] = suppressed.Max(candidate => candidate.MinorSpan).ToString("0.###", CultureInfo.InvariantCulture),
+                ["maxMajorSpan"] = suppressed.Max(candidate => candidate.MajorSpan).ToString("0.###", CultureInfo.InvariantCulture),
+                ["maxAspectRatio"] = suppressed.Max(candidate => candidate.AspectRatio).ToString("0.###", CultureInfo.InvariantCulture),
+                ["examples"] = string.Join(";", exampleBounds)
             });
     }
 
@@ -1490,6 +1597,14 @@ internal sealed class RoomDetectionStage : IPipelineStage
     private sealed record RoomUseClassification(
         RoomUseKind Kind,
         IReadOnlyList<string> Evidence);
+
+    private readonly record struct SuppressedRoomCandidate(
+        PlanRect Bounds,
+        IReadOnlyList<string> WallIds,
+        string? Label,
+        double MinorSpan,
+        double MajorSpan,
+        double AspectRatio);
 
     private sealed record RoomUseRule(
         RoomUseKind Kind,

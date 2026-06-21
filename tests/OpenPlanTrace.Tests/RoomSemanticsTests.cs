@@ -198,6 +198,74 @@ public sealed class RoomSemanticsTests
     }
 
     [Fact]
+    public async Task RoomDetectionStage_SuppressesSkinnyOffsetFacesAsRoomNoise()
+    {
+        var document = new PlanDocument(
+            "room-graph-sliver-offset",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(680, 460),
+                    new PlanPrimitive[]
+                    {
+                        RoomText("office-label", "OFFICE", new PlanRect(255, 210, 70, 16))
+                    })
+            });
+        var context = new ScanContext(
+            document,
+            new ScannerOptions
+            {
+                WallSnapTolerance = 4,
+                GeometryTolerance = new GeometryTolerance(Distance: 1.5)
+            });
+
+        var mainTop = GraphWall("wall-main-top", new PlanPoint(100, 100), new PlanPoint(500, 100));
+        var sliverTop = GraphWall("wall-sliver-top", new PlanPoint(500, 100), new PlanPoint(520, 100));
+        var sliverRight = GraphWall("wall-sliver-right", new PlanPoint(520, 100), new PlanPoint(520, 350));
+        var sliverBottom = GraphWall("wall-sliver-bottom", new PlanPoint(520, 350), new PlanPoint(500, 350));
+        var shared = GraphWall("wall-shared-offset", new PlanPoint(500, 100), new PlanPoint(500, 350));
+        var mainBottom = GraphWall("wall-main-bottom", new PlanPoint(500, 350), new PlanPoint(100, 350));
+        var mainLeft = GraphWall("wall-main-left", new PlanPoint(100, 350), new PlanPoint(100, 100));
+        context.Walls.AddRange(new[] { mainTop, sliverTop, sliverRight, sliverBottom, shared, mainBottom, mainLeft });
+
+        context.WallGraph = new WallGraph(
+            new[]
+            {
+                GraphNode("n1", new PlanPoint(100, 100)),
+                GraphNode("n2", new PlanPoint(500, 100)),
+                GraphNode("n3", new PlanPoint(520, 100)),
+                GraphNode("n4", new PlanPoint(520, 350)),
+                GraphNode("n5", new PlanPoint(500, 350)),
+                GraphNode("n6", new PlanPoint(100, 350))
+            },
+            new[]
+            {
+                GraphEdge("e1", "n1", "n2", mainTop.Id),
+                GraphEdge("e2", "n2", "n3", sliverTop.Id),
+                GraphEdge("e3", "n3", "n4", sliverRight.Id),
+                GraphEdge("e4", "n4", "n5", sliverBottom.Id),
+                GraphEdge("e5", "n5", "n2", shared.Id),
+                GraphEdge("e6", "n5", "n6", mainBottom.Id),
+                GraphEdge("e7", "n6", "n1", mainLeft.Id)
+            });
+
+        await new RoomDetectionStage().ExecuteAsync(context, CancellationToken.None);
+
+        var room = Assert.Single(context.Rooms);
+        Assert.Equal("OFFICE", room.Label);
+        Assert.Equal(100, room.Bounds.Left, precision: 1);
+        Assert.Equal(500, room.Bounds.Right, precision: 1);
+        Assert.DoesNotContain(context.Rooms, candidate => Math.Min(candidate.Bounds.Width, candidate.Bounds.Height) <= 32);
+
+        var diagnostic = Assert.Single(
+            context.Diagnostics.Build().Messages,
+            item => item.Code == "rooms.sliver_faces.suppressed");
+        Assert.Equal("1", diagnostic.Properties["suppressedRoomCandidateCount"]);
+        Assert.Contains("wall-shared-offset", diagnostic.SourcePrimitiveIds);
+    }
+
+    [Fact]
     public async Task ScanAsync_AddsRoomAdjacencyGraphForSharedRoomBoundary()
     {
         var result = await ScanAdjacentRoomsAsync();
