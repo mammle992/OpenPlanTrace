@@ -87,6 +87,77 @@ public sealed class RoomSemanticsTests
     }
 
     [Fact]
+    public async Task ScanAsync_AddsReviewGradeSemanticRoomSeedFromLabelAndAreaWhenLoopIsMissing()
+    {
+        var document = new PlanDocument(
+            "semantic-room-seed",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(700, 500),
+                    new PlanPrimitive[]
+                    {
+                        Wall("wall-top", new PlanPoint(100, 120), new PlanPoint(480, 120)),
+                        Wall("wall-left", new PlanPoint(100, 120), new PlanPoint(100, 360)),
+                        Wall("wall-right-fragment", new PlanPoint(480, 120), new PlanPoint(480, 240)),
+                        RoomText("office-label", "OFFICE", new PlanRect(246, 194, 70, 16)),
+                        RoomText("office-area", "12.5 m2", new PlanRect(252, 218, 64, 16))
+                    })
+            });
+
+        var result = await new OpenPlanTraceScanner().ScanAsync(document);
+        var room = Assert.Single(result.Rooms);
+
+        Assert.Equal("OFFICE", room.Label);
+        Assert.Equal(RoomUseKind.Office, room.UseKind);
+        Assert.Empty(room.WallIds);
+        Assert.True(room.Confidence.Value < 0.5);
+        Assert.Equal(12.5, room.AreaSquareMeters);
+        Assert.Contains("office-label", room.LabelSourcePrimitiveIds);
+        Assert.Contains("office-area", room.LabelSourcePrimitiveIds);
+        Assert.Contains(room.Evidence, item => item.Contains("semantic room seed", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(room.Evidence, item => item.Contains("requires wall-boundary review", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Diagnostics.Messages, diagnostic => diagnostic.Code == "rooms.semantic_label_seeds.detected");
+    }
+
+    [Fact]
+    public async Task ScanAsync_DoesNotCreateSemanticRoomSeedFromPureNumericLabelWithoutLayerHint()
+    {
+        var document = new PlanDocument(
+            "semantic-room-numeric-label",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(700, 500),
+                    new PlanPrimitive[]
+                    {
+                        Wall("wall-top", new PlanPoint(100, 120), new PlanPoint(480, 120)),
+                        Wall("wall-left", new PlanPoint(100, 120), new PlanPoint(100, 360)),
+                        Wall("wall-right-fragment", new PlanPoint(480, 120), new PlanPoint(480, 240)),
+                        new TextPrimitive("148", new PlanRect(246, 194, 40, 16))
+                        {
+                            SourceId = "numeric-note",
+                            Layer = "A-ANNO",
+                            Source = Source("numeric-note", "TEXT", "A-ANNO")
+                        },
+                        new TextPrimitive("20.1 m2", new PlanRect(252, 218, 64, 16))
+                        {
+                            SourceId = "area-note",
+                            Layer = "A-ANNO",
+                            Source = Source("area-note", "TEXT", "A-ANNO")
+                        }
+                    })
+            });
+
+        var result = await new OpenPlanTraceScanner().ScanAsync(document);
+
+        Assert.Empty(result.Rooms);
+        Assert.DoesNotContain(result.Diagnostics.Messages, diagnostic => diagnostic.Code == "rooms.semantic_label_seeds.detected");
+    }
+
+    [Fact]
     public async Task JsonExporter_IncludesRoomBoundaryAndLabelEvidence()
     {
         var result = await ScanLabeledRoomAsync();

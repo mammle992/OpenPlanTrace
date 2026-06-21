@@ -7,6 +7,7 @@ internal static class WallTopologySpanVisibility
     private const double MaxCleanRunJoinGapDrawingUnits = 12.0;
     private const double MinCleanRunLengthDrawingUnits = 8.0;
     private const double MinOpeningAdjacentCleanRunLengthDrawingUnits = 20.0;
+    private const double MinTrustedOpeningAdjacentCleanRunLengthDrawingUnits = 6.0;
     private const double MaxContainedDuplicateAxisDistanceDrawingUnits = 1.25;
     private const double MinContainedDuplicateOverlapRatio = 0.92;
     private const double MinExteriorFacePairAxisDistanceDrawingUnits = 2.0;
@@ -19,8 +20,10 @@ internal static class WallTopologySpanVisibility
     private const double MaxDominantAxisSkewRatio = 0.04;
     private const double MaxDominantAxisSkewDrawingUnits = 8.0;
     private const double MinSourceBackedFallbackWallLengthDrawingUnits = 48.0;
-    private const double MinSourceBackedFallbackPairScore = 0.74;
+    private const double MinSourceBackedFallbackPairScore = 0.70;
+    private const double MinSourceBackedFallbackStrictPairScore = 0.74;
     private const double MinSourceBackedFallbackOverlapRatio = 0.72;
+    private const double MinSourceBackedFallbackRelaxedScoreOverlapRatio = 0.96;
     private const double MinSourceBackedFallbackFaceSeparationDrawingUnits = 1.5;
     private const double MaxSourceBackedFallbackFaceSeparationDrawingUnits = 24.0;
     private const double MaxSourceBackedFallbackExistingCoverageRatio = 0.68;
@@ -39,9 +42,7 @@ internal static class WallTopologySpanVisibility
             .Where(span => IsVisibleTopologySpan(span, context, options))
             .ToArray();
 
-        return options.IncludeReviewOnlyWallTopologySpans
-            ? spans
-            : BuildCleanPlacementTopologySpans(spans, result.Openings, context, result.Walls, pageNumber);
+        return BuildCleanPlacementTopologySpans(spans, result.Openings, context, result.Walls, pageNumber);
     }
 
     public static IReadOnlyList<WallGraphTopologySpan> BuildCleanPlacementTopologySpans(
@@ -159,11 +160,6 @@ internal static class WallTopologySpanVisibility
         WallTopologySpanVisibilityContext context,
         SvgOverlayRenderOptions options)
     {
-        if (options.IncludeReviewOnlyWallTopologySpans)
-        {
-            return true;
-        }
-
         context.ComponentByWallId.TryGetValue(span.WallId, out var component);
         context.WallEvidenceAssessments.TryGetValue(span.WallId, out var assessment);
         var reviewReasons = context.ReviewReasonsByWallId.TryGetValue(span.WallId, out var reasons)
@@ -376,6 +372,12 @@ internal static class WallTopologySpanVisibility
             || pair.OverlapRatio < MinSourceBackedFallbackOverlapRatio
             || pair.FaceSeparation < MinSourceBackedFallbackFaceSeparationDrawingUnits
             || pair.FaceSeparation > MaxSourceBackedFallbackFaceSeparationDrawingUnits)
+        {
+            return false;
+        }
+
+        if (pair.Score < MinSourceBackedFallbackStrictPairScore
+            && pair.OverlapRatio < MinSourceBackedFallbackRelaxedScoreOverlapRatio)
         {
             return false;
         }
@@ -1014,9 +1016,11 @@ internal static class WallTopologySpanVisibility
         string? nextOpeningId)
     {
         var length = (endParameter - startParameter) * sourceWall.CenterLine.Length;
-        var minimumLength = previousOpeningId is not null || nextOpeningId is not null
-            ? MinOpeningAdjacentCleanRunLengthDrawingUnits
-            : MinCleanRunLengthDrawingUnits;
+        var minimumLength = OpeningAdjacentMinimumCleanRunLength(
+            span,
+            sourceWall,
+            previousOpeningId,
+            nextOpeningId);
         if (length < minimumLength)
         {
             return;
@@ -1030,6 +1034,56 @@ internal static class WallTopologySpanVisibility
             sequence++,
             previousOpeningId,
             nextOpeningId));
+    }
+
+    private static double OpeningAdjacentMinimumCleanRunLength(
+        WallGraphTopologySpan span,
+        WallSegment sourceWall,
+        string? previousOpeningId,
+        string? nextOpeningId)
+    {
+        if (previousOpeningId is null && nextOpeningId is null)
+        {
+            return MinCleanRunLengthDrawingUnits;
+        }
+
+        return IsTrustedOpeningAdjacentShortRun(span, sourceWall)
+            ? MinTrustedOpeningAdjacentCleanRunLengthDrawingUnits
+            : MinOpeningAdjacentCleanRunLengthDrawingUnits;
+    }
+
+    private static bool IsTrustedOpeningAdjacentShortRun(
+        WallGraphTopologySpan span,
+        WallSegment sourceWall)
+    {
+        if (sourceWall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || sourceWall.WallType == WallType.Unknown
+            || sourceWall.FragmentEvidence?.RequiresGeometryReview == true
+            || sourceWall.PairEvidence is not { } pair
+            || pair.Score < MinSourceBackedFallbackPairScore
+            || pair.OverlapRatio < MinSourceBackedFallbackOverlapRatio
+            || pair.FaceSeparation < MinSourceBackedFallbackFaceSeparationDrawingUnits
+            || pair.FaceSeparation > MaxSourceBackedFallbackFaceSeparationDrawingUnits)
+        {
+            return false;
+        }
+
+        if (pair.Score < MinSourceBackedFallbackStrictPairScore
+            && pair.OverlapRatio < MinSourceBackedFallbackRelaxedScoreOverlapRatio)
+        {
+            return false;
+        }
+
+        var maxFaceFragmentCount = Math.Max(pair.FirstFaceFragmentCount, pair.SecondFaceFragmentCount);
+        var fragmentLimit = sourceWall.DrawingLength >= MinLongSourceBackedFallbackWallLengthDrawingUnits
+            ? MaxLongSourceBackedFallbackFaceFragmentCount
+            : MaxSourceBackedFallbackFaceFragmentCount;
+        if (maxFaceFragmentCount > fragmentLimit)
+        {
+            return false;
+        }
+
+        return span.Confidence.Value >= 0.7 && sourceWall.Confidence.Value >= 0.7;
     }
 
     private static WallGraphTopologySpan CreateOpeningSplitSpan(

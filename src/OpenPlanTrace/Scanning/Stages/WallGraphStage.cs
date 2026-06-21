@@ -853,13 +853,25 @@ internal sealed class WallGraphStage : IPipelineStage
                 mainBounds = pageBounds;
             }
 
-            var ordered = pageGroup
+            var orderedRawComponents = pageGroup
                 .OrderByDescending(component => component.DrawingLength)
                 .ThenByDescending(component => component.WallIds.Count)
                 .ThenBy(component => component.Bounds.Top)
                 .ThenBy(component => component.Bounds.Left)
                 .ToArray();
-            var mainComponent = ordered.FirstOrDefault(component => component.WallIds.Count >= 2 || component.EdgeIds.Count >= 2);
+            var mainComponent = orderedRawComponents.FirstOrDefault(component => component.WallIds.Count >= 2 || component.EdgeIds.Count >= 2);
+            var ordered = SplitContaminatedAnchoredPairedWallComponents(
+                    orderedRawComponents,
+                    mainComponent,
+                    context,
+                    wallsById,
+                    nodesById,
+                    edges)
+                .OrderByDescending(component => component.DrawingLength)
+                .ThenByDescending(component => component.WallIds.Count)
+                .ThenBy(component => component.Bounds.Top)
+                .ThenBy(component => component.Bounds.Left)
+                .ToArray();
             var sequence = 1;
             foreach (var rawComponent in ordered)
             {
@@ -891,6 +903,144 @@ internal sealed class WallGraphStage : IPipelineStage
             .OrderBy(component => component.PageNumber)
             .ThenBy(component => component.Id, StringComparer.Ordinal)
             .ToArray();
+    }
+
+    private static IReadOnlyList<RawWallGraphComponent> SplitContaminatedAnchoredPairedWallComponents(
+        IReadOnlyList<RawWallGraphComponent> components,
+        RawWallGraphComponent? mainComponent,
+        ScanContext context,
+        IReadOnlyDictionary<string, WallSegment> wallsById,
+        IReadOnlyDictionary<string, WallNode> nodesById,
+        IReadOnlyList<WallEdge> edges)
+    {
+        if (mainComponent is null || components.Count == 0)
+        {
+            return components;
+        }
+
+        var split = new List<RawWallGraphComponent>(components.Count);
+        foreach (var component in components)
+        {
+            if (ReferenceEquals(component, mainComponent))
+            {
+                split.Add(component);
+                continue;
+            }
+
+            var trustedWallIds = FindAnchoredTrustedPairedWallsInContaminatedComponent(
+                    component,
+                    mainComponent,
+                    context,
+                    wallsById)
+                .ToArray();
+            if (trustedWallIds.Length == 0)
+            {
+                split.Add(component);
+                continue;
+            }
+
+            var trustedWallIdSet = trustedWallIds.ToHashSet(StringComparer.Ordinal);
+            var remainingWallIds = component.WallIds
+                .Where(id => !trustedWallIdSet.Contains(id))
+                .ToArray();
+            if (remainingWallIds.Length == 0)
+            {
+                split.Add(component);
+                continue;
+            }
+
+            split.Add(CreateRawComponentForWallIds(
+                component.PageNumber,
+                trustedWallIds,
+                wallsById,
+                nodesById,
+                edges,
+                context.Options));
+            split.Add(CreateRawComponentForWallIds(
+                component.PageNumber,
+                remainingWallIds,
+                wallsById,
+                nodesById,
+                edges,
+                context.Options));
+        }
+
+        return split;
+    }
+
+    private static IEnumerable<string> FindAnchoredTrustedPairedWallsInContaminatedComponent(
+        RawWallGraphComponent component,
+        RawWallGraphComponent mainComponent,
+        ScanContext context,
+        IReadOnlyDictionary<string, WallSegment> wallsById)
+    {
+        if (component.Bounds.IsEmpty
+            || mainComponent.Bounds.IsEmpty
+            || component.WallIds.Count < 2
+            || component.WallIds.Count > 10
+            || component.EdgeIds.Count == 0
+            || component.PairedWallCount == 0
+            || component.DiagonalWallCount == 0)
+        {
+            yield break;
+        }
+
+        var structuralNeighborhood = mainComponent.Bounds.Inflate(Math.Max(
+            UnresolvedEndpointGapReviewTolerance(context.Options) * 2.0,
+            context.Options.DefaultWallThickness * 10.0));
+        if (!structuralNeighborhood.Intersects(component.Bounds))
+        {
+            yield break;
+        }
+
+        var assessmentsByWallId = context.WallEvidenceMap.WallAssessments
+            .Where(assessment => !string.IsNullOrWhiteSpace(assessment.WallId))
+            .GroupBy(assessment => assessment.WallId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
+
+        foreach (var wallId in component.WallIds)
+        {
+            if (!wallsById.TryGetValue(wallId, out var wall)
+                || !assessmentsByWallId.TryGetValue(wallId, out var assessment)
+                || wall.DrawingLength < AnchoredSinglePairedWallBodyLength(context.Options)
+                || !IsTrustedCompactStructuralPairedWall(assessment, wall, context.Options)
+                || !HasEndpointAttachmentToMainComponent(wall, mainComponent, wallsById, context.Options))
+            {
+                continue;
+            }
+
+            yield return wallId;
+        }
+    }
+
+    private static RawWallGraphComponent CreateRawComponentForWallIds(
+        int pageNumber,
+        IReadOnlyList<string> wallIds,
+        IReadOnlyDictionary<string, WallSegment> wallsById,
+        IReadOnlyDictionary<string, WallNode> nodesById,
+        IReadOnlyList<WallEdge> edges,
+        ScannerOptions options)
+    {
+        var wallIdSet = wallIds
+            .Where(id => !string.IsNullOrWhiteSpace(id) && wallsById.ContainsKey(id))
+            .ToHashSet(StringComparer.Ordinal);
+        var componentEdges = edges
+            .Where(edge => !string.IsNullOrWhiteSpace(edge.WallId) && wallIdSet.Contains(edge.WallId))
+            .ToArray();
+        var nodeIds = componentEdges
+            .SelectMany(edge => new[] { edge.FromNodeId, edge.ToNodeId })
+            .Where(id => !string.IsNullOrWhiteSpace(id) && nodesById.ContainsKey(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        return CreateRawComponent(
+            pageNumber,
+            wallIdSet,
+            nodeIds,
+            componentEdges.Select(edge => edge.Id),
+            wallsById,
+            nodesById,
+            options);
     }
 
     private static void RefineObjectLikeComponentWallEvidence(

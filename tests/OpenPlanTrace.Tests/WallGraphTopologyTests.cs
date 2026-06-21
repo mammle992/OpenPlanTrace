@@ -1747,6 +1747,127 @@ public sealed class WallGraphTopologyTests
     }
 
     [Fact]
+    public async Task WallGraphStage_SplitsTrustedAnchoredPairedWallOutOfContaminatedDetailComponent()
+    {
+        var mainWalls = new[]
+        {
+            DetectedWall("main-top", new PlanPoint(100, 100), new PlanPoint(700, 100)) with { WallType = WallType.Exterior },
+            DetectedWall("main-right", new PlanPoint(700, 100), new PlanPoint(700, 500)) with { WallType = WallType.Exterior },
+            DetectedWall("main-bottom", new PlanPoint(700, 500), new PlanPoint(100, 500)) with { WallType = WallType.Exterior },
+            DetectedWall("main-left", new PlanPoint(100, 500), new PlanPoint(100, 100)) with { WallType = WallType.Exterior }
+        };
+        var trustedWall = StrongPairedWall(
+            "wall-contaminated-anchored-trusted",
+            new PlanPoint(300, 114),
+            new PlanPoint(300, 202));
+        var diagonalDetailA = DetectedWall(
+            "wall-contaminated-diagonal-detail-a",
+            new PlanPoint(300, 150),
+            new PlanPoint(334, 166));
+        var diagonalDetailB = DetectedWall(
+            "wall-contaminated-diagonal-detail-b",
+            new PlanPoint(334, 166),
+            new PlanPoint(300, 188));
+        var context = new ScanContext(
+            Document("wall-contaminated-anchored-pair-split"),
+            new ScannerOptions());
+        context.Walls.AddRange(mainWalls.Concat(new[] { trustedWall, diagonalDetailA, diagonalDetailB }));
+        context.WallEvidenceMap = new WallEvidenceMap(
+            Array.Empty<WallEvidenceSegment>(),
+            Array.Empty<WallEvidenceBand>(),
+            mainWalls
+                .Select(wall => Assessment(wall, WallEvidenceDecision.Accept, WallEvidenceCategory.StrongWallBody, Confidence.High))
+                .Concat(new[]
+                {
+                    Assessment(trustedWall, WallEvidenceDecision.Accept, WallEvidenceCategory.StrongWallBody, new Confidence(0.91)),
+                    Assessment(diagonalDetailA, WallEvidenceDecision.Review, WallEvidenceCategory.MediumWallBody, new Confidence(0.52)),
+                    Assessment(diagonalDetailB, WallEvidenceDecision.Review, WallEvidenceCategory.MediumWallBody, new Confidence(0.52))
+                })
+                .ToArray());
+
+        await new WallTopologyPreparationStage().ExecuteAsync(context, CancellationToken.None);
+        await new WallGraphStage().ExecuteAsync(context, CancellationToken.None);
+
+        var trustedComponent = Assert.Single(
+            context.WallGraph.Components,
+            component => component.WallIds.Contains(trustedWall.Id));
+        var detailComponent = Assert.Single(
+            context.WallGraph.Components,
+            component => component.WallIds.Contains(diagonalDetailA.Id)
+                && component.WallIds.Contains(diagonalDetailB.Id));
+        var trustedAssessment = Assert.Single(
+            context.WallEvidenceMap.WallAssessments,
+            assessment => assessment.WallId == trustedWall.Id);
+
+        Assert.Equal(WallGraphComponentKind.SecondaryStructural, trustedComponent.Kind);
+        Assert.False(trustedComponent.ExcludedFromStructuralTopology);
+        Assert.DoesNotContain(diagonalDetailA.Id, trustedComponent.WallIds);
+        Assert.DoesNotContain(diagonalDetailB.Id, trustedComponent.WallIds);
+        Assert.Equal(WallGraphComponentKind.ObjectLikeIsland, detailComponent.Kind);
+        Assert.True(detailComponent.ExcludedFromStructuralTopology);
+        Assert.Equal(WallEvidenceDecision.Accept, trustedAssessment.Decision);
+        Assert.Equal(WallEvidenceCategory.StrongWallBody, trustedAssessment.Category);
+        Assert.False(trustedAssessment.RejectedAsNoise);
+    }
+
+    [Fact]
+    public async Task WallGraphStage_KeepsLowScoreContaminatedPairedWallClusterOutOfStructuralTopology()
+    {
+        var mainWalls = new[]
+        {
+            DetectedWall("main-top", new PlanPoint(100, 100), new PlanPoint(700, 100)) with { WallType = WallType.Exterior },
+            DetectedWall("main-right", new PlanPoint(700, 100), new PlanPoint(700, 500)) with { WallType = WallType.Exterior },
+            DetectedWall("main-bottom", new PlanPoint(700, 500), new PlanPoint(100, 500)) with { WallType = WallType.Exterior },
+            DetectedWall("main-left", new PlanPoint(100, 500), new PlanPoint(100, 100)) with { WallType = WallType.Exterior }
+        };
+        var lowScoreWall = StrongPairedWall(
+            "wall-contaminated-low-score-trusted",
+            new PlanPoint(300, 114),
+            new PlanPoint(300, 202),
+            pairScore: 0.62);
+        var diagonalDetailA = DetectedWall(
+            "wall-contaminated-low-score-diagonal-a",
+            new PlanPoint(300, 150),
+            new PlanPoint(334, 166));
+        var diagonalDetailB = DetectedWall(
+            "wall-contaminated-low-score-diagonal-b",
+            new PlanPoint(334, 166),
+            new PlanPoint(300, 188));
+        var context = new ScanContext(
+            Document("wall-contaminated-low-score-cluster"),
+            new ScannerOptions());
+        context.Walls.AddRange(mainWalls.Concat(new[] { lowScoreWall, diagonalDetailA, diagonalDetailB }));
+        context.WallEvidenceMap = new WallEvidenceMap(
+            Array.Empty<WallEvidenceSegment>(),
+            Array.Empty<WallEvidenceBand>(),
+            mainWalls
+                .Select(wall => Assessment(wall, WallEvidenceDecision.Accept, WallEvidenceCategory.StrongWallBody, Confidence.High))
+                .Concat(new[]
+                {
+                    Assessment(lowScoreWall, WallEvidenceDecision.Accept, WallEvidenceCategory.StrongWallBody, new Confidence(0.91)),
+                    Assessment(diagonalDetailA, WallEvidenceDecision.Review, WallEvidenceCategory.MediumWallBody, new Confidence(0.52)),
+                    Assessment(diagonalDetailB, WallEvidenceDecision.Review, WallEvidenceCategory.MediumWallBody, new Confidence(0.52))
+                })
+                .ToArray());
+
+        await new WallTopologyPreparationStage().ExecuteAsync(context, CancellationToken.None);
+        await new WallGraphStage().ExecuteAsync(context, CancellationToken.None);
+
+        var contaminatedComponent = Assert.Single(
+            context.WallGraph.Components,
+            component => component.WallIds.Contains(lowScoreWall.Id));
+        var lowScoreAssessment = Assert.Single(
+            context.WallEvidenceMap.WallAssessments,
+            assessment => assessment.WallId == lowScoreWall.Id);
+
+        Assert.Equal(WallGraphComponentKind.IsolatedFragment, contaminatedComponent.Kind);
+        Assert.False(contaminatedComponent.ExcludedFromStructuralTopology);
+        Assert.Equal(WallEvidenceDecision.Accept, lowScoreAssessment.Decision);
+        Assert.Equal(WallEvidenceCategory.StrongWallBody, lowScoreAssessment.Category);
+        Assert.False(lowScoreAssessment.RejectedAsNoise);
+    }
+
+    [Fact]
     public async Task WallGraphStage_KeepsCompactMediumPairedWallClusterObjectLike()
     {
         var mainWalls = new[]

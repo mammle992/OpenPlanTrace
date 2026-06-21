@@ -6,6 +6,87 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.171] - 2026-06-21
+
+### Added
+- Room detection now has a deterministic semantic fallback that can create
+  review-grade room seeds from nearby room label plus area text evidence when
+  wall loops are missing.
+- Semantic room seeds include label source IDs, area text evidence, confidence,
+  room-use hints, and diagnostics so downstream tools can review them without
+  treating them as exact geometry.
+- Added a `wall-qa-review` SVG profile and viewer `WALL REVIEW` preset that
+  shows clean placement wall spans separately from amber non-placement/review
+  spans for missing-wall and noisy-fragment diagnosis.
+
+### Improved
+- Placement export now blocks semantic room seeds from coordinate-ready import
+  until a real closed wall boundary is verified, even if nearby orthogonal wall
+  evidence was found.
+- Pure numeric text is no longer accepted as a semantic room seed label unless
+  explicit room-layer evidence exists, reducing false rooms from annotation
+  numbers.
+- Norwegian room-use hints now classify `Trapperom` as stair space and
+  `Gard.`/`garderobe` as storage.
+- Wall topology SVG/snapshot export now keeps placement-ready topology spans
+  separate from non-placement spans instead of letting diagnostic review spans
+  appear in the clean placement layer.
+- Source-backed wall fallback now recovers strong paired wall bodies with
+  slightly lower pair scores when overlap is near-complete, improving recovery
+  of real interior partitions that the wall graph failed to connect.
+- Opening-aware topology splitting now keeps short door-adjacent jamb/return
+  spans when they come from trusted paired wall-face evidence, while still
+  suppressing similarly tiny single-line remnants that are likely door/detail
+  noise.
+- Placement omission export now distinguishes walls already represented by a
+  cleaner topology span from genuinely missing topology, including evidence and
+  linked wall IDs where production wall IDs are available.
+
+### Verified
+- Added tests for semantic room seeds from label/area evidence, numeric-label
+  suppression, placement-review gating for rooms without linked wall evidence,
+  and the clean-vs-review wall QA profile split.
+- Added positive and negative regression coverage for lower-score
+  source-backed wall fallback recovery.
+- Rescanned the supplied medium-difficulty PDF with `wall-qa`; semantic rooms
+  increased useful room context while the risky numeric-only seed was removed
+  (`8` rooms down to `7` after the guard), and the wall-only QA screenshot was
+  rendered for review.
+- Rescanned the supplied medium-difficulty A20 PDF with `wall-qa` and
+  `wall-qa-review`; the new review screenshot separates amber non-placement
+  spans from blue/green clean placement walls, making the former random-looking
+  line soup diagnosable without treating it as placement output.
+- Confirmed the A20 clean placement count is still conservative (`24`
+  placement-ready walls, `27` visible topology spans), so the next accuracy
+  target is component classification and opening-aware recovery rather than
+  visual cleanup alone.
+- Added regression coverage proving tiny single-line opening-adjacent remnants
+  stay suppressed while trusted paired wall jambs survive clean topology export.
+- Rescanned the supplied medium-difficulty A20 PDF with `wall-qa`; recovered
+  three trusted short wall spans around openings (`24` to `27`
+  placement-ready walls, `27` to `30` clean topology spans) without restoring
+  the amber review/noise spans to the clean layer.
+- Rescanned the same medium-difficulty PDF after the omission-taxonomy update;
+  geometry stayed stable (`27` placement-ready walls, `30` clean topology
+  spans), and the duplicated long exterior wall now reports
+  `duplicate_clean_topology_span` linked to the clean representative wall.
+- Isolated/review wall fragments that are geometrically covered by an existing
+  clean topology span now also report `duplicate_clean_topology_span` instead
+  of inflating the isolated-fragment missing-wall bucket.
+- Rescanned the same medium-difficulty PDF again; clean geometry stayed stable
+  while duplicate-clean omissions increased from `1` to `14` and isolated
+  fragment omissions dropped from `37` to `26`, making wall QA output less
+  noisy without adding placement lines.
+- Duplicate-clean topology omissions now recognize recovered wall identifier
+  shapes such as `page:1:wall-evidence-recovered:001` when filling
+  `linkedWallIds`, so downstream tools can follow representative walls even
+  when they came from recovery logic.
+- Rescanned the same medium-difficulty PDF again; duplicate-clean omission
+  counts stayed stable at `14`, clean topology stayed stable at `30`, and
+  linked representative wall IDs improved from `12/14` to `14/14`.
+- Targeted room/export/wall-QA tests passed, and the full solution test suite
+  passed (`651` tests).
+
 ## [0.02.170] - 2026-06-21
 
 ### Improved

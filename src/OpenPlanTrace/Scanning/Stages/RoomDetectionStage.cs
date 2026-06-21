@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 
 namespace OpenPlanTrace;
 
@@ -57,6 +58,8 @@ internal sealed class RoomDetectionStage : IPipelineStage
         "area",
         "areal"
     };
+    private static readonly Regex RoomAreaMeasurementRegex =
+        new(@"^\s*\d+(?:[\.,]\d+)?\s*m(?:2|\^2|\u00B2|\u33A1)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     public string Name => StageName;
 
@@ -87,6 +90,8 @@ internal sealed class RoomDetectionStage : IPipelineStage
             {
                 addedForPage = AddRectangularFallbackRooms(page, pageGroup.Key, structuralWalls, context, seen, cancellationToken);
             }
+
+            addedForPage += AddSemanticLabelRooms(page, pageGroup.Key, structuralWalls, context, seen, cancellationToken);
 
             if (addedForPage == 0 && structuralWalls.Count > 0)
             {
@@ -286,6 +291,150 @@ internal sealed class RoomDetectionStage : IPipelineStage
         return addedForPage;
     }
 
+    private int AddSemanticLabelRooms(
+        PlanPage page,
+        int pageNumber,
+        IReadOnlyList<WallSegment> structuralWalls,
+        ScanContext context,
+        HashSet<string> seen,
+        CancellationToken cancellationToken)
+    {
+        var mainRegion = context.SheetRegions
+            .Where(region => region.PageNumber == pageNumber && region.Kind == RegionKind.MainFloorPlan)
+            .OrderBy(region => region.Bounds.Area)
+            .FirstOrDefault();
+        if (mainRegion is null)
+        {
+            return 0;
+        }
+
+        var textLines = BuildRoomTextLines(page, context, mainRegion.Bounds).ToArray();
+        if (textLines.Length < 2)
+        {
+            return 0;
+        }
+
+        var axisWalls = structuralWalls
+            .Select(wall => AxisWall.TryCreate(wall, context.Options.GeometryTolerance.Distance))
+            .Where(axis => axis is not null)
+            .Select(axis => axis!)
+            .ToArray();
+        var candidates = BuildSemanticRoomCandidates(page, textLines, mainRegion.Bounds, context.Options).ToArray();
+        var added = 0;
+        var approximateCount = 0;
+        var wallBoundedCount = 0;
+        var sourcePrimitiveIds = new List<string>();
+
+        foreach (var candidate in candidates)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (added >= context.Options.MaxRoomCandidatesPerPage)
+            {
+                AddRoomLimitDiagnostic(pageNumber, added, context);
+                break;
+            }
+
+            if (context.Rooms
+                .Where(room => room.PageNumber == pageNumber)
+                .Any(room => room.Bounds.Contains(candidate.AnchorPoint, context.Options.WallSnapTolerance)
+                    || OverlapRatio(candidate.EvidenceBounds, room.Bounds) > 0.55))
+            {
+                continue;
+            }
+
+            var boundary = TryInferSemanticRoomBoundary(
+                candidate,
+                axisWalls,
+                mainRegion.Bounds,
+                context.Options,
+                out var wallIds,
+                out var boundaryEvidence);
+            var isWallBounded = boundary.Count >= 4 && wallIds.Length >= 2;
+            var roomBounds = isWallBounded
+                ? PlanRect.Union(boundary.Select(point => new PlanRect(point.X, point.Y, 0, 0)))
+                : candidate.EvidenceBounds
+                    .Inflate(Math.Max(8, context.Options.DefaultWallThickness * 3.0))
+                    .ClampTo(mainRegion.Bounds);
+
+            if (!isWallBounded)
+            {
+                boundary = RectangleBoundary(roomBounds.Left, roomBounds.Top, roomBounds.Right, roomBounds.Bottom);
+            }
+
+            if (roomBounds.IsEmpty || roomBounds.Area < Math.Max(80, context.Options.MinRoomArea * 0.15))
+            {
+                continue;
+            }
+
+            var key = $"semantic:{pageNumber}:{NormalizeLabel(candidate.Label.Text)}:{Math.Round(candidate.Area.Bounds.Center.X)}:{Math.Round(candidate.Area.Bounds.Center.Y)}";
+            if (!seen.Add(key))
+            {
+                continue;
+            }
+
+            var useClassification = ClassifyRoomUse(candidate.Label.Text, roomBounds);
+            var confidence = isWallBounded ? 0.62 : 0.48;
+            var scaleGroup = context.Calibration.SelectMeasurementScaleGroup(pageNumber, roomBounds, mainRegion.Id);
+            var evidence = new List<string>
+            {
+                $"semantic room seed from label '{candidate.Label.Text}' and area text '{candidate.Area.Text}'",
+                isWallBounded
+                    ? "semantic room seed was bounded by nearby orthogonal wall evidence"
+                    : "semantic room seed has approximate label/area bounds and requires wall-boundary review"
+            };
+            evidence.AddRange(boundaryEvidence);
+            evidence.AddRange(useClassification.Evidence);
+
+            context.Rooms.Add(
+                new RoomRegion(
+                    $"page:{pageNumber}:room:{context.Rooms.Count + 1}",
+                    pageNumber,
+                    roomBounds,
+                    boundary,
+                    wallIds,
+                    new Confidence(confidence))
+                {
+                    Label = candidate.Label.Text,
+                    UseKind = useClassification.Kind,
+                    LabelSourcePrimitiveIds = candidate.SourcePrimitiveIds,
+                    Evidence = evidence.ToArray(),
+                    AreaSquareMeters = candidate.AreaSquareMeters,
+                    MeasurementScaleGroupId = scaleGroup?.Id
+                });
+
+            added++;
+            approximateCount += isWallBounded ? 0 : 1;
+            wallBoundedCount += isWallBounded ? 1 : 0;
+            sourcePrimitiveIds.AddRange(candidate.SourcePrimitiveIds);
+        }
+
+        if (added > 0)
+        {
+            context.AddDiagnostic(
+                "rooms.semantic_label_seeds.detected",
+                DiagnosticSeverity.Info,
+                StageName,
+                $"Added {added} semantic room seed(s) from room label and area text evidence.",
+                pageNumber,
+                PlanRect.Union(context.Rooms
+                    .Where(room => room.PageNumber == pageNumber)
+                    .TakeLast(added)
+                    .Select(room => room.Bounds)),
+                Confidence.Medium,
+                DiagnosticScope.Room,
+                sourcePrimitiveIds.Distinct(StringComparer.Ordinal),
+                new Dictionary<string, string>
+                {
+                    ["semanticRoomSeedCount"] = added.ToString(),
+                    ["wallBoundedSeedCount"] = wallBoundedCount.ToString(),
+                    ["approximateSeedCount"] = approximateCount.ToString()
+                });
+        }
+
+        return added;
+    }
+
     private bool AddRoom(
         PlanPage page,
         int pageNumber,
@@ -336,6 +485,324 @@ internal sealed class RoomDetectionStage : IPipelineStage
                 MeasurementScaleGroupId = scaleGroup?.Id
             });
         return true;
+    }
+
+    private static IEnumerable<RoomTextLine> BuildRoomTextLines(
+        PlanPage page,
+        ScanContext context,
+        PlanRect mainBounds)
+    {
+        var annotationSourceIds = AnnotationSourcePrimitiveIds(context);
+        var words = page.Primitives
+            .Select((primitive, index) => new
+            {
+                Primitive = primitive,
+                SourceId = context.PrimitiveId(page.Number, index, primitive)
+            })
+            .Where(item => item.Primitive is TextPrimitive text
+                && !string.IsNullOrWhiteSpace(text.Text)
+                && !annotationSourceIds.Contains(item.SourceId)
+                && mainBounds.Contains(text.Bounds.Center, Math.Max(2, context.Options.WallSnapTolerance)))
+            .Select(item =>
+            {
+                var text = (TextPrimitive)item.Primitive;
+                return new RoomTextWord(
+                    text.Text.Trim(),
+                    item.SourceId,
+                    text.Bounds,
+                    HasRoomLayerHint(text));
+            })
+            .Where(word => !LooksLikeAnnotationOnlyRoomText(word.Text))
+            .OrderBy(word => word.Bounds.Center.Y)
+            .ThenBy(word => word.Bounds.Left)
+            .ToArray();
+
+        if (words.Length == 0)
+        {
+            yield break;
+        }
+
+        var rowTolerance = Math.Max(3, MedianValue(words.Select(word => Math.Max(1, word.Bounds.Height)).DefaultIfEmpty(12)) * 0.85);
+        var gapTolerance = Math.Max(26, Math.Min(page.Size.Width, page.Size.Height) * 0.035);
+        var rows = new List<List<RoomTextWord>>();
+
+        foreach (var word in words)
+        {
+            var row = rows
+                .OrderBy(candidate => Math.Abs(candidate.Average(item => item.Bounds.Center.Y) - word.Bounds.Center.Y))
+                .FirstOrDefault(candidate => Math.Abs(candidate.Average(item => item.Bounds.Center.Y) - word.Bounds.Center.Y) <= rowTolerance);
+
+            if (row is null)
+            {
+                row = new List<RoomTextWord>();
+                rows.Add(row);
+            }
+
+            row.Add(word);
+        }
+
+        foreach (var row in rows.OrderBy(row => row.Average(word => word.Bounds.Center.Y)))
+        {
+            var ordered = row.OrderBy(word => word.Bounds.Left).ToArray();
+            var current = new List<RoomTextWord>();
+            foreach (var word in ordered)
+            {
+                if (current.Count > 0)
+                {
+                    var previous = current[^1];
+                    var gap = word.Bounds.Left - previous.Bounds.Right;
+                    var localGapTolerance = Math.Max(gapTolerance, Math.Max(previous.Bounds.Width, word.Bounds.Width) * 1.8);
+                    if (gap > localGapTolerance)
+                    {
+                        var line = BuildRoomTextLine(current);
+                        if (line is not null)
+                        {
+                            yield return line;
+                        }
+
+                        current.Clear();
+                    }
+                }
+
+                current.Add(word);
+            }
+
+            var finalLine = BuildRoomTextLine(current);
+            if (finalLine is not null)
+            {
+                yield return finalLine;
+            }
+        }
+    }
+
+    private static RoomTextLine? BuildRoomTextLine(IReadOnlyList<RoomTextWord> words)
+    {
+        if (words.Count == 0)
+        {
+            return null;
+        }
+
+        var text = string.Join(" ", words.Select(word => word.Text)).Trim();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        return new RoomTextLine(
+            text,
+            PlanRect.Union(words.Select(word => word.Bounds)),
+            words.Select(word => word.SourcePrimitiveId).Distinct(StringComparer.Ordinal).ToArray(),
+            words.Any(word => word.HasLayerHint));
+    }
+
+    private static IEnumerable<SemanticRoomCandidate> BuildSemanticRoomCandidates(
+        PlanPage page,
+        IReadOnlyList<RoomTextLine> textLines,
+        PlanRect mainBounds,
+        ScannerOptions options)
+    {
+        var minPageSpan = Math.Min(page.Size.Width, page.Size.Height);
+        var maxVerticalGap = Math.Max(36, minPageSpan * 0.065);
+        var maxHorizontalDrift = Math.Max(90, minPageSpan * 0.18);
+        var areaLines = textLines
+            .Where(line => LooksLikeRoomAreaText(line.Text))
+            .OrderBy(line => line.Bounds.Top)
+            .ThenBy(line => line.Bounds.Left)
+            .ToArray();
+        var yielded = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var area in areaLines)
+        {
+            if (!TryParseRoomAreaSquareMeters(area.Text, out var squareMeters))
+            {
+                continue;
+            }
+
+            var label = textLines
+                .Where(candidate => !ReferenceEquals(candidate, area)
+                    && candidate.Bounds.Bottom <= area.Bounds.Bottom + Math.Max(4, options.WallSnapTolerance)
+                    && area.Bounds.Top - candidate.Bounds.Bottom <= maxVerticalGap
+                    && Math.Abs(candidate.Bounds.Center.X - area.Bounds.Center.X) <= maxHorizontalDrift
+                    && (LabelHasLetters(candidate.Text) || candidate.HasLayerHint || area.HasLayerHint)
+                    && (LooksLikeRoomLabel(candidate.Text) || LooksLikeRoomSemanticLabel(candidate.Text)))
+                .Where(candidate => !LooksLikeRoomAreaText(candidate.Text))
+                .Select(candidate => new
+                {
+                    Line = candidate,
+                    VerticalGap = Math.Max(0, area.Bounds.Top - candidate.Bounds.Bottom),
+                    HorizontalDrift = Math.Abs(candidate.Bounds.Center.X - area.Bounds.Center.X),
+                    Overlap = HorizontalOverlapRatio(candidate.Bounds, area.Bounds),
+                    KnownUse = ClassifyRoomUse(candidate.Text, candidate.Bounds).Kind != RoomUseKind.Unknown
+                })
+                .Where(candidate => candidate.Overlap > 0.08 || candidate.HorizontalDrift <= maxHorizontalDrift * 0.55)
+                .OrderByDescending(candidate => candidate.Line.HasLayerHint)
+                .ThenByDescending(candidate => candidate.KnownUse)
+                .ThenByDescending(candidate => candidate.Overlap)
+                .ThenBy(candidate => candidate.VerticalGap)
+                .ThenBy(candidate => candidate.HorizontalDrift)
+                .Select(candidate => candidate.Line)
+                .FirstOrDefault();
+
+            if (label is null)
+            {
+                continue;
+            }
+
+            var evidenceBounds = PlanRect.Union(label.Bounds, area.Bounds).ClampTo(mainBounds);
+            var key = string.Join("|", label.SourcePrimitiveIds.Concat(area.SourcePrimitiveIds).Order(StringComparer.Ordinal));
+            if (!yielded.Add(key))
+            {
+                continue;
+            }
+
+            yield return new SemanticRoomCandidate(
+                label,
+                area,
+                evidenceBounds,
+                evidenceBounds.Center,
+                squareMeters,
+                label.SourcePrimitiveIds.Concat(area.SourcePrimitiveIds).Distinct(StringComparer.Ordinal).ToArray());
+        }
+    }
+
+    private static IReadOnlyList<PlanPoint> TryInferSemanticRoomBoundary(
+        SemanticRoomCandidate candidate,
+        IReadOnlyList<AxisWall> axisWalls,
+        PlanRect mainBounds,
+        ScannerOptions options,
+        out string[] wallIds,
+        out IReadOnlyList<string> evidence)
+    {
+        var searchRadius = Math.Max(80, Math.Min(mainBounds.Width, mainBounds.Height) * 0.22);
+        var spanTolerance = Math.Max(options.WallSnapTolerance * 4.0, options.DefaultWallThickness * 8.0);
+        var vertical = axisWalls.Where(axis => axis.Orientation == WallOrientation.Vertical).ToArray();
+        var horizontal = axisWalls.Where(axis => axis.Orientation == WallOrientation.Horizontal).ToArray();
+        var left = vertical
+            .Where(axis => axis.Coordinate < candidate.AnchorPoint.X
+                && candidate.AnchorPoint.X - axis.Coordinate <= searchRadius
+                && AxisCoversPoint(axis, candidate.AnchorPoint.Y, spanTolerance))
+            .OrderBy(axis => candidate.AnchorPoint.X - axis.Coordinate)
+            .FirstOrDefault();
+        var right = vertical
+            .Where(axis => axis.Coordinate > candidate.AnchorPoint.X
+                && axis.Coordinate - candidate.AnchorPoint.X <= searchRadius
+                && AxisCoversPoint(axis, candidate.AnchorPoint.Y, spanTolerance))
+            .OrderBy(axis => axis.Coordinate - candidate.AnchorPoint.X)
+            .FirstOrDefault();
+        var top = horizontal
+            .Where(axis => axis.Coordinate < candidate.AnchorPoint.Y
+                && candidate.AnchorPoint.Y - axis.Coordinate <= searchRadius
+                && AxisCoversPoint(axis, candidate.AnchorPoint.X, spanTolerance))
+            .OrderBy(axis => candidate.AnchorPoint.Y - axis.Coordinate)
+            .FirstOrDefault();
+        var bottom = horizontal
+            .Where(axis => axis.Coordinate > candidate.AnchorPoint.Y
+                && axis.Coordinate - candidate.AnchorPoint.Y <= searchRadius
+                && AxisCoversPoint(axis, candidate.AnchorPoint.X, spanTolerance))
+            .OrderBy(axis => axis.Coordinate - candidate.AnchorPoint.Y)
+            .FirstOrDefault();
+
+        if (left is null || right is null || top is null || bottom is null)
+        {
+            wallIds = Array.Empty<string>();
+            evidence = new[] { "semantic room boundary could not be closed from four nearby orthogonal walls" };
+            return Array.Empty<PlanPoint>();
+        }
+
+        var bounds = PlanRect
+            .FromEdges(left.Coordinate, top.Coordinate, right.Coordinate, bottom.Coordinate)
+            .ClampTo(mainBounds);
+        if (bounds.IsEmpty || bounds.Area < Math.Max(80, options.MinRoomArea * 0.15))
+        {
+            wallIds = Array.Empty<string>();
+            evidence = new[] { "semantic room boundary from nearby walls was too small or outside the main floorplan" };
+            return Array.Empty<PlanPoint>();
+        }
+
+        if (!bounds.Contains(candidate.EvidenceBounds.Center, spanTolerance))
+        {
+            wallIds = Array.Empty<string>();
+            evidence = new[] { "semantic room label/area evidence did not sit inside inferred wall bounds" };
+            return Array.Empty<PlanPoint>();
+        }
+
+        wallIds = new[] { top.Wall.Id, bottom.Wall.Id, left.Wall.Id, right.Wall.Id }
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        evidence = new[]
+        {
+            $"semantic room boundary inferred from nearby walls {string.Join(",", wallIds)}"
+        };
+        return RectangleBoundary(bounds.Left, bounds.Top, bounds.Right, bounds.Bottom);
+    }
+
+    private static bool AxisCoversPoint(AxisWall axis, double coordinate, double tolerance) =>
+        axis.Start <= coordinate + tolerance && axis.End >= coordinate - tolerance;
+
+    private static bool LooksLikeAnnotationOnlyRoomText(string text)
+    {
+        var trimmed = text.Trim();
+        return trimmed.Length == 0
+            || LooksLikeDimensionText(trimmed)
+            || LooksLikeFloorLevelText(trimmed)
+            || LooksLikeEquipmentTagText(trimmed)
+            || LooksLikeNonRoomDescriptor(trimmed);
+    }
+
+    private static bool LooksLikeRoomAreaText(string text) =>
+        RoomAreaMeasurementRegex.IsMatch(text.Trim().Replace(" ", string.Empty, StringComparison.Ordinal));
+
+    private static bool TryParseRoomAreaSquareMeters(string text, out double squareMeters)
+    {
+        squareMeters = 0;
+        var normalized = text
+            .Trim()
+            .Replace(" ", string.Empty, StringComparison.Ordinal)
+            .Replace("m2", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .Replace("m^2", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .Replace("m\u00B2", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .Replace("\u33A1", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .Replace(',', '.');
+
+        return double.TryParse(normalized, NumberStyles.Float, CultureInfo.InvariantCulture, out squareMeters)
+            && squareMeters > 0;
+    }
+
+    private static bool LooksLikeRoomSemanticLabel(string text)
+    {
+        var trimmed = text.Trim();
+        return LabelHasLetters(trimmed)
+            && trimmed.Length <= 48
+            && !LooksLikeAnnotationOnlyRoomText(trimmed)
+            && ClassifyRoomUse(trimmed, new PlanRect(0, 0, 20, 20)).Kind != RoomUseKind.Unknown;
+    }
+
+    private static double HorizontalOverlapRatio(PlanRect first, PlanRect second)
+    {
+        var overlap = Math.Max(0, Math.Min(first.Right, second.Right) - Math.Max(first.Left, second.Left));
+        var minWidth = Math.Max(1, Math.Min(first.Width, second.Width));
+        return overlap / minWidth;
+    }
+
+    private static double OverlapRatio(PlanRect first, PlanRect second)
+    {
+        var intersection = first.OverlapArea(second);
+        var denominator = Math.Max(1, Math.Min(first.Area, second.Area));
+        return intersection / denominator;
+    }
+
+    private static double MedianValue(IEnumerable<double> values)
+    {
+        var sorted = values.Order().ToArray();
+        if (sorted.Length == 0)
+        {
+            return 0;
+        }
+
+        var middle = sorted.Length / 2;
+        return sorted.Length % 2 == 1
+            ? sorted[middle]
+            : (sorted[middle - 1] + sorted[middle]) / 2.0;
     }
 
     private static bool ShouldSuppressSliverRoom(
@@ -1594,6 +2061,26 @@ internal sealed class RoomDetectionStage : IPipelineStage
         string Text,
         IReadOnlyList<string> SourcePrimitiveIds);
 
+    private sealed record RoomTextWord(
+        string Text,
+        string SourcePrimitiveId,
+        PlanRect Bounds,
+        bool HasLayerHint);
+
+    private sealed record RoomTextLine(
+        string Text,
+        PlanRect Bounds,
+        IReadOnlyList<string> SourcePrimitiveIds,
+        bool HasLayerHint);
+
+    private sealed record SemanticRoomCandidate(
+        RoomTextLine Label,
+        RoomTextLine Area,
+        PlanRect EvidenceBounds,
+        PlanPoint AnchorPoint,
+        double AreaSquareMeters,
+        IReadOnlyList<string> SourcePrimitiveIds);
+
     private sealed record RoomUseClassification(
         RoomUseKind Kind,
         IReadOnlyList<string> Evidence);
@@ -1618,7 +2105,7 @@ internal sealed class RoomDetectionStage : IPipelineStage
         new(RoomUseKind.Bathroom, new[] { "bath", "bathroom", "bad", "shower", "dusj" }),
         new(RoomUseKind.Office, new[] { "office", "kontor", "workspace", "workplace" }),
         new(RoomUseKind.Meeting, new[] { "meeting", "conference", "moterom", "møterom", "boardroom" }),
-        new(RoomUseKind.Storage, new[] { "storage", "store", "lager", "closet", "archive", "arkiv" }),
+        new(RoomUseKind.Storage, new[] { "storage", "store", "lager", "closet", "archive", "arkiv", "gard", "garderobe", "wardrobe" }),
         new(RoomUseKind.Mechanical, new[] { "mechanical", "mech", "pump", "boiler", "plant", "machine", "maskin", "teknisk" }),
         new(RoomUseKind.Electrical, new[] { "electrical", "elec", "el", "switchgear", "transformer", "server", "data" }),
         new(RoomUseKind.Plumbing, new[] { "plumbing", "vvs", "water", "sprinkler" }),
@@ -1627,7 +2114,7 @@ internal sealed class RoomDetectionStage : IPipelineStage
         new(RoomUseKind.Kitchen, new[] { "kitchen", "kitchenette", "kjokken", "kjøkken", "pantry" }),
         new(RoomUseKind.Living, new[] { "living", "stue", "lounge", "family room" }),
         new(RoomUseKind.Bedroom, new[] { "bedroom", "soverom", "sleeping" }),
-        new(RoomUseKind.Stair, new[] { "stair", "stairs", "staircase", "trapp" }),
+        new(RoomUseKind.Stair, new[] { "stair", "stairs", "staircase", "trapp", "trapperom" }),
         new(RoomUseKind.Elevator, new[] { "elevator", "lift", "heis" }),
         new(RoomUseKind.Shaft, new[] { "shaft", "sjakt", "riser" }),
         new(RoomUseKind.Laboratory, new[] { "lab", "laboratory", "laboratorium" }),

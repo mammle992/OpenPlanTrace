@@ -57,9 +57,11 @@ internal static class WallPlacementOmissionSummary
             BuildWallReviewReasons(result.Diagnostics.Messages),
             WallPlacementContextGuards.BuildReviewReasons(result));
         var repairCandidatesByWallId = BuildWallGraphRepairCandidateLookup(result.WallGraph.RepairCandidates);
-        var topologySpansByWallId = WallTopologySpanVisibility
+        var cleanTopologySpans = WallTopologySpanVisibility
             .BuildCleanPlacementTopologySpans(result)
             .Where(span => span.PageNumber == pageNumber)
+            .ToArray();
+        var topologySpansByWallId = cleanTopologySpans
             .GroupBy(span => span.WallId, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
         var omissionCodes = new List<string>();
@@ -98,6 +100,7 @@ internal static class WallPlacementOmissionSummary
                 assessment,
                 reliability,
                 topologySpans,
+                cleanTopologySpans,
                 excludedFromStructuralTopology,
                 repairCandidates,
                 combinedReviewReasons);
@@ -214,6 +217,7 @@ internal static class WallPlacementOmissionSummary
             "secondary_without_room_boundary_support" => 30,
             "isolated_fragment" => 40,
             "rejected_wall_evidence" => 50,
+            "duplicate_clean_topology_span" => 55,
             "duplicate_wall_face" => 60,
             _ => 100
         };
@@ -320,6 +324,7 @@ internal static class WallPlacementOmissionSummary
     private static string OmissionLabel(string code) =>
         code switch
         {
+            "duplicate_clean_topology_span" => "duplicate clean spans",
             "duplicate_wall_face" => "duplicate faces",
             "fragmented_interior_without_room_boundary_support" => "fragmented interior no room",
             "fragmented_pair_review_required" => "fragmented pairs",

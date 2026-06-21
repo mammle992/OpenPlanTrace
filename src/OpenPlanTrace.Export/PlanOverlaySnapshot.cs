@@ -172,6 +172,7 @@ public sealed record PlanOverlayPageSnapshot(
         Add(options.IncludeWallComponents, "wallComponents");
         Add(options.IncludeSurfacePatterns, "surfacePatterns");
         Add(options.IncludeWallTopologySpans, "wallTopologySpans");
+        Add(options.IncludeReviewOnlyWallTopologySpans, "wallTopologyReviewSpans");
         Add(options.IncludeWallBodyFootprints, "wallBodyFootprints");
         Add(options.IncludeWallGraphRepairs, "wallGraphRepairs");
         Add(options.IncludeWalls, "walls");

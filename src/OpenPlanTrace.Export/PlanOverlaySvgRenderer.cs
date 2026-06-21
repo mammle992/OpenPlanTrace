@@ -404,6 +404,22 @@ public static class PlanOverlaySvgRenderer
             builder.AppendLine("</g>");
         }
 
+        if (options.IncludeReviewOnlyWallTopologySpans)
+        {
+            builder.AppendLine("""<g id="wall-topology-review-spans">""");
+            var componentByWallId = BuildWallComponentLookup(result.WallGraph.Components);
+            var wallEvidenceAssessments = WallEvidenceExportHelpers.BuildAssessmentLookup(result.WallEvidenceMap);
+            var reviewSpans = WallTopologySpanVisibility.BuildHiddenNonPlacementTopologySpans(result, page.Number, options);
+            foreach (var span in reviewSpans)
+            {
+                componentByWallId.TryGetValue(span.WallId, out var component);
+                wallEvidenceAssessments.TryGetValue(span.WallId, out var assessment);
+                var title = WallTopologySpanTitle(span, component, assessment, "non-placement wall topology span");
+                builder.AppendLine($"""<line class="{WallTopologySpanCssClass(span, component, assessment)} wall-topology-span-review-only" x1="{N(span.CenterLine.Start.X)}" y1="{N(span.CenterLine.Start.Y)}" x2="{N(span.CenterLine.End.X)}" y2="{N(span.CenterLine.End.Y)}" opacity="{N(Opacity(span.Confidence))}"><title>{Esc(title)}</title></line>""");
+            }
+            builder.AppendLine("</g>");
+        }
+
         if (options.IncludeWallGraphRepairs)
         {
             builder.AppendLine("""<g id="wall-graph-repairs">""");
@@ -673,12 +689,19 @@ public static class PlanOverlaySvgRenderer
         {
             rows.Add("Placement-ready wall spans");
         }
-        else if (options.Profile is SvgOverlayRenderProfile.WallQa or SvgOverlayRenderProfile.WallQaFocus)
+        else if (options.Profile is SvgOverlayRenderProfile.WallQa or SvgOverlayRenderProfile.WallQaReview or SvgOverlayRenderProfile.WallQaFocus)
         {
-            rows.Add("Walls-only placement QA");
+            rows.Add(options.Profile == SvgOverlayRenderProfile.WallQaReview
+                ? "Walls-only placement/review QA"
+                : "Walls-only placement QA");
             if (options.CropToFloorplanContent)
             {
                 rows.Add("Focused wall topology crop");
+            }
+
+            if (options.IncludeReviewOnlyWallTopologySpans)
+            {
+                rows.Add("Includes non-placement wall spans");
             }
 
             if (options.IncludeSourceContext && string.IsNullOrWhiteSpace(options.BackgroundImageHref))
@@ -904,7 +927,8 @@ public static class PlanOverlaySvgRenderer
     private static string WallTopologySpanTitle(
         WallGraphTopologySpan span,
         WallGraphComponent? component,
-        WallEvidenceWallAssessment? evidenceAssessment)
+        WallEvidenceWallAssessment? evidenceAssessment,
+        string label = "clean wall topology span")
     {
         var componentText = component is null
             ? "no component"
@@ -918,7 +942,7 @@ public static class PlanOverlaySvgRenderer
                 ? $"; source offsets {N(startOffset)} -> {N(endOffset)} drawing units"
                 : string.Empty;
 
-        return $"clean wall topology span {span.Id}; source wall {span.WallId}; {wallType}; {componentText}; {evidenceText}; length {N(span.DrawingLength)} drawing units{offsets}";
+        return $"{label} {span.Id}; source wall {span.WallId}; {wallType}; {componentText}; {evidenceText}; length {N(span.DrawingLength)} drawing units{offsets}";
     }
 
     private static string WallBodyFootprintCssClass(

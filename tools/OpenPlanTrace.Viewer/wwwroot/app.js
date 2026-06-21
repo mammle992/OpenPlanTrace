@@ -78,6 +78,12 @@ const wallQaEnabledLayers = [
   "wallTopologySpans"
 ];
 
+const wallQaReviewEnabledLayers = [
+  "wallTopologySpans",
+  "wallTopologyReviewSpans",
+  "placementIssues"
+];
+
 const overlayLegendItems = [
   { key: "regions", label: "Regions", stroke: "#147c72", fill: "rgba(20, 124, 114, 0.07)" },
   { key: "dimensions", label: "Dimensions", stroke: "#7854a8", fill: "rgba(120, 84, 168, 0.045)", dash: "5 4" },
@@ -237,6 +243,7 @@ const elements = {
   downloadSvg: document.querySelector("#downloadSvg"),
   applyDefaultLayers: document.querySelector("#applyDefaultLayers"),
   applyWallQaLayers: document.querySelector("#applyWallQaLayers"),
+  applyWallQaReviewLayers: document.querySelector("#applyWallQaReviewLayers"),
   stage: document.querySelector("#stage"),
   emptyState: document.querySelector("#emptyState"),
   pageFrame: document.querySelector("#pageFrame"),
@@ -507,6 +514,7 @@ document.querySelectorAll("[data-layer]").forEach((checkbox) => {
 
 elements.applyDefaultLayers?.addEventListener("click", () => applyOverlayLayerPreset(defaultEnabledLayers));
 elements.applyWallQaLayers?.addEventListener("click", () => applyOverlayLayerPreset(wallQaEnabledLayers));
+elements.applyWallQaReviewLayers?.addEventListener("click", () => applyOverlayLayerPreset(wallQaReviewEnabledLayers));
 
 function applyOverlayLayerPreset(layerKeys) {
   state.enabledLayers = new Set(layerKeys);

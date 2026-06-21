@@ -82,9 +82,14 @@ public sealed class ViewerScriptContractTests
 
         Assert.Contains("id=\"applyWallQaLayers\"", html);
         Assert.Contains(">WALL QA<", html);
+        Assert.Contains("id=\"applyWallQaReviewLayers\"", html);
+        Assert.Contains(">WALL REVIEW<", html);
         Assert.Contains("const wallQaEnabledLayers", script);
+        Assert.Contains("const wallQaReviewEnabledLayers", script);
         Assert.Contains("\"wallTopologySpans\"", script);
+        Assert.Contains("\"wallTopologyReviewSpans\"", script);
         Assert.Contains("applyOverlayLayerPreset(wallQaEnabledLayers)", script);
+        Assert.Contains("applyOverlayLayerPreset(wallQaReviewEnabledLayers)", script);
         Assert.Contains("function applyOverlayLayerPreset", script);
         Assert.Contains("state.enabledLayers = new Set(layerKeys)", script);
     }

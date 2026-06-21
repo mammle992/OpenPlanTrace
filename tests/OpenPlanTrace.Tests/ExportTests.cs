@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -734,7 +735,66 @@ public sealed class ExportTests
         Assert.Equal("duplicate-long-wall:clean-run:1", span.GetProperty("id").GetString());
         Assert.Equal(100, span.GetProperty("centerLine").GetProperty("start").GetProperty("x").GetDouble(), precision: 3);
         Assert.Equal(300, span.GetProperty("centerLine").GetProperty("end").GetProperty("x").GetDouble(), precision: 3);
+        var duplicateWall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(wall => wall.GetProperty("id").GetString() == "duplicate-contained-wall");
+        var omission = duplicateWall.GetProperty("placementOmission");
+        Assert.Equal("duplicate_clean_topology_span", omission.GetProperty("code").GetString());
+        Assert.Contains(
+            omission.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("already represented by clean topology span", StringComparison.OrdinalIgnoreCase) == true);
         Assert.Equal(1, document.RootElement.GetProperty("summary").GetProperty("wallTopologySpanCount").GetInt32());
+    }
+
+    [Fact]
+    public void PlacementExporter_ClassifiesIsolatedFragmentCoveredByCleanSpanAsDuplicateCleanTopology()
+    {
+        var result = WithContainedWallAsIsolatedReviewFragment(CreateContainedDuplicatePlacementRunResult());
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var duplicateWall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(wall => wall.GetProperty("id").GetString() == "duplicate-contained-wall");
+        var omission = duplicateWall.GetProperty("placementOmission");
+
+        Assert.Equal("duplicate_clean_topology_span", omission.GetProperty("code").GetString());
+        Assert.Contains(
+            omission.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("already represented by clean topology span", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.DoesNotContain(
+            omission.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("wall omitted from clean placement topology (isolated_fragment)", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Equal(1, document.RootElement.GetProperty("summary").GetProperty("wallTopologySpanCount").GetInt32());
+    }
+
+    [Fact]
+    public void PlacementExporter_LinksRecoveredWallIdsInDuplicateCleanTopologyOmissions()
+    {
+        var result = RenameSyntheticWall(
+            CreateContainedDuplicatePlacementRunResult(),
+            "duplicate-long-wall",
+            "page:1:wall-evidence-recovered:001");
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var duplicateWall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(wall => wall.GetProperty("id").GetString() == "duplicate-contained-wall");
+        var omission = duplicateWall.GetProperty("placementOmission");
+
+        Assert.Equal("duplicate_clean_topology_span", omission.GetProperty("code").GetString());
+        Assert.Contains(
+            "page:1:wall-evidence-recovered:001",
+            JsonStrings(omission.GetProperty("linkedWallIds")));
+        Assert.Contains(
+            omission.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("page:1:wall-evidence-recovered:001", StringComparison.Ordinal) == true);
     }
 
     [Fact]
@@ -841,6 +901,47 @@ public sealed class ExportTests
 
         Assert.Equal(140, span.GetProperty("centerLine").GetProperty("start").GetProperty("x").GetDouble(), precision: 3);
         Assert.Equal(280, span.GetProperty("centerLine").GetProperty("end").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Contains(
+            span.GetProperty("evidence").EnumerateArray(),
+            item => item.GetString()?.Contains("previous adjacent opening cutout cutout-door", StringComparison.Ordinal) == true);
+        Assert.Equal(1, document.RootElement.GetProperty("summary").GetProperty("wallTopologySpanCount").GetInt32());
+    }
+
+    [Fact]
+    public void PlacementExporter_SuppressesOnlyTinyOpeningAdjacentSingleLineWallRun()
+    {
+        var result = CreateOpeningCutoutPlacementReviewResult(startParameter: 0.0, endParameter: 0.969);
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var wall = Assert.Single(document.RootElement.GetProperty("walls").EnumerateArray());
+
+        Assert.Empty(wall.GetProperty("topologySpans").EnumerateArray());
+        Assert.Equal("no_clean_topology_spans", wall.GetProperty("placementOmission").GetProperty("code").GetString());
+        Assert.False(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.Equal(0, document.RootElement.GetProperty("summary").GetProperty("wallTopologySpanCount").GetInt32());
+    }
+
+    [Fact]
+    public void PlacementExporter_KeepsTrustedShortOpeningAdjacentPairedWallJamb()
+    {
+        var result = WithTrustedPairEvidence(
+            CreateOpeningCutoutPlacementReviewResult(startParameter: 0.0, endParameter: 0.969),
+            "cutout-wall");
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var wall = Assert.Single(document.RootElement.GetProperty("walls").EnumerateArray());
+        var span = Assert.Single(wall.GetProperty("topologySpans").EnumerateArray());
+        var line = span.GetProperty("centerLine");
+
+        Assert.Equal(JsonValueKind.Null, wall.GetProperty("placementOmission").ValueKind);
+        Assert.True(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.Equal(273.8, line.GetProperty("start").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(280, line.GetProperty("end").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(6.2, span.GetProperty("drawingLength").GetDouble(), precision: 3);
         Assert.Contains(
             span.GetProperty("evidence").EnumerateArray(),
             item => item.GetString()?.Contains("previous adjacent opening cutout cutout-door", StringComparison.Ordinal) == true);
@@ -1027,6 +1128,35 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void SvgRenderer_WallQaReviewProfileDrawsCleanAndNonPlacementWallSpansWithSourceContext()
+    {
+        var result = WithEndpointToWallHostRepairCandidate(
+            WithReviewOnlyWallAssessment(
+                CreateDenseMinorRoutingDetailResult(),
+                "detail-tooth-1"));
+
+        var svg = PlanOverlaySvgRenderer.RenderPage(
+            result,
+            1,
+            SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.WallQaReview));
+
+        Assert.Contains("data-profile=\"wall-qa-review\"", svg);
+        Assert.Contains("Walls-only placement/review QA", svg);
+        Assert.Contains("Includes non-placement wall spans", svg);
+        Assert.Contains("Faint source linework context", svg);
+        Assert.Contains("id=\"source-context\"", svg);
+        Assert.Contains("id=\"wall-topology-spans\"", svg);
+        Assert.Contains("id=\"wall-topology-review-spans\"", svg);
+        Assert.Contains("clean wall topology span detail-host:clean-run:1", svg);
+        Assert.Contains("non-placement wall topology span edge-tooth-1", svg);
+        Assert.Contains("1 visible topology spans", svg);
+        Assert.Contains("4 hidden non-placement topology spans", svg);
+        Assert.DoesNotContain("id=\"wall-body-footprints\"", svg);
+        Assert.DoesNotContain("id=\"wall-graph-repairs\"", svg);
+        Assert.DoesNotContain("id=\"walls\"", svg);
+    }
+
+    [Fact]
     public void SvgRenderer_WallQaProfileSuppressesSourceContextWhenBackgroundImageIsPresent()
     {
         var result = CreateDenseMinorRoutingDetailResult();
@@ -1141,6 +1271,17 @@ public sealed class ExportTests
     }
 
     [Theory]
+    [InlineData("wall-qa-review")]
+    [InlineData("wall-review")]
+    [InlineData("non-placement-walls")]
+    public void SvgOverlayRenderOptions_ParsesWallQaReviewProfileAliases(string value)
+    {
+        Assert.True(SvgOverlayRenderOptions.TryParseProfile(value, out var profile));
+        Assert.Equal(SvgOverlayRenderProfile.WallQaReview, profile);
+        Assert.Equal("wall-qa-review", SvgOverlayRenderOptions.ProfileName(profile));
+    }
+
+    [Theory]
     [InlineData("wall-qa-focus")]
     [InlineData("focused-wall-qa")]
     [InlineData("wall-qa-zoom")]
@@ -1175,6 +1316,29 @@ public sealed class ExportTests
         Assert.Equal(1, page.Layers.Single(layer => layer.Name == "wallTopologySpans").Count);
         Assert.Equal(4, page.Layers.Single(layer => layer.Name == "wallTopologyReviewSpans").Count);
         Assert.Contains("wallTopologyReviewSpans", page.HiddenLayerNames);
+    }
+
+    [Fact]
+    public void VisualSnapshotExporter_WallQaReviewProfileExposesNonPlacementTopologySpanLayer()
+    {
+        var result = WithReviewOnlyWallAssessment(
+            CreateDenseMinorRoutingDetailResult(),
+            "detail-tooth-1");
+
+        var snapshot = PlanOverlaySnapshot.From(
+            result,
+            new Dictionary<int, string> { [1] = "overlays/page-1.svg" },
+            SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.WallQaReview));
+
+        var page = Assert.Single(snapshot.Pages);
+        Assert.Equal("wall-qa-review", page.SvgProfile);
+        Assert.Contains("wallTopologySpans", page.VisibleLayerNames);
+        Assert.Contains("wallTopologyReviewSpans", page.VisibleLayerNames);
+        Assert.Contains("sourceContext", page.VisibleLayerNames);
+        Assert.Equal(1, page.Layers.Single(layer => layer.Name == "wallTopologySpans").Count);
+        Assert.Equal(4, page.Layers.Single(layer => layer.Name == "wallTopologyReviewSpans").Count);
+        Assert.DoesNotContain("wallBodyFootprints", page.VisibleLayerNames);
+        Assert.DoesNotContain("walls", page.VisibleLayerNames);
     }
 
     [Fact]
@@ -2118,6 +2282,62 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementExporter_RecoversSourceBackedSpanWhenStrongPairedWallBodyHasLowerScoreButFullOverlap()
+    {
+        var result = CreateSourceBackedFallbackWallResult(pairScore: 0.702);
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var wall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == "source-backed-fallback-wall");
+
+        var topologySpan = Assert.Single(wall.GetProperty("topologySpans").EnumerateArray());
+        Assert.Contains("source-backed-fallback", topologySpan.GetProperty("id").GetString(), StringComparison.Ordinal);
+        Assert.Equal(JsonValueKind.Null, wall.GetProperty("placementOmission").ValueKind);
+        Assert.True(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.Contains(
+            topologySpan.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("pair score 0.702", StringComparison.OrdinalIgnoreCase) == true);
+
+        var summary = document.RootElement.GetProperty("summary");
+        Assert.Equal(1, summary.GetProperty("placementReadyWallCount").GetInt32());
+        Assert.Equal(1, summary.GetProperty("sourceBackedFallbackTopologySpanCount").GetInt32());
+    }
+
+    [Fact]
+    public void PlacementExporter_DoesNotRecoverSourceBackedSpanWhenLowerScorePairLacksFullOverlap()
+    {
+        var result = CreateSourceBackedFallbackWallResult(pairScore: 0.702);
+        var wall = result.Walls.Single(item => item.Id == "source-backed-fallback-wall");
+        var downgradedPair = wall.PairEvidence! with { OverlapRatio = 0.82 };
+        result = result with
+        {
+            Walls = result.Walls
+                .Select(item => item.Id == wall.Id ? item with { PairEvidence = downgradedPair } : item)
+                .ToArray()
+        };
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var exportedWall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == "source-backed-fallback-wall");
+
+        Assert.Empty(exportedWall.GetProperty("topologySpans").EnumerateArray());
+        Assert.Equal(
+            "no_clean_topology_spans",
+            exportedWall.GetProperty("placementOmission").GetProperty("code").GetString());
+        Assert.False(exportedWall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+    }
+
+    [Fact]
     public void PlacementExporter_KeepsSourceBackedFallbackWhenNearbyDifferentSourceSpanWouldContainIt()
     {
         var result = CreateSourceBackedFallbackWallResult(includeNearbyGraphSpan: true);
@@ -2272,6 +2492,55 @@ public sealed class ExportTests
             reliability.GetProperty("reasons").EnumerateArray(),
             reason => reason.GetString()?.Contains("room boundary uses review-required wall evidence", StringComparison.OrdinalIgnoreCase) == true
                 && reason.GetString()?.Contains(boundaryWallId, StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public async Task PlacementExporter_MarksRoomsWithoutLinkedWallEvidenceForReview()
+    {
+        var result = await CreateScanResultAsync();
+        var semanticRoom = new RoomRegion(
+            "page:1:room:semantic-review",
+            1,
+            new PlanRect(170, 160, 90, 52),
+            new[]
+            {
+                new PlanPoint(170, 160),
+                new PlanPoint(260, 160),
+                new PlanPoint(260, 212),
+                new PlanPoint(170, 212)
+            },
+            Array.Empty<string>(),
+            new Confidence(0.48))
+        {
+            Label = "OFFICE",
+            UseKind = RoomUseKind.Office,
+            LabelSourcePrimitiveIds = new[] { "office-label", "office-area" },
+            Evidence = new[] { "semantic room seed has approximate label/area bounds and requires wall-boundary review" },
+            AreaSquareMeters = 12.5
+        };
+        result = result with
+        {
+            Rooms = result.Rooms.Concat(new[] { semanticRoom }).ToArray()
+        };
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var room = document.RootElement
+            .GetProperty("rooms")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == semanticRoom.Id);
+
+        var reliability = room.GetProperty("reliability");
+        Assert.False(reliability.GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.True(reliability.GetProperty("requiresReview").GetBoolean());
+        Assert.Contains(
+            reliability.GetProperty("reasons").EnumerateArray(),
+            reason => reason.GetString()?.Contains("room boundary has no linked wall evidence", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Contains(
+            reliability.GetProperty("reasons").EnumerateArray(),
+            reason => reason.GetString()?.Contains("semantic room seed requires review", StringComparison.OrdinalIgnoreCase) == true);
     }
 
     [Fact]
@@ -3624,11 +3893,117 @@ public sealed class ExportTests
                 Array.Empty<WallEvidenceBand>(),
                 assessments,
                 walls.Length,
-            0)
+                0)
         };
     }
 
-    private static PlanScanResult CreateSourceBackedFallbackWallResult(bool includeNearbyGraphSpan = false)
+    private static PlanScanResult WithContainedWallAsIsolatedReviewFragment(PlanScanResult result)
+    {
+        var containedWall = result.Walls.Single(wall => wall.Id == "duplicate-contained-wall");
+        var longWall = result.Walls.Single(wall => wall.Id == "duplicate-long-wall");
+        var longComponent = new WallGraphComponent(
+            "duplicate-long-component",
+            1,
+            WallGraphComponentKind.MainStructural,
+            longWall.Bounds,
+            [longWall.Id],
+            ["duplicate-long-node-a", "duplicate-long-node-b"],
+            ["duplicate-long-edge"],
+            longWall.SourcePrimitiveIds,
+            longWall.DrawingLength,
+            Confidence.High,
+            ["synthetic main structural clean placement run"]);
+        var containedComponent = new WallGraphComponent(
+            "duplicate-contained-isolated-component",
+            1,
+            WallGraphComponentKind.IsolatedFragment,
+            containedWall.Bounds,
+            [containedWall.Id],
+            ["duplicate-contained-node-a", "duplicate-contained-node-b"],
+            ["duplicate-contained-edge"],
+            containedWall.SourcePrimitiveIds,
+            containedWall.DrawingLength,
+            Confidence.Medium,
+            ["synthetic isolated fragment fully covered by a clean topology span"],
+            ExcludedFromStructuralTopology: false);
+        var containedAssessment = new WallEvidenceWallAssessment(
+            containedWall.Id,
+            containedWall.PageNumber,
+            containedWall.Bounds,
+            WallEvidenceCategory.MediumWallBody,
+            Confidence.Medium,
+            PlacementReady: false,
+            RequiresReview: true,
+            RejectedAsNoise: false,
+            containedWall.SourcePrimitiveIds,
+            ["synthetic isolated review fragment"])
+        {
+            Decision = WallEvidenceDecision.Review
+        };
+
+        return result with
+        {
+            WallGraph = result.WallGraph with
+            {
+                Components = [longComponent, containedComponent]
+            },
+            WallEvidenceMap = new WallEvidenceMap(
+                result.WallEvidenceMap.Segments,
+                result.WallEvidenceMap.Bands,
+                result.WallEvidenceMap.WallAssessments
+                    .Select(assessment => assessment.WallId == containedWall.Id ? containedAssessment : assessment)
+                    .ToArray(),
+                result.WallEvidenceMap.SourceCandidateWallCount,
+                result.WallEvidenceMap.RecoveredCandidateWallCount)
+        };
+    }
+
+    private static PlanScanResult RenameSyntheticWall(
+        PlanScanResult result,
+        string oldWallId,
+        string newWallId)
+    {
+        return result with
+        {
+            Walls = result.Walls
+                .Select(wall => wall.Id == oldWallId ? wall with { Id = newWallId } : wall)
+                .ToArray(),
+            WallGraph = result.WallGraph with
+            {
+                Edges = result.WallGraph.Edges
+                    .Select(edge => edge.WallId == oldWallId ? edge with { WallId = newWallId } : edge)
+                    .ToArray(),
+                Components = result.WallGraph.Components
+                    .Select(component => component with
+                    {
+                        WallIds = component.WallIds
+                            .Select(wallId => wallId == oldWallId ? newWallId : wallId)
+                            .ToArray()
+                    })
+                    .ToArray()
+            },
+            WallEvidenceMap = new WallEvidenceMap(
+                result.WallEvidenceMap.Segments,
+                result.WallEvidenceMap.Bands,
+                result.WallEvidenceMap.WallAssessments
+                    .Select(assessment => assessment.WallId == oldWallId
+                        ? assessment with
+                        {
+                            WallId = newWallId,
+                            SourcePrimitiveIds = assessment.SourcePrimitiveIds
+                                .Select(sourceId => sourceId == oldWallId ? newWallId : sourceId)
+                                .ToArray()
+                        }
+                        : assessment)
+                    .ToArray(),
+                result.WallEvidenceMap.SourceCandidateWallCount,
+                result.WallEvidenceMap.RecoveredCandidateWallCount)
+        };
+    }
+
+    private static PlanScanResult CreateSourceBackedFallbackWallResult(
+        bool includeNearbyGraphSpan = false,
+        double pairScore = 0.93)
     {
         var wall = SyntheticWall("source-backed-fallback-wall", 80, 120, 180, 120) with
         {
@@ -3639,7 +4014,7 @@ public sealed class ExportTests
                 new PlanLineSegment(new PlanPoint(80, 124), new PlanPoint(180, 124)),
                 FaceSeparation: 8,
                 OverlapRatio: 1,
-                Score: 0.93,
+                Score: pairScore,
                 FirstFaceFragmentCount: 2,
                 SecondFaceFragmentCount: 2,
                 FirstFaceSourcePrimitiveIds: ["fallback-face-a"],
@@ -3648,7 +4023,7 @@ public sealed class ExportTests
             [
                 "parallel wall-face pair",
                 "wall evidence: strong double-edge wall body",
-                "pair score 0.93"
+                $"pair score {pairScore.ToString(CultureInfo.InvariantCulture)}"
             ]
         };
         var walls = new List<WallSegment> { wall };
@@ -3702,7 +4077,7 @@ public sealed class ExportTests
                     ? [
                         "parallel wall-face pair",
                         "wall evidence: strong double-edge wall body",
-                        "pair score 0.93"
+                        $"pair score {pairScore.ToString(CultureInfo.InvariantCulture)}"
                     ]
                     : ["synthetic accepted nearby graph wall body"]))
             .Select(item => item with { Decision = WallEvidenceDecision.Accept })
@@ -4264,6 +4639,44 @@ public sealed class ExportTests
                 [assessment],
                 1,
                 0)
+        };
+    }
+
+    private static PlanScanResult WithTrustedPairEvidence(
+        PlanScanResult result,
+        string wallId)
+    {
+        var wall = result.Walls.Single(item => item.Id == wallId);
+        var line = wall.CenterLine;
+        var pairedWall = wall with
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            Thickness = 8,
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(
+                    new PlanPoint(line.Start.X, line.Start.Y - 4),
+                    new PlanPoint(line.End.X, line.End.Y - 4)),
+                new PlanLineSegment(
+                    new PlanPoint(line.Start.X, line.Start.Y + 4),
+                    new PlanPoint(line.End.X, line.End.Y + 4)),
+                FaceSeparation: 8,
+                OverlapRatio: 1,
+                Score: 0.93,
+                FirstFaceFragmentCount: 2,
+                SecondFaceFragmentCount: 2,
+                FirstFaceSourcePrimitiveIds: ["cutout-wall-face-a"],
+                SecondFaceSourcePrimitiveIds: ["cutout-wall-face-b"]),
+            Evidence = wall.Evidence
+                .Append("parallel wall-face pair")
+                .Append("wall evidence: strong double-edge wall body")
+                .ToArray()
+        };
+
+        return result with
+        {
+            Walls = result.Walls
+                .Select(item => item.Id == wallId ? pairedWall : item)
+                .ToArray()
         };
     }
 

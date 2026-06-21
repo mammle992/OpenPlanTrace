@@ -6,6 +6,7 @@ public enum SvgOverlayRenderProfile
     StructuralReview,
     PlacementReview,
     WallQa,
+    WallQaReview,
     WallQaFocus
 }
 
@@ -137,6 +138,33 @@ public sealed record SvgOverlayRenderOptions
                 IncludeRoutingLayer = false,
                 IncludeSourceContext = true
             },
+            SvgOverlayRenderProfile.WallQaReview => new SvgOverlayRenderOptions
+            {
+                Profile = SvgOverlayRenderProfile.WallQaReview,
+                IncludeLegend = true,
+                IncludeDiagnostics = true,
+                IncludeRegions = false,
+                IncludeDimensions = false,
+                IncludeAnnotations = false,
+                IncludeGridAxes = false,
+                IncludeGridBaySpacings = false,
+                IncludeWalls = false,
+                IncludeWallComponents = false,
+                IncludeWallNodes = false,
+                IncludeRooms = false,
+                IncludeRoomClusters = false,
+                IncludeRoomAdjacency = false,
+                IncludeOpenings = false,
+                IncludeObjects = false,
+                IncludeObjectAggregates = false,
+                IncludeSurfacePatterns = false,
+                IncludeWallTopologySpans = true,
+                IncludeWallBodyFootprints = false,
+                IncludeReviewOnlyWallTopologySpans = true,
+                IncludeWallGraphRepairs = false,
+                IncludeRoutingLayer = false,
+                IncludeSourceContext = true
+            },
             SvgOverlayRenderProfile.WallQaFocus => new SvgOverlayRenderOptions
             {
                 Profile = SvgOverlayRenderProfile.WallQaFocus,
@@ -204,6 +232,16 @@ public sealed record SvgOverlayRenderOptions
             case "cleanwallsonly":
                 profile = SvgOverlayRenderProfile.WallQa;
                 return true;
+            case "wallqareview":
+            case "wallaccuracyreviewall":
+            case "wallreview":
+            case "reviewwalls":
+            case "reviewwallsonly":
+            case "nonplacementwalls":
+            case "nonplacementwallspans":
+            case "omittedwalls":
+                profile = SvgOverlayRenderProfile.WallQaReview;
+                return true;
             case "wallqafocus":
             case "wallaccuracyfocus":
             case "wallaccuracyreviewfocus":
@@ -223,6 +261,7 @@ public sealed record SvgOverlayRenderOptions
         profile switch
         {
             SvgOverlayRenderProfile.WallQaFocus => "wall-qa-focus",
+            SvgOverlayRenderProfile.WallQaReview => "wall-qa-review",
             SvgOverlayRenderProfile.WallQa => "wall-qa",
             SvgOverlayRenderProfile.PlacementReview => "placement-review",
             SvgOverlayRenderProfile.StructuralReview => "structural-review",

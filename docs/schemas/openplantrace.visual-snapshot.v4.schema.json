@@ -540,6 +540,7 @@
             "placement-review",
             "structural-review",
             "wall-qa",
+            "wall-qa-review",
             "wall-qa-focus"
           ]
         },

@@ -108,6 +108,7 @@ public sealed record PlanPlacementExport(
                 wallComponentLookup,
                 wallEvidenceAssessments.TryGetValue(wall.Id, out var assessment) ? assessment : null,
                 wallTopologySpansByWallId.TryGetValue(wall.Id, out var spans) ? spans : Array.Empty<WallGraphTopologySpan>(),
+                wallTopologySpans,
                 openingsByWallId.TryGetValue(wall.Id, out var wallOpenings) ? wallOpenings : Array.Empty<OpeningCandidate>(),
                 wallReviewReasons.TryGetValue(wall.Id, out var reasons) ? reasons : Array.Empty<string>(),
                 wallGraphRepairCandidatesByWallId.TryGetValue(wall.Id, out var repairCandidates)
@@ -1132,12 +1133,17 @@ public sealed record PlacementWallOmissionExport(
     IReadOnlyList<string> RepairCandidateIds,
     IReadOnlyList<string> Evidence)
 {
+    private const double MinRepresentedByCleanTopologyOverlapRatio = 0.92;
+    private const double MaxInteriorRepresentedByCleanTopologyAxisDistance = 6.0;
+    private const double MaxExteriorRepresentedByCleanTopologyAxisDistance = 18.0;
+
     public static PlacementWallOmissionExport? From(
         WallSegment wall,
         WallGraphComponent? component,
         WallEvidenceWallAssessment? evidenceAssessment,
         PlacementReliabilityExport reliability,
         IReadOnlyList<WallGraphTopologySpan> topologySpans,
+        IReadOnlyList<WallGraphTopologySpan>? allCleanTopologySpans,
         bool excludedFromStructuralTopology,
         IReadOnlyList<WallGraphRepairCandidate> repairCandidates,
         IReadOnlyList<string> reviewReasons)
@@ -1158,7 +1164,30 @@ public sealed record PlacementWallOmissionExport(
             .Distinct(StringComparer.Ordinal)
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToArray();
-        var combinedEvidence = BuildEvidence(wall, component, evidenceAssessment, reliability, repairCandidates, reviewReasons);
+        var representedByCleanSpan = FindRepresentingCleanTopologySpan(
+            wall,
+            component,
+            evidenceAssessment,
+            reliability,
+            topologySpans,
+            allCleanTopologySpans ?? topologySpans,
+            excludedFromStructuralTopology);
+        var representedEvidence = representedByCleanSpan is null
+            ? Array.Empty<string>()
+            :
+            [
+                $"wall already represented by clean topology span from wall {representedByCleanSpan.WallId}; "
+                + $"overlap {RepresentedByCleanTopologyOverlapRatio(wall, representedByCleanSpan):0.###}; "
+                + $"axis distance {RepresentedByCleanTopologyAxisDistance(wall, representedByCleanSpan):0.###} drawing units"
+            ];
+        var combinedEvidence = BuildEvidence(
+            wall,
+            component,
+            evidenceAssessment,
+            reliability,
+            repairCandidates,
+            reviewReasons,
+            representedEvidence);
         var linkedWallIds = ExtractLinkedWallIds(wall.Id, combinedEvidence, repairCandidates);
         var classification = Classify(
             evidenceAssessment,
@@ -1207,6 +1236,15 @@ public sealed record PlacementWallOmissionExport(
                 "DuplicateWallFace",
                 "Wall is omitted from clean placement topology because it appears to be a duplicate face of a stronger paired wall body.",
                 "Use the linked stronger wall body for placement and keep this wall as review evidence only.");
+        }
+
+        if (ContainsEvidence(evidence, "already represented by clean topology span"))
+        {
+            return new PlacementWallOmissionClassification(
+                "duplicate_clean_topology_span",
+                "DuplicateCleanTopology",
+                "Wall is omitted from clean placement topology because another clean wall span already represents the same run.",
+                "Use the linked clean wall span for placement and keep this wall only as source/evidence context.");
         }
 
         if (evidenceAssessment?.RejectedAsNoise == true
@@ -1342,9 +1380,11 @@ public sealed record PlacementWallOmissionExport(
         WallEvidenceWallAssessment? evidenceAssessment,
         PlacementReliabilityExport reliability,
         IReadOnlyList<WallGraphRepairCandidate> repairCandidates,
-        IReadOnlyList<string> reviewReasons)
+        IReadOnlyList<string> reviewReasons,
+        IReadOnlyList<string>? extraEvidence = null)
     {
-        var evidence = reliability.Reasons
+        var evidence = (extraEvidence ?? Array.Empty<string>())
+            .Concat(reliability.Reasons)
             .Concat(reviewReasons)
             .Concat(evidenceAssessment?.Evidence ?? Array.Empty<string>())
             .Concat(wall.Evidence)
@@ -1363,7 +1403,124 @@ public sealed record PlacementWallOmissionExport(
 
     private static bool IsHighPriorityPlacementOmissionEvidence(string evidence) =>
         evidence.Contains("demoted from placement-ready", StringComparison.OrdinalIgnoreCase)
-        || evidence.Contains("severe fragmented-face evidence", StringComparison.OrdinalIgnoreCase);
+        || evidence.Contains("severe fragmented-face evidence", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("already represented by clean topology span", StringComparison.OrdinalIgnoreCase);
+
+    private static WallGraphTopologySpan? FindRepresentingCleanTopologySpan(
+        WallSegment wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? evidenceAssessment,
+        PlacementReliabilityExport reliability,
+        IReadOnlyList<WallGraphTopologySpan> topologySpans,
+        IReadOnlyList<WallGraphTopologySpan> allCleanTopologySpans,
+        bool excludedFromStructuralTopology)
+    {
+        if (topologySpans.Count > 0
+            || allCleanTopologySpans.Count == 0
+            || excludedFromStructuralTopology
+            || component?.Kind == WallGraphComponentKind.ObjectLikeIsland
+            || evidenceAssessment?.Category == WallEvidenceCategory.ObjectOrFixtureDetail
+            || evidenceAssessment?.RejectedAsNoise == true
+            || evidenceAssessment?.Decision == WallEvidenceDecision.Reject
+            || wall.CenterLine.Length <= 0.001
+            || ResolveRepresentedTopologyOrientation(wall.CenterLine) == RepresentedTopologyOrientation.Unknown)
+        {
+            return null;
+        }
+
+        return allCleanTopologySpans
+            .Where(span => span.PageNumber == wall.PageNumber)
+            .Where(span => !string.Equals(span.WallId, wall.Id, StringComparison.Ordinal))
+            .Where(span => ResolveRepresentedTopologyOrientation(span.CenterLine)
+                == ResolveRepresentedTopologyOrientation(wall.CenterLine))
+            .Select(span => new
+            {
+                Span = span,
+                Overlap = RepresentedByCleanTopologyOverlapRatio(wall, span),
+                AxisDistance = RepresentedByCleanTopologyAxisDistance(wall, span)
+            })
+            .Where(item => item.Overlap >= MinRepresentedByCleanTopologyOverlapRatio)
+            .Where(item => item.AxisDistance <= RepresentedByCleanTopologyAxisDistanceTolerance(wall, item.Span))
+            .OrderByDescending(item => item.Overlap)
+            .ThenBy(item => item.AxisDistance)
+            .ThenByDescending(item => item.Span.DrawingLength)
+            .Select(item => item.Span)
+            .FirstOrDefault();
+    }
+
+    private static double RepresentedByCleanTopologyOverlapRatio(
+        WallSegment wall,
+        WallGraphTopologySpan span)
+    {
+        var orientation = ResolveRepresentedTopologyOrientation(wall.CenterLine);
+        if (orientation == RepresentedTopologyOrientation.Unknown
+            || orientation != ResolveRepresentedTopologyOrientation(span.CenterLine)
+            || wall.CenterLine.Length <= 0.001)
+        {
+            return 0;
+        }
+
+        var overlap = Math.Min(RepresentedAxisMax(wall.CenterLine, orientation), RepresentedAxisMax(span.CenterLine, orientation))
+            - Math.Max(RepresentedAxisMin(wall.CenterLine, orientation), RepresentedAxisMin(span.CenterLine, orientation));
+        return Math.Clamp(overlap / wall.CenterLine.Length, 0, 1);
+    }
+
+    private static double RepresentedByCleanTopologyAxisDistance(
+        WallSegment wall,
+        WallGraphTopologySpan span)
+    {
+        var orientation = ResolveRepresentedTopologyOrientation(wall.CenterLine);
+        if (orientation == RepresentedTopologyOrientation.Unknown
+            || orientation != ResolveRepresentedTopologyOrientation(span.CenterLine))
+        {
+            return double.PositiveInfinity;
+        }
+
+        return Math.Abs(RepresentedAxisCoordinate(wall.CenterLine, orientation) - RepresentedAxisCoordinate(span.CenterLine, orientation));
+    }
+
+    private static double RepresentedByCleanTopologyAxisDistanceTolerance(
+        WallSegment wall,
+        WallGraphTopologySpan span)
+    {
+        var baseTolerance = wall.WallType == WallType.Exterior || span.SourceWall?.WallType == WallType.Exterior
+            ? MaxExteriorRepresentedByCleanTopologyAxisDistance
+            : MaxInteriorRepresentedByCleanTopologyAxisDistance;
+        return Math.Max(baseTolerance, Math.Max(wall.Thickness, span.Thickness) + 1.0);
+    }
+
+    private static RepresentedTopologyOrientation ResolveRepresentedTopologyOrientation(PlanLineSegment line)
+    {
+        if (line.IsHorizontal(2))
+        {
+            return RepresentedTopologyOrientation.Horizontal;
+        }
+
+        return line.IsVertical(2)
+            ? RepresentedTopologyOrientation.Vertical
+            : RepresentedTopologyOrientation.Unknown;
+    }
+
+    private static double RepresentedAxisMin(
+        PlanLineSegment line,
+        RepresentedTopologyOrientation orientation) =>
+        orientation == RepresentedTopologyOrientation.Horizontal
+            ? Math.Min(line.Start.X, line.End.X)
+            : Math.Min(line.Start.Y, line.End.Y);
+
+    private static double RepresentedAxisMax(
+        PlanLineSegment line,
+        RepresentedTopologyOrientation orientation) =>
+        orientation == RepresentedTopologyOrientation.Horizontal
+            ? Math.Max(line.Start.X, line.End.X)
+            : Math.Max(line.Start.Y, line.End.Y);
+
+    private static double RepresentedAxisCoordinate(
+        PlanLineSegment line,
+        RepresentedTopologyOrientation orientation) =>
+        orientation == RepresentedTopologyOrientation.Horizontal
+            ? (line.Start.Y + line.End.Y) / 2.0
+            : (line.Start.X + line.End.X) / 2.0;
 
     private static IReadOnlyList<string> ExtractLinkedWallIds(
         string wallId,
@@ -1413,16 +1570,26 @@ public sealed record PlacementWallOmissionExport(
                 return;
             }
 
-            var looksLikeFreeTextWallId =
-                trimmed.Contains(":wall:", StringComparison.OrdinalIgnoreCase)
-                || ((trimmed.StartsWith("wall-", StringComparison.OrdinalIgnoreCase)
-                        || trimmed.StartsWith("wall_", StringComparison.OrdinalIgnoreCase))
-                    && trimmed.Any(char.IsDigit));
+            var looksLikeFreeTextWallId = LooksLikeWallIdentifier(trimmed);
             if (allowAnyRepairWallId || looksLikeFreeTextWallId)
             {
                 linkedWallIds.Add(trimmed);
             }
         }
+    }
+
+    private static bool LooksLikeWallIdentifier(string value)
+    {
+        if (value.Contains(":wall:", StringComparison.OrdinalIgnoreCase)
+            || value.Contains(":wall-evidence-recovered:", StringComparison.OrdinalIgnoreCase)
+            || value.Contains(":wall-evidence-recovered-short:", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return (value.StartsWith("wall-", StringComparison.OrdinalIgnoreCase)
+                || value.StartsWith("wall_", StringComparison.OrdinalIgnoreCase))
+            && value.Any(char.IsDigit);
     }
 
     private static bool ContainsEvidence(IReadOnlyList<string> evidence, string text) =>
@@ -1433,6 +1600,13 @@ public sealed record PlacementWallOmissionExport(
         string Category,
         string Message,
         string RecommendedAction);
+
+    private enum RepresentedTopologyOrientation
+    {
+        Unknown,
+        Horizontal,
+        Vertical
+    }
 }
 
 public sealed record PlacementSurfacePatternExport(
@@ -1535,6 +1709,7 @@ public sealed record PlacementWallExport(
         IReadOnlyDictionary<string, WallGraphComponent> wallComponentLookup,
         WallEvidenceWallAssessment? evidenceAssessment,
         IReadOnlyList<WallGraphTopologySpan> topologySpans,
+        IReadOnlyList<WallGraphTopologySpan> allCleanTopologySpans,
         IReadOnlyList<OpeningCandidate> openings,
         IReadOnlyList<string> reviewReasons,
         IReadOnlyList<WallGraphRepairCandidate> repairCandidates)
@@ -1570,6 +1745,7 @@ public sealed record PlacementWallExport(
             evidenceAssessment,
             reliability,
             topologySpans,
+            allCleanTopologySpans,
             excludedFromStructuralTopology,
             repairCandidates,
             combinedReviewReasons);
@@ -3688,6 +3864,17 @@ internal static class PlacementReliability
             reasons.Add("room boundary has fewer than 3 points");
         }
 
+        var isSemanticRoomSeed = room.Evidence.Any(item => item.Contains("semantic room seed", StringComparison.OrdinalIgnoreCase));
+        if (isSemanticRoomSeed)
+        {
+            reasons.Add("semantic room seed requires review before coordinate placement");
+        }
+
+        if (room.WallIds.Count == 0)
+        {
+            reasons.Add("room boundary has no linked wall evidence");
+        }
+
         if (!calibration.HasReliableMeasurementScale)
         {
             reasons.Add("metric scale unavailable");
@@ -3723,13 +3910,16 @@ internal static class PlacementReliability
             reasons.Add($"room boundary uses rejected wall evidence: {string.Join(",", rejectedBoundaryWallIds.Take(12))}");
         }
 
-        var boundaryWallsAreCoordinateReady = reviewBoundaryWallIds.Length == 0 && rejectedBoundaryWallIds.Length == 0;
+        var boundaryWallsAreCoordinateReady = !isSemanticRoomSeed
+            && room.WallIds.Count > 0
+            && reviewBoundaryWallIds.Length == 0
+            && rejectedBoundaryWallIds.Length == 0;
 
         return Create(
             room.Confidence.Value,
             room.Confidence.Value >= 0.5 && room.Boundary.Count >= 3 && boundaryWallsAreCoordinateReady,
             calibration.HasReliableMeasurementScale,
-            !boundaryWallsAreCoordinateReady,
+            reasons.Count > 0 || !boundaryWallsAreCoordinateReady,
             reasons);
     }
 
