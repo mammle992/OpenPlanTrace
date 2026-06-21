@@ -20,7 +20,7 @@ public sealed record PlanOverlaySnapshot(
     IReadOnlyList<PlanOverlayPageSnapshot> Pages,
     IReadOnlyList<PlanOverlaySnapshotIssue> Issues)
 {
-    public const string CurrentSchemaVersion = "openplantrace.visual-snapshot.v3";
+    public const string CurrentSchemaVersion = "openplantrace.visual-snapshot.v4";
 
     public static PlanOverlaySnapshot From(
         PlanScanResult result,
@@ -87,6 +87,7 @@ public sealed record PlanOverlayPageSnapshot(
     IReadOnlyList<string> VisibleLayerNames,
     IReadOnlyList<string> HiddenLayerNames,
     IReadOnlyList<PlanOverlayLayerSnapshot> Layers,
+    PlanOverlayWallPlacementSummary WallPlacement,
     int ReviewQueueCount,
     IReadOnlyDictionary<string, int> ReviewQueueKindBreakdown,
     IReadOnlyDictionary<string, int> ReviewQueueSeverityBreakdown,
@@ -132,7 +133,8 @@ public sealed record PlanOverlayPageSnapshot(
         var reviewItems = pageReviewQueue
             .Select(PlanOverlayReviewQueueItemSnapshot.From)
             .ToArray();
-        var issues = BuildIssues(result, page, pageBounds, layers, detectionBounds, coverage, pageReviewQueue).ToArray();
+        var wallPlacement = WallPlacementOmissionSummary.From(result, page.Number);
+        var issues = BuildIssues(result, page, pageBounds, layers, detectionBounds, coverage, pageReviewQueue, wallPlacement).ToArray();
 
         return new PlanOverlayPageSnapshot(
             page.Number,
@@ -150,6 +152,7 @@ public sealed record PlanOverlayPageSnapshot(
             visibleLayerNames,
             hiddenLayerNames,
             layers,
+            wallPlacement,
             pageReviewQueue.Length,
             PlanOverlaySnapshot.CountBy(pageReviewQueue, item => item.Kind),
             PlanOverlaySnapshot.CountBy(pageReviewQueue, item => item.Severity),
@@ -470,7 +473,8 @@ public sealed record PlanOverlayPageSnapshot(
         IReadOnlyList<PlanOverlayLayerSnapshot> layers,
         PlanRect detectionBounds,
         double coverage,
-        IReadOnlyList<ScanReviewQueueItemExport> reviewQueue)
+        IReadOnlyList<ScanReviewQueueItemExport> reviewQueue,
+        PlanOverlayWallPlacementSummary wallPlacement)
     {
         var pageNumber = page.Number;
         if (layers.Sum(layer => layer.Count) == 0)
@@ -498,6 +502,16 @@ public sealed record PlanOverlayPageSnapshot(
         if (nodeCount > 0 && wallCount > 0 && nodeCount > wallCount * 4)
         {
             yield return Issue("visual.wall_node_density_high", pageNumber, "warning", "Wall node count is much higher than wall count; visual review should check snapping and fragmentation.");
+        }
+
+        var cleanSpanCount = LayerCount(layers, "wallTopologySpans");
+        if (ShouldFlagHighWallPlacementOmissionRatio(wallCount, cleanSpanCount, wallPlacement))
+        {
+            yield return Issue(
+                "visual.wall_placement_omission_ratio_high",
+                pageNumber,
+                "warning",
+                $"{wallPlacement.PlacementOmittedWallCount} wall candidate(s) were omitted/review-only versus {wallPlacement.PlacementReadyWallCount} placement-ready wall(s) and {cleanSpanCount} clean topology span(s); inspect raw detected walls and non-placement spans before trusting wall placement.");
         }
 
         var objectCount = LayerCount(layers, "objects");
@@ -532,6 +546,25 @@ public sealed record PlanOverlayPageSnapshot(
                 severity,
                 $"Scan review queue has {reviewQueue.Count} {action} item(s) on this page.");
         }
+    }
+
+    private static bool ShouldFlagHighWallPlacementOmissionRatio(
+        int rawWallCount,
+        int cleanSpanCount,
+        PlanOverlayWallPlacementSummary wallPlacement)
+    {
+        if (rawWallCount < 12 || wallPlacement.PlacementOmittedWallCount < 12)
+        {
+            return false;
+        }
+
+        var readyBaseline = Math.Max(wallPlacement.PlacementReadyWallCount, cleanSpanCount);
+        if (readyBaseline <= 0)
+        {
+            return true;
+        }
+
+        return wallPlacement.PlacementOmittedWallCount >= readyBaseline * 3;
     }
 
     private static bool ItemAppliesToPage(ScanReviewQueueItemExport item, int pageNumber) =>

@@ -8,7 +8,7 @@ public static class PlanOverlaySnapshotJsonSchema
     public const string CurrentSchemaVersion = PlanOverlaySnapshot.CurrentSchemaVersion;
 
     public const string CurrentResourceName =
-        "OpenPlanTrace.Export.Schemas.openplantrace.visual-snapshot.v3.schema.json";
+        "OpenPlanTrace.Export.Schemas.openplantrace.visual-snapshot.v4.schema.json";
 
     public static string ReadCurrent()
     {

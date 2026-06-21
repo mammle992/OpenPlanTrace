@@ -6,6 +6,86 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.155] - 2026-06-21
+
+### Added
+- Visual snapshots now emit `visual.wall_placement_omission_ratio_high` when a
+  page has a large imbalance between omitted/review-only wall candidates and
+  clean placement output. This turns the noisy-wall/clean-wall mismatch into a
+  machine-readable QA warning instead of relying only on screenshot review.
+
+### Verified
+- Export, schema, and viewer contract tests passed with `112` tests.
+- Full test suite passed with `613` tests.
+
+## [0.02.154] - 2026-06-21
+
+### Added
+- The viewer now has an off-by-default `Raw detected walls` audit layer. It
+  draws the original wall centerlines with separate styling so wall detection
+  mistakes can be inspected without mixing raw geometry into clean placement QA.
+
+### Improved
+- Wall body footprint legend counts now use the same clean placement-wall
+  predicate as the drawing path, so the viewer does not report footprint counts
+  for walls that cannot be drawn as placement-ready spans.
+
+### Verified
+- Viewer script contract tests passed with `7` tests.
+- Full test suite passed with `612` tests.
+
+## [0.02.153] - 2026-06-21
+
+### Fixed
+- The viewer placement wall, clean wall span, and wall body footprint layers now
+  require clean placement topology spans before drawing. This removes the old
+  raw-centerline fallback path that could make wall-QA screenshots show
+  spaghetti-like review geometry as if it were trustworthy placement output.
+- The viewer script cache key was bumped so browsers load the corrected wall
+  drawing behavior instead of reusing an older cached script.
+
+### Verified
+- Viewer, export, and schema contract tests passed with `110` tests.
+- Full test suite passed with `611` tests.
+
+## [0.02.152] - 2026-06-21
+
+### Improved
+- Scan JSON wall records now expose the same clean placement-ready
+  `topologySpans` used by placement JSON and wall-QA SVGs, while raw graph
+  topology remains available under `wallGraph` for diagnostics. This prevents
+  the viewer from redrawing review-only graph fragments as trusted wall output.
+- Visual snapshots now use `openplantrace.visual-snapshot.v4` and include
+  page-level wall placement summaries with ready/omitted counts, omission-code
+  totals, and prioritized top omissions for wall-QA review.
+- The README now documents the current scan schema artifact and the clean
+  wall-span semantics used by viewer-facing scan output.
+
+### Verified
+- Export, schema, and viewer script tests passed with `109` tests.
+- Full test suite passed with `610` tests.
+- Rescanned an ignored local medium-difficulty PDF fixture. `scan.json`,
+  `placement.json`, `visual-snapshot.json`, and the wall-QA SVG now agree on
+  `24` clean topology spans, `20` placement-ready walls, `98` omitted/review
+  walls, and `fragmented_pair_review_required=2`.
+
+## [0.02.151] - 2026-06-21
+
+### Improved
+- Wall-QA SVG legends now prioritize high-impact omission categories such as
+  `fragmented_pair_review_required`, `topology_import_blocked`, and
+  `fragment_geometry_review` before filling the remaining legend rows by count.
+  This keeps dangerous low-count wall failures visible during visual review.
+
+### Verified
+- Added SVG renderer coverage proving `fragmented pairs` remains visible even
+  when larger generic omission buckets would otherwise fill the legend.
+- Export tests passed with `59` tests.
+- Full test suite passed with `610` tests.
+- Rescanned an ignored local medium-difficulty PDF fixture. Placement geometry
+  stayed stable at `24` clean topology spans and `20` placement-ready walls,
+  while the generated wall-QA SVG now includes `omit: fragmented pairs 2`.
+
 ## [0.02.150] - 2026-06-21
 
 ### Improved

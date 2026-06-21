@@ -47,8 +47,9 @@ public sealed record PlanTraceExport(
             .Where(source => !string.IsNullOrWhiteSpace(source.SourceId))
             .ToDictionary(source => source.SourceId, StringComparer.Ordinal);
         var wallComponentLookup = BuildWallComponentLookup(result.WallGraph.Components);
-        var wallTopologySpans = WallGraphTopologySpanBuilder.Build(result.WallGraph, result.Walls);
-        var wallTopologySpansByWallId = wallTopologySpans
+        var rawWallTopologySpans = WallGraphTopologySpanBuilder.Build(result.WallGraph, result.Walls);
+        var cleanWallTopologySpans = WallTopologySpanVisibility.BuildCleanPlacementTopologySpans(result);
+        var cleanWallTopologySpansByWallId = cleanWallTopologySpans
             .GroupBy(span => span.WallId, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
         var wallEvidenceAssessments = WallEvidenceExportHelpers.BuildAssessmentLookup(result.WallEvidenceMap);
@@ -75,12 +76,12 @@ public sealed record PlanTraceExport(
                 sourceLookup,
                 wallComponentLookup,
                 wallEvidenceAssessments.TryGetValue(wall.Id, out var assessment) ? assessment : null,
-                wallTopologySpansByWallId.TryGetValue(wall.Id, out var spans) ? spans : Array.Empty<WallGraphTopologySpan>())).ToArray(),
+                cleanWallTopologySpansByWallId.TryGetValue(wall.Id, out var spans) ? spans : Array.Empty<WallGraphTopologySpan>())).ToArray(),
             WallEvidenceExport.From(result.WallEvidenceMap, sourceLookup),
             WallTopologyPreparationExport.From(result.WallTopologyPreparation, sourceLookup),
             WallGraphExport.From(
                 result.WallGraph,
-                wallTopologySpans,
+                rawWallTopologySpans,
                 result.Calibration,
                 sourceLookup,
                 wallComponentLookup,

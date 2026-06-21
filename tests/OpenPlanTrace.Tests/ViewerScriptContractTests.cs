@@ -105,6 +105,54 @@ public sealed class ViewerScriptContractTests
         Assert.Contains("function wallCoordinateBlocked", script);
     }
 
+    [Fact]
+    public void ViewerWalls_DoNotFallbackToRawCenterlinesForPlacementQa()
+    {
+        var script = File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(),
+            "tools",
+            "OpenPlanTrace.Viewer",
+            "wwwroot",
+            "app.js"));
+
+        var normalized = script.Replace("\r\n", "\n", StringComparison.Ordinal);
+        Assert.DoesNotContain("function wallRawDrawLines", normalized);
+        Assert.DoesNotContain("function wallVisualDrawLines", normalized);
+        Assert.DoesNotContain("return wallRawDrawLines(wall)", normalized);
+
+        Assert.Contains("if (!shouldDrawWallAsPlacementWall(wall))", normalized);
+        Assert.Contains("case \"walls\":\n      return wallTopologySpanCount(scan, null, shouldDrawWallAsPlacementWall);", normalized);
+        Assert.Contains("case \"walls\":\n      return wallTopologySpanCount(scan, state.currentPage, shouldDrawWallAsPlacementWall);", normalized);
+    }
+
+    [Fact]
+    public void ViewerWalls_ExposeRawWallAuditAsSeparateOffByDefaultLayer()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var html = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "tools",
+            "OpenPlanTrace.Viewer",
+            "wwwroot",
+            "index.html"));
+        var script = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "tools",
+            "OpenPlanTrace.Viewer",
+            "wwwroot",
+            "app.js"));
+        var normalized = script.Replace("\r\n", "\n", StringComparison.Ordinal);
+
+        Assert.Contains("<label><input type=\"checkbox\" data-layer=\"rawWalls\"> Raw detected walls</label>", html);
+        Assert.Contains("{ key: \"rawWalls\", label: \"Raw detected walls\"", normalized);
+        Assert.Contains("if (state.enabledLayers.has(\"rawWalls\"))", normalized);
+        Assert.Contains("function shouldDrawRawWallAuditLine", normalized);
+        Assert.Contains("function rawWallAuditClassName", normalized);
+        Assert.Contains("case \"rawWalls\":\n      return rawWallAuditLineCount(scan);", normalized);
+        Assert.Contains("case \"rawWalls\":\n      return rawWallAuditLineCount(scan, state.currentPage);", normalized);
+        Assert.DoesNotContain("{ key: \"rawWalls\", label: \"Raw detected walls\", layer: \"rawWalls\"", normalized);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

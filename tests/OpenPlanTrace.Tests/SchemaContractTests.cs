@@ -354,7 +354,7 @@ public sealed class SchemaContractTests
         using var document = JsonDocument.Parse(schema);
 
         Assert.Equal("https://json-schema.org/draft/2020-12/schema", document.RootElement.GetProperty("$schema").GetString());
-        Assert.Equal("urn:openplantrace:schema:visual-snapshot:v3", document.RootElement.GetProperty("$id").GetString());
+        Assert.Equal("urn:openplantrace:schema:visual-snapshot:v4", document.RootElement.GetProperty("$id").GetString());
         Assert.Equal(
             PlanOverlaySnapshot.CurrentSchemaVersion,
             document.RootElement.GetProperty("x-openplantrace-schemaVersion").GetString());
@@ -497,8 +497,10 @@ public sealed class SchemaContractTests
     {
         using var schemaDocument = JsonDocument.Parse(PlanOverlaySnapshotJsonSchema.ReadCurrent());
 
-        AssertDefinitionRequires(schemaDocument, "pageSnapshot", "pageNumber", "width", "height", "pageBounds", "detectionBounds", "detectionCoverage", "drawableItemCount", "primitiveCount", "svgPath", "layers", "reviewQueueCount", "reviewQueueKindBreakdown", "reviewQueueSeverityBreakdown", "reviewQueue", "issues");
+        AssertDefinitionRequires(schemaDocument, "pageSnapshot", "pageNumber", "width", "height", "pageBounds", "detectionBounds", "detectionCoverage", "drawableItemCount", "primitiveCount", "svgPath", "svgProfile", "visibleDrawableItemCount", "hiddenDrawableItemCount", "visibleLayerNames", "hiddenLayerNames", "layers", "wallPlacement", "reviewQueueCount", "reviewQueueKindBreakdown", "reviewQueueSeverityBreakdown", "reviewQueue", "issues");
         AssertDefinitionRequires(schemaDocument, "layerSnapshot", "name", "count", "bounds", "normalizedBounds", "normalizedDensity", "averageConfidence", "minimumConfidence", "maximumConfidence", "breakdown");
+        AssertDefinitionRequires(schemaDocument, "wallPlacementSummary", "placementReadyWallCount", "placementOmittedWallCount", "omissionCounts", "topOmissions");
+        AssertDefinitionRequires(schemaDocument, "wallPlacementOmissionSummary", "code", "label", "count", "isPriority");
         AssertDefinitionRequires(schemaDocument, "reviewQueueItem", "id", "kind", "detector", "itemId", "priority", "severity", "pageNumber", "bounds", "confidence", "recommendedAction", "sourcePrimitiveCount", "sourceLayerCount", "evidence");
         AssertDefinitionRequires(schemaDocument, "snapshotIssue", "code", "severity", "message", "pageNumber");
         AssertDefinitionRequires(schemaDocument, "rect", "x", "y", "width", "height", "left", "top", "right", "bottom", "centerX", "centerY", "area");

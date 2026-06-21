@@ -1,0 +1,490 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:openplantrace:schema:visual-snapshot:v4",
+  "title": "OpenPlanTrace Visual Snapshot",
+  "description": "Schema for compact visual QA snapshots emitted beside OpenPlanTrace SVG overlays. The snapshot records page-coordinate frames, overlay artifact links, detector layer counts, bounds, confidence summaries, coverage, wall placement omission summaries, and visual-review issues for repeatable scanner QA.",
+  "type": "object",
+  "additionalProperties": true,
+  "x-openplantrace-schemaVersion": "openplantrace.visual-snapshot.v4",
+  "required": [
+    "schemaVersion",
+    "documentId",
+    "coordinateSpace",
+    "origin",
+    "xAxisDirection",
+    "yAxisDirection",
+    "unit",
+    "scanSchemaVersion",
+    "qualityGrade",
+    "qualityConfidence",
+    "requiresReview",
+    "reviewQueueCount",
+    "reviewQueueKindBreakdown",
+    "reviewQueueSeverityBreakdown",
+    "pages",
+    "issues"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "openplantrace.visual-snapshot.v4"
+    },
+    "documentId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "coordinateSpace": {
+      "const": "OpenPlanTracePageCoordinates"
+    },
+    "origin": {
+      "const": "TopLeft"
+    },
+    "xAxisDirection": {
+      "const": "Right"
+    },
+    "yAxisDirection": {
+      "const": "Down"
+    },
+    "unit": {
+      "const": "DrawingUnit"
+    },
+    "scanSchemaVersion": {
+      "type": "string",
+      "pattern": "^openplantrace\\.scan\\.v[0-9]+$"
+    },
+    "qualityGrade": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "qualityConfidence": {
+      "$ref": "#/$defs/ratio"
+    },
+    "requiresReview": {
+      "type": "boolean"
+    },
+    "reviewQueueCount": {
+      "$ref": "#/$defs/nonNegativeInteger"
+    },
+    "reviewQueueKindBreakdown": {
+      "$ref": "#/$defs/countBreakdown"
+    },
+    "reviewQueueSeverityBreakdown": {
+      "$ref": "#/$defs/countBreakdown"
+    },
+    "pages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/pageSnapshot"
+      }
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/snapshotIssue"
+      }
+    }
+  },
+  "$defs": {
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nonNegativeNumber": {
+      "type": "number",
+      "minimum": 0
+    },
+    "positiveNumber": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "ratio": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "nullableRatio": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "nullableString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "countBreakdown": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/nonNegativeInteger"
+      }
+    },
+    "rect": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height",
+        "left",
+        "top",
+        "right",
+        "bottom",
+        "centerX",
+        "centerY",
+        "area"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number"
+        },
+        "height": {
+          "type": "number"
+        },
+        "left": {
+          "type": "number"
+        },
+        "top": {
+          "type": "number"
+        },
+        "right": {
+          "type": "number"
+        },
+        "bottom": {
+          "type": "number"
+        },
+        "centerX": {
+          "type": "number"
+        },
+        "centerY": {
+          "type": "number"
+        },
+        "area": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        }
+      }
+    },
+    "layerSnapshot": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "name",
+        "count",
+        "bounds",
+        "normalizedBounds",
+        "normalizedDensity",
+        "averageConfidence",
+        "minimumConfidence",
+        "maximumConfidence",
+        "breakdown"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "count": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "normalizedBounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "normalizedDensity": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "averageConfidence": {
+          "$ref": "#/$defs/nullableRatio"
+        },
+        "minimumConfidence": {
+          "$ref": "#/$defs/nullableRatio"
+        },
+        "maximumConfidence": {
+          "$ref": "#/$defs/nullableRatio"
+        },
+        "breakdown": {
+          "$ref": "#/$defs/countBreakdown"
+        }
+      }
+    },
+    "snapshotIssue": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "code",
+        "severity",
+        "message",
+        "pageNumber"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pageNumber": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        }
+      }
+    },
+    "reviewQueueItem": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "kind",
+        "detector",
+        "itemId",
+        "priority",
+        "severity",
+        "pageNumber",
+        "bounds",
+        "confidence",
+        "recommendedAction",
+        "sourcePrimitiveCount",
+        "sourceLayerCount",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "detector": {
+          "type": "string",
+          "minLength": 1
+        },
+        "itemId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "priority": {
+          "type": "integer"
+        },
+        "severity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pageNumber": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ratio"
+        },
+        "recommendedAction": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourcePrimitiveCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "sourceLayerCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "wallPlacementSummary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "placementReadyWallCount",
+        "placementOmittedWallCount",
+        "omissionCounts",
+        "topOmissions"
+      ],
+      "properties": {
+        "placementReadyWallCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "placementOmittedWallCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "omissionCounts": {
+          "$ref": "#/$defs/countBreakdown"
+        },
+        "topOmissions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/wallPlacementOmissionSummary"
+          }
+        }
+      }
+    },
+    "wallPlacementOmissionSummary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "code",
+        "label",
+        "count",
+        "isPriority"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "count": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "isPriority": {
+          "type": "boolean"
+        }
+      }
+    },
+    "pageSnapshot": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "pageNumber",
+        "width",
+        "height",
+        "pageBounds",
+        "detectionBounds",
+        "detectionCoverage",
+        "drawableItemCount",
+        "primitiveCount",
+        "svgPath",
+        "svgProfile",
+        "visibleDrawableItemCount",
+        "hiddenDrawableItemCount",
+        "visibleLayerNames",
+        "hiddenLayerNames",
+        "layers",
+        "wallPlacement",
+        "reviewQueueCount",
+        "reviewQueueKindBreakdown",
+        "reviewQueueSeverityBreakdown",
+        "reviewQueue",
+        "issues"
+      ],
+      "properties": {
+        "pageNumber": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "width": {
+          "$ref": "#/$defs/positiveNumber"
+        },
+        "height": {
+          "$ref": "#/$defs/positiveNumber"
+        },
+        "pageBounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "detectionBounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "detectionCoverage": {
+          "$ref": "#/$defs/ratio"
+        },
+        "drawableItemCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "primitiveCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "svgPath": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "svgProfile": {
+          "type": "string",
+          "enum": [
+            "full",
+            "placement-review",
+            "structural-review",
+            "wall-qa"
+          ]
+        },
+        "visibleDrawableItemCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "hiddenDrawableItemCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "visibleLayerNames": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "hiddenLayerNames": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "layers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/layerSnapshot"
+          }
+        },
+        "wallPlacement": {
+          "$ref": "#/$defs/wallPlacementSummary"
+        },
+        "reviewQueueCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "reviewQueueKindBreakdown": {
+          "$ref": "#/$defs/countBreakdown"
+        },
+        "reviewQueueSeverityBreakdown": {
+          "$ref": "#/$defs/countBreakdown"
+        },
+        "reviewQueue": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reviewQueueItem"
+          }
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/snapshotIssue"
+          }
+        }
+      }
+    }
+  }
+}

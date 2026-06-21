@@ -1024,6 +1024,31 @@ public sealed class ExportTests
         Assert.DoesNotContain("edge-tooth-1", svg);
     }
 
+    [Fact]
+    public void SvgRenderer_WallQaLegendKeepsPriorityOmissionRowsVisible()
+    {
+        var result = WithOmissionLegendPriorityFixture(CreateDenseMinorRoutingDetailResult());
+
+        var svg = PlanOverlaySvgRenderer.RenderPage(
+            result,
+            1,
+            SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.WallQa));
+
+        Assert.Contains("omit: fragmented pairs 1", svg);
+        Assert.Contains("omit: isolated fragments", svg);
+        Assert.Contains("omit: rejected evidence", svg);
+
+        var snapshot = PlanOverlaySnapshot.From(
+            result,
+            new Dictionary<int, string> { [1] = "overlays/page-1.svg" },
+            SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.WallQa));
+        var page = Assert.Single(snapshot.Pages);
+        var firstOmission = page.WallPlacement.TopOmissions[0];
+        Assert.Equal("fragmented_pair_review_required", firstOmission.Code);
+        Assert.True(firstOmission.IsPriority);
+        Assert.Equal(1, page.WallPlacement.OmissionCounts["fragmented_pair_review_required"]);
+    }
+
     [Theory]
     [InlineData("wall-qa")]
     [InlineData("walls-only")]
@@ -1052,6 +1077,9 @@ public sealed class ExportTests
         Assert.Contains("wallBodyFootprints", page.VisibleLayerNames);
         Assert.Contains("wallTopologySpans", page.VisibleLayerNames);
         Assert.DoesNotContain("walls", page.VisibleLayerNames);
+        Assert.Equal(1, page.WallPlacement.PlacementReadyWallCount);
+        Assert.Equal(4, page.WallPlacement.PlacementOmittedWallCount);
+        Assert.Equal(1, page.WallPlacement.OmissionCounts["wall_evidence_review_required"]);
         Assert.Equal(1, page.Layers.Single(layer => layer.Name == "wallBodyFootprints").Count);
         Assert.Equal(1, page.Layers.Single(layer => layer.Name == "wallTopologySpans").Count);
         Assert.Equal(4, page.Layers.Single(layer => layer.Name == "wallTopologyReviewSpans").Count);
@@ -1249,6 +1277,11 @@ public sealed class ExportTests
         Assert.Equal(
             "full",
             document.RootElement.GetProperty("pages")[0].GetProperty("svgProfile").GetString());
+        var pageWallPlacement = document.RootElement.GetProperty("pages")[0].GetProperty("wallPlacement");
+        Assert.True(pageWallPlacement.GetProperty("placementReadyWallCount").GetInt32() >= 1);
+        Assert.True(pageWallPlacement.GetProperty("placementOmittedWallCount").GetInt32() >= 0);
+        Assert.Equal(JsonValueKind.Object, pageWallPlacement.GetProperty("omissionCounts").ValueKind);
+        Assert.Equal(JsonValueKind.Array, pageWallPlacement.GetProperty("topOmissions").ValueKind);
         Assert.Contains(
             document.RootElement.GetProperty("pages")[0].GetProperty("layers").EnumerateArray(),
             layer => layer.GetProperty("name").GetString() == "walls"
@@ -1345,6 +1378,26 @@ public sealed class ExportTests
             && issue.Severity == "warning"
             && issue.PageNumber == 1
             && issue.Message.Contains("objects", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void VisualSnapshotExporter_FlagsHighWallPlacementOmissionRatio()
+    {
+        var result = WithOmissionLegendPriorityFixture(CreateDenseMinorRoutingDetailResult());
+
+        var snapshot = PlanOverlaySnapshot.From(
+            result,
+            new Dictionary<int, string> { [1] = "overlays/page-1.svg" },
+            SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.WallQa));
+        var page = Assert.Single(snapshot.Pages);
+
+        Assert.True(page.WallPlacement.PlacementOmittedWallCount >= page.WallPlacement.PlacementReadyWallCount * 3);
+        Assert.Contains(page.Issues, issue =>
+            issue.Code == "visual.wall_placement_omission_ratio_high"
+            && issue.Severity == "warning"
+            && issue.PageNumber == 1
+            && issue.Message.Contains("omitted/review-only", StringComparison.Ordinal)
+            && issue.Message.Contains("clean topology span", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -2506,11 +2559,15 @@ public sealed class ExportTests
             .EnumerateArray()
             .Single(item => item.GetProperty("wallId").GetString() == "isolated-clean-fragment");
 
+        Assert.Empty(wall.GetProperty("topologySpans").EnumerateArray());
         Assert.False(wall.GetProperty("readyForCoordinatePlacement").GetBoolean());
         Assert.True(wall.GetProperty("requiresReview").GetBoolean());
         Assert.Contains(
             wall.GetProperty("reviewReasons").EnumerateArray(),
             item => item.GetString()?.Contains("isolated fragment", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Contains(
+            wall.GetProperty("reviewReasons").EnumerateArray(),
+            item => item.GetString()?.Contains("no clean wall graph topology span", StringComparison.OrdinalIgnoreCase) == true);
         Assert.False(edge.GetProperty("readyForCoordinatePlacement").GetBoolean());
         Assert.True(edge.GetProperty("requiresReview").GetBoolean());
         Assert.Contains(
@@ -4031,6 +4088,136 @@ public sealed class ExportTests
                 result.WallEvidenceMap.SourceCandidateWallCount,
                 result.WallEvidenceMap.RecoveredCandidateWallCount)
         };
+    }
+
+    private static PlanScanResult WithOmissionLegendPriorityFixture(PlanScanResult result)
+    {
+        var walls = new List<WallSegment>();
+        var components = new List<WallGraphComponent>();
+        var assessments = new List<WallEvidenceWallAssessment>();
+        AddOmissionGroup(
+            "legend-isolated",
+            5,
+            WallGraphComponentKind.IsolatedFragment,
+            WallEvidenceCategory.StrongWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            WallEvidenceDecision.Accept,
+            ["synthetic isolated fragment retained for review/opening support"]);
+        AddOmissionGroup(
+            "legend-rejected",
+            4,
+            WallGraphComponentKind.MainStructural,
+            WallEvidenceCategory.ObjectOrFixtureDetail,
+            placementReady: false,
+            requiresReview: true,
+            rejectedAsNoise: true,
+            WallEvidenceDecision.Reject,
+            ["wall evidence rejected as non-wall object/fixture detail"]);
+        AddOmissionGroup(
+            "legend-no-clean",
+            3,
+            WallGraphComponentKind.MainStructural,
+            WallEvidenceCategory.StrongWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            WallEvidenceDecision.Accept,
+            ["synthetic accepted wall evidence without clean topology span"]);
+        AddOmissionGroup(
+            "legend-duplicate",
+            2,
+            WallGraphComponentKind.MainStructural,
+            WallEvidenceCategory.MediumWallBody,
+            placementReady: false,
+            requiresReview: true,
+            rejectedAsNoise: false,
+            WallEvidenceDecision.Review,
+            ["duplicate wall-face already represented by stronger paired wall body wall-stronger"]);
+        AddOmissionGroup(
+            "legend-object",
+            2,
+            WallGraphComponentKind.ObjectLikeIsland,
+            WallEvidenceCategory.StrongWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            WallEvidenceDecision.Accept,
+            ["synthetic object-like island component"]);
+        AddOmissionGroup(
+            "legend-fragmented-pair",
+            1,
+            WallGraphComponentKind.MainStructural,
+            WallEvidenceCategory.MediumWallBody,
+            placementReady: false,
+            requiresReview: true,
+            rejectedAsNoise: false,
+            WallEvidenceDecision.Review,
+            ["wall evidence: demoted from placement-ready because short unlayered parallel-face pair has severe fragmented-face evidence; pair score 0.642, max face fragments 107, total face fragments 111"]);
+
+        return result with
+        {
+            Walls = result.Walls.Concat(walls).ToArray(),
+            WallGraph = new WallGraph(
+                result.WallGraph.Nodes,
+                result.WallGraph.Edges,
+                result.WallGraph.Components.Concat(components).ToArray(),
+                result.WallGraph.RepairCandidates),
+            WallEvidenceMap = new WallEvidenceMap(
+                result.WallEvidenceMap.Segments,
+                result.WallEvidenceMap.Bands,
+                result.WallEvidenceMap.WallAssessments.Concat(assessments).ToArray(),
+                result.WallEvidenceMap.SourceCandidateWallCount + walls.Count,
+                result.WallEvidenceMap.RecoveredCandidateWallCount)
+        };
+
+        void AddOmissionGroup(
+            string prefix,
+            int count,
+            WallGraphComponentKind componentKind,
+            WallEvidenceCategory evidenceCategory,
+            bool placementReady,
+            bool requiresReview,
+            bool rejectedAsNoise,
+            WallEvidenceDecision decision,
+            IReadOnlyList<string> evidence)
+        {
+            for (var index = 0; index < count; index++)
+            {
+                var x = 340 + (index * 12);
+                var y = 40 + (walls.Count * 12);
+                var wall = SyntheticWall($"{prefix}-{index + 1}", x, y, x + 8, y);
+                walls.Add(wall);
+                components.Add(new WallGraphComponent(
+                    $"component-{wall.Id}",
+                    wall.PageNumber,
+                    componentKind,
+                    wall.Bounds,
+                    [wall.Id],
+                    Array.Empty<string>(),
+                    Array.Empty<string>(),
+                    wall.SourcePrimitiveIds,
+                    wall.DrawingLength,
+                    Confidence.Medium,
+                    evidence,
+                    ExcludedFromStructuralTopology: false));
+                assessments.Add(new WallEvidenceWallAssessment(
+                    wall.Id,
+                    wall.PageNumber,
+                    wall.Bounds,
+                    evidenceCategory,
+                    Confidence.Medium,
+                    placementReady,
+                    requiresReview,
+                    rejectedAsNoise,
+                    wall.SourcePrimitiveIds,
+                    evidence)
+                {
+                    Decision = decision
+                });
+            }
+        }
     }
 
     private static PlanScanResult WithWallGraphRepairCandidate(PlanScanResult result)

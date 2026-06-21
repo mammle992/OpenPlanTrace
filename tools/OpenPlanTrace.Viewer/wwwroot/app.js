@@ -85,6 +85,7 @@ const overlayLegendItems = [
   { key: "gridBays", label: "Grid bays", stroke: "#6b7c1f", fill: "rgba(107, 124, 31, 0.08)", dash: "3 4" },
   { key: "annotations", label: "Annotations", stroke: "#2587b4", fill: "rgba(37, 135, 180, 0.055)" },
   { key: "wallComponents", label: "Wall components", stroke: "#c97c18", fill: "rgba(201, 124, 24, 0.06)", dash: "6 4" },
+  { key: "rawWalls", label: "Raw detected walls", stroke: "#b82f42", fill: "rgba(184, 47, 66, 0.045)", dash: "2 3" },
   { key: "walls", label: "Placement walls", stroke: "#0f4fb8", fill: "rgba(15, 79, 184, 0.06)" },
   { key: "wallBodyFootprints", label: "Wall body footprints", stroke: "#0f4fb8", fill: "rgba(15, 79, 184, 0.10)" },
   { key: "wallTopologySpans", label: "Clean wall spans", stroke: "#0f4fb8", fill: "rgba(15, 79, 184, 0.06)" },
@@ -118,6 +119,7 @@ const placementOverlayLayerKeys = new Set([
   "surfacePatterns",
   "placementIssues",
   "wallGraphRepairs",
+  "rawWalls",
   "routingLayer"
 ]);
 
@@ -2963,12 +2965,36 @@ function drawOverlay() {
     });
   }
 
+  if (state.enabledLayers.has("rawWalls")) {
+    state.scan.walls.filter(onCurrentPage).forEach((wall) => {
+      if (!visibleBySourceLayer(wall) || !shouldDrawRawWallAuditLine(wall)) {
+        return;
+      }
+
+      const component = wall.wallComponentKind
+        ? `${wall.wallComponentKind}${wall.excludedFromStructuralTopology ? ", topology excluded" : ""}`
+        : "no component";
+      const inspection = describeItem("raw detected wall", wall);
+      const title = [
+        `${wall.id} - raw detector centerline`,
+        component,
+        wall.wallType ? `type ${wall.wallType}` : "",
+        wall.evidenceAssessment?.category ? `evidence ${wall.evidenceAssessment.category}` : "",
+        `confidence ${wall.confidence.toFixed(2)}`,
+        wallReliabilitySummary(wall)
+      ].filter(Boolean).join(" - ");
+      const className = rawWallAuditClassName(wall);
+      addLine(wall.centerLine, `${className} raw-wall-audit-halo`, "", 1);
+      addLine(wall.centerLine, className, title, wallDrawOpacity(wall), inspection);
+    });
+  }
+
   if (state.enabledLayers.has("wallBodyFootprints")) {
     state.scan.walls.filter(onCurrentPage).forEach((wall) => {
       if (!visibleBySourceLayer(wall)) {
         return;
       }
-      if (!shouldDrawWallAsCleanTopologySpan(wall)) {
+      if (!shouldDrawWallAsPlacementWall(wall)) {
         return;
       }
 
@@ -3007,7 +3033,7 @@ function drawOverlay() {
       if (!visibleBySourceLayer(wall)) {
         return;
       }
-      if (!shouldDrawWallAsCleanTopologySpan(wall)) {
+      if (!shouldDrawWallAsPlacementWall(wall)) {
         return;
       }
 
@@ -3079,7 +3105,7 @@ function drawOverlay() {
       if (!visibleBySourceLayer(wall)) {
         return;
       }
-      if (!shouldDrawWallInStructuralLayer(wall)) {
+      if (!shouldDrawWallAsPlacementWall(wall)) {
         return;
       }
       const component = wall.wallComponentKind
@@ -3217,6 +3243,27 @@ function shouldDrawWallAsPlacementWall(wall) {
 
 function shouldDrawWallAsReviewTopologySpan(wall) {
   return shouldDrawWallInStructuralCandidateLayer(wall) && !wallIsPlacementReady(wall);
+}
+
+function shouldDrawRawWallAuditLine(wall) {
+  return Boolean(wall?.centerLine?.start && wall?.centerLine?.end);
+}
+
+function rawWallAuditClassName(wall) {
+  const classes = ["raw-wall-audit"];
+  if (wallCoordinateBlocked(wall)) {
+    classes.push("raw-wall-audit-blocked");
+  } else if (wallRequiresReliabilityReview(wall)) {
+    classes.push("raw-wall-audit-review");
+  }
+
+  if (wall?.excludedFromStructuralTopology
+    || wall?.wallComponentKind === "ObjectLikeIsland"
+    || wall?.wallComponentKind === "IsolatedFragment") {
+    classes.push("raw-wall-audit-non-structural");
+  }
+
+  return classes.join(" ");
 }
 
 function drawScanReviewQueue(page, options = {}) {
@@ -4517,17 +4564,6 @@ function wallReliabilityReasons(wall) {
   return normalizeStringArray(wall?.evidenceAssessment?.evidence);
 }
 
-function wallRawDrawLines(wall) {
-  return wall?.centerLine?.start && wall?.centerLine?.end
-    ? [{
-      id: wall.id,
-      centerLine: wall.centerLine,
-      confidence: wall.confidence,
-      isRawWall: true
-    }]
-    : [];
-}
-
 function wallCleanTopologySpans(wall) {
   const spans = Array.isArray(wall?.topologySpans)
     ? wall.topologySpans
@@ -4950,15 +4986,6 @@ function translatePoint(point, dx, dy) {
     x: Number(point.x) + dx,
     y: Number(point.y) + dy
   };
-}
-
-function wallVisualDrawLines(wall) {
-  const topologySpans = wallCleanTopologySpans(wall);
-  if (topologySpans.length) {
-    return topologySpans;
-  }
-
-  return wallRawDrawLines(wall);
 }
 
 function wallTopologySpanClassName(wall) {
@@ -9785,9 +9812,16 @@ function wallTopologySpanCount(scan = state.scan, pageNumber = null, predicate =
     .reduce((total, wall) => total + wallCleanTopologySpans(wall).length, 0);
 }
 
+function rawWallAuditLineCount(scan = state.scan, pageNumber = null) {
+  return (scan?.walls ?? [])
+    .filter(shouldDrawRawWallAuditLine)
+    .filter((wall) => pageNumber == null || wall.pageNumber == null || wall.pageNumber === pageNumber)
+    .length;
+}
+
 function wallBodyFootprintCount(scan = state.scan, pageNumber = null) {
   return (scan?.walls ?? [])
-    .filter(shouldDrawWallAsCleanTopologySpan)
+    .filter(shouldDrawWallAsPlacementWall)
     .filter((wall) => pageNumber == null || wall.pageNumber == null || wall.pageNumber === pageNumber)
     .reduce((total, wall) => total + wallBodyFootprints(wall).length, 0);
 }
@@ -9840,6 +9874,8 @@ function layerTotalForKey(scan, key) {
       return state.placement?.issues?.filter((issue) => normalizeRect(issue.bounds)).length ?? 0;
     case "wallComponents":
       return scan.wallComponents?.length ?? 0;
+    case "rawWalls":
+      return rawWallAuditLineCount(scan);
     case "walls":
       return wallTopologySpanCount(scan, null, shouldDrawWallAsPlacementWall);
     case "wallBodyFootprints":
@@ -9900,6 +9936,8 @@ function layerCountForKey(scan, key) {
       return placementIssuesForPage(state.currentPage).filter((issue) => issue.bounds).length;
     case "wallComponents":
       return currentPageOnly(scan.wallComponents);
+    case "rawWalls":
+      return rawWallAuditLineCount(scan, state.currentPage);
     case "walls":
       return wallTopologySpanCount(scan, state.currentPage, shouldDrawWallAsPlacementWall);
     case "wallBodyFootprints":
