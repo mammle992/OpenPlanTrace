@@ -19,7 +19,7 @@
       "const": "openplantrace.scan.compact.v1"
     },
     "sourceSchemaVersion": {
-      "const": "openplantrace.scan.v69"
+      "const": "openplantrace.scan.v70"
     },
     "encoding": {
       "const": "shape-string-token-v1"

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OpenPlanTrace Viewer</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23191a1f'/%3E%3Ctext x='16' y='20' text-anchor='middle' font-family='Arial,sans-serif' font-size='10' font-weight='700' fill='white'%3EOPT%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./styles.css?v=53">
+  <link rel="stylesheet" href="./styles.css?v=54">
 </head>
 <body>
   <main class="app-shell">
@@ -27,6 +27,10 @@
 
       <section class="panel">
         <h2>Overlay Layers</h2>
+        <div class="layer-presets" aria-label="Overlay layer presets">
+          <button id="applyDefaultLayers" type="button">DEFAULT</button>
+          <button id="applyWallQaLayers" type="button">WALL QA</button>
+        </div>
         <label><input type="checkbox" data-layer="regions" checked> Regions</label>
         <label><input type="checkbox" data-layer="dimensions" checked> Dimensions</label>
         <label><input type="checkbox" data-layer="gridAxes" checked> Grid axes</label>
@@ -202,6 +206,6 @@
     </aside>
   </main>
 
-  <script type="module" src="./app.js?v=54"></script>
+  <script type="module" src="./app.js?v=57"></script>
 </body>
 </html>

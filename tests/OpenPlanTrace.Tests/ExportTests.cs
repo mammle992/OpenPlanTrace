@@ -188,6 +188,9 @@ public sealed class ExportTests
         Assert.True(firstWallEvidenceAssessment.GetProperty("placementReady").ValueKind is JsonValueKind.True or JsonValueKind.False);
         Assert.True(firstWallEvidenceAssessment.GetProperty("requiresReview").ValueKind is JsonValueKind.True or JsonValueKind.False);
         Assert.True(firstWallEvidenceAssessment.GetProperty("rejectedAsNoise").ValueKind is JsonValueKind.True or JsonValueKind.False);
+        Assert.True(firstWallEvidenceAssessment.GetProperty("scoreBreakdown").GetProperty("decisionScore").ValueKind is JsonValueKind.Number);
+        Assert.Equal(JsonValueKind.Array, firstWallEvidenceAssessment.GetProperty("scoreBreakdown").GetProperty("positiveEvidence").ValueKind);
+        Assert.Equal(JsonValueKind.Array, firstWallEvidenceAssessment.GetProperty("scoreBreakdown").GetProperty("negativeEvidence").ValueKind);
         Assert.True(firstWallEvidenceAssessment.GetProperty("sourcePrimitiveIds").GetArrayLength() > 0);
         Assert.True(firstWallEvidenceAssessment.GetProperty("evidence").GetArrayLength() > 0);
         Assert.True(firstWall.GetProperty("evidence").GetArrayLength() > 0);

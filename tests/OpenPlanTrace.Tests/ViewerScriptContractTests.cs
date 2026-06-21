@@ -44,6 +44,67 @@ public sealed class ViewerScriptContractTests
         Assert.Contains("viewerCleanWallMergeGap", script);
     }
 
+    [Fact]
+    public void ViewerWalls_FilterMicroTopologyRunsBeforeWallQaDrawing()
+    {
+        var script = File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(),
+            "tools",
+            "OpenPlanTrace.Viewer",
+            "wwwroot",
+            "app.js"));
+
+        Assert.Contains("const viewerCleanWallMinSpanLength = 8.0", script);
+        Assert.Contains("function viewerSpanLength", script);
+        Assert.Contains(".filter((interval) => interval.length >= viewerCleanWallMinSpanLength)", script);
+        Assert.Contains("if (!intervals.length)", script);
+        Assert.Contains("return [];", script);
+        Assert.DoesNotContain("if (intervals.length <= 1) {\r\n    return spans;", script);
+        Assert.DoesNotContain("if (intervals.length <= 1) {\n    return spans;", script);
+    }
+
+    [Fact]
+    public void ViewerLayers_ExposeWallQaPresetForCleanWallScreenshots()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var html = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "tools",
+            "OpenPlanTrace.Viewer",
+            "wwwroot",
+            "index.html"));
+        var script = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "tools",
+            "OpenPlanTrace.Viewer",
+            "wwwroot",
+            "app.js"));
+
+        Assert.Contains("id=\"applyWallQaLayers\"", html);
+        Assert.Contains(">WALL QA<", html);
+        Assert.Contains("const wallQaEnabledLayers", script);
+        Assert.Contains("\"wallTopologySpans\"", script);
+        Assert.Contains("applyOverlayLayerPreset(wallQaEnabledLayers)", script);
+        Assert.Contains("function applyOverlayLayerPreset", script);
+        Assert.Contains("state.enabledLayers = new Set(layerKeys)", script);
+    }
+
+    [Fact]
+    public void ViewerWalls_UseTopLevelPlacementReadinessForCleanWallDrawing()
+    {
+        var script = File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(),
+            "tools",
+            "OpenPlanTrace.Viewer",
+            "wwwroot",
+            "app.js"));
+
+        Assert.Contains("wall?.readyForCoordinatePlacement === false || wall?.requiresReview === true", script);
+        Assert.Contains("wall?.readyForCoordinatePlacement === false", script);
+        Assert.Contains("function wallIsPlacementReady", script);
+        Assert.Contains("function wallCoordinateBlocked", script);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

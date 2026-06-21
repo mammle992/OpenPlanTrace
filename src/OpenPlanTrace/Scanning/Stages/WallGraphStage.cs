@@ -2034,6 +2034,11 @@ internal sealed class WallGraphStage : IPipelineStage
             return WallGraphComponentKind.SecondaryStructural;
         }
 
+        if (LooksLikeAnchoredSinglePairedWallBody(component, mainComponent, context))
+        {
+            return WallGraphComponentKind.SecondaryStructural;
+        }
+
         if (LooksLikeObjectIsland(component, mainBounds)
             || LooksLikeDenseDetailOrStairIsland(component, mainBounds, context.Options))
         {
@@ -2207,6 +2212,99 @@ internal sealed class WallGraphStage : IPipelineStage
 
     private static double CompactStructuralPairedReturnClusterLength(ScannerOptions options) =>
         Math.Max(options.MinWallLength * 4.0, options.DefaultWallThickness * 24.0);
+
+    private static bool LooksLikeAnchoredSinglePairedWallBody(
+        RawWallGraphComponent component,
+        RawWallGraphComponent? mainComponent,
+        ScanContext context)
+    {
+        if (mainComponent is null
+            || ReferenceEquals(component, mainComponent)
+            || component.Bounds.IsEmpty
+            || mainComponent.Bounds.IsEmpty
+            || component.WallIds.Count != 1
+            || component.EdgeIds.Count == 0
+            || component.NodeIds.Count == 0
+            || component.PairedWallCount != 1
+            || component.DiagonalWallCount > 0
+            || component.DrawingLength < AnchoredSinglePairedWallBodyLength(context.Options))
+        {
+            return false;
+        }
+
+        var structuralNeighborhood = mainComponent.Bounds.Inflate(UnresolvedEndpointGapReviewTolerance(context.Options));
+        if (!structuralNeighborhood.Intersects(component.Bounds))
+        {
+            return false;
+        }
+
+        var wallsById = context.Walls.ToDictionary(wall => wall.Id, StringComparer.Ordinal);
+        var assessmentsByWallId = context.WallEvidenceMap.WallAssessments
+            .Where(assessment => !string.IsNullOrWhiteSpace(assessment.WallId))
+            .GroupBy(assessment => assessment.WallId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
+        var wallId = component.WallIds[0];
+        if (!wallsById.TryGetValue(wallId, out var wall)
+            || !assessmentsByWallId.TryGetValue(wallId, out var assessment)
+            || !IsTrustedCompactStructuralPairedWall(assessment, wall, context.Options))
+        {
+            return false;
+        }
+
+        if (wall.WallType == WallType.Unknown && !HasWallLayerEvidence(assessment, wall))
+        {
+            return false;
+        }
+
+        return HasEndpointAttachmentToMainComponent(wall, mainComponent, wallsById, context.Options);
+    }
+
+    private static double AnchoredSinglePairedWallBodyLength(ScannerOptions options) =>
+        Math.Max(options.MinWallLength * 3.0, options.DefaultWallThickness * 18.0);
+
+    private static bool HasEndpointAttachmentToMainComponent(
+        WallSegment wall,
+        RawWallGraphComponent mainComponent,
+        IReadOnlyDictionary<string, WallSegment> wallsById,
+        ScannerOptions options)
+    {
+        var attachmentTolerance = UnresolvedEndpointGapReviewTolerance(options);
+        foreach (var hostWallId in mainComponent.WallIds)
+        {
+            if (!wallsById.TryGetValue(hostWallId, out var hostWall)
+                || string.Equals(hostWall.Id, wall.Id, StringComparison.Ordinal)
+                || hostWall.PageNumber != wall.PageNumber)
+            {
+                continue;
+            }
+
+            if (EndpointAttachesToWall(wall.CenterLine.Start, hostWall.CenterLine, attachmentTolerance)
+                || EndpointAttachesToWall(wall.CenterLine.End, hostWall.CenterLine, attachmentTolerance))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool EndpointAttachesToWall(
+        PlanPoint endpoint,
+        PlanLineSegment hostLine,
+        double tolerance)
+    {
+        if (endpoint.DistanceTo(hostLine.Start) <= tolerance
+            || endpoint.DistanceTo(hostLine.End) <= tolerance)
+        {
+            return true;
+        }
+
+        var parameterTolerance = tolerance / Math.Max(hostLine.Length, 1.0);
+        var parameter = hostLine.ProjectParameter(endpoint);
+        return parameter >= -parameterTolerance
+            && parameter <= 1.0 + parameterTolerance
+            && hostLine.DistanceToPoint(endpoint) <= tolerance;
+    }
 
     private static string? StructuralTopologyExclusionReason(
         RawWallGraphComponent component,
@@ -2462,6 +2560,10 @@ internal sealed class WallGraphStage : IPipelineStage
             && component.WallIds.Count <= 6)
         {
             evidence.Add("compact paired-wall component retained as secondary structural wall context");
+        }
+        else if (component.WallIds.Count == 1 && component.PairedWallCount == 1)
+        {
+            evidence.Add("anchored single paired-wall body retained as secondary structural wall context");
         }
         else if (component.WallIds.Count == 1 && component.FragmentMergedWallCount == 1 && component.InteriorWallCount == 1)
         {

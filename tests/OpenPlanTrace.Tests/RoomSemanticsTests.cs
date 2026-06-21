@@ -146,6 +146,58 @@ public sealed class RoomSemanticsTests
     }
 
     [Fact]
+    public async Task RoomDetectionStage_AnchorsGraphEdgesToWallAxisWhenMergedNodeDrifts()
+    {
+        var document = new PlanDocument(
+            "room-graph-node-drift",
+            new[]
+            {
+                new PlanPage(1, new PlanSize(420, 420), Array.Empty<PlanPrimitive>())
+            });
+        var context = new ScanContext(
+            document,
+            new ScannerOptions
+            {
+                WallSnapTolerance = 4,
+                GeometryTolerance = new GeometryTolerance(Distance: 1.5)
+            });
+
+        var top = GraphWall("wall-top", new PlanPoint(100, 100), new PlanPoint(300, 100));
+        var right = GraphWall("wall-right", new PlanPoint(300, 100), new PlanPoint(300, 300));
+        var bottom = GraphWall("wall-bottom", new PlanPoint(300, 300), new PlanPoint(100, 300));
+        var left = GraphWall("wall-left", new PlanPoint(100, 300), new PlanPoint(100, 100));
+        context.Walls.AddRange(new[] { top, right, bottom, left });
+
+        context.WallGraph = new WallGraph(
+            new[]
+            {
+                GraphNode("n1", new PlanPoint(100, 100)),
+                GraphNode("n2", new PlanPoint(300, 100)),
+                GraphNode("n3", new PlanPoint(300, 300)),
+                GraphNode("n4", new PlanPoint(100, 303))
+            },
+            new[]
+            {
+                GraphEdge("e1", "n1", "n2", top.Id),
+                GraphEdge("e2", "n2", "n3", right.Id),
+                GraphEdge("e3", "n3", "n4", bottom.Id),
+                GraphEdge("e4", "n4", "n1", left.Id)
+            });
+
+        await new RoomDetectionStage().ExecuteAsync(context, CancellationToken.None);
+
+        var room = Assert.Single(context.Rooms);
+        Assert.Equal(100, room.Bounds.Left, precision: 1);
+        Assert.Equal(100, room.Bounds.Top, precision: 1);
+        Assert.Equal(300, room.Bounds.Right, precision: 1);
+        Assert.Equal(300, room.Bounds.Bottom, precision: 1);
+        Assert.Contains(bottom.Id, room.WallIds);
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "rooms.wall_graph_cycles.detected");
+    }
+
+    [Fact]
     public async Task ScanAsync_AddsRoomAdjacencyGraphForSharedRoomBoundary()
     {
         var result = await ScanAdjacentRoomsAsync();
@@ -780,6 +832,27 @@ public sealed class RoomSemanticsTests
             Layer = "A-WINDOW",
             Source = Source(sourceId, "LINE", "A-WINDOW")
         };
+
+    private static WallSegment GraphWall(string id, PlanPoint start, PlanPoint end) =>
+        new(id, 1, new PlanLineSegment(start, end), 4, Confidence.High)
+        {
+            SourcePrimitiveIds = new[] { id },
+            Evidence = new[] { "test graph wall" }
+        };
+
+    private static WallNode GraphNode(string id, PlanPoint position) =>
+        new(
+            id,
+            1,
+            position,
+            WallNodeKind.Corner,
+            2,
+            Array.Empty<string>(),
+            Confidence.High,
+            Array.Empty<string>());
+
+    private static WallEdge GraphEdge(string id, string fromNodeId, string toNodeId, string wallId) =>
+        new(id, 1, fromNodeId, toNodeId, wallId, Confidence.High);
 
     private static PrimitiveSourceMetadata Source(string sourceId, string entityType, string layer) =>
         new()

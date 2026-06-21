@@ -64,7 +64,7 @@ public static class WallPlacementContextGuards
     {
         if (component?.Kind != WallGraphComponentKind.SecondaryStructural
             || component.ExcludedFromStructuralTopology
-            || component.WallIds.Count < 2
+            || component.WallIds.Count < 1
             || component.WallIds.Count > 4
             || component.Confidence.Value < 0.6)
         {
@@ -97,6 +97,11 @@ public static class WallPlacementContextGuards
             .Select(wall => wallEvidenceByWallId[wall.Id])
             .ToArray();
 
+        if (component.WallIds.Count == 1)
+        {
+            return LooksLikeTrustedAnchoredSinglePairedWallBody(component, walls[0], assessments[0]);
+        }
+
         return LooksLikeTrustedLongThinPairedWallBodyChain(component)
             || LooksLikeTrustedCompactPairedReturn(component, walls, assessments);
     }
@@ -104,6 +109,18 @@ public static class WallPlacementContextGuards
     private static bool LooksLikeTrustedLongThinPairedWallBodyChain(WallGraphComponent component) =>
         component.DrawingLength >= 150
         && IsLongThinComponent(component.Bounds);
+
+    private static bool LooksLikeTrustedAnchoredSinglePairedWallBody(
+        WallGraphComponent component,
+        WallSegment wall,
+        WallEvidenceWallAssessment assessment) =>
+        component.DrawingLength >= 72
+        && wall.DrawingLength >= 72
+        && wall.DetectionKind == WallDetectionKind.ParallelLinePair
+        && assessment.Category == WallEvidenceCategory.StrongWallBody
+        && component.Evidence.Any(item =>
+            item.Contains("anchored single paired-wall body", StringComparison.OrdinalIgnoreCase))
+        && IsThinComponent(component.Bounds, minimumLongSide: 72, maxShortSide: 18, minimumAspectRatio: 3);
 
     private static bool LooksLikeTrustedCompactPairedReturn(
         WallGraphComponent component,
@@ -134,10 +151,19 @@ public static class WallPlacementContextGuards
     }
 
     private static bool IsLongThinComponent(PlanRect bounds)
+        => IsThinComponent(bounds, minimumLongSide: 120, maxShortSide: 12, minimumAspectRatio: 10);
+
+    private static bool IsThinComponent(
+        PlanRect bounds,
+        double minimumLongSide,
+        double maxShortSide,
+        double minimumAspectRatio)
     {
         var shortSide = Math.Min(bounds.Width, bounds.Height);
         var longSide = Math.Max(bounds.Width, bounds.Height);
-        return longSide >= 120 && shortSide <= 12 && longSide / Math.Max(shortSide, 0.001) >= 10;
+        return longSide >= minimumLongSide
+            && shortSide <= maxShortSide
+            && longSide / Math.Max(shortSide, 0.001) >= minimumAspectRatio;
     }
 
     private static bool HasStrongPairedWallBodyEvidence(

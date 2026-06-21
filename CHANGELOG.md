@@ -6,6 +6,130 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.140] - 2026-06-21
+
+### Improved
+- Room-grid extraction now uses median coordinate clustering instead of averaging
+  each snapped coordinate cluster. This makes room boundaries less likely to be
+  pulled away from the dominant wall axis by one noisy snapped graph node.
+- Room graph edges now fall back to projecting drifted graph-node spans onto the
+  source wall centerline when the node-to-node edge is no longer axis-aligned,
+  preserving room closure without promoting review-only wall evidence into
+  placement-ready output.
+
+### Verified
+- Added regression coverage for a closed room whose merged graph node drifts off
+  one wall corner while the source wall centerlines remain correct.
+- Focused room/wall graph/recovery tests passed with `89` tests.
+- Rebuilt the solution successfully, and the full test suite passed with `593`
+  tests.
+- Rescanned the ignored local medium-difficulty PDF fixture and rendered a
+  wall-QA screenshot with the source background. Placement-ready wall count
+  stayed at `39`, omitted/review wall count stayed at `85`, and room candidates
+  increased from `9` to `13`. The central recovered-wall room is back, but the
+  scan now exposes extra narrow/sliver room faces that should be filtered next.
+
+## [0.02.139] - 2026-06-21
+
+### Improved
+- Scan JSON is now `openplantrace.scan.v70`. Inline wall
+  `evidenceAssessment` objects now include the same score breakdown used by the
+  top-level wall evidence map, so downstream consumers can inspect why a wall
+  was accepted, reviewed, or rejected without joining against a second table.
+- Recovered wall evidence now compares recovered wall bands against the full
+  recovered candidate set, not just original wall candidates. Adjacent recovered
+  bands that duplicate a stronger recovered wall body are kept as review-only
+  topology evidence instead of being exported as coordinate-ready duplicate
+  walls.
+- Public scan examples and viewer smoke samples were regenerated or aligned to
+  the current scan schema version.
+
+### Verified
+- Added regression coverage for inline wall evidence score export, scan schema
+  v70 contract metadata, and adjacent recovered wall duplicate review handling.
+- Focused recovery/export/schema/documentation tests passed with `115` tests.
+- Full test suite passed with `592` tests using cached/offline restore mode
+  (`RestoreIgnoreFailedSources=true`) because `api.nuget.org` was unavailable.
+- Rescanned the ignored local medium-difficulty PDF fixture and rendered a
+  wall-QA screenshot with the source background. The duplicate recovered
+  vertical wall in the middle is no longer placement-ready noise (`39`
+  placement-ready walls, `85` omitted/review walls). Room closure dropped from
+  `10` to `9`, so room reconstruction around recovered/review-only walls is the
+  next accuracy target.
+
+## [0.02.138] - 2026-06-21
+
+### Improved
+- Wall graph classification now promotes only strongly evidenced single paired
+  wall bodies that are anchored to the main structural component into secondary
+  structural wall context. This recovers real wall returns that sit just beyond
+  the automatic snap tolerance without reopening the door to short door/detail
+  fragments.
+- Placement context guards now recognize those explicitly anchored single
+  paired-wall bodies as trusted secondary structural support, so they can be
+  exported as coordinate-ready when their wall evidence is strong.
+
+### Verified
+- Added regression coverage for anchored single paired-wall promotion and its
+  placement review guard behavior.
+- Focused wall graph/readiness/filter tests passed with `62` tests; focused
+  viewer/recovery tests passed with `20` tests.
+- Full test suite passed with `591` tests using cached/offline restore mode
+  (`RestoreIgnoreFailedSources=true`) because `api.nuget.org` was unreachable.
+- Rescanned the ignored local medium-difficulty PDF fixture and rendered a
+  wall-QA screenshot with the source background. Placement-ready walls improved
+  from `38` to `40`, review/omitted walls dropped from `86` to `84`, secondary
+  structural wall components increased from `7` to `9`, and the prior random
+  connector strokes did not reappear.
+
+## [0.02.137] - 2026-06-21
+
+### Fixed
+- Viewer wall-QA drawing now filters sub-threshold clean topology crumbs even
+  when only one span remains. This prevents tiny graph scraps around
+  doors/openings from reappearing as random trusted wall strokes in scan-JSON
+  screenshots.
+- Recovered wall evidence no longer gets suppressed as a duplicate when the
+  alleged stronger wall only overlaps a short portion of the recovered span.
+  Duplicate suppression now requires a comparable-length representative wall,
+  so long recovered wall bodies can become placement-ready instead of being
+  hidden by a small local overlap.
+
+### Verified
+- Added regression coverage for viewer micro-span filtering and long recovered
+  wall duplicate handling.
+- Focused viewer/recovery tests passed with `20` tests.
+- Rescanned the ignored local medium-difficulty PDF fixture with wall-QA output
+  and an embedded source-page background. Placement-ready walls increased from
+  `35` to `38`, omitted/review walls dropped from `89` to `86`, wall graph
+  edges increased from `187` to `202`, and the middle recovered vertical wall
+  now appears in the wall-only alignment screenshot without the reported random
+  short connector strokes.
+
+## [0.02.136] - 2026-06-21
+
+### Fixed
+- Viewer clean-wall drawing now honors top-level wall placement readiness flags,
+  not only nested evidence assessments. Walls exported as coordinate-blocked or
+  review-required no longer leak into the trusted clean-wall layer.
+
+### Added
+- Viewer Overlay Layers panel now includes one-click `DEFAULT` and `WALL QA`
+  presets. `WALL QA` enables only clean wall spans for repeatable wall-accuracy
+  screenshots.
+
+### Verified
+- Added viewer script contract coverage for the wall-QA preset and top-level
+  wall-readiness gates.
+- Focused viewer contract tests passed with `4` tests.
+- Full test suite passed with `588` tests.
+- Scanned an ignored local medium-difficulty PDF fixture, rendered the page
+  background locally, generated an embedded-background `wall-qa` SVG, and
+  rendered it headlessly for visual inspection. The trusted wall screenshot no
+  longer shows the jagged non-placement wall noise from the reported layer mix,
+  while the QA panel still reports `35` placement-ready walls and `89`
+  omitted/review walls for ongoing accuracy work.
+
 ## [0.02.135] - 2026-06-21
 
 ### Added

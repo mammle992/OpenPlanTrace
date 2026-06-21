@@ -32,7 +32,7 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var assessment = AssessWall(wall, context);
+            var assessment = AssessWall(wall, context, candidateWalls);
             assessments.Add(assessment);
             segments.Add(new WallEvidenceSegment(
                 $"wall-evidence-segment:{wall.Id}",
@@ -103,7 +103,10 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
             assessment.Evidence);
     }
 
-    private static WallEvidenceWallAssessment AssessWall(WallSegment wall, ScanContext context)
+    private static WallEvidenceWallAssessment AssessWall(
+        WallSegment wall,
+        ScanContext context,
+        IReadOnlyList<WallSegment> candidateWalls)
     {
         var evidence = new List<string>();
         var category = WallEvidenceCategory.Unknown;
@@ -112,7 +115,7 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
         var requiresReview = false;
         var rejected = false;
 
-        if (TryClassifyRecoveredDuplicateWallBodyReview(wall, context, out var recoveredDuplicateEvidence))
+        if (TryClassifyRecoveredDuplicateWallBodyReview(wall, context, candidateWalls, out var recoveredDuplicateEvidence))
         {
             category = WallEvidenceCategory.MediumWallBody;
             confidence = new Confidence(Math.Min(0.88, Math.Max(wall.Confidence.Value, 0.68)));
@@ -583,11 +586,11 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
     private static bool TryClassifyRecoveredDuplicateWallBodyReview(
         WallSegment wall,
         ScanContext context,
+        IReadOnlyList<WallSegment> candidateWalls,
         out string evidence)
     {
         evidence = string.Empty;
-        if (wall.WallType != WallType.Unknown
-            || !IsStrongPairedWall(wall)
+        if (!IsStrongPairedWall(wall)
             || wall.PairEvidence is null
             || wall.FragmentEvidence?.RequiresGeometryReview == true
             || !IsRecoveredWallEvidence(wall))
@@ -595,14 +598,17 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
             return false;
         }
 
-        foreach (var other in context.WallCandidates)
+        foreach (var other in candidateWalls)
         {
+            var otherIsRecovered = IsRecoveredWallEvidence(other);
             if (string.Equals(other.Id, wall.Id, StringComparison.Ordinal)
                 || other.PageNumber != wall.PageNumber
-                || other.WallType == WallType.Unknown
                 || !IsStrongPairedWall(other)
                 || other.PairEvidence is null
                 || other.FragmentEvidence?.RequiresGeometryReview == true
+                || (!otherIsRecovered && other.WallType == WallType.Unknown)
+                || (!otherIsRecovered && other.DrawingLength < MinimumRecoveredDuplicateRepresentativeLength(wall))
+                || (otherIsRecovered && !IsPreferredRecoveredDuplicateRepresentative(other, wall))
                 || !AreNearParallel(wall.CenterLine, other.CenterLine))
             {
                 continue;
@@ -631,8 +637,33 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
         return false;
     }
 
+    private static double MinimumRecoveredDuplicateRepresentativeLength(WallSegment recoveredWall) =>
+        Math.Max(recoveredWall.DrawingLength * 0.72, recoveredWall.DrawingLength - 24.0);
+
     private static bool IsRecoveredWallEvidence(WallSegment wall) =>
         wall.Evidence.Any(item => item.Contains("recovered by wall evidence map", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsPreferredRecoveredDuplicateRepresentative(WallSegment candidate, WallSegment duplicate)
+    {
+        if (!IsRecoveredWallEvidence(candidate))
+        {
+            return false;
+        }
+
+        var scoreDelta = candidate.Confidence.Value - duplicate.Confidence.Value;
+        if (Math.Abs(scoreDelta) > 0.01)
+        {
+            return scoreDelta > 0;
+        }
+
+        var lengthDelta = candidate.DrawingLength - duplicate.DrawingLength;
+        if (Math.Abs(lengthDelta) > 1.0)
+        {
+            return lengthDelta > 0;
+        }
+
+        return string.Compare(candidate.Id, duplicate.Id, StringComparison.Ordinal) < 0;
+    }
 
     private static double RecoveredDuplicateWallBodySeparationLimit(
         WallPairEvidence first,

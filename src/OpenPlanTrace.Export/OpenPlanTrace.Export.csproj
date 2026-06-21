@@ -15,8 +15,8 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource
-      Include="..\..\docs\schemas\openplantrace.scan.v69.schema.json"
-      LogicalName="OpenPlanTrace.Export.Schemas.openplantrace.scan.v69.schema.json" />
+      Include="..\..\docs\schemas\openplantrace.scan.v70.schema.json"
+      LogicalName="OpenPlanTrace.Export.Schemas.openplantrace.scan.v70.schema.json" />
     <EmbeddedResource
       Include="..\..\docs\schemas\openplantrace.scan.compact.v1.schema.json"
       LogicalName="OpenPlanTrace.Export.Schemas.openplantrace.scan.compact.v1.schema.json" />

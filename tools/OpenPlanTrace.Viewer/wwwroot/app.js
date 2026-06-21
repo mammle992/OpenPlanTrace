@@ -74,6 +74,10 @@ const defaultEnabledLayers = [
   "routingLayer"
 ];
 
+const wallQaEnabledLayers = [
+  "wallTopologySpans"
+];
+
 const overlayLegendItems = [
   { key: "regions", label: "Regions", stroke: "#147c72", fill: "rgba(20, 124, 114, 0.07)" },
   { key: "dimensions", label: "Dimensions", stroke: "#7854a8", fill: "rgba(120, 84, 168, 0.045)", dash: "5 4" },
@@ -229,6 +233,8 @@ const elements = {
   downloadObjectCorrectionDataset: document.querySelector("#downloadObjectCorrectionDataset"),
   downloadBenchmark: document.querySelector("#downloadBenchmark"),
   downloadSvg: document.querySelector("#downloadSvg"),
+  applyDefaultLayers: document.querySelector("#applyDefaultLayers"),
+  applyWallQaLayers: document.querySelector("#applyWallQaLayers"),
   stage: document.querySelector("#stage"),
   emptyState: document.querySelector("#emptyState"),
   pageFrame: document.querySelector("#pageFrame"),
@@ -496,6 +502,18 @@ document.querySelectorAll("[data-layer]").forEach((checkbox) => {
     refreshWorkspaceTabs();
   });
 });
+
+elements.applyDefaultLayers?.addEventListener("click", () => applyOverlayLayerPreset(defaultEnabledLayers));
+elements.applyWallQaLayers?.addEventListener("click", () => applyOverlayLayerPreset(wallQaEnabledLayers));
+
+function applyOverlayLayerPreset(layerKeys) {
+  state.enabledLayers = new Set(layerKeys);
+  syncLayerControls();
+  drawOverlay();
+  setLegend();
+  setAnalysisCounts(state.scan);
+  refreshWorkspaceTabs();
+}
 
 function syncLayerControls() {
   const availableLayerKeys = availableOverlayLayerKeys(state.scan);
@@ -3177,6 +3195,10 @@ function shouldDrawWallInStructuralCandidateLayer(wall) {
 }
 
 function wallIsPlacementReady(wall) {
+  if (wall?.readyForCoordinatePlacement === false || wall?.requiresReview === true) {
+    return false;
+  }
+
   const assessment = wall?.evidenceAssessment;
   if (!assessment) {
     return true;
@@ -4406,6 +4428,10 @@ function wallCoordinateBlocked(wall) {
     return true;
   }
 
+  if (wall?.readyForCoordinatePlacement === false) {
+    return true;
+  }
+
   if (wall?.reliability) {
     return wall.reliability.readyForCoordinatePlacement === false;
   }
@@ -4633,27 +4659,27 @@ function viewerMaxSourceAxisShift(spanLine, projectedLine, orientation) {
 }
 
 function mergeViewerCleanTopologyRuns(wall, spans) {
-  if (spans.length <= 1) {
-    return spans;
+  if (!spans.length) {
+    return [];
   }
 
   const wallLine = normalizeLine(wall?.centerLine ?? wall?.line);
   const wallLength = lineLength(wallLine);
   if (!wallLine || wallLength <= 0.001) {
-    return spans;
+    return spans.filter((span) => viewerSpanLength(span) >= viewerCleanWallMinSpanLength);
   }
 
   const orientation = dominantOrthogonalLineOrientation(wallLine);
   if (!orientation) {
-    return spans;
+    return spans.filter((span) => viewerSpanLength(span) >= viewerCleanWallMinSpanLength);
   }
 
   const intervals = spans
     .map((span) => viewerCleanRunInterval(wallLine, span))
     .filter((interval) => interval.length >= viewerCleanWallMinSpanLength)
     .sort((first, second) => first.start - second.start);
-  if (intervals.length <= 1) {
-    return spans;
+  if (!intervals.length) {
+    return [];
   }
 
   const merged = [];
@@ -4678,6 +4704,15 @@ function mergeViewerCleanTopologyRuns(wall, spans) {
   merged.push(current);
   return merged.map((interval, index) =>
     viewerCleanRunSpanFromInterval(wall, wallLine, orientation, wallLength, interval, index + 1));
+}
+
+function viewerSpanLength(span) {
+  const explicitLength = Number(span?.drawingLength ?? span?.length);
+  if (Number.isFinite(explicitLength) && explicitLength >= 0) {
+    return explicitLength;
+  }
+
+  return lineLength(normalizeLine(span?.centerLine ?? span?.line));
 }
 
 function viewerCleanRunInterval(wallLine, span) {

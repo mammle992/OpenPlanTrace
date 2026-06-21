@@ -1,6 +1,6 @@
 {
-  "schemaVersion": "openplantrace.scan.v69",
-  "generatedAt": "2026-06-17T09:20:12.1008667+00:00",
+  "schemaVersion": "openplantrace.scan.v70",
+  "generatedAt": "2026-06-21T12:14:40.24917+00:00",
   "document": {
     "id": "semantic-smoke.dxf",
     "sourceName": "semantic-smoke.dxf",
@@ -1857,6 +1857,9 @@
           "sourceLayers": [
             "A-WALL"
           ],
+          "sourceWallGraphEdgeIds": [
+            "page:1:edge:1"
+          ],
           "evidence": [
             "wall graph topology span from page:1:node:1 to page:1:node:2",
             "source wall page:1:wall:1",
@@ -1883,6 +1886,11 @@
       "wallComponentId": "page:1:wall-component:3",
       "wallComponentKind": "IsolatedFragment",
       "excludedFromStructuralTopology": false,
+      "readyForCoordinatePlacement": false,
+      "requiresReview": true,
+      "reviewReasons": [
+        "wall graph component is an isolated fragment requiring review"
+      ],
       "drawingLength": 50,
       "lengthMeters": 0.05,
       "thicknessMillimeters": 4,
@@ -1900,6 +1908,22 @@
         "placementReady": true,
         "requiresReview": false,
         "rejectedAsNoise": false,
+        "scoreBreakdown": {
+          "positiveScore": 0.47,
+          "negativeScore": 0,
+          "decisionScore": 0.47,
+          "pairSupportScore": 0.22,
+          "layerSupportScore": 0.25,
+          "structuralSupportScore": 0,
+          "recoverySupportScore": 0,
+          "noisePenalty": 0,
+          "fragmentReviewPenalty": 0,
+          "positiveEvidence": [
+            "medium wall-body geometry",
+            "wall or structural source layer"
+          ],
+          "negativeEvidence": []
+        },
         "sourcePrimitiveIds": [
           "dxf:entity:13:LINE"
         ],
@@ -1978,6 +2002,9 @@
           "sourceLayers": [
             "A-WALL"
           ],
+          "sourceWallGraphEdgeIds": [
+            "page:1:edge:2"
+          ],
           "evidence": [
             "wall graph topology span from page:1:node:3 to page:1:node:4",
             "source wall page:1:wall:2",
@@ -2004,6 +2031,11 @@
       "wallComponentId": "page:1:wall-component:2",
       "wallComponentKind": "IsolatedFragment",
       "excludedFromStructuralTopology": false,
+      "readyForCoordinatePlacement": false,
+      "requiresReview": true,
+      "reviewReasons": [
+        "wall graph component is an isolated fragment requiring review"
+      ],
       "drawingLength": 80,
       "lengthMeters": 0.08,
       "thicknessMillimeters": 4,
@@ -2021,6 +2053,22 @@
         "placementReady": true,
         "requiresReview": false,
         "rejectedAsNoise": false,
+        "scoreBreakdown": {
+          "positiveScore": 0.47,
+          "negativeScore": 0,
+          "decisionScore": 0.47,
+          "pairSupportScore": 0.22,
+          "layerSupportScore": 0.25,
+          "structuralSupportScore": 0,
+          "recoverySupportScore": 0,
+          "noisePenalty": 0,
+          "fragmentReviewPenalty": 0,
+          "positiveEvidence": [
+            "medium wall-body geometry",
+            "wall or structural source layer"
+          ],
+          "negativeEvidence": []
+        },
         "sourcePrimitiveIds": [
           "dxf:entity:14:LINE"
         ],
@@ -2099,6 +2147,9 @@
           "sourceLayers": [
             "A-WALL"
           ],
+          "sourceWallGraphEdgeIds": [
+            "page:1:edge:3"
+          ],
           "evidence": [
             "wall graph topology span from page:1:node:5 to page:1:node:6",
             "source wall page:1:wall:3",
@@ -2126,6 +2177,9 @@
       "wallComponentId": "page:1:wall-component:1",
       "wallComponentKind": "MainStructural",
       "excludedFromStructuralTopology": false,
+      "readyForCoordinatePlacement": true,
+      "requiresReview": false,
+      "reviewReasons": [],
       "drawingLength": 400,
       "lengthMeters": 0.4,
       "thicknessMillimeters": 4,
@@ -2143,6 +2197,23 @@
         "placementReady": true,
         "requiresReview": false,
         "rejectedAsNoise": false,
+        "scoreBreakdown": {
+          "positiveScore": 0.67,
+          "negativeScore": 0,
+          "decisionScore": 0.67,
+          "pairSupportScore": 0.22,
+          "layerSupportScore": 0.25,
+          "structuralSupportScore": 0.2,
+          "recoverySupportScore": 0,
+          "noisePenalty": 0,
+          "fragmentReviewPenalty": 0,
+          "positiveEvidence": [
+            "medium wall-body geometry",
+            "wall or structural source layer",
+            "both endpoints supported by structural context"
+          ],
+          "negativeEvidence": []
+        },
         "sourcePrimitiveIds": [
           "dxf:entity:3:LINE"
         ],
@@ -2222,6 +2293,9 @@
           "sourceLayers": [
             "A-WALL"
           ],
+          "sourceWallGraphEdgeIds": [
+            "page:1:edge:4"
+          ],
           "evidence": [
             "wall graph topology span from page:1:node:7 to page:1:node:8",
             "source wall page:1:wall:4",
@@ -2249,6 +2323,9 @@
       "wallComponentId": "page:1:wall-component:1",
       "wallComponentKind": "MainStructural",
       "excludedFromStructuralTopology": false,
+      "readyForCoordinatePlacement": true,
+      "requiresReview": false,
+      "reviewReasons": [],
       "drawingLength": 400,
       "lengthMeters": 0.4,
       "thicknessMillimeters": 4,
@@ -2266,6 +2343,23 @@
         "placementReady": true,
         "requiresReview": false,
         "rejectedAsNoise": false,
+        "scoreBreakdown": {
+          "positiveScore": 0.67,
+          "negativeScore": 0,
+          "decisionScore": 0.67,
+          "pairSupportScore": 0.22,
+          "layerSupportScore": 0.25,
+          "structuralSupportScore": 0.2,
+          "recoverySupportScore": 0,
+          "noisePenalty": 0,
+          "fragmentReviewPenalty": 0,
+          "positiveEvidence": [
+            "medium wall-body geometry",
+            "wall or structural source layer",
+            "both endpoints supported by structural context"
+          ],
+          "negativeEvidence": []
+        },
         "sourcePrimitiveIds": [
           "dxf:entity:1:LINE"
         ],
@@ -2345,6 +2439,9 @@
           "sourceLayers": [
             "A-WALL"
           ],
+          "sourceWallGraphEdgeIds": [
+            "page:1:edge:5"
+          ],
           "evidence": [
             "wall graph topology span from page:1:node:5 to page:1:node:7",
             "source wall page:1:wall:5",
@@ -2372,6 +2469,9 @@
       "wallComponentId": "page:1:wall-component:1",
       "wallComponentKind": "MainStructural",
       "excludedFromStructuralTopology": false,
+      "readyForCoordinatePlacement": true,
+      "requiresReview": false,
+      "reviewReasons": [],
       "drawingLength": 220,
       "lengthMeters": 0.22,
       "thicknessMillimeters": 4,
@@ -2389,6 +2489,23 @@
         "placementReady": true,
         "requiresReview": false,
         "rejectedAsNoise": false,
+        "scoreBreakdown": {
+          "positiveScore": 0.67,
+          "negativeScore": 0,
+          "decisionScore": 0.67,
+          "pairSupportScore": 0.22,
+          "layerSupportScore": 0.25,
+          "structuralSupportScore": 0.2,
+          "recoverySupportScore": 0,
+          "noisePenalty": 0,
+          "fragmentReviewPenalty": 0,
+          "positiveEvidence": [
+            "medium wall-body geometry",
+            "wall or structural source layer",
+            "both endpoints supported by structural context"
+          ],
+          "negativeEvidence": []
+        },
         "sourcePrimitiveIds": [
           "dxf:entity:4:LINE"
         ],
@@ -2468,6 +2585,9 @@
           "sourceLayers": [
             "A-WALL"
           ],
+          "sourceWallGraphEdgeIds": [
+            "page:1:edge:6"
+          ],
           "evidence": [
             "wall graph topology span from page:1:node:6 to page:1:node:8",
             "source wall page:1:wall:6",
@@ -2495,6 +2615,9 @@
       "wallComponentId": "page:1:wall-component:1",
       "wallComponentKind": "MainStructural",
       "excludedFromStructuralTopology": false,
+      "readyForCoordinatePlacement": true,
+      "requiresReview": false,
+      "reviewReasons": [],
       "drawingLength": 220,
       "lengthMeters": 0.22,
       "thicknessMillimeters": 4,
@@ -2512,6 +2635,23 @@
         "placementReady": true,
         "requiresReview": false,
         "rejectedAsNoise": false,
+        "scoreBreakdown": {
+          "positiveScore": 0.67,
+          "negativeScore": 0,
+          "decisionScore": 0.67,
+          "pairSupportScore": 0.22,
+          "layerSupportScore": 0.25,
+          "structuralSupportScore": 0.2,
+          "recoverySupportScore": 0,
+          "noisePenalty": 0,
+          "fragmentReviewPenalty": 0,
+          "positiveEvidence": [
+            "medium wall-body geometry",
+            "wall or structural source layer",
+            "both endpoints supported by structural context"
+          ],
+          "negativeEvidence": []
+        },
         "sourcePrimitiveIds": [
           "dxf:entity:2:LINE"
         ],
@@ -3427,6 +3567,11 @@
         "wallComponentId": "page:1:wall-component:3",
         "wallComponentKind": "IsolatedFragment",
         "excludedFromStructuralTopology": false,
+        "readyForCoordinatePlacement": false,
+        "requiresReview": true,
+        "reviewReasons": [
+          "wall graph component is an isolated fragment requiring review"
+        ],
         "line": {
           "start": {
             "x": 68,
@@ -3494,6 +3639,11 @@
         "wallComponentId": "page:1:wall-component:2",
         "wallComponentKind": "IsolatedFragment",
         "excludedFromStructuralTopology": false,
+        "readyForCoordinatePlacement": false,
+        "requiresReview": true,
+        "reviewReasons": [
+          "wall graph component is an isolated fragment requiring review"
+        ],
         "line": {
           "start": {
             "x": 148,
@@ -3561,6 +3711,9 @@
         "wallComponentId": "page:1:wall-component:1",
         "wallComponentKind": "MainStructural",
         "excludedFromStructuralTopology": false,
+        "readyForCoordinatePlacement": true,
+        "requiresReview": false,
+        "reviewReasons": [],
         "line": {
           "start": {
             "x": 48,
@@ -3629,6 +3782,9 @@
         "wallComponentId": "page:1:wall-component:1",
         "wallComponentKind": "MainStructural",
         "excludedFromStructuralTopology": false,
+        "readyForCoordinatePlacement": true,
+        "requiresReview": false,
+        "reviewReasons": [],
         "line": {
           "start": {
             "x": 48,
@@ -3697,6 +3853,9 @@
         "wallComponentId": "page:1:wall-component:1",
         "wallComponentKind": "MainStructural",
         "excludedFromStructuralTopology": false,
+        "readyForCoordinatePlacement": true,
+        "requiresReview": false,
+        "reviewReasons": [],
         "line": {
           "start": {
             "x": 48,
@@ -3765,6 +3924,9 @@
         "wallComponentId": "page:1:wall-component:1",
         "wallComponentKind": "MainStructural",
         "excludedFromStructuralTopology": false,
+        "readyForCoordinatePlacement": true,
+        "requiresReview": false,
+        "reviewReasons": [],
         "line": {
           "start": {
             "x": 448,
@@ -3872,6 +4034,7 @@
         "evidence": [
           "connected component with 4 wall(s), 4 node(s), 4 edge(s)",
           "drawing length 1240",
+          "component shape: 2 horizontal, 2 vertical, 0 diagonal, 0 short-detail wall(s)",
           "largest structural wall component on page"
         ]
       },
@@ -3910,6 +4073,7 @@
         "evidence": [
           "connected component with 1 wall(s), 2 node(s), 1 edge(s)",
           "drawing length 80",
+          "component shape: 1 horizontal, 0 vertical, 0 diagonal, 0 short-detail wall(s)",
           "isolated wall graph fragment with weak topology"
         ]
       },
@@ -3948,6 +4112,7 @@
         "evidence": [
           "connected component with 1 wall(s), 2 node(s), 1 edge(s)",
           "drawing length 50",
+          "component shape: 1 horizontal, 0 vertical, 0 diagonal, 1 short-detail wall(s)",
           "isolated wall graph fragment with weak topology"
         ]
       }
@@ -5073,6 +5238,7 @@
       "fragment-review wall barriers suppressed: 0",
       "wall-evidence rejected barriers suppressed: 0",
       "wall-evidence review barriers suppressed: 0",
+      "non-trusted wall evidence blocked from routing protection: 0",
       "routing passages from opening evidence: 1",
       "routing obstacles after aggregate suppression: 1",
       "suppressed child object candidates: 0",
@@ -5082,25 +5248,30 @@
     ]
   },
   "importReadiness": {
-    "grade": "Strong",
-    "score": 0.970259,
-    "readyForGeometryImport": true,
-    "readyForMetricImport": true,
-    "readyForRoutingImport": true,
-    "requiresReview": false,
-    "blockingIssueCodes": [],
+    "grade": "Blocked",
+    "score": 0.845259,
+    "readyForGeometryImport": false,
+    "readyForMetricImport": false,
+    "readyForRoutingImport": false,
+    "requiresReview": true,
+    "blockingIssueCodes": [
+      "placement.import.low_coordinate_ready_ratio",
+      "placement.import.low_metric_ready_ratio"
+    ],
     "reviewIssueCodes": [],
     "recommendedActions": [
-      "Placement packet is ready for downstream import; keep benchmark coverage for this source family."
+      "Open the visual overlay and review wall/room geometry before importing placement coordinates.",
+      "Review calibration and dimension evidence before using millimeter coordinates.",
+      "Inspect reliability reasons for low-confidence or review-required placement entities."
     ],
     "evidence": [
-      "import readiness grade Strong with score 0,97",
-      "geometry import ready: True",
-      "metric import ready: True",
-      "routing import ready: True",
-      "coordinate readiness ratio 1",
-      "metric readiness ratio 1",
-      "review-required wall/room/opening/evidence entities 0",
+      "import readiness grade Blocked with score 0,845",
+      "geometry import ready: False",
+      "metric import ready: False",
+      "routing import ready: False",
+      "coordinate readiness ratio 0,75",
+      "metric readiness ratio 0,75",
+      "review-required wall/room/opening/evidence entities 2",
       "scan quality Strong at 0,881 confidence",
       "measurement consistency has no outliers"
     ]
@@ -5478,7 +5649,7 @@
     ]
   },
   "diagnostics": {
-    "durationMilliseconds": 491.7206,
+    "durationMilliseconds": 443.1747,
     "executionModel": "fixed-stage-chain",
     "stageCount": 27,
     "executionWaveCount": 13,
@@ -6867,30 +7038,32 @@
         ],
         "requiredConsumerStages": [
           "wall-topology-preparation",
-          "wall-graph"
+          "wall-graph",
+          "wall-type-refinement"
         ],
         "optionalConsumerStages": [],
         "consumerStages": [
           "wall-topology-preparation",
-          "wall-graph"
+          "wall-graph",
+          "wall-type-refinement"
         ],
         "producerCount": 1,
-        "consumerCount": 2,
+        "consumerCount": 3,
         "firstProducerOrder": 14,
         "lastProducerOrder": 14,
         "firstConsumerOrder": 15,
-        "lastConsumerOrder": 16,
+        "lastConsumerOrder": 20,
         "firstProducerWave": 5,
         "lastProducerWave": 5,
         "firstConsumerWave": 6,
-        "lastConsumerWave": 7,
+        "lastConsumerWave": 11,
         "hasMultipleProducers": false,
         "hasRequiredConsumers": true,
         "dependencyRole": "ProducedAndConsumed",
         "evidence": [
           "artifact depends on scanner stage output",
           "producer stages: wall-evidence",
-          "required consumers: wall-topology-preparation, wall-graph",
+          "required consumers: wall-topology-preparation, wall-graph, wall-type-refinement",
           "optional consumers: none",
           "correction impact affects 12 stage(s)"
         ]
@@ -7858,13 +8031,14 @@
         ],
         "consumerStages": [
           "wall-topology-preparation",
-          "wall-graph"
+          "wall-graph",
+          "wall-type-refinement"
         ],
         "evidence": [
           "final inventory has count \u003E 0",
           "artifact is produced by scanner stages",
           "producer stages: wall-evidence",
-          "consumer stages: wall-topology-preparation, wall-graph"
+          "consumer stages: wall-topology-preparation, wall-graph, wall-type-refinement"
         ]
       },
       {
@@ -8416,6 +8590,7 @@
           "ObjectCandidates",
           "RoomAdjacency",
           "Rooms",
+          "WallEvidence",
           "WallGraph",
           "Walls"
         ],
@@ -9951,7 +10126,8 @@
         ],
         "directConsumerStages": [
           "wall-topology-preparation",
-          "wall-graph"
+          "wall-graph",
+          "wall-type-refinement"
         ],
         "affectedStages": [
           "wall-topology-preparation",
@@ -9992,7 +10168,7 @@
         "evidence": [
           "artifact is produced by scanner stages",
           "producer stages: wall-evidence",
-          "direct consumers: wall-topology-preparation, wall-graph",
+          "direct consumers: wall-topology-preparation, wall-graph, wall-type-refinement",
           "transitive affected stages: 12",
           "affected artifacts: LayerConsistency, ObjectAggregates, ObjectCandidates, ObjectGroups, Openings, RoomAdjacency, Rooms, RoutingBarriers, RoutingIgnoredObjects, RoutingObstacles, RoutingPassages, RoutingRoomUseHints, RoutingSuppressedObjects, TopologySpans, VisualAiClassifications, WallGraph, WallTopologyPreparation"
         ]
@@ -10916,7 +11092,7 @@
             "Diagnostics"
           ]
         },
-        "durationMilliseconds": 18.9868,
+        "durationMilliseconds": 15.0313,
         "inputCount": 0,
         "outputCount": 9,
         "diagnosticCount": 0,
@@ -11112,7 +11288,7 @@
             "RasterImages"
           ]
         },
-        "durationMilliseconds": 0.5788,
+        "durationMilliseconds": 0.5247,
         "inputCount": 9,
         "outputCount": 9,
         "diagnosticCount": 0,
@@ -11308,7 +11484,7 @@
             "PdfImages"
           ]
         },
-        "durationMilliseconds": 0.2384,
+        "durationMilliseconds": 0.2554,
         "inputCount": 9,
         "outputCount": 9,
         "diagnosticCount": 0,
@@ -11500,7 +11676,7 @@
             "Diagnostics"
           ]
         },
-        "durationMilliseconds": 38.3234,
+        "durationMilliseconds": 30.0663,
         "inputCount": 9,
         "outputCount": 12,
         "diagnosticCount": 0,
@@ -11696,7 +11872,7 @@
           "undeclaredChangedArtifacts": [],
           "declaredUnchangedArtifacts": []
         },
-        "durationMilliseconds": 36.1272,
+        "durationMilliseconds": 29.3049,
         "inputCount": 12,
         "outputCount": 16,
         "diagnosticCount": 1,
@@ -11918,7 +12094,7 @@
             "Diagnostics"
           ]
         },
-        "durationMilliseconds": 76.9782,
+        "durationMilliseconds": 69.8451,
         "inputCount": 16,
         "outputCount": 19,
         "diagnosticCount": 0,
@@ -12130,7 +12306,7 @@
           "undeclaredChangedArtifacts": [],
           "declaredUnchangedArtifacts": []
         },
-        "durationMilliseconds": 21.2555,
+        "durationMilliseconds": 22.5986,
         "inputCount": 19,
         "outputCount": 20,
         "diagnosticCount": 1,
@@ -12329,7 +12505,7 @@
           "undeclaredChangedArtifacts": [],
           "declaredUnchangedArtifacts": []
         },
-        "durationMilliseconds": 15.9584,
+        "durationMilliseconds": 15.3796,
         "inputCount": 20,
         "outputCount": 23,
         "diagnosticCount": 1,
@@ -12543,7 +12719,7 @@
           "undeclaredChangedArtifacts": [],
           "declaredUnchangedArtifacts": []
         },
-        "durationMilliseconds": 15.0049,
+        "durationMilliseconds": 15.6371,
         "inputCount": 23,
         "outputCount": 24,
         "diagnosticCount": 1,
@@ -12744,7 +12920,7 @@
             "GridBays"
           ]
         },
-        "durationMilliseconds": 1.0787,
+        "durationMilliseconds": 0.9493,
         "inputCount": 24,
         "outputCount": 24,
         "diagnosticCount": 0,
@@ -12946,7 +13122,7 @@
           "undeclaredChangedArtifacts": [],
           "declaredUnchangedArtifacts": []
         },
-        "durationMilliseconds": 4.1425,
+        "durationMilliseconds": 4.2744,
         "inputCount": 24,
         "outputCount": 25,
         "diagnosticCount": 1,
@@ -13149,7 +13325,7 @@
             "DimensionChains"
           ]
         },
-        "durationMilliseconds": 3.9276,
+        "durationMilliseconds": 3.8491,
         "inputCount": 25,
         "outputCount": 25,
         "diagnosticCount": 0,
@@ -13450,7 +13626,7 @@
             "SurfacePatterns"
           ]
         },
-        "durationMilliseconds": 26.8431,
+        "durationMilliseconds": 25.7842,
         "inputCount": 25,
         "outputCount": 31,
         "diagnosticCount": 2,
@@ -13758,7 +13934,7 @@
           "undeclaredChangedArtifacts": [],
           "declaredUnchangedArtifacts": []
         },
-        "durationMilliseconds": 19.2635,
+        "durationMilliseconds": 20.2927,
         "inputCount": 31,
         "outputCount": 49,
         "diagnosticCount": 1,
@@ -13967,7 +14143,7 @@
           "undeclaredChangedArtifacts": [],
           "declaredUnchangedArtifacts": []
         },
-        "durationMilliseconds": 1.9834,
+        "durationMilliseconds": 2.0383,
         "inputCount": 49,
         "outputCount": 55,
         "diagnosticCount": 1,
@@ -14233,7 +14409,7 @@
           "undeclaredChangedArtifacts": [],
           "declaredUnchangedArtifacts": []
         },
-        "durationMilliseconds": 30.6071,
+        "durationMilliseconds": 37.1716,
         "inputCount": 55,
         "outputCount": 72,
         "diagnosticCount": 1,
@@ -14484,7 +14660,7 @@
             "Diagnostics"
           ]
         },
-        "durationMilliseconds": 14.2659,
+        "durationMilliseconds": 13.0336,
         "inputCount": 72,
         "outputCount": 73,
         "diagnosticCount": 0,
@@ -14740,7 +14916,7 @@
           "undeclaredChangedArtifacts": [],
           "declaredUnchangedArtifacts": []
         },
-        "durationMilliseconds": 31.1846,
+        "durationMilliseconds": 26.7662,
         "inputCount": 73,
         "outputCount": 74,
         "diagnosticCount": 2,
@@ -14967,7 +15143,7 @@
           "undeclaredChangedArtifacts": [],
           "declaredUnchangedArtifacts": []
         },
-        "durationMilliseconds": 15.0629,
+        "durationMilliseconds": 12.6003,
         "inputCount": 74,
         "outputCount": 75,
         "diagnosticCount": 1,
@@ -14983,6 +15159,7 @@
         "isParallelCandidate": true,
         "reads": [
           "Walls",
+          "WallEvidence",
           "WallGraph",
           "Rooms",
           "RoomAdjacency"
@@ -14994,7 +15171,8 @@
         "capabilities": [
           "room-side-wall-classification",
           "shared-wall-refinement",
-          "exterior-boundary-refinement"
+          "exterior-boundary-refinement",
+          "room-confirmed-wall-evidence"
         ],
         "isDependencyReady": true,
         "dependencyLevel": 11,
@@ -15035,6 +15213,7 @@
           "nonEmptyRequiredReads": [
             "RoomAdjacency",
             "Rooms",
+            "WallEvidence",
             "WallGraph",
             "Walls"
           ],
@@ -15044,7 +15223,7 @@
           "nonEmptyOptionalReads": [],
           "emptyOptionalReads": [],
           "evidence": [
-            "required runtime reads with data 4/4",
+            "required runtime reads with data 5/5",
             "optional runtime reads with data 0/0"
           ]
         },
@@ -15089,6 +15268,18 @@
               "artifact count 1",
               "state key Rooms:1:625215fe",
               "revision 1649546750"
+            ]
+          },
+          {
+            "artifact": "WallEvidence",
+            "count": 12,
+            "stateKey": "WallEvidence:12:00abc908",
+            "revision": 11258120,
+            "evidence": [
+              "artifact kind WallEvidence",
+              "artifact count 12",
+              "state key WallEvidence:12:00abc908",
+              "revision 11258120"
             ]
           },
           {
@@ -15169,7 +15360,7 @@
           "undeclaredChangedArtifacts": [],
           "declaredUnchangedArtifacts": []
         },
-        "durationMilliseconds": 3.8616,
+        "durationMilliseconds": 5.0182,
         "inputCount": 75,
         "outputCount": 75,
         "diagnosticCount": 1,
@@ -15347,7 +15538,7 @@
             "Diagnostics"
           ]
         },
-        "durationMilliseconds": 1.5423,
+        "durationMilliseconds": 1.2334,
         "inputCount": 75,
         "outputCount": 75,
         "diagnosticCount": 0,
@@ -15599,7 +15790,7 @@
             "Diagnostics"
           ]
         },
-        "durationMilliseconds": 18.5096,
+        "durationMilliseconds": 13.5788,
         "inputCount": 75,
         "outputCount": 78,
         "diagnosticCount": 0,
@@ -15800,7 +15991,7 @@
           "undeclaredChangedArtifacts": [],
           "declaredUnchangedArtifacts": []
         },
-        "durationMilliseconds": 7.5999,
+        "durationMilliseconds": 6.244,
         "inputCount": 78,
         "outputCount": 79,
         "diagnosticCount": 1,
@@ -16017,7 +16208,7 @@
             "ObjectAggregates"
           ]
         },
-        "durationMilliseconds": 3.6964,
+        "durationMilliseconds": 2.7084,
         "inputCount": 79,
         "outputCount": 79,
         "diagnosticCount": 0,
@@ -16510,7 +16701,7 @@
             "RoutingSuppressedObjects"
           ]
         },
-        "durationMilliseconds": 20.9592,
+        "durationMilliseconds": 16.941,
         "inputCount": 79,
         "outputCount": 91,
         "diagnosticCount": 1,
@@ -16738,7 +16929,7 @@
             "VisualAiClassifications"
           ]
         },
-        "durationMilliseconds": 1.8234,
+        "durationMilliseconds": 1.4962,
         "inputCount": 91,
         "outputCount": 91,
         "diagnosticCount": 0,
@@ -16978,7 +17169,7 @@
             "LayerConsistency"
           ]
         },
-        "durationMilliseconds": 2.3608,
+        "durationMilliseconds": 1.829,
         "inputCount": 91,
         "outputCount": 91,
         "diagnosticCount": 0,
@@ -17345,6 +17536,7 @@
           "twoSidedRoomEvidenceWallCount": "0",
           "oneSidedRoomEvidenceWallCount": "4",
           "rejectedEvidenceProtectedWallCount": "0",
+          "roomConfirmedPlacementPromotedWallCount": "0",
           "exteriorWallCount": "6",
           "interiorWallCount": "0",
           "unknownWallCount": "0"

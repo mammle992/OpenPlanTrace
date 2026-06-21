@@ -1030,6 +1030,7 @@
         "evidence": [
           "connected component with 4 wall(s), 4 node(s), 4 edge(s)",
           "drawing length 1240",
+          "component shape: 2 horizontal, 2 vertical, 0 diagonal, 0 short-detail wall(s)",
           "largest structural wall component on page"
         ],
         "sourcePrimitiveIds": [
@@ -1097,6 +1098,7 @@
         "evidence": [
           "connected component with 1 wall(s), 2 node(s), 1 edge(s)",
           "drawing length 80",
+          "component shape: 1 horizontal, 0 vertical, 0 diagonal, 0 short-detail wall(s)",
           "isolated wall graph fragment with weak topology"
         ],
         "sourcePrimitiveIds": [
@@ -1161,6 +1163,7 @@
         "evidence": [
           "connected component with 1 wall(s), 2 node(s), 1 edge(s)",
           "drawing length 50",
+          "component shape: 1 horizontal, 0 vertical, 0 diagonal, 1 short-detail wall(s)",
           "isolated wall graph fragment with weak topology"
         ],
         "sourcePrimitiveIds": [

@@ -106,6 +106,51 @@ public sealed class WallEvidenceRecoveryTests
     }
 
     [Fact]
+    public async Task WallEvidenceRefinement_MarksAdjacentRecoveredBandDuplicateReviewOnly()
+    {
+        var document = new PlanDocument(
+            "wall-evidence-adjacent-recovered-band-deduplication",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(520, 320),
+                    new PlanPrimitive[]
+                    {
+                        Line("primary-face-a", new PlanPoint(100, 118), new PlanPoint(400, 118)),
+                        Line("primary-face-b", new PlanPoint(100, 124), new PlanPoint(400, 124)),
+                        Line("adjacent-duplicate-face-a", new PlanPoint(100, 128), new PlanPoint(400, 128)),
+                        Line("adjacent-duplicate-face-b", new PlanPoint(100, 134), new PlanPoint(400, 134))
+                    })
+            });
+        var context = new ScanContext(document, new ScannerOptions { DefaultWallThickness = 6 });
+        context.WallCandidates.Add(HostWall("host-left", new PlanPoint(100, 50), new PlanPoint(100, 285)));
+        context.WallCandidates.Add(HostWall("host-right", new PlanPoint(400, 50), new PlanPoint(400, 285)));
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var recovered = context.Walls
+            .Where(wall => wall.Evidence.Any(item => item.Contains("recovered by wall evidence map", StringComparison.OrdinalIgnoreCase)))
+            .ToArray();
+
+        Assert.Equal(2, recovered.Length);
+        var recoveredAssessments = context.WallEvidenceMap.WallAssessments
+            .Where(assessment => recovered.Any(wall => wall.Id == assessment.WallId))
+            .ToArray();
+
+        var accepted = Assert.Single(recoveredAssessments, assessment => assessment.Decision == WallEvidenceDecision.Accept);
+        Assert.True(accepted.PlacementReady);
+
+        var review = Assert.Single(recoveredAssessments, assessment => assessment.Decision == WallEvidenceDecision.Review);
+        Assert.False(review.PlacementReady);
+        Assert.True(review.RequiresReview);
+        Assert.Contains(
+            review.Evidence,
+            item => item.Contains("recovered duplicate wall body", StringComparison.OrdinalIgnoreCase)
+                && item.Contains(accepted.WallId, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task WallEvidenceRefinement_MarksRecoveredDuplicatePairedBodyReviewOnly()
     {
         var context = new ScanContext(
@@ -160,6 +205,56 @@ public sealed class WallEvidenceRecoveryTests
             duplicateAssessment.Evidence,
             item => item.Contains("recovered duplicate wall body", StringComparison.OrdinalIgnoreCase)
                 && item.Contains(knownExterior.Id, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task WallEvidenceRefinement_DoesNotSuppressLongRecoveredWallForShortOverlap()
+    {
+        var context = new ScanContext(
+            new PlanDocument(
+                "wall-evidence-long-recovered-not-short-duplicate",
+                new[]
+                {
+                    new PlanPage(1, new PlanSize(420, 320), Array.Empty<PlanPrimitive>())
+                }),
+            new ScannerOptions
+            {
+                DefaultWallThickness = 6,
+                WallSnapTolerance = 4
+            });
+        var shortKnownWall = PairedWall(
+            "short-known-wall",
+            new PlanLineSegment(new PlanPoint(200, 60), new PlanPoint(200, 105)),
+            faceSeparation: 8,
+            pairScore: 0.86,
+            WallType.Interior);
+        var recoveredLongWall = PairedWall(
+            "long-recovered-wall",
+            new PlanLineSegment(new PlanPoint(204, 62), new PlanPoint(204, 240)),
+            faceSeparation: 6,
+            pairScore: 0.82,
+            WallType.Unknown) with
+            {
+                Evidence = new[]
+                {
+                    "recovered by wall evidence map from unclaimed parallel wall-face evidence"
+                }
+            };
+        context.WallCandidates.Add(shortKnownWall);
+        context.WallCandidates.Add(recoveredLongWall);
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var recoveredAssessment = Assert.Single(
+            context.WallEvidenceMap.WallAssessments,
+            assessment => assessment.WallId == recoveredLongWall.Id);
+        Assert.Equal(WallEvidenceCategory.RecoveredWallBody, recoveredAssessment.Category);
+        Assert.Equal(WallEvidenceDecision.Accept, recoveredAssessment.Decision);
+        Assert.True(recoveredAssessment.PlacementReady);
+        Assert.False(recoveredAssessment.RequiresReview);
+        Assert.DoesNotContain(
+            recoveredAssessment.Evidence,
+            item => item.Contains("recovered duplicate wall body", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

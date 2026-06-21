@@ -646,6 +646,30 @@ h1 {
   font-size: 11px;
 }
 
+.layer-presets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.layer-presets button {
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fbfaf7;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.layer-presets button:hover {
+  border-color: rgba(20, 124, 114, 0.42);
+  background: rgba(20, 124, 114, 0.08);
+}
+
 .quality-issue.warning {
   border-left-color: var(--amber);
 }

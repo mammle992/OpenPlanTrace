@@ -35,7 +35,7 @@ public sealed record PlanTraceExport(
     QualityExport Quality,
     DiagnosticsExport Diagnostics)
 {
-    public const string CurrentSchemaVersion = "openplantrace.scan.v69";
+    public const string CurrentSchemaVersion = "openplantrace.scan.v70";
 
     public static PlanTraceExport From(PlanScanResult result) =>
         Create(result);
@@ -1085,6 +1085,7 @@ public sealed record WallEvidenceAssessmentExport(
     bool PlacementReady,
     bool RequiresReview,
     bool RejectedAsNoise,
+    WallEvidenceScoreBreakdownExport ScoreBreakdown,
     IReadOnlyList<string> SourcePrimitiveIds,
     IReadOnlyList<string> Evidence)
 {
@@ -1095,6 +1096,7 @@ public sealed record WallEvidenceAssessmentExport(
             assessment.PlacementReady,
             assessment.RequiresReview,
             assessment.RejectedAsNoise,
+            WallEvidenceScoreBreakdownExport.From(assessment.ScoreBreakdown),
             assessment.SourcePrimitiveIds,
             assessment.Evidence);
 }

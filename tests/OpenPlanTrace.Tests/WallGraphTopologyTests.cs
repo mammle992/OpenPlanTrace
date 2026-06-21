@@ -642,6 +642,64 @@ public sealed class WallGraphTopologyTests
     }
 
     [Fact]
+    public async Task WallGraphStage_PromotesAnchoredSinglePairedWallBodyToSecondaryStructural()
+    {
+        var mainWalls = new[]
+        {
+            DetectedWall("main-top", new PlanPoint(100, 100), new PlanPoint(420, 100)) with { WallType = WallType.Exterior },
+            DetectedWall("main-right", new PlanPoint(420, 100), new PlanPoint(420, 300)) with { WallType = WallType.Exterior },
+            DetectedWall("main-bottom", new PlanPoint(420, 300), new PlanPoint(100, 300)) with { WallType = WallType.Exterior },
+            DetectedWall("main-left", new PlanPoint(100, 300), new PlanPoint(100, 100)) with { WallType = WallType.Exterior }
+        };
+        var anchoredWall = StrongPairedWall(
+            "anchored-single-paired-wall",
+            new PlanPoint(260, 114),
+            new PlanPoint(260, 220));
+        var context = new ScanContext(
+            Document("wall-anchored-single-paired-promotion"),
+            new ScannerOptions());
+        context.Walls.AddRange(mainWalls.Append(anchoredWall));
+        context.WallEvidenceMap = new WallEvidenceMap(
+            Array.Empty<WallEvidenceSegment>(),
+            Array.Empty<WallEvidenceBand>(),
+            mainWalls
+                .Select(wall => Assessment(wall, WallEvidenceDecision.Accept, WallEvidenceCategory.StrongWallBody, Confidence.High))
+                .Append(StrongPairedEndpointAssessment(
+                    anchoredWall,
+                    "one endpoint supported by structural context"))
+                .ToArray());
+        context.Rooms.Add(new RoomRegion(
+            "room-main",
+            1,
+            new PlanRect(100, 100, 320, 200),
+            new[]
+            {
+                new PlanPoint(100, 100),
+                new PlanPoint(420, 100),
+                new PlanPoint(420, 300),
+                new PlanPoint(100, 300)
+            },
+            mainWalls.Select(wall => wall.Id).ToArray(),
+            Confidence.High));
+
+        await new WallTopologyPreparationStage().ExecuteAsync(context, CancellationToken.None);
+        await new WallGraphStage().ExecuteAsync(context, CancellationToken.None);
+
+        var anchoredComponent = Assert.Single(
+            context.WallGraph.Components,
+            component => component.WallIds.Contains(anchoredWall.Id));
+        var result = context.ToResult();
+        var reviewReasons = WallPlacementContextGuards.BuildReviewReasons(result);
+
+        Assert.Equal(WallGraphComponentKind.SecondaryStructural, anchoredComponent.Kind);
+        Assert.False(anchoredComponent.ExcludedFromStructuralTopology);
+        Assert.Contains(
+            anchoredComponent.Evidence,
+            item => item.Contains("anchored single paired-wall body", StringComparison.OrdinalIgnoreCase));
+        Assert.False(reviewReasons.ContainsKey(anchoredWall.Id));
+    }
+
+    [Fact]
     public async Task WallGraphStage_DoesNotUseReviewRequiredWallsAsAutoRepairSupport()
     {
         var reviewHostWall = DetectedWall("wall-review-host", new PlanPoint(100, 100), new PlanPoint(320, 100));

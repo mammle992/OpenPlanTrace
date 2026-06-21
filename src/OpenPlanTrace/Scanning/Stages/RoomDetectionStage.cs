@@ -1309,12 +1309,21 @@ internal sealed class RoomDetectionStage : IPipelineStage
                     continue;
                 }
 
-                result.Add(cluster.Average());
+                result.Add(Median(cluster));
                 cluster = new List<double> { sorted[index] };
             }
 
-            result.Add(cluster.Average());
+            result.Add(Median(cluster));
             return result.ToArray();
+        }
+
+        private static double Median(IReadOnlyList<double> values)
+        {
+            var sorted = values.Order().ToArray();
+            var middle = sorted.Length / 2;
+            return sorted.Length % 2 == 1
+                ? sorted[middle]
+                : (sorted[middle - 1] + sorted[middle]) / 2.0;
         }
 
         private static int FindCoordinateIndex(double value, IReadOnlyList<double> coordinates, double tolerance)
@@ -1404,8 +1413,57 @@ internal sealed class RoomDetectionStage : IPipelineStage
                     Math.Max(from.Position.Y, to.Position.Y));
             }
 
+            if (wall.CenterLine.IsHorizontal(tolerance))
+            {
+                var start = ProjectAlongHorizontalWall(wall.CenterLine, from.Position);
+                var end = ProjectAlongHorizontalWall(wall.CenterLine, to.Position);
+                if (Math.Abs(end - start) <= tolerance)
+                {
+                    return null;
+                }
+
+                return new AxisGraphEdge(
+                    edge,
+                    wall,
+                    WallOrientation.Horizontal,
+                    wall.CenterLine.Midpoint.Y,
+                    Math.Min(start, end),
+                    Math.Max(start, end));
+            }
+
+            if (wall.CenterLine.IsVertical(tolerance))
+            {
+                var start = ProjectAlongVerticalWall(wall.CenterLine, from.Position);
+                var end = ProjectAlongVerticalWall(wall.CenterLine, to.Position);
+                if (Math.Abs(end - start) <= tolerance)
+                {
+                    return null;
+                }
+
+                return new AxisGraphEdge(
+                    edge,
+                    wall,
+                    WallOrientation.Vertical,
+                    wall.CenterLine.Midpoint.X,
+                    Math.Min(start, end),
+                    Math.Max(start, end));
+            }
+
             return null;
         }
+
+        private static double ProjectAlongHorizontalWall(PlanLineSegment wallLine, PlanPoint point)
+        {
+            var t = Math.Clamp(wallLine.ProjectParameter(point), 0, 1);
+            return wallLine.PointAt(t).X;
+        }
+
+        private static double ProjectAlongVerticalWall(PlanLineSegment wallLine, PlanPoint point)
+        {
+            var t = Math.Clamp(wallLine.ProjectParameter(point), 0, 1);
+            return wallLine.PointAt(t).Y;
+        }
+
     }
 
     private readonly record struct Cell(int XIndex, int YIndex);
