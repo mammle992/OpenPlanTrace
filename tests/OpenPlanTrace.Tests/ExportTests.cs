@@ -722,7 +722,7 @@ public sealed class ExportTests
             1,
             SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.PlacementReview));
 
-        Assert.Contains("2 wall body footprints", svg);
+        Assert.Contains("2 visible wall body footprints", svg);
         Assert.Contains("cutout-wall:solid-span:1:body-footprint", svg);
         Assert.Contains("cutout-wall:solid-span:2:body-footprint", svg);
         Assert.DoesNotContain("cutout-wall:solid-span:3:body-footprint", svg);
@@ -872,12 +872,49 @@ public sealed class ExportTests
         Assert.Contains("x1=\"100\" y1=\"100\" x2=\"300\" y2=\"100\"", svg);
         Assert.Contains("1 placement-ready walls", svg);
         Assert.Contains("4 omitted/review walls", svg);
-        Assert.Contains("1 wall body footprints", svg);
+        Assert.Contains("1 visible wall body footprints", svg);
         Assert.Contains("1 visible topology spans", svg);
         Assert.Contains("4 hidden non-placement topology spans", svg);
         Assert.DoesNotContain("edge-tooth-1", svg);
         Assert.DoesNotContain("edge-tooth-2", svg);
         Assert.DoesNotContain("id=\"walls\"", svg);
+    }
+
+    [Fact]
+    public void SvgRenderer_WallQaProfileDrawsOnlyCleanWallPlacementLines()
+    {
+        var result = WithEndpointToWallHostRepairCandidate(
+            WithReviewOnlyWallAssessment(
+                CreateDenseMinorRoutingDetailResult(),
+                "detail-tooth-1"));
+
+        var svg = PlanOverlaySvgRenderer.RenderPage(
+            result,
+            1,
+            SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.WallQa));
+
+        Assert.Contains("data-profile=\"wall-qa\"", svg);
+        Assert.Contains("Walls-only placement QA", svg);
+        Assert.Contains("id=\"wall-topology-spans\"", svg);
+        Assert.Contains("clean wall topology span detail-host:clean-run:1", svg);
+        Assert.Contains("1 visible topology spans", svg);
+        Assert.Contains("1 wall body footprints hidden", svg);
+        Assert.Contains("1 wall graph repairs hidden (1 blocking)", svg);
+        Assert.DoesNotContain("id=\"wall-body-footprints\"", svg);
+        Assert.DoesNotContain("id=\"wall-graph-repairs\"", svg);
+        Assert.DoesNotContain("id=\"walls\"", svg);
+        Assert.DoesNotContain("edge-tooth-1", svg);
+    }
+
+    [Theory]
+    [InlineData("wall-qa")]
+    [InlineData("walls-only")]
+    [InlineData("clean-walls")]
+    public void SvgOverlayRenderOptions_ParsesWallQaProfileAliases(string value)
+    {
+        Assert.True(SvgOverlayRenderOptions.TryParseProfile(value, out var profile));
+        Assert.Equal(SvgOverlayRenderProfile.WallQa, profile);
+        Assert.Equal("wall-qa", SvgOverlayRenderOptions.ProfileName(profile));
     }
 
     [Fact]
@@ -916,7 +953,7 @@ public sealed class ExportTests
         Assert.Contains("1 placement-ready walls", svg);
         Assert.Contains("5 omitted/review walls", svg);
         Assert.Contains("1 visible topology spans", svg);
-        Assert.Contains("1 wall body footprints", svg);
+        Assert.Contains("1 visible wall body footprints", svg);
         Assert.Contains("5 hidden non-placement topology spans", svg);
         Assert.DoesNotContain("clean wall topology span isolated-clean-fragment:clean-run:1", svg);
 
@@ -943,7 +980,7 @@ public sealed class ExportTests
 
         Assert.Contains("id=\"wall-graph-repairs\"", svg);
         Assert.Contains("EndpointToWall SnapEndpointToWall", svg);
-        Assert.Contains("1 wall graph repairs (1 blocking)", svg);
+        Assert.Contains("1 visible wall graph repairs (1 blocking)", svg);
         Assert.Contains("class=\"wall-graph-repair wall-graph-repair-high\"", svg);
         Assert.DoesNotContain("clean wall topology span detail-host", svg);
         Assert.DoesNotContain("wall body footprint detail-host", svg);
@@ -992,6 +1029,35 @@ public sealed class ExportTests
         Assert.Contains(
             "detail-tooth-4",
             placementOmission.GetProperty("linkedWallIds").EnumerateArray().Select(item => item.GetString()));
+    }
+
+    [Fact]
+    public void PlacementJsonExporter_DoesNotBlockEndpointToWallHostWallWithTopologyImportBlockedRepairCandidate()
+    {
+        var result = WithEndpointToWallHostRepairCandidate(CreateDenseMinorRoutingDetailResult());
+
+        using var parsed = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(result));
+        var root = parsed.RootElement;
+        var candidate = Assert.Single(root.GetProperty("wallGraphRepairCandidates").EnumerateArray());
+        var host = Assert.Single(root.GetProperty("walls").EnumerateArray(), item =>
+            item.GetProperty("id").GetString() == "detail-host");
+        var endpointWall = Assert.Single(root.GetProperty("walls").EnumerateArray(), item =>
+            item.GetProperty("id").GetString() == "detail-tooth-4");
+
+        Assert.Equal("detail-host", candidate.GetProperty("hostWallId").GetString());
+        Assert.Equal("TopologyImportBlocked", candidate.GetProperty("importImpact").GetString());
+        Assert.DoesNotContain(
+            candidate.GetProperty("id").GetString(),
+            host.GetProperty("wallGraphRepairCandidateIds").EnumerateArray().Select(item => item.GetString()));
+        Assert.True(host.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, host.GetProperty("placementOmission").ValueKind);
+        Assert.Contains(
+            candidate.GetProperty("id").GetString(),
+            endpointWall.GetProperty("wallGraphRepairCandidateIds").EnumerateArray().Select(item => item.GetString()));
+        Assert.False(endpointWall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.Equal(
+            "topology_import_blocked",
+            endpointWall.GetProperty("placementOmission").GetProperty("code").GetString());
     }
 
     [Fact]
@@ -1603,6 +1669,44 @@ public sealed class ExportTests
         Assert.DoesNotContain(
             "placement.review.wall_evidence_requires_review",
             JsonStrings(importReadiness.GetProperty("reviewIssueCodes")));
+    }
+
+    [Fact]
+    public async Task PlacementExporter_FlagsRejectedStrongWallBodiesForVisualReview()
+    {
+        var result = WithRejectedStrongObjectLikeWallBody(await CreateScanResultAsync());
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+
+        var issue = Assert.Single(document.RootElement.GetProperty("issues").EnumerateArray(), item =>
+            item.GetProperty("code").GetString() == "placement.review.rejected_strong_wall_body");
+        Assert.Equal("rejected-strong-wall-body", issue.GetProperty("itemId").GetString());
+        Assert.Equal("Info", issue.GetProperty("severity").GetString());
+        Assert.Equal("ObjectOrFixtureDetail", issue.GetProperty("properties").GetProperty("category").GetString());
+        Assert.Equal("ObjectLikeIsland", issue.GetProperty("properties").GetProperty("componentKind").GetString());
+        Assert.Equal("True", issue.GetProperty("properties").GetProperty("rejectedAsNoise").GetString());
+        Assert.Contains(
+            issue.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("strong double-edge wall body", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Contains(
+            "rejected-strong-wall-body",
+            JsonStrings(issue.GetProperty("sourcePrimitiveIds")));
+
+        var wall = document.RootElement.GetProperty("walls").EnumerateArray().Single(item =>
+            item.GetProperty("id").GetString() == "rejected-strong-wall-body");
+        Assert.Equal("rejected_wall_evidence", wall.GetProperty("placementOmission").GetProperty("code").GetString());
+        Assert.False(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+
+        var importReadiness = document.RootElement.GetProperty("summary").GetProperty("importReadiness");
+        Assert.DoesNotContain(
+            "placement.review.rejected_strong_wall_body",
+            JsonStrings(importReadiness.GetProperty("reviewIssueCodes")));
+        Assert.DoesNotContain(
+            "placement.review.rejected_strong_wall_body",
+            JsonStrings(importReadiness.GetProperty("blockingIssueCodes")));
     }
 
     [Fact]
@@ -3313,6 +3417,91 @@ public sealed class ExportTests
         };
     }
 
+    private static PlanScanResult WithRejectedStrongObjectLikeWallBody(PlanScanResult result)
+    {
+        var wall = SyntheticWall("rejected-strong-wall-body", 360, 180, 480, 180) with
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Unknown,
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "wall evidence: strong double-edge wall body"
+            ]
+        };
+        var nodes = new[]
+        {
+            SyntheticNode("node-rejected-strong-a", 360, 180, WallNodeKind.Endpoint),
+            SyntheticNode("node-rejected-strong-b", 480, 180, WallNodeKind.Endpoint)
+        };
+        var edge = new WallEdge(
+            "edge-rejected-strong",
+            1,
+            nodes[0].Id,
+            nodes[1].Id,
+            wall.Id,
+            Confidence.High);
+        var component = new WallGraphComponent(
+            "component-rejected-strong",
+            1,
+            WallGraphComponentKind.ObjectLikeIsland,
+            wall.Bounds,
+            [wall.Id],
+            nodes.Select(node => node.Id).ToArray(),
+            [edge.Id],
+            wall.SourcePrimitiveIds,
+            wall.DrawingLength,
+            Confidence.High,
+            ["synthetic component excluded as compact object-like linework"],
+            ExcludedFromStructuralTopology: true);
+        var assessment = new WallEvidenceWallAssessment(
+            wall.Id,
+            wall.PageNumber,
+            wall.Bounds,
+            WallEvidenceCategory.ObjectOrFixtureDetail,
+            Confidence.High,
+            PlacementReady: false,
+            RequiresReview: true,
+            RejectedAsNoise: true,
+            wall.SourcePrimitiveIds,
+            [
+                "parallel wall-face pair",
+                "wall evidence: strong double-edge wall body",
+                "wall evidence: reclassified as object/fixture detail because graph component is ObjectLikeIsland"
+            ])
+        {
+            Decision = WallEvidenceDecision.Reject,
+            ScoreBreakdown = new WallEvidenceScoreBreakdown(
+                PositiveScore: 0.92,
+                NegativeScore: 0.78,
+                DecisionScore: -0.2,
+                PairSupportScore: 0.92,
+                LayerSupportScore: 0.2,
+                StructuralSupportScore: 0.75,
+                RecoverySupportScore: 0,
+                NoisePenalty: 0.78,
+                FragmentReviewPenalty: 0,
+                PositiveEvidence: ["strong double-edge wall body"],
+                NegativeEvidence: ["component excluded as compact object-like linework"])
+        };
+
+        return result with
+        {
+            Walls = result.Walls.Append(wall).ToArray(),
+            WallGraph = new WallGraph(
+                result.WallGraph.Nodes.Concat(nodes).ToArray(),
+                result.WallGraph.Edges.Append(edge).ToArray(),
+                result.WallGraph.Components.Append(component).ToArray(),
+                result.WallGraph.RepairCandidates),
+            WallEvidenceMap = new WallEvidenceMap(
+                result.WallEvidenceMap.Segments,
+                result.WallEvidenceMap.Bands,
+                result.WallEvidenceMap.WallAssessments.Append(assessment).ToArray(),
+                result.WallEvidenceMap.SourceCandidateWallCount + 1,
+                result.WallEvidenceMap.RecoveredCandidateWallCount)
+        };
+    }
+
     private static PlanScanResult WithUnsupportedSecondaryStructuralComponent(PlanScanResult result)
     {
         var walls = new[]
@@ -3460,6 +3649,43 @@ public sealed class ExportTests
             Confidence.High,
             RequiresReview: true,
             ["synthetic high-severity wall graph repair candidate"]);
+
+        return result with
+        {
+            WallGraph = new WallGraph(
+                result.WallGraph.Nodes,
+                result.WallGraph.Edges,
+                result.WallGraph.Components,
+                result.WallGraph.RepairCandidates.Append(candidate).ToArray())
+        };
+    }
+
+    private static PlanScanResult WithEndpointToWallHostRepairCandidate(PlanScanResult result)
+    {
+        var candidate = new WallGraphRepairCandidate(
+            "repair-high-gap-host-wall",
+            1,
+            WallGraphRepairCandidateKind.EndpointToWall,
+            WallGraphRepairAction.SnapEndpointToWall,
+            WallGraphRepairSeverity.High,
+            WallGraphRepairImportImpact.TopologyImportBlocked,
+            WallGraphRepairApplicability.ManualCorrectionRecommended,
+            "node-t4-end",
+            new PlanPoint(260, 124),
+            new PlanPoint(260, 100),
+            null,
+            "detail-host",
+            GapDistance: 24,
+            SafeSnapDistance: 9,
+            ReviewDistanceLimit: 18,
+            ExcessDistanceBeyondSafeSnap: 15,
+            new PlanLineSegment(new PlanPoint(260, 124), new PlanPoint(260, 100)),
+            new PlanRect(256, 96, 8, 32),
+            ["detail-host", "detail-tooth-4"],
+            ["detail-host", "detail-tooth-4"],
+            Confidence.High,
+            RequiresReview: true,
+            ["synthetic high-severity endpoint-to-wall repair candidate hosted by clean wall"]);
 
         return result with
         {

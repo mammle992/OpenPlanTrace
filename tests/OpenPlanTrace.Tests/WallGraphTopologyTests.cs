@@ -1636,6 +1636,59 @@ public sealed class WallGraphTopologyTests
     }
 
     [Fact]
+    public async Task WallGraphStage_RetainsCompactSupportedPairedReturnAsSecondaryStructural()
+    {
+        var mainWalls = new[]
+        {
+            DetectedWall("main-top", new PlanPoint(100, 100), new PlanPoint(700, 100)) with { WallType = WallType.Exterior },
+            DetectedWall("main-right", new PlanPoint(700, 100), new PlanPoint(700, 500)) with { WallType = WallType.Exterior },
+            DetectedWall("main-bottom", new PlanPoint(700, 500), new PlanPoint(100, 500)) with { WallType = WallType.Exterior },
+            DetectedWall("main-left", new PlanPoint(100, 500), new PlanPoint(100, 100)) with { WallType = WallType.Exterior }
+        };
+        var trustedReturn = StrongPairedWall("wall-compact-supported-return-trusted", new PlanPoint(300, 180), new PlanPoint(380, 180));
+        var companionReturn = StrongPairedWall("wall-compact-supported-return-companion", new PlanPoint(380, 180), new PlanPoint(380, 238), pairScore: 0.65);
+        var context = new ScanContext(
+            Document("wall-compact-supported-return-cluster"),
+            new ScannerOptions());
+        context.Walls.AddRange(mainWalls.Append(trustedReturn).Append(companionReturn));
+        context.WallEvidenceMap = new WallEvidenceMap(
+            Array.Empty<WallEvidenceSegment>(),
+            Array.Empty<WallEvidenceBand>(),
+            mainWalls
+                .Select(wall => Assessment(wall, WallEvidenceDecision.Accept, WallEvidenceCategory.StrongWallBody, Confidence.High))
+                .Concat(new[]
+                {
+                    StrongPairedEndpointAssessment(trustedReturn, "both endpoints supported by structural context"),
+                    StrongPairedEndpointAssessment(companionReturn, "one endpoint supported by structural context")
+                })
+                .ToArray());
+
+        await new WallTopologyPreparationStage().ExecuteAsync(context, CancellationToken.None);
+        await new WallGraphStage().ExecuteAsync(context, CancellationToken.None);
+
+        var compactComponent = Assert.Single(
+            context.WallGraph.Components,
+            component => component.WallIds.Contains(trustedReturn.Id)
+                && component.WallIds.Contains(companionReturn.Id));
+        var trustedAssessment = Assert.Single(context.WallEvidenceMap.WallAssessments, assessment => assessment.WallId == trustedReturn.Id);
+        var companionAssessment = Assert.Single(context.WallEvidenceMap.WallAssessments, assessment => assessment.WallId == companionReturn.Id);
+
+        Assert.Equal(WallGraphComponentKind.SecondaryStructural, compactComponent.Kind);
+        Assert.False(compactComponent.ExcludedFromStructuralTopology);
+        Assert.Equal(WallEvidenceCategory.StrongWallBody, trustedAssessment.Category);
+        Assert.Equal(WallEvidenceCategory.StrongWallBody, companionAssessment.Category);
+        Assert.Equal(WallEvidenceDecision.Accept, trustedAssessment.Decision);
+        Assert.Equal(WallEvidenceDecision.Accept, companionAssessment.Decision);
+        Assert.Contains(
+            compactComponent.Evidence,
+            item => item.Contains("compact paired-wall component retained", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "wall_evidence.object_like_components_reclassified"
+                && diagnostic.Properties["componentIds"].Contains(compactComponent.Id, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task WallGraphStage_KeepsCompactMediumPairedWallClusterObjectLike()
     {
         var mainWalls = new[]
@@ -1957,6 +2010,43 @@ public sealed class WallGraphTopologyTests
                 0,
                 new[] { "parallel-face wall pair", "both endpoints supported by structural context" },
                 new[] { "not placement-ready without review" })
+        };
+    }
+
+    private static WallEvidenceWallAssessment StrongPairedEndpointAssessment(
+        WallSegment wall,
+        string endpointSupportEvidence)
+    {
+        return new WallEvidenceWallAssessment(
+            wall.Id,
+            wall.PageNumber,
+            wall.Bounds,
+            WallEvidenceCategory.StrongWallBody,
+            new Confidence(0.91),
+            PlacementReady: true,
+            RequiresReview: false,
+            RejectedAsNoise: false,
+            wall.SourcePrimitiveIds,
+            new[]
+            {
+                "parallel wall-face pair",
+                "wall evidence: strong double-edge wall body",
+                endpointSupportEvidence
+            })
+        {
+            Decision = WallEvidenceDecision.Accept,
+            ScoreBreakdown = new WallEvidenceScoreBreakdown(
+                0.70,
+                0,
+                0.70,
+                0.50,
+                0,
+                endpointSupportEvidence.StartsWith("both", StringComparison.OrdinalIgnoreCase) ? 0.20 : 0.10,
+                0,
+                0,
+                0,
+                new[] { "strong parallel-face wall pair", endpointSupportEvidence },
+                Array.Empty<string>())
         };
     }
 

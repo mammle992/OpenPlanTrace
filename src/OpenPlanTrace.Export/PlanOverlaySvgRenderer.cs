@@ -520,9 +520,14 @@ public static class PlanOverlaySvgRenderer
         {
             rows.Add("Placement-ready wall spans");
         }
+        else if (options.Profile == SvgOverlayRenderProfile.WallQa)
+        {
+            rows.Add("Walls-only placement QA");
+        }
 
         var visibleTopologySpanCount = WallTopologySpanCount(result, page.Number, options);
         var hiddenTopologySpanCount = HiddenNonPlacementTopologySpanCount(result, page.Number, options);
+        var wallBodyFootprintCount = WallBodyFootprintCount(result, page.Number, options);
         var wallReadiness = WallPlacementReadinessSummary.From(result, page.Number);
         var repairCandidateCount = result.WallGraph.RepairCandidates.Count(candidate => candidate.PageNumber == page.Number);
         var blockingRepairCandidateCount = result.WallGraph.RepairCandidates.Count(candidate =>
@@ -540,11 +545,15 @@ public static class PlanOverlaySvgRenderer
             $"{result.Walls.Count(wall => wall.PageNumber == page.Number)} walls",
             $"{wallReadiness.PlacementReadyWallCount} placement-ready walls",
             $"{wallReadiness.PlacementOmittedWallCount} omitted/review walls",
-            $"{WallBodyFootprintCount(result, page.Number, options)} wall body footprints",
+            options.IncludeWallBodyFootprints
+                ? $"{wallBodyFootprintCount} visible wall body footprints"
+                : $"{wallBodyFootprintCount} wall body footprints hidden",
             $"{visibleTopologySpanCount} visible topology spans",
             $"{hiddenTopologySpanCount} hidden non-placement topology spans",
             $"{TopologyExcludedWallCount(result, page.Number)} topology-excluded walls",
-            $"{repairCandidateCount} wall graph repairs ({blockingRepairCandidateCount} blocking)",
+            options.IncludeWallGraphRepairs
+                ? $"{repairCandidateCount} visible wall graph repairs ({blockingRepairCandidateCount} blocking)"
+                : $"{repairCandidateCount} wall graph repairs hidden ({blockingRepairCandidateCount} blocking)",
             $"{result.Rooms.Count(room => room.PageNumber == page.Number)} rooms",
             $"{result.RoomAdjacencyGraph.Clusters.Count(cluster => cluster.PageNumber == page.Number)} room clusters",
             $"{result.RoomAdjacencyGraph.Edges.Count(edge => edge.PageNumber == page.Number)} room links",
@@ -969,7 +978,7 @@ public static class PlanOverlaySvgRenderer
         var lookup = new Dictionary<string, List<WallGraphRepairCandidate>>(StringComparer.Ordinal);
         foreach (var candidate in candidates)
         {
-            foreach (var wallId in WallGraphRepairCandidateWallIds(candidate).Distinct(StringComparer.Ordinal))
+            foreach (var wallId in WallGraphRepairCandidateImpact.CoordinateImpactedWallIds(candidate).Distinct(StringComparer.Ordinal))
             {
                 if (!lookup.TryGetValue(wallId, out var wallCandidates))
                 {
@@ -988,22 +997,6 @@ public static class PlanOverlaySvgRenderer
                 .OrderBy(candidate => candidate.Id, StringComparer.Ordinal)
                 .ToArray(),
             StringComparer.Ordinal);
-    }
-
-    private static IEnumerable<string> WallGraphRepairCandidateWallIds(WallGraphRepairCandidate candidate)
-    {
-        foreach (var wallId in candidate.WallIds)
-        {
-            if (!string.IsNullOrWhiteSpace(wallId))
-            {
-                yield return wallId;
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(candidate.HostWallId))
-        {
-            yield return candidate.HostWallId;
-        }
     }
 
     private static string WallGraphRepairReviewReason(WallGraphRepairCandidate candidate)

@@ -10140,7 +10140,7 @@ internal static class OpenPlanTraceCli
         Console.WriteLine("  --placement <path>        Write compact downstream placement JSON with coordinates, metric transforms, routing, and trust gates");
         Console.WriteLine("  --svg <path>              Write one SVG overlay");
         Console.WriteLine("  --svg-dir <directory>     Write one SVG overlay per page");
-        Console.WriteLine("  --svg-profile <name>      SVG overlay profile: placement-review (default), structural-review, or full");
+        Console.WriteLine("  --svg-profile <name>      SVG overlay profile: placement-review (default), wall-qa, structural-review, or full");
         Console.WriteLine("  --svg-background <path>   Embed one page background image in the SVG for alignment QA");
         Console.WriteLine("  --svg-background-dir <d>  Embed page-N.png/jpg/webp backgrounds in per-page SVG overlays");
         Console.WriteLine("  --svg-background-embed    Store SVG background images as data URIs for portable/headless QA screenshots");
@@ -10208,7 +10208,7 @@ internal static class OpenPlanTraceCli
         Console.WriteLine("  --geojson                 Write scan.geojson beside each per-file scan.json");
         Console.WriteLine("  --recursive               Recurse into input directories");
         Console.WriteLine("  --no-svg                  Do not write per-page SVG overlays; visual-snapshot.json is still written without SVG links");
-        Console.WriteLine("  --svg-profile <name>      SVG overlay profile: placement-review (default), structural-review, or full");
+        Console.WriteLine("  --svg-profile <name>      SVG overlay profile: placement-review (default), wall-qa, structural-review, or full");
         Console.WriteLine("  --compact-json            Disable pretty JSON");
         Console.WriteLine("  --parallel <n>            Scan up to n batch items at once; default 1");
         Console.WriteLine("  --retries <n>             Retry failed scan/load attempts n times; default 0");
@@ -10887,7 +10887,7 @@ internal static class OpenPlanTraceCli
         }
 
         throw new ArgumentException(
-            $"Invalid SVG overlay profile '{value}'. Valid profiles: placement-review, structural-review, full.");
+            $"Invalid SVG overlay profile '{value}'. Valid profiles: placement-review, wall-qa, structural-review, full.");
     }
 }
 

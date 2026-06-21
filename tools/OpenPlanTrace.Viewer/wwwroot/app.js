@@ -4426,11 +4426,36 @@ function wallHasTopologyImportBlockedRepair(wall, scan = state.scan) {
     }
 
     if (repairIds.size > 0 && repairIds.has(String(candidate.id || ""))) {
-      return true;
+      return !wallGraphRepairIsEndpointToWallHost(candidate, wallId);
     }
 
-    return normalizeStringArray(candidate?.wallIds).includes(wallId);
+    return wallGraphRepairCoordinateImpactsWall(candidate, wallId);
   });
+}
+
+function wallGraphRepairCoordinateImpactsWall(candidate, wallId) {
+  if (!candidate || !wallId) {
+    return false;
+  }
+
+  if (wallGraphRepairIsEndpointToWallHost(candidate, wallId)) {
+    return false;
+  }
+
+  const normalizedWallId = String(wallId);
+  if (normalizeStringArray(candidate?.wallIds).includes(normalizedWallId)) {
+    return true;
+  }
+
+  const kind = String(candidate?.kind || "").toLowerCase();
+  const hostWallId = String(candidate?.hostWallId || "");
+  return kind !== "endpointtowall" && hostWallId === normalizedWallId;
+}
+
+function wallGraphRepairIsEndpointToWallHost(candidate, wallId) {
+  const kind = String(candidate?.kind || "").toLowerCase();
+  const hostWallId = String(candidate?.hostWallId || "");
+  return kind === "endpointtowall" && hostWallId === String(wallId);
 }
 
 function wallReliabilitySummary(wall) {

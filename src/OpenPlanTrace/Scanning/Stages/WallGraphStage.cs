@@ -2087,6 +2087,8 @@ internal sealed class WallGraphStage : IPipelineStage
             .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
 
         var trustedPairedWallCount = 0;
+        var supportedPairedReturnWallCount = 0;
+        var hasEndpointSupportedWall = false;
         foreach (var wallId in component.WallIds)
         {
             if (!wallsById.TryGetValue(wallId, out var wall)
@@ -2099,9 +2101,23 @@ internal sealed class WallGraphStage : IPipelineStage
             {
                 trustedPairedWallCount++;
             }
+
+            if (IsSupportedCompactStructuralPairedReturnWall(assessment, wall, context.Options))
+            {
+                supportedPairedReturnWallCount++;
+                hasEndpointSupportedWall |= HasStructuralEndpointSupportEvidence(assessment);
+            }
         }
 
-        return trustedPairedWallCount >= 2;
+        if (trustedPairedWallCount >= 2)
+        {
+            return true;
+        }
+
+        return trustedPairedWallCount >= 1
+            && supportedPairedReturnWallCount == component.WallIds.Count
+            && hasEndpointSupportedWall
+            && component.DrawingLength >= CompactStructuralPairedReturnClusterLength(context.Options);
     }
 
     private static bool IsTrustedCompactStructuralPairedWall(
@@ -2140,8 +2156,57 @@ internal sealed class WallGraphStage : IPipelineStage
             || pairScore >= MinCompactStructuralPairedWallPairScore;
     }
 
+    private static bool IsSupportedCompactStructuralPairedReturnWall(
+        WallEvidenceWallAssessment assessment,
+        WallSegment wall,
+        ScannerOptions options)
+    {
+        if (assessment.RejectedAsNoise
+            || assessment.Category != WallEvidenceCategory.StrongWallBody
+            || assessment.Confidence.Value < 0.80
+            || (!assessment.PlacementReady && assessment.Decision != WallEvidenceDecision.Accept)
+            || wall.DrawingLength < options.MinWallLength
+            || wall.FragmentEvidence?.RequiresGeometryReview == true
+            || HasOpeningKeywordEvidence(wall))
+        {
+            return false;
+        }
+
+        var evidence = assessment.Evidence
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(assessment.ScoreBreakdown.NegativeEvidence)
+            .Concat(wall.Evidence)
+            .ToArray();
+        if (evidence.Any(IsHardRiskReviewWallEvidence)
+            || evidence.Any(IsMainStructuralPromotionBlockedEvidence)
+            || evidence.Any(item => item.Contains("weak/fragmented pair evidence", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        if (wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            && !evidence.Any(item => item.Contains("parallel wall-face pair", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        return !TryReadPairScore(evidence, out var pairScore)
+            || pairScore >= 0.60;
+    }
+
+    private static bool HasStructuralEndpointSupportEvidence(WallEvidenceWallAssessment assessment) =>
+        assessment.ScoreBreakdown.PositiveEvidence
+            .Concat(assessment.Evidence)
+            .Any(item =>
+                item.Contains("endpoint supported by structural context", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("endpoints supported by structural context", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("structural graph support", StringComparison.OrdinalIgnoreCase));
+
     private static double CompactStructuralPairedWallClusterLength(ScannerOptions options) =>
         Math.Max(options.MinWallLength * 5.0, options.DefaultWallThickness * 30.0);
+
+    private static double CompactStructuralPairedReturnClusterLength(ScannerOptions options) =>
+        Math.Max(options.MinWallLength * 4.0, options.DefaultWallThickness * 24.0);
 
     private static string? StructuralTopologyExclusionReason(
         RawWallGraphComponent component,

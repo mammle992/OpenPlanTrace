@@ -4,7 +4,8 @@ public enum SvgOverlayRenderProfile
 {
     Full,
     StructuralReview,
-    PlacementReview
+    PlacementReview,
+    WallQa
 }
 
 public sealed record SvgOverlayRenderOptions
@@ -100,6 +101,32 @@ public sealed record SvgOverlayRenderOptions
                 IncludeReviewOnlyWallTopologySpans = false,
                 IncludeRoutingLayer = false
             },
+            SvgOverlayRenderProfile.WallQa => new SvgOverlayRenderOptions
+            {
+                Profile = SvgOverlayRenderProfile.WallQa,
+                IncludeLegend = true,
+                IncludeDiagnostics = true,
+                IncludeRegions = false,
+                IncludeDimensions = false,
+                IncludeAnnotations = false,
+                IncludeGridAxes = false,
+                IncludeGridBaySpacings = false,
+                IncludeWalls = false,
+                IncludeWallComponents = false,
+                IncludeWallNodes = false,
+                IncludeRooms = false,
+                IncludeRoomClusters = false,
+                IncludeRoomAdjacency = false,
+                IncludeOpenings = false,
+                IncludeObjects = false,
+                IncludeObjectAggregates = false,
+                IncludeSurfacePatterns = false,
+                IncludeWallTopologySpans = true,
+                IncludeWallBodyFootprints = false,
+                IncludeReviewOnlyWallTopologySpans = false,
+                IncludeWallGraphRepairs = false,
+                IncludeRoutingLayer = false
+            },
             _ => new SvgOverlayRenderOptions()
             {
                 IncludeWallTopologySpans = true,
@@ -126,10 +153,18 @@ public sealed record SvgOverlayRenderOptions
                 return true;
             case "placement":
             case "placementreview":
-            case "cleanwalls":
             case "topology":
             case "topologyspans":
                 profile = SvgOverlayRenderProfile.PlacementReview;
+                return true;
+            case "wallqa":
+            case "wallaccuracy":
+            case "wallaccuracyreview":
+            case "walls":
+            case "wallsonly":
+            case "cleanwalls":
+            case "cleanwallsonly":
+                profile = SvgOverlayRenderProfile.WallQa;
                 return true;
             default:
                 profile = SvgOverlayRenderProfile.Full;
@@ -140,6 +175,7 @@ public sealed record SvgOverlayRenderOptions
     public static string ProfileName(SvgOverlayRenderProfile profile) =>
         profile switch
         {
+            SvgOverlayRenderProfile.WallQa => "wall-qa",
             SvgOverlayRenderProfile.PlacementReview => "placement-review",
             SvgOverlayRenderProfile.StructuralReview => "structural-review",
             _ => "full"

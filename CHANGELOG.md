@@ -6,6 +6,124 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.135] - 2026-06-21
+
+### Added
+- Added a dedicated SVG `wall-qa` profile for source-backed wall-accuracy
+  screenshots. It renders only clean placement-grade wall topology spans while
+  hiding wall body footprints, repair rays, rooms, openings, dimensions,
+  objects, and other debug layers.
+
+### Improved
+- SVG QA legends now state when wall body footprints or wall graph repair
+  layers are hidden, so a walls-only screenshot does not imply hidden layers are
+  visible.
+
+### Verified
+- Added export coverage for `wall-qa` profile aliases and layer visibility.
+- Focused export/viewer tests passed with `54` tests.
+- Full test suite passed with `586` tests.
+- Scanned an ignored local medium-difficulty PDF fixture with embedded source
+  background using `--svg-profile wall-qa` and rendered the result for visual
+  inspection. The walls-only overlay is clearer for wall alignment review while
+  still reporting `35` placement-ready walls and `89` omitted/review walls in
+  the QA panel.
+
+## [0.02.134] - 2026-06-21
+
+### Fixed
+- Viewer-side wall repair blocking now mirrors placement-export semantics.
+  High-severity endpoint-to-wall repairs block the endpoint/source wall that
+  needs repair, but no longer mark the clean host wall as coordinate-blocked
+  just because it is the snap target.
+
+### Verified
+- Added viewer script contract coverage for endpoint-to-wall host-wall repair
+  impact semantics.
+- Focused viewer/export tests passed with `50` tests.
+- Full test suite passed with `582` tests.
+- Scanned an ignored local medium-difficulty PDF fixture with an embedded
+  source-page background for visual QA. The placement-review overlay shows `35`
+  placement-ready walls out of `124` wall candidates, confirming the clean wall
+  layer is readable while the remaining professional gap is reducing
+  review/omitted wall-candidate noise.
+
+## [0.02.133] - 2026-06-21
+
+### Fixed
+- Endpoint-to-wall repair candidates no longer block the host wall's clean
+  placement geometry. High-severity endpoint snaps still block the
+  source/endpoint-side wall that needs repair, while the host wall remains
+  eligible for coordinate placement when its own evidence and topology are
+  trustworthy.
+- Placement SVG summaries now use the same repair-impact semantics as placement
+  JSON, so visual QA counts match exported placement readiness.
+
+### Verified
+- Added export regression coverage proving a topology-blocked endpoint-to-wall
+  repair candidate blocks the endpoint/source wall but not the clean host wall.
+- Focused export/readiness tests passed with `55` tests.
+- Full test suite passed with `582` tests.
+- Rescanned the ignored local medium PDF fixture with embedded source
+  background. Clean placement improved from `34` to `35` placement-ready walls,
+  placement-omitted walls dropped from `90` to `89`, topology-blocked omissions
+  dropped from `2` to `1`, and clean topology spans increased from `34` to `35`.
+- Rendered and inspected the fresh source-backed placement-review screenshot.
+  The overlay legend now reports `35` placement-ready walls and `35` visible
+  topology spans, matching placement JSON while the source-side endpoint repair
+  remains visible as a blocker.
+
+## [0.02.132] - 2026-06-21
+
+### Improved
+- Wall graph classification now keeps compact orthogonal paired-wall returns as
+  secondary structural context when they have strong wall-body evidence,
+  endpoint support, and at least one strong pair score. The placement guard also
+  allows these compact supported returns without room-boundary support, while
+  low-score paired details, dense detail clusters, object-like islands, and
+  topology-blocked companions stay out of clean placement output.
+
+### Verified
+- Added regression coverage for compact supported paired returns in both wall
+  graph classification and placement readiness/export behavior.
+- Focused wall-graph tests passed with `48` tests.
+- Focused scan-quality/export tests passed with `71` tests.
+- Full test suite passed with `581` tests.
+- Rescanned the ignored local medium PDF fixture with embedded source
+  background. Clean placement improved from `33` to `34` placement-ready walls;
+  structural walls improved from `88` to `90`; rejected-wall-evidence omissions
+  dropped from `36` to `34`; openings increased from `31` to `32`; object
+  aggregates increased from `5` to `7`.
+- Rendered and inspected a fresh source-backed placement-review screenshot. The
+  recovered compact return appears aligned in the middle/right interior area;
+  the companion wall still stays omitted behind a topology repair blocker, so
+  the next accuracy work should address safe endpoint repair rather than simply
+  promoting it.
+
+## [0.02.131] - 2026-06-21
+
+### Added
+- Placement JSON now emits informational `placement.review.rejected_strong_wall_body`
+  issues for long object-like wall candidates that Wall Evidence V2 rejected
+  despite strong paired wall-body evidence. These candidates remain omitted and
+  non-placement-ready, but review tools can jump directly to possible missed
+  structural wall bodies instead of hunting through all rejected evidence.
+
+### Verified
+- Added export regression coverage proving the issue is emitted with component
+  and evidence metadata, while the wall remains `rejected_wall_evidence` and
+  the issue does not enter import-readiness blocking or review codes.
+- Focused export tests passed with `47` tests.
+- Full test suite passed with `579` tests.
+- Rescanned the ignored local medium PDF fixture with embedded source
+  background. Detector totals stayed stable at `124` walls, `10` rooms, and
+  `31` openings, with `33` placement-ready walls and `91` omitted/review walls.
+- The scan produced `5` informational rejected-strong-wall-body review issues
+  and did not add this issue type to import-readiness review or blocking codes.
+- Rendered and inspected the source-backed placement-review screenshot; clean
+  wall placement geometry stayed unchanged while the new review issue queue
+  exposes suspicious rejected wall bodies for follow-up.
+
 ## [0.02.130] - 2026-06-19
 
 ### Added

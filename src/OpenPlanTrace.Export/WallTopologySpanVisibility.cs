@@ -660,7 +660,7 @@ internal static class WallTopologySpanVisibility
         foreach (var candidate in repairCandidates.Where(candidate =>
             candidate.ImportImpact == WallGraphRepairImportImpact.TopologyImportBlocked))
         {
-            foreach (var wallId in candidate.WallIds)
+            foreach (var wallId in WallGraphRepairCandidateImpact.CoordinateImpactedWallIds(candidate))
             {
                 if (!string.IsNullOrWhiteSpace(wallId))
                 {

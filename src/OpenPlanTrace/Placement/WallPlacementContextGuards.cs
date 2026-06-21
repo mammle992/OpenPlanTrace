@@ -66,9 +66,7 @@ public static class WallPlacementContextGuards
             || component.ExcludedFromStructuralTopology
             || component.WallIds.Count < 2
             || component.WallIds.Count > 4
-            || component.DrawingLength < 150
-            || component.Confidence.Value < 0.6
-            || !IsLongThinComponent(component.Bounds))
+            || component.Confidence.Value < 0.6)
         {
             return false;
         }
@@ -84,13 +82,55 @@ public static class WallPlacementContextGuards
             return false;
         }
 
-        return walls.All(wall =>
+        if (!walls.All(wall =>
             wallEvidenceByWallId.TryGetValue(wall.Id, out var assessment)
             && assessment.PlacementReady
             && !assessment.RequiresReview
             && !assessment.RejectedAsNoise
             && assessment.Category == WallEvidenceCategory.StrongWallBody
-            && HasStrongPairedWallBodyEvidence(wall, assessment));
+            && HasStrongPairedWallBodyEvidence(wall, assessment)))
+        {
+            return false;
+        }
+
+        var assessments = walls
+            .Select(wall => wallEvidenceByWallId[wall.Id])
+            .ToArray();
+
+        return LooksLikeTrustedLongThinPairedWallBodyChain(component)
+            || LooksLikeTrustedCompactPairedReturn(component, walls, assessments);
+    }
+
+    private static bool LooksLikeTrustedLongThinPairedWallBodyChain(WallGraphComponent component) =>
+        component.DrawingLength >= 150
+        && IsLongThinComponent(component.Bounds);
+
+    private static bool LooksLikeTrustedCompactPairedReturn(
+        WallGraphComponent component,
+        IReadOnlyList<WallSegment> walls,
+        IReadOnlyList<WallEvidenceWallAssessment> assessments)
+    {
+        if (component.WallIds.Count is < 2 or > 3
+            || component.DrawingLength < 96
+            || !walls.All(wall => wall.CenterLine.IsHorizontal() || wall.CenterLine.IsVertical())
+            || !walls.Any(wall => wall.CenterLine.IsHorizontal())
+            || !walls.Any(wall => wall.CenterLine.IsVertical())
+            || !assessments.Any(HasStructuralEndpointSupportEvidence))
+        {
+            return false;
+        }
+
+        var pairScores = walls
+            .SelectMany(wall => wall.Evidence)
+            .Concat(assessments.SelectMany(assessment => assessment.Evidence))
+            .Select(TryReadPairScore)
+            .Where(score => score.HasValue)
+            .Select(score => score!.Value)
+            .ToArray();
+
+        return pairScores.Length == 0
+            || (pairScores.Any(score => score >= 0.68)
+                && pairScores.All(score => score >= 0.60));
     }
 
     private static bool IsLongThinComponent(PlanRect bounds)
@@ -107,6 +147,43 @@ public static class WallPlacementContextGuards
         var evidence = wall.Evidence.Concat(assessment.Evidence).ToArray();
         return evidence.Any(item => item.Contains("parallel wall-face pair", StringComparison.OrdinalIgnoreCase))
             && evidence.Any(item => item.Contains("strong double-edge wall body", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool HasStructuralEndpointSupportEvidence(WallEvidenceWallAssessment assessment) =>
+        assessment.Evidence
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Any(item =>
+                item.Contains("endpoint supported by structural context", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("endpoints supported by structural context", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("structural graph support", StringComparison.OrdinalIgnoreCase));
+
+    private static double? TryReadPairScore(string evidence)
+    {
+        const string Prefix = "pair score ";
+        var index = evidence.IndexOf(Prefix, StringComparison.OrdinalIgnoreCase);
+        if (index < 0)
+        {
+            return null;
+        }
+
+        var start = index + Prefix.Length;
+        var end = start;
+        while (end < evidence.Length
+            && (char.IsDigit(evidence[end])
+                || evidence[end] == '.'
+                || evidence[end] == ','))
+        {
+            end++;
+        }
+
+        var valueText = evidence[start..end].Replace(',', '.');
+        return double.TryParse(
+            valueText,
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var value)
+            ? value
+            : null;
     }
 
     private static IReadOnlySet<string> BuildRoomWallIds(IReadOnlyList<RoomRegion> rooms)

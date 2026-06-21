@@ -16,7 +16,11 @@ public sealed class ViewerScriptContractTests
         Assert.Contains("wallHasTopologyImportBlockedRepair(wall)", script);
         Assert.Contains("wallGraphRepairCandidates", script);
         Assert.Contains("topologyimportblocked", script);
-        Assert.Contains("candidate?.wallIds", script);
+        Assert.Contains("function wallGraphRepairCoordinateImpactsWall", script);
+        Assert.Contains("function wallGraphRepairIsEndpointToWallHost", script);
+        Assert.Contains("wallGraphRepairIsEndpointToWallHost(candidate, wallId)", script);
+        Assert.Contains("kind === \"endpointtowall\" && hostWallId === String(wallId)", script);
+        Assert.Contains("wallGraphRepairCoordinateImpactsWall(candidate, wallId)", script);
     }
 
     [Fact]

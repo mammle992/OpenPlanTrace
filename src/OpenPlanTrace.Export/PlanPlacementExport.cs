@@ -208,7 +208,7 @@ public sealed record PlanPlacementExport(
         var lookup = new Dictionary<string, List<WallGraphRepairCandidate>>(StringComparer.Ordinal);
         foreach (var candidate in candidates)
         {
-            foreach (var wallId in WallGraphRepairCandidateWallIds(candidate).Distinct(StringComparer.Ordinal))
+            foreach (var wallId in WallGraphRepairCandidateImpact.CoordinateImpactedWallIds(candidate).Distinct(StringComparer.Ordinal))
             {
                 if (!lookup.TryGetValue(wallId, out var wallCandidates))
                 {
@@ -227,22 +227,6 @@ public sealed record PlanPlacementExport(
                 .OrderBy(candidate => candidate.Id, StringComparer.Ordinal)
                 .ToArray(),
             StringComparer.Ordinal);
-    }
-
-    private static IEnumerable<string> WallGraphRepairCandidateWallIds(WallGraphRepairCandidate candidate)
-    {
-        foreach (var wallId in candidate.WallIds)
-        {
-            if (!string.IsNullOrWhiteSpace(wallId))
-            {
-                yield return wallId;
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(candidate.HostWallId))
-        {
-            yield return candidate.HostWallId;
-        }
     }
 
     private static IReadOnlyDictionary<string, IReadOnlyList<OpeningCandidate>> BuildWallOpeningLookup(
@@ -661,10 +645,12 @@ public sealed record PlacementImportReadinessExport(
             : code;
 
     private static bool ShouldKeepPlacementIssueInformationalForReadiness(string code) =>
-        string.Equals(code, "placement.review.dense_minor_routing_detail", StringComparison.Ordinal);
+        string.Equals(code, "placement.review.dense_minor_routing_detail", StringComparison.Ordinal)
+        || string.Equals(code, "placement.review.rejected_strong_wall_body", StringComparison.Ordinal);
 
     private static bool ShouldIncludePlacementIssueForImportReadiness(PlacementIssueExport issue) =>
-        !string.Equals(issue.Code, "placement.review.dense_minor_routing_detail", StringComparison.Ordinal);
+        !string.Equals(issue.Code, "placement.review.dense_minor_routing_detail", StringComparison.Ordinal)
+        && !string.Equals(issue.Code, "placement.review.rejected_strong_wall_body", StringComparison.Ordinal);
 }
 
 public sealed record PlacementPageSummaryExport(
@@ -3198,6 +3184,73 @@ public sealed record PlacementIssueExport(
                 });
         }
 
+        var componentByWallId = BuildComponentLookup(result.WallGraph.Components);
+        foreach (var entry in result.WallEvidenceMap.WallAssessments
+                     .OrderByDescending(assessment => assessment.Confidence.Value)
+                     .ThenBy(assessment => assessment.WallId, StringComparer.Ordinal)
+                     .Select((assessment, index) => new { Assessment = assessment, Index = index }))
+        {
+            var assessment = entry.Assessment;
+            if (!wallsById.TryGetValue(assessment.WallId, out var wall))
+            {
+                continue;
+            }
+
+            componentByWallId.TryGetValue(assessment.WallId, out var component);
+            if (!IsRejectedStrongWallBody(assessment, wall, component))
+            {
+                continue;
+            }
+
+            var sourcePrimitiveIds = assessment.SourcePrimitiveIds
+                .Concat(wall.SourcePrimitiveIds)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            var scale = ResolveMillimetersPerDrawingUnit(result.Calibration, wall.MeasurementScaleGroupId);
+            var score = assessment.ScoreBreakdown;
+            var componentEvidence = component?.Evidence ?? Array.Empty<string>();
+
+            yield return new PlacementIssueExport(
+                "placement.review.rejected_strong_wall_body",
+                DiagnosticSeverity.Info.ToString(),
+                "Wall Evidence V2 rejected a strong wall-body candidate as non-structural detail.",
+                assessment.PageNumber,
+                new[] { assessment.PageNumber },
+                assessment.WallId,
+                RectExport.From(assessment.Bounds),
+                ScaleRect(assessment.Bounds, scale),
+                ClampRatio(assessment.Confidence.Value),
+                "Review this candidate against the source plan before deciding whether it is detail linework or a missed structural wall.",
+                sourcePrimitiveIds,
+                ExportSourceHelpers.SourceLayers(sourcePrimitiveIds, sourceLookup),
+                BuildIssueEvidence(
+                    assessment.Evidence
+                        .Concat(componentEvidence)
+                        .Concat(score.PositiveEvidence.Select(evidence => $"positive: {evidence}"))
+                        .Concat(score.NegativeEvidence.Select(evidence => $"negative: {evidence}"))),
+                new Dictionary<string, string>
+                {
+                    ["detector"] = "wallEvidence",
+                    ["wallId"] = assessment.WallId,
+                    ["category"] = assessment.Category.ToString(),
+                    ["decision"] = assessment.Decision.ToString(),
+                    ["placementReady"] = assessment.PlacementReady.ToString(CultureInfo.InvariantCulture),
+                    ["requiresReview"] = assessment.RequiresReview.ToString(CultureInfo.InvariantCulture),
+                    ["rejectedAsNoise"] = assessment.RejectedAsNoise.ToString(CultureInfo.InvariantCulture),
+                    ["reviewQueueRank"] = (entry.Index + 1).ToString(CultureInfo.InvariantCulture),
+                    ["componentId"] = component?.Id ?? string.Empty,
+                    ["componentKind"] = component?.Kind.ToString() ?? string.Empty,
+                    ["componentExcludedFromStructuralTopology"] = (component?.ExcludedFromStructuralTopology == true).ToString(CultureInfo.InvariantCulture),
+                    ["positiveScore"] = score.PositiveScore.ToString("0.###", CultureInfo.InvariantCulture),
+                    ["negativeScore"] = score.NegativeScore.ToString("0.###", CultureInfo.InvariantCulture),
+                    ["decisionScore"] = score.DecisionScore.ToString("0.###", CultureInfo.InvariantCulture),
+                    ["pairSupportScore"] = score.PairSupportScore.ToString("0.###", CultureInfo.InvariantCulture),
+                    ["structuralSupportScore"] = score.StructuralSupportScore.ToString("0.###", CultureInfo.InvariantCulture),
+                    ["noisePenalty"] = score.NoisePenalty.ToString("0.###", CultureInfo.InvariantCulture)
+                });
+        }
+
         foreach (var pattern in PlanRoutingLayerBuilder.DetectDenseMinorRoutingDetailPatterns(result)
                      .OrderBy(pattern => pattern.PageNumber)
                      .ThenBy(pattern => pattern.Id, StringComparer.Ordinal))
@@ -3413,6 +3466,36 @@ public sealed record PlacementIssueExport(
             .Where(item => !string.IsNullOrWhiteSpace(item))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
+
+    private static IReadOnlyDictionary<string, WallGraphComponent> BuildComponentLookup(
+        IReadOnlyList<WallGraphComponent> components)
+    {
+        var result = new Dictionary<string, WallGraphComponent>(StringComparer.Ordinal);
+        foreach (var component in components)
+        {
+            foreach (var wallId in component.WallIds)
+            {
+                if (!string.IsNullOrWhiteSpace(wallId))
+                {
+                    result[wallId] = component;
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static bool IsRejectedStrongWallBody(
+        WallEvidenceWallAssessment assessment,
+        WallSegment wall,
+        WallGraphComponent? component) =>
+        (assessment.RejectedAsNoise || assessment.Decision == WallEvidenceDecision.Reject)
+        && component?.Kind == WallGraphComponentKind.ObjectLikeIsland
+        && wall.DrawingLength >= 60
+        && assessment.Category is WallEvidenceCategory.StrongWallBody or WallEvidenceCategory.ObjectOrFixtureDetail
+        && assessment.Evidence.Any(evidence =>
+            evidence.Contains("strong double-edge wall body", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("parallel wall-face pair", StringComparison.OrdinalIgnoreCase));
 
     private static string RecommendedActionForQualityIssue(string code) =>
         code switch
