@@ -1291,6 +1291,108 @@ public sealed class BenchmarkComparisonTests
     }
 
     [Fact]
+    public void Compare_DetectsWallPlacementRegressionAndImprovementSignals()
+    {
+        var baseline = BenchmarkRunResult.Create(
+            "baseline",
+            new[]
+            {
+                Case(
+                    "medium-plan",
+                    passed: true,
+                    failedAssertions: 0,
+                    wallPlacement: WallPlacement(
+                        readyWalls: 28,
+                        reviewWalls: 8,
+                        isolatedFragments: 2,
+                        blockedRepairs: 0,
+                        highSeverityRepairs: 0)),
+                Case(
+                    "wall-recovery",
+                    passed: true,
+                    failedAssertions: 0,
+                    wallPlacement: WallPlacement(
+                        readyWalls: 10,
+                        reviewWalls: 12,
+                        isolatedFragments: 7,
+                        blockedRepairs: 2,
+                        highSeverityRepairs: 2))
+            });
+        var candidate = BenchmarkRunResult.Create(
+            "candidate",
+            new[]
+            {
+                Case(
+                    "medium-plan",
+                    passed: true,
+                    failedAssertions: 0,
+                    wallPlacement: WallPlacement(
+                        readyWalls: 24,
+                        reviewWalls: 15,
+                        isolatedFragments: 7,
+                        blockedRepairs: 2,
+                        highSeverityRepairs: 1)),
+                Case(
+                    "wall-recovery",
+                    passed: true,
+                    failedAssertions: 0,
+                    wallPlacement: WallPlacement(
+                        readyWalls: 14,
+                        reviewWalls: 5,
+                        isolatedFragments: 2,
+                        blockedRepairs: 0,
+                        highSeverityRepairs: 0))
+            });
+
+        var comparison = BenchmarkComparisonResult.Compare(
+            baseline,
+            candidate,
+            new BenchmarkComparisonOptions
+            {
+                WallPlacementReadyWallRegressionMinimumDelta = 1,
+                WallPlacementReviewWallRegressionMinimumDelta = 1,
+                WallPlacementFragmentRegressionMinimumDelta = 1,
+                WallPlacementRepairRegressionMinimumDelta = 1
+            });
+
+        Assert.False(comparison.Passed);
+        Assert.Contains(comparison.Signals, signal =>
+            signal.FixtureId == "medium-plan"
+            && signal.Code == "wall_placement.ready_walls"
+            && signal.Severity == BenchmarkComparisonSignalSeverity.Regression);
+        Assert.Contains(comparison.Signals, signal =>
+            signal.FixtureId == "medium-plan"
+            && signal.Code == "wall_placement.review_walls"
+            && signal.Severity == BenchmarkComparisonSignalSeverity.Regression);
+        Assert.Contains(comparison.Signals, signal =>
+            signal.FixtureId == "medium-plan"
+            && signal.Code == "wall_placement.isolated_fragments"
+            && signal.Severity == BenchmarkComparisonSignalSeverity.Regression);
+        Assert.Contains(comparison.Signals, signal =>
+            signal.FixtureId == "medium-plan"
+            && signal.Code == "wall_placement.topology_blocked_repairs"
+            && signal.Severity == BenchmarkComparisonSignalSeverity.Regression);
+        Assert.Contains(comparison.Signals, signal =>
+            signal.FixtureId == "wall-recovery"
+            && signal.Code == "wall_placement.ready_walls"
+            && signal.Severity == BenchmarkComparisonSignalSeverity.Improvement);
+        Assert.Contains(comparison.Signals, signal =>
+            signal.FixtureId == "wall-recovery"
+            && signal.Code == "wall_placement.review_walls"
+            && signal.Severity == BenchmarkComparisonSignalSeverity.Improvement);
+
+        var mediumCase = comparison.Cases.Single(item => item.FixtureId == "medium-plan");
+        Assert.Equal(-4, Assert.Single(mediumCase.CountDeltas, delta => delta.Name == "wallPlacement.placementReadyWallCount").Delta);
+        Assert.Equal(5, Assert.Single(mediumCase.CountDeltas, delta => delta.Name == "wallPlacement.isolatedFragmentComponentCount").Delta);
+
+        var markdown = BenchmarkComparisonMarkdownReport.Create(comparison);
+        Assert.Contains("## Wall Placement", markdown);
+        Assert.Contains("wall_placement.ready_walls", markdown);
+        Assert.Contains("wallPlacement.placementReadyWallCount", markdown);
+        Assert.Contains("| -4 |", markdown);
+    }
+
+    [Fact]
     public void Compare_DetectsDetectorMetricRegressionAndImprovementSignals()
     {
         var baseline = BenchmarkRunResult.Create(
@@ -1609,6 +1711,7 @@ public sealed class BenchmarkComparisonTests
         double? measurementMedianScale = null,
         double? measurementSpread = null,
         double measurementConfidence = 0,
+        BenchmarkWallPlacementSummary? wallPlacement = null,
         IReadOnlyList<BenchmarkDetectorMetrics>? metrics = null,
         PlanImportReadiness? importReadiness = null,
         ScanReviewQueueSummary? scanReviewQueue = null,
@@ -1661,6 +1764,7 @@ public sealed class BenchmarkComparisonTests
         {
             Metrics = metrics ?? Array.Empty<BenchmarkDetectorMetrics>(),
             ImportReadiness = importReadiness ?? Readiness(walls, rooms, measurementOutliers),
+            WallPlacement = wallPlacement ?? WallPlacement(readyWalls: walls, structuralComponents: Math.Min(1, walls), topologyEdges: walls),
             ScanReviewQueue = scanReviewQueue ?? ScanReviewQueueSummary.Empty,
             Stages = stages ?? Array.Empty<BenchmarkStageSummary>(),
             ArtifactInventory = artifactInventory ?? Array.Empty<PipelineArtifactSnapshot>(),
@@ -1928,6 +2032,54 @@ public sealed class BenchmarkComparisonTests
                 : new[] { geometryReady ? "placement.measurement_outliers.require_review" : "placement.import.low_coordinate_ready_ratio" },
             new[] { metricReady ? "Synthetic import-ready fixture." : "Synthetic import readiness requires review." },
             new[] { $"synthetic import readiness {grade}" });
+    }
+
+    private static BenchmarkWallPlacementSummary WallPlacement(
+        int readyWalls,
+        int reviewWalls = 0,
+        int rejectedNoiseWalls = 0,
+        int acceptedWalls = 0,
+        int reviewDecisionWalls = 0,
+        int rejectedWalls = 0,
+        int structuralComponents = 1,
+        int mainStructuralComponents = 1,
+        int secondaryStructuralComponents = 0,
+        int objectLikeComponents = 0,
+        int isolatedFragments = 0,
+        int topologyEdges = 0,
+        int repairCandidates = 0,
+        int blockedRepairs = 0,
+        int endpointGapRepairs = 0,
+        int endpointOverrunRepairs = 0,
+        int highSeverityRepairs = 0)
+    {
+        var totalWalls = Math.Max(readyWalls + reviewWalls + rejectedNoiseWalls, readyWalls);
+        var acceptedCount = acceptedWalls == 0 ? readyWalls : acceptedWalls;
+        var reviewDecisionCount = reviewDecisionWalls == 0 ? reviewWalls : reviewDecisionWalls;
+        var rejectedCount = rejectedWalls == 0 ? rejectedNoiseWalls : rejectedWalls;
+        var repairCount = repairCandidates == 0
+            ? blockedRepairs + endpointGapRepairs + endpointOverrunRepairs
+            : repairCandidates;
+
+        return new BenchmarkWallPlacementSummary(
+            totalWalls,
+            readyWalls,
+            reviewWalls,
+            rejectedNoiseWalls,
+            acceptedCount,
+            reviewDecisionCount,
+            rejectedCount,
+            structuralComponents,
+            mainStructuralComponents,
+            secondaryStructuralComponents,
+            objectLikeComponents,
+            isolatedFragments,
+            topologyEdges,
+            repairCount,
+            blockedRepairs,
+            endpointGapRepairs,
+            endpointOverrunRepairs,
+            highSeverityRepairs);
     }
 
     private static BenchmarkDetectorMetrics Metric(

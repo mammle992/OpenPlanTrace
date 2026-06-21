@@ -660,6 +660,58 @@ public sealed class WallTypeRefinementTests
     }
 
     [Fact]
+    public async Task WallTypeRefinement_KeepsExteriorFragmentedPairWithShellContinuityPlacementReady()
+    {
+        var leftShell = ExteriorShellWall("wall-left-shell", 100, 100, 190, 100);
+        var fragmentedShell = ExteriorShellWall("wall-fragmented-shell-gap", 191, 100, 280, 100) with
+        {
+            Evidence = new[]
+            {
+                "parallel wall-face pair",
+                "pair score 0,642",
+                "first face merged 8 fragments",
+                "second face merged 107 fragments",
+                "layer (unlayered) classified Unknown (0,35)",
+                "layer evidence: no strong layer name or geometry evidence",
+                "wall evidence: strong double-edge wall body"
+            }
+        };
+        var rightShell = ExteriorShellWall("wall-right-shell", 281, 100, 370, 100);
+        var context = CreateContext("keep-exterior-fragmented-shell-continuity");
+        context.Walls.Add(leftShell);
+        context.Walls.Add(fragmentedShell);
+        context.Walls.Add(rightShell);
+        context.WallGraph = GraphFor(leftShell, fragmentedShell, rightShell);
+        context.WallEvidenceMap = EvidenceMapFor(
+            new[] { leftShell, fragmentedShell, rightShell },
+            WallEvidenceCategory.StrongWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            wall => wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var retained = Assert.Single(
+            context.WallEvidenceMap.WallAssessments,
+            assessment => assessment.WallId == fragmentedShell.Id);
+        Assert.True(retained.PlacementReady);
+        Assert.False(retained.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Accept, retained.Decision);
+        Assert.Contains(
+            retained.Evidence,
+            item => item.Contains("exterior shell continuity kept fragmented paired wall placement-ready", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(
+            retained.Evidence,
+            item => item.Contains("demoted from placement-ready", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "walls.architectural_type_refined"
+                && diagnostic.Properties["fragmentedExteriorShellContinuityRetainedWallCount"] == "1"
+                && diagnostic.Properties["fragmentedPairPlacementDemotedWallCount"] == "0");
+    }
+
+    [Fact]
     public async Task WallTypeRefinement_DoesNotPromoteOneSidedRoomReference()
     {
         var wall = new WallSegment(
@@ -705,6 +757,36 @@ public sealed class WallTypeRefinementTests
                 }),
             new ScannerOptions());
 
+    private static WallSegment ExteriorShellWall(string id, double x1, double y1, double x2, double y2) =>
+        new(
+            id,
+            1,
+            new PlanLineSegment(new PlanPoint(x1, y1), new PlanPoint(x2, y2)),
+            7,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Exterior,
+            SourcePrimitiveIds = new[] { $"{id}:face-a", $"{id}:face-b" },
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(new PlanPoint(x1, y1 - 3.5), new PlanPoint(x2, y2 - 3.5)),
+                new PlanLineSegment(new PlanPoint(x1, y1 + 3.5), new PlanPoint(x2, y2 + 3.5)),
+                7,
+                OverlapRatio: 1,
+                Score: 0.9,
+                FirstFaceFragmentCount: 1,
+                SecondFaceFragmentCount: 1,
+                FirstFaceSourcePrimitiveIds: new[] { $"{id}:face-a" },
+                SecondFaceSourcePrimitiveIds: new[] { $"{id}:face-b" }),
+            Evidence = new[]
+            {
+                "parallel wall-face pair",
+                "pair score 0,9",
+                "layer (unlayered) classified Unknown (0,35)",
+                "wall evidence: strong double-edge wall body"
+            }
+        };
+
     private static WallGraph GraphFor(WallSegment wall) =>
         new(
             Array.Empty<WallNode>(),
@@ -724,6 +806,35 @@ public sealed class WallTypeRefinementTests
                 Confidence.High,
                 Array.Empty<string>())
             });
+
+    private static WallGraph GraphFor(params WallSegment[] walls) =>
+        new(
+            Array.Empty<WallNode>(),
+            Array.Empty<WallEdge>(),
+            new[]
+            {
+                new WallGraphComponent(
+                    "component-main",
+                    1,
+                    WallGraphComponentKind.MainStructural,
+                    UnionBounds(walls),
+                    walls.Select(wall => wall.Id).ToArray(),
+                    Array.Empty<string>(),
+                    Array.Empty<string>(),
+                    walls.SelectMany(wall => wall.SourcePrimitiveIds).ToArray(),
+                    walls.Sum(wall => wall.DrawingLength),
+                    Confidence.High,
+                    Array.Empty<string>())
+            });
+
+    private static PlanRect UnionBounds(IReadOnlyList<WallSegment> walls)
+    {
+        var minX = walls.Min(wall => wall.Bounds.X);
+        var minY = walls.Min(wall => wall.Bounds.Y);
+        var maxX = walls.Max(wall => wall.Bounds.Right);
+        var maxY = walls.Max(wall => wall.Bounds.Bottom);
+        return new PlanRect(minX, minY, maxX - minX, maxY - minY);
+    }
 
     private static WallGraph SupportedEndpointGraphFor(WallSegment wall) =>
         new(
@@ -804,6 +915,37 @@ public sealed class WallTypeRefinementTests
         {
             UseKind = useKind
         };
+
+    private static WallEvidenceMap EvidenceMapFor(
+        IReadOnlyList<WallSegment> walls,
+        WallEvidenceCategory category,
+        bool placementReady,
+        bool requiresReview,
+        bool rejectedAsNoise,
+        Func<WallSegment, IReadOnlyList<string>> evidence) =>
+        new(
+            Array.Empty<WallEvidenceSegment>(),
+            Array.Empty<WallEvidenceBand>(),
+            walls
+                .Select(wall => new WallEvidenceWallAssessment(
+                    wall.Id,
+                    wall.PageNumber,
+                    wall.Bounds,
+                    category,
+                    Confidence.High,
+                    placementReady,
+                    requiresReview,
+                    rejectedAsNoise,
+                    wall.SourcePrimitiveIds,
+                    evidence(wall))
+                {
+                    Decision = placementReady
+                        ? WallEvidenceDecision.Accept
+                        : rejectedAsNoise
+                            ? WallEvidenceDecision.Reject
+                            : WallEvidenceDecision.Review
+                })
+                .ToArray());
 
     private static WallEvidenceMap EvidenceMapFor(
         WallSegment wall,

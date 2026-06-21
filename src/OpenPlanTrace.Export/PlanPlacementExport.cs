@@ -87,6 +87,9 @@ public sealed record PlanPlacementExport(
         var wallTopologySpans = WallTopologySpanVisibility
             .BuildCleanPlacementTopologySpans(result)
             .ToArray();
+        var wallGraphTopologySpans = rawWallTopologySpans
+            .Concat(wallTopologySpans)
+            .ToArray();
         var wallTopologySpansByWallId = wallTopologySpans
             .GroupBy(span => span.WallId, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
@@ -125,7 +128,7 @@ public sealed record PlanPlacementExport(
             .ToArray();
         var placementWallGraph = PlacementWallGraphExport.From(
             result.WallGraph,
-            rawWallTopologySpans,
+            wallGraphTopologySpans,
             result.Calibration,
             sourceLookup,
             wallComponentLookup,
@@ -1232,6 +1235,17 @@ public sealed record PlacementWallOmissionExport(
                 "NonStructuralComponent",
                 "Wall-like linework is omitted from clean placement topology because it is an isolated fragment.",
                 "Keep it for opening/object review, but do not import it as a structural wall without correction.");
+        }
+
+        if (ContainsEvidence(
+            evidence,
+            WallPlacementContextGuards.SecondaryStructuralObjectLineworkWithoutRoomBoundarySupportReason))
+        {
+            return new PlacementWallOmissionClassification(
+                "secondary_object_linework_without_room_boundary_support",
+                "SecondaryObjectLineworkReview",
+                "Wall is omitted from clean placement topology because it overlaps detected stair/object linework and is not used by any detected room boundary.",
+                "Review the wall against the source PDF before importing it; it may be stair, fixture, or symbol linework rather than a true wall.");
         }
 
         if (ContainsEvidence(
@@ -2437,9 +2451,7 @@ public sealed record PlacementWallGraphExport(
         IReadOnlyDictionary<string, WallGraphComponent> wallComponentLookup,
         IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceAssessments)
     {
-        var spansByEdgeId = topologySpans
-            .GroupBy(span => span.Id, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var spansByEdgeId = BuildTopologySpanLookupByWallGraphEdgeId(topologySpans);
         var nodes = graph.Nodes
             .Select(node => PlacementWallGraphNodeExport.From(node, calibration))
             .ToArray();
@@ -2470,6 +2482,36 @@ public sealed record PlacementWallGraphExport(
             components,
             repairCandidateIds,
             evidence);
+    }
+
+    private static IReadOnlyDictionary<string, WallGraphTopologySpan> BuildTopologySpanLookupByWallGraphEdgeId(
+        IReadOnlyList<WallGraphTopologySpan> topologySpans)
+    {
+        var spansByEdgeId = new Dictionary<string, WallGraphTopologySpan>(StringComparer.Ordinal);
+        foreach (var span in topologySpans)
+        {
+            AddSpan(span.Id, span);
+            foreach (var sourceEdgeId in span.SourceWallGraphEdgeIds)
+            {
+                AddSpan(sourceEdgeId, span);
+            }
+        }
+
+        return spansByEdgeId;
+
+        void AddSpan(string edgeId, WallGraphTopologySpan span)
+        {
+            if (string.IsNullOrWhiteSpace(edgeId))
+            {
+                return;
+            }
+
+            if (!spansByEdgeId.TryGetValue(edgeId, out var existing)
+                || span.DrawingLength > existing.DrawingLength)
+            {
+                spansByEdgeId[edgeId] = span;
+            }
+        }
     }
 }
 

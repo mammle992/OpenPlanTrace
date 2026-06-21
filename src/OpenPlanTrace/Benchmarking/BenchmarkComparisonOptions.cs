@@ -26,6 +26,14 @@ public sealed record BenchmarkComparisonOptions
 
     public double ImportReadinessScoreRegressionThreshold { get; init; } = 0.03;
 
+    public int WallPlacementReadyWallRegressionMinimumDelta { get; init; } = 1;
+
+    public int WallPlacementReviewWallRegressionMinimumDelta { get; init; } = 3;
+
+    public int WallPlacementFragmentRegressionMinimumDelta { get; init; } = 3;
+
+    public int WallPlacementRepairRegressionMinimumDelta { get; init; } = 1;
+
     public int ScanReviewQueueItemRegressionMinimumDelta { get; init; } = 10;
 
     public double ScanReviewQueueItemRegressionRatio { get; init; } = 1.25;

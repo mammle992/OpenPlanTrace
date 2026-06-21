@@ -2840,6 +2840,33 @@ public sealed class ExportTests
         Assert.Equal(
             new[] { "fragmented-short-edge-a", "fragmented-short-edge-b", "fragmented-short-edge-c" },
             JsonStrings(span.GetProperty("sourceWallGraphEdgeIds")));
+
+        var graphEdges = document.RootElement
+            .GetProperty("wallGraph")
+            .GetProperty("edges")
+            .EnumerateArray()
+            .Where(item => item.GetProperty("wallId").GetString() == "fragmented-short-wall-return")
+            .ToArray();
+        Assert.Equal(3, graphEdges.Length);
+        Assert.All(graphEdges, edge =>
+        {
+            Assert.Equal(JsonValueKind.Object, edge.GetProperty("centerLine").ValueKind);
+            Assert.True(edge.GetProperty("drawingLength").GetDouble() > 0);
+            Assert.Contains(
+                "clean placement run merged 3 topology span(s)",
+                edge.GetProperty("evidence")
+                    .EnumerateArray()
+                    .Select(item => item.GetString())
+                    .Where(item => !string.IsNullOrWhiteSpace(item)));
+        });
+
+        var fallbackGraphEdge = document.RootElement
+            .GetProperty("wallGraph")
+            .GetProperty("edges")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == "fragmented-short-anchor-edge");
+        Assert.Equal(JsonValueKind.Object, fallbackGraphEdge.GetProperty("centerLine").ValueKind);
+        Assert.True(fallbackGraphEdge.GetProperty("drawingLength").GetDouble() > 0);
     }
 
     [Fact]

@@ -19,6 +19,10 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         var supportedTopologyEndpointCountsByWallId = BuildSupportedTopologyEndpointCounts(context.WallGraph);
         var evidenceByWallId = BuildEvidenceByWallId(context.WallEvidenceMap);
         var rejectedEvidenceByWallId = BuildRejectedEvidenceByWallId(context.WallEvidenceMap);
+        var exteriorContinuitySupportedWallIds = BuildExteriorContinuitySupportedWallIds(
+            context.Walls,
+            evidenceByWallId,
+            context.Options);
         var roomsById = context.Rooms
             .Where(room => !string.IsNullOrWhiteSpace(room.Id))
             .GroupBy(room => room.Id, StringComparer.Ordinal)
@@ -34,6 +38,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         var rejectedEvidenceProtected = 0;
         var roomConfirmedPlacementPromoted = 0;
         var fragmentedPairPlacementDemoted = 0;
+        var fragmentedExteriorShellContinuityRetained = 0;
         var updatedAssessmentsByWallId = new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal);
 
         for (var index = 0; index < context.Walls.Count; index++)
@@ -111,6 +116,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             }
 
             evidenceByWallId.TryGetValue(wall.Id, out var assessment);
+            var hasExteriorShellContinuitySupport = exteriorContinuitySupportedWallIds.Contains(wall.Id);
             if (assessment is not null
                 && TryDemoteFragmentedPlacementReadyWallEvidence(
                     updatedWall,
@@ -123,6 +129,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
                     supportedTopologyEndpointCountsByWallId.TryGetValue(wall.Id, out var demotionSupportedEndpointCount)
                         ? demotionSupportedEndpointCount
                         : 0,
+                    hasExteriorShellContinuitySupport,
                     out var demotedAssessment,
                     out var demotionEvidence))
             {
@@ -134,6 +141,27 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
                 fragmentedPairPlacementDemoted++;
                 evidenceUpdated++;
                 assessment = demotedAssessment;
+            }
+            else if (assessment is not null
+                && hasExteriorShellContinuitySupport
+                && IsRetainedByExteriorShellContinuity(updatedWall, assessment, context.Options))
+            {
+                var continuityEvidence = new[]
+                {
+                    "wall evidence: exterior shell continuity kept fragmented paired wall placement-ready between trusted collinear exterior wall segments"
+                };
+                var retainedAssessment = assessment with
+                {
+                    Evidence = AppendEvidence(assessment.Evidence, continuityEvidence)
+                };
+                updatedAssessmentsByWallId[wall.Id] = retainedAssessment;
+                updatedWall = updatedWall with
+                {
+                    Evidence = AppendEvidence(updatedWall.Evidence, continuityEvidence)
+                };
+                fragmentedExteriorShellContinuityRetained++;
+                evidenceUpdated++;
+                assessment = retainedAssessment;
             }
 
             if (assessment is not null
@@ -188,7 +216,8 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             oneSidedRoomEvidence,
             rejectedEvidenceProtected,
             roomConfirmedPlacementPromoted,
-            fragmentedPairPlacementDemoted);
+            fragmentedPairPlacementDemoted,
+            fragmentedExteriorShellContinuityRetained);
         return ValueTask.CompletedTask;
     }
 
@@ -269,6 +298,120 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
 
             nodeIds.Add(nodeId);
         }
+    }
+
+    private static HashSet<string> BuildExteriorContinuitySupportedWallIds(
+        IReadOnlyList<WallSegment> walls,
+        IReadOnlyDictionary<string, WallEvidenceWallAssessment> evidenceByWallId,
+        ScannerOptions options)
+    {
+        var trustedExteriorWalls = walls
+            .Where(wall => wall.WallType == WallType.Exterior)
+            .Where(wall => evidenceByWallId.TryGetValue(wall.Id, out var assessment)
+                && assessment.PlacementReady
+                && !assessment.RequiresReview
+                && assessment.Decision == WallEvidenceDecision.Accept)
+            .ToArray();
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var wall in trustedExteriorWalls)
+        {
+            if (wall.DetectionKind != WallDetectionKind.ParallelLinePair
+                || wall.PairEvidence is null
+                || !IsSevereFragmentedPairDemotionCandidate(
+                    wall,
+                    wall.Evidence.Concat(evidenceByWallId[wall.Id].Evidence),
+                    options))
+            {
+                continue;
+            }
+
+            if (HasTrustedExteriorShellContinuity(wall, trustedExteriorWalls, options))
+            {
+                result.Add(wall.Id);
+            }
+        }
+
+        return result;
+    }
+
+    private static bool HasTrustedExteriorShellContinuity(
+        WallSegment wall,
+        IReadOnlyList<WallSegment> trustedExteriorWalls,
+        ScannerOptions options)
+    {
+        if (!TryResolveAxisInterval(wall.CenterLine, out var orientation, out var coordinate, out var start, out var end))
+        {
+            return false;
+        }
+
+        var coordinateTolerance = Math.Max(options.WallSnapTolerance * 3.0, options.DefaultWallThickness * 1.5);
+        var gapTolerance = Math.Max(options.MaxOpeningGap * 0.25, options.DefaultWallThickness * 3.0);
+        var hasBeforeSupport = false;
+        var hasAfterSupport = false;
+        foreach (var other in trustedExteriorWalls)
+        {
+            if (string.Equals(other.Id, wall.Id, StringComparison.Ordinal)
+                || other.PageNumber != wall.PageNumber
+                || !TryResolveAxisInterval(other.CenterLine, out var otherOrientation, out var otherCoordinate, out var otherStart, out var otherEnd)
+                || otherOrientation != orientation
+                || Math.Abs(otherCoordinate - coordinate) > coordinateTolerance)
+            {
+                continue;
+            }
+
+            var beforeGap = start - otherEnd;
+            if (beforeGap >= -coordinateTolerance && beforeGap <= gapTolerance)
+            {
+                hasBeforeSupport = true;
+            }
+
+            var afterGap = otherStart - end;
+            if (afterGap >= -coordinateTolerance && afterGap <= gapTolerance)
+            {
+                hasAfterSupport = true;
+            }
+
+            if (hasBeforeSupport && hasAfterSupport)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryResolveAxisInterval(
+        PlanLineSegment line,
+        out AxisOrientation orientation,
+        out double coordinate,
+        out double start,
+        out double end)
+    {
+        var dx = Math.Abs(line.End.X - line.Start.X);
+        var dy = Math.Abs(line.End.Y - line.Start.Y);
+        if (dx >= dy && dy <= Math.Max(1.0, dx * 0.02))
+        {
+            orientation = AxisOrientation.Horizontal;
+            coordinate = (line.Start.Y + line.End.Y) / 2.0;
+            start = Math.Min(line.Start.X, line.End.X);
+            end = Math.Max(line.Start.X, line.End.X);
+            return true;
+        }
+
+        if (dy > dx && dx <= Math.Max(1.0, dy * 0.02))
+        {
+            orientation = AxisOrientation.Vertical;
+            coordinate = (line.Start.X + line.End.X) / 2.0;
+            start = Math.Min(line.Start.Y, line.End.Y);
+            end = Math.Max(line.Start.Y, line.End.Y);
+            return true;
+        }
+
+        orientation = AxisOrientation.Unknown;
+        coordinate = 0;
+        start = 0;
+        end = 0;
+        return false;
     }
 
     private static Dictionary<string, WallEvidenceWallAssessment> BuildRejectedEvidenceByWallId(WallEvidenceMap evidenceMap) =>
@@ -494,6 +637,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         bool isSharedByRoomAdjacency,
         RoomSideEvidence sideEvidence,
         int supportedTopologyEndpointCount,
+        bool hasExteriorShellContinuitySupport,
         out WallEvidenceWallAssessment demotedAssessment,
         out IReadOnlyList<string> demotionEvidence)
     {
@@ -525,17 +669,21 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             && wall.DrawingLength <= maxTrustedLength
             && faceFragments.MaxFaceFragmentCount >= 40
             && faceFragments.TotalFaceFragmentCount >= 50;
+        var hasPlacementContextSupport = HasPlacementContextSupport(
+            component,
+            roomReferenceCount,
+            isSharedByRoomAdjacency,
+            sideEvidence,
+            supportedTopologyEndpointCount)
+            || hasExteriorShellContinuitySupport;
         var unsupportedSeverelyFragmentedPair =
             pairScore < 0.95
             && wall.DrawingLength <= Math.Max(180, options.MinWallLength * 7.5)
             && faceFragments.MaxFaceFragmentCount >= 70
             && faceFragments.TotalFaceFragmentCount >= 80
-            && !HasPlacementContextSupport(
-                component,
-                roomReferenceCount,
-                isSharedByRoomAdjacency,
-                sideEvidence,
-                supportedTopologyEndpointCount);
+            && !hasPlacementContextSupport;
+        shortLowScoreFragmentedPair = shortLowScoreFragmentedPair
+            && !hasExteriorShellContinuitySupport;
         if (!shortLowScoreFragmentedPair && !unsupportedSeverelyFragmentedPair)
         {
             return false;
@@ -559,6 +707,26 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             Evidence = AppendEvidence(assessment.Evidence, demotionEvidence)
         };
         return true;
+    }
+
+    private static bool IsRetainedByExteriorShellContinuity(
+        WallSegment wall,
+        WallEvidenceWallAssessment assessment,
+        ScannerOptions options)
+    {
+        if (!assessment.PlacementReady
+            || assessment.RequiresReview
+            || assessment.Decision != WallEvidenceDecision.Accept
+            || wall.WallType != WallType.Exterior
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair)
+        {
+            return false;
+        }
+
+        return IsSevereFragmentedPairDemotionCandidate(
+            wall,
+            wall.Evidence.Concat(assessment.Evidence),
+            options);
     }
 
     private static bool HasPlacementContextSupport(
@@ -805,6 +973,34 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         evidence.Any(item => item.Contains("layer (unlayered) classified", StringComparison.OrdinalIgnoreCase)
             || item.Contains("layer evidence: no strong layer", StringComparison.OrdinalIgnoreCase));
 
+    private static bool IsFragmentedPairEvidence(IEnumerable<string> evidence) =>
+        evidence.Any(item => item.Contains("face merged", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("fragmented-face evidence", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsSevereFragmentedPairDemotionCandidate(
+        WallSegment wall,
+        IEnumerable<string> evidence,
+        ScannerOptions options)
+    {
+        var evidenceArray = evidence.ToArray();
+        if (!IsFragmentedPairEvidence(evidenceArray)
+            || !TryReadPairScore(evidenceArray, out var pairScore)
+            || !TryReadFaceFragmentCounts(evidenceArray, out var faceFragments))
+        {
+            return false;
+        }
+
+        var maxTrustedLength = Math.Max(90, options.MinWallLength * 4.0);
+        return (pairScore < 0.68
+            && wall.DrawingLength <= maxTrustedLength
+            && faceFragments.MaxFaceFragmentCount >= 40
+            && faceFragments.TotalFaceFragmentCount >= 50)
+            || (pairScore < 0.95
+            && wall.DrawingLength <= Math.Max(180, options.MinWallLength * 7.5)
+            && faceFragments.MaxFaceFragmentCount >= 70
+            && faceFragments.TotalFaceFragmentCount >= 80);
+    }
+
     private static bool HasRoomConfirmedPromotionBlocker(
         WallSegment wall,
         WallEvidenceWallAssessment assessment) =>
@@ -966,7 +1162,8 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         int oneSidedRoomEvidence,
         int rejectedEvidenceProtected,
         int roomConfirmedPlacementPromoted,
-        int fragmentedPairPlacementDemoted)
+        int fragmentedPairPlacementDemoted,
+        int fragmentedExteriorShellContinuityRetained)
     {
         var exterior = context.Walls.Count(wall => wall.WallType == WallType.Exterior);
         var interior = context.Walls.Count(wall => wall.WallType == WallType.Interior);
@@ -989,6 +1186,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
                 ["rejectedEvidenceProtectedWallCount"] = rejectedEvidenceProtected.ToString(),
                 ["roomConfirmedPlacementPromotedWallCount"] = roomConfirmedPlacementPromoted.ToString(),
                 ["fragmentedPairPlacementDemotedWallCount"] = fragmentedPairPlacementDemoted.ToString(),
+                ["fragmentedExteriorShellContinuityRetainedWallCount"] = fragmentedExteriorShellContinuityRetained.ToString(),
                 ["exteriorWallCount"] = exterior.ToString(),
                 ["interiorWallCount"] = interior.ToString(),
                 ["unknownWallCount"] = unknown.ToString()
@@ -1015,6 +1213,13 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         public int MaxFaceFragmentCount => Math.Max(FirstFaceFragmentCount, SecondFaceFragmentCount);
 
         public int TotalFaceFragmentCount => FirstFaceFragmentCount + SecondFaceFragmentCount;
+    }
+
+    private enum AxisOrientation
+    {
+        Unknown,
+        Horizontal,
+        Vertical
     }
 
     private sealed record WallTypeRefinement(WallType WallType, string Evidence);

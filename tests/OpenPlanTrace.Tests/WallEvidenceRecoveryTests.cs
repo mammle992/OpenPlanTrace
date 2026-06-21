@@ -465,6 +465,72 @@ public sealed class WallEvidenceRecoveryTests
     }
 
     [Fact]
+    public async Task WallEvidenceRefinement_KeepsSparseUnlayeredFragmentMergedWallsReviewOnlyEvenWithEndpointSupport()
+    {
+        var document = new PlanDocument(
+            "wall-evidence-sparse-fragment-merged-review",
+            new[]
+            {
+                new PlanPage(1, new PlanSize(340, 240), Array.Empty<PlanPrimitive>())
+            });
+        var context = new ScanContext(
+            document,
+            new ScannerOptions
+            {
+                DefaultWallThickness = 4,
+                MinWallLength = 36
+            });
+        var fragmentWall = new WallSegment(
+            "wall-sparse-fragment-detail",
+            1,
+            new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(230, 100)),
+            4,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.FragmentMerged,
+            WallType = WallType.Interior,
+            FragmentEvidence = new WallFragmentEvidence(
+                0,
+                0,
+                2,
+                0,
+                0,
+                RequiresGeometryReview: false,
+                new[] { "sparse fragment-merged detail-like wall" }),
+            SourcePrimitiveIds = new[] { "fixture-fragment-a", "fixture-fragment-b" },
+            Evidence = new[] { "merged collinear wall fragments" }
+        };
+        context.WallCandidates.Add(fragmentWall);
+        context.WallCandidates.Add(PairedWall(
+            "support-left",
+            new PlanLineSegment(new PlanPoint(100, 50), new PlanPoint(100, 180)),
+            8,
+            0.86,
+            WallType.Interior));
+        context.WallCandidates.Add(PairedWall(
+            "support-right",
+            new PlanLineSegment(new PlanPoint(230, 50), new PlanPoint(230, 180)),
+            8,
+            0.86,
+            WallType.Interior));
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var assessment = Assert.Single(
+            context.WallEvidenceMap.WallAssessments,
+            item => item.WallId == fragmentWall.Id);
+
+        Assert.Equal(WallEvidenceCategory.MediumWallBody, assessment.Category);
+        Assert.Equal(WallEvidenceDecision.Review, assessment.Decision);
+        Assert.False(assessment.PlacementReady);
+        Assert.True(assessment.RequiresReview);
+        Assert.Contains(
+            assessment.Evidence,
+            item => item.Contains("sparse unlayered fragment-merged wall candidate", StringComparison.OrdinalIgnoreCase)
+                && item.Contains("possible fixture/detail linework", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task WallEvidenceRefinement_AcceptsTrustedSupportedUnlayeredFragmentMergedWalls()
     {
         var document = new PlanDocument(

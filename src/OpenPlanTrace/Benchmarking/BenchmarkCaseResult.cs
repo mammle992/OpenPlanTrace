@@ -52,6 +52,9 @@ public sealed record BenchmarkCaseResult(
     public PlanImportReadiness ImportReadiness { get; init; } =
         PlanImportReadiness.Empty;
 
+    public BenchmarkWallPlacementSummary WallPlacement { get; init; } =
+        BenchmarkWallPlacementSummary.Empty;
+
     public ScanReviewQueueSummary ScanReviewQueue { get; init; } =
         ScanReviewQueueSummary.Empty;
 

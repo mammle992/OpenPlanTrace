@@ -6,6 +6,134 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.165] - 2026-06-21
+
+### Improved
+- Placement readiness now blocks secondary structural wall candidates that
+  substantially overlap detected stair/object linework when they are not used
+  by any detected room boundary. These candidates remain in scan evidence and
+  review output, but are no longer exported as exact coordinate-ready wall
+  geometry.
+- Added the placement omission code
+  `secondary_object_linework_without_room_boundary_support` so downstream
+  consumers can tell this apart from ordinary secondary walls that simply lack
+  room-boundary support.
+- Wall-QA omission summaries now label this class as
+  `secondary object linework`.
+
+### Verified
+- A medium-difficulty supplied PDF was rescanned with the wall-QA profile:
+  placement-ready walls changed from `26/118` to `25/118`, omitted/review walls
+  changed from `92` to `93`, and `page:1:wall:100` moved from
+  coordinate-ready to
+  `secondary_object_linework_without_room_boundary_support`.
+- A headless wall-QA screenshot was rendered and reviewed; the stair-area
+  secondary vertical line is no longer visible in the placement-ready wall
+  overlay.
+- Focused placement/export/readiness tests passed with `96` tests.
+- Full test suite passed with `626` tests.
+
+## [0.02.164] - 2026-06-21
+
+### Improved
+- Wall Type Refinement now preserves severe fragmented exterior paired-wall
+  candidates when they are tightly bracketed by trusted collinear
+  placement-ready exterior shell segments. This recovers real exterior wall
+  runs interrupted by window/detail-heavy PDF linework without reopening the
+  broad fragmented-pair noise gate.
+- Retained exterior shell fragments now carry explicit evidence explaining that
+  exterior shell continuity kept them placement-ready.
+- The architectural type diagnostic now reports
+  `fragmentedExteriorShellContinuityRetainedWallCount`.
+
+### Verified
+- A medium-difficulty supplied PDF was rescanned with the wall-QA profile:
+  placement-ready walls changed from `25/118` to `26/118`, omitted/review walls
+  changed from `93` to `92`, fragmented-pair omissions dropped from `2` to `1`,
+  routing items changed from `87` to `89`, and the bottom exterior shell
+  candidate `page:1:wall:22` moved from `fragmented_pair_review_required` to
+  placement-ready.
+- The earlier closet/detail candidate `page:1:wall:162` stayed
+  `wall_evidence_review_required`, so the previous false-positive fix was
+  preserved.
+- Source-render and wall-QA screenshots were reviewed; the lower exterior shell
+  gap is filled while the closet/detail false wall remains absent from the
+  placement-ready overlay.
+- Targeted wall, export, benchmark, and schema tests passed with `252` tests.
+- Full test suite passed with `624` tests.
+
+## [0.02.163] - 2026-06-21
+
+### Improved
+- Wall Evidence V2 now keeps sparse unlayered fragment-merged wall candidates
+  review-only when they are built from only one or two source fragments. This
+  blocks closet, fixture, shelf, and detail linework from exact wall placement
+  even when the line happens to touch real walls at both ends.
+- Added regression coverage for the two-fragment supported-detail case so
+  future wall recovery changes do not silently promote this kind of linework
+  back into placement-ready output.
+
+### Verified
+- A medium-difficulty supplied PDF was rescanned with the wall-QA profile:
+  placement-ready walls changed from `26/118` to `25/118`, omitted/review walls
+  changed from `92` to `93`, graph edges changed from `183` to `182`, and the
+  specific closet/detail wall candidate moved from placement-ready to
+  `wall_evidence_review_required`.
+- The exported scan evidence now explains the decision as sparse unlayered
+  fragment-merged linework that should be reviewed as possible fixture/detail
+  geometry before exact placement.
+- Source-render and wall-QA screenshots were reviewed; the fixture/detail line
+  no longer appears in the placement-ready overlay.
+- Targeted wall evidence, topology, routing, and placement readiness tests
+  passed with `118` tests.
+- Full test suite passed with `623` tests.
+
+## [0.02.162] - 2026-06-21
+
+### Improved
+- Placement wall graph export now combines raw graph topology spans with clean
+  placement topology spans. Clean spans resolve back through
+  `sourceWallGraphEdgeIds`, so merged/split wall runs carry placement-ready
+  centerlines and evidence into `wallGraph.edges` instead of only appearing on
+  per-wall topology spans.
+- Review/debug wall graph edges keep raw fallback geometry when no clean
+  placement span exists, avoiding the bad clean-only behavior where many graph
+  edges became blank in the visualizer and placement JSON.
+- Regression coverage now checks both merged clean-span wall graph edges and
+  raw fallback graph-edge geometry for fragmented short wall returns.
+
+### Verified
+- A medium-difficulty supplied PDF was rescanned with the wall-QA profile and a
+  headless PNG screenshot was reviewed: the random-line visual failure is
+  reduced, while remaining missing/partial interior walls and detail false
+  positives are still visible for the next accuracy pass.
+- The same scan preserved `159/183` wall graph edges with nonzero geometry,
+  kept placement-ready walls at `26/118`, and upgraded `40` graph edges to clean
+  placement-run evidence without hiding raw review geometry.
+- Targeted export, schema, and benchmark tests passed with `167` tests.
+- Full test suite passed with `622` tests.
+
+## [0.02.161] - 2026-06-21
+
+### Improved
+- Benchmark results now include a compact `wallPlacement` summary with
+  placement-ready walls, review/rejected wall counts, structural component
+  counts, isolated fragments, topology edges, and wall graph repair candidates.
+- Benchmark comparisons now emit explicit `wall_placement.*` regression and
+  improvement signals when wall accuracy changes, making bad wall snapping,
+  random fragment growth, and topology-blocking repairs much harder to miss.
+- Benchmark comparison markdown now includes a dedicated Wall Placement table so
+  wall accuracy changes are visible without digging through raw JSON.
+
+### Verified
+- Targeted benchmark comparison, evaluator, and schema tests passed with `102`
+  tests.
+- Golden fixture and documentation example tests passed with `6` tests.
+- Full test suite passed with `622` tests.
+- A geometry tweak for the medium supplied PDF was tested and rejected before
+  this update because it reduced placement-ready wall output; the retained work
+  is the comparison guardrail needed before the next accuracy pass.
+
 ## [0.02.160] - 2026-06-21
 
 ### Improved

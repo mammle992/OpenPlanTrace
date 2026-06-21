@@ -1591,6 +1591,18 @@ public sealed class SchemaContractTests
         Assert.True(caseResultProperties.TryGetProperty("rerunImpacts", out _), "Missing benchmark case rerun impact summary property.");
         Assert.True(caseResultProperties.TryGetProperty("rerunPlans", out _), "Missing benchmark case rerun plan summary property.");
         Assert.True(caseResultProperties.TryGetProperty("pipelineHealth", out _), "Missing benchmark case pipeline health summary property.");
+        Assert.True(caseResultProperties.TryGetProperty("wallPlacement", out _), "Missing benchmark case wall placement summary property.");
+        AssertDefinitionRequires(
+            schemaDocument,
+            "wallPlacementSummary",
+            "totalWallCount",
+            "placementReadyWallCount",
+            "placementReviewWallCount",
+            "rejectedNoiseWallCount",
+            "structuralComponentCount",
+            "isolatedFragmentComponentCount",
+            "topologyEdgeCount",
+            "topologyImportBlockedRepairCandidateCount");
         Assert.True(
             defs.GetProperty("counts").GetProperty("properties").TryGetProperty("surfacePatterns", out _),
             "Benchmark result counts schema should document optional surfacePatterns.");

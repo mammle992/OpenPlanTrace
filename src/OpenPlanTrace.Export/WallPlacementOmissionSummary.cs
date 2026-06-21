@@ -208,6 +208,7 @@ internal static class WallPlacementOmissionSummary
         {
             "no_clean_topology_spans" => 10,
             "wall_evidence_review_required" => 20,
+            "secondary_object_linework_without_room_boundary_support" => 25,
             "secondary_without_room_boundary_support" => 30,
             "isolated_fragment" => 40,
             "rejected_wall_evidence" => 50,
@@ -323,6 +324,7 @@ internal static class WallPlacementOmissionSummary
             "no_clean_topology_spans" => "no clean spans",
             "object_like_linework" => "object linework",
             "rejected_wall_evidence" => "rejected evidence",
+            "secondary_object_linework_without_room_boundary_support" => "secondary object linework",
             "secondary_without_room_boundary_support" => "secondary no room",
             "topology_import_blocked" => "blocked repairs",
             "wall_evidence_review_required" => "review evidence",

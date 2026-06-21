@@ -12,6 +12,7 @@ public static class PlanBenchmarkEvaluator
 
         var counts = BenchmarkCounts.From(result);
         var importReadiness = PlanImportReadiness.FromScanResult(result);
+        var wallPlacement = BenchmarkWallPlacementSummary.From(result);
         var scanReviewQueue = ScanReviewQueueSummary.From(result);
         var assertions = new List<BenchmarkAssertionResult>
         {
@@ -73,6 +74,7 @@ public static class PlanBenchmarkEvaluator
                 .ToArray(),
             PipelineHealth = BenchmarkPipelineHealthSummary.From(result.Diagnostics.ExecutionPlan, stages),
             ImportReadiness = importReadiness,
+            WallPlacement = wallPlacement,
             ScanReviewQueue = scanReviewQueue
         };
     }

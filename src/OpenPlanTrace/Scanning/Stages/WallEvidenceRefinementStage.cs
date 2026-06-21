@@ -284,6 +284,14 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
             requiresReview = true;
             evidence.Add(duplicateWallFaceEvidence);
         }
+        else if (TryClassifySparseUnlayeredFragmentMergedWallReview(wall, context, out var sparseFragmentEvidence))
+        {
+            category = WallEvidenceCategory.MediumWallBody;
+            confidence = new Confidence(Math.Min(0.88, Math.Max(wall.Confidence.Value, 0.64)));
+            placementReady = false;
+            requiresReview = true;
+            evidence.Add(sparseFragmentEvidence);
+        }
         else if (TryClassifyUnsupportedFragmentMergedWallReview(wall, context, out var unsupportedFragmentEvidence))
         {
             category = WallEvidenceCategory.MediumWallBody;
@@ -994,6 +1002,39 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
             fragmentEvidence.GapRatio);
         return true;
     }
+
+    private static bool TryClassifySparseUnlayeredFragmentMergedWallReview(
+        WallSegment wall,
+        ScanContext context,
+        out string evidence)
+    {
+        evidence = string.Empty;
+        if (wall.DetectionKind != WallDetectionKind.FragmentMerged
+            || wall.PairEvidence is not null
+            || wall.FragmentEvidence is not { RequiresGeometryReview: false } fragmentEvidence
+            || IsWallLayerBacked(wall, context)
+            || IsRecoveredWallEvidence(wall)
+            || wall.WallType == WallType.Exterior
+            || wall.DrawingLength > SparseUnlayeredFragmentMergedReviewLength(context.Options))
+        {
+            return false;
+        }
+
+        var sourceFragmentCount = Math.Max(fragmentEvidence.FragmentCount, wall.SourcePrimitiveIds.Count);
+        if (sourceFragmentCount > 2)
+        {
+            return false;
+        }
+
+        evidence = string.Format(
+            CultureInfo.InvariantCulture,
+            "wall evidence: sparse unlayered fragment-merged wall candidate has only {0} source fragment(s); keep for topology but block exact placement until reviewed as possible fixture/detail linework",
+            sourceFragmentCount);
+        return true;
+    }
+
+    private static double SparseUnlayeredFragmentMergedReviewLength(ScannerOptions options) =>
+        Math.Max(options.MinWallLength * 4.5, options.DefaultWallThickness * 40.0);
 
     private static double UnsupportedFragmentMergedReviewLength(ScannerOptions options) =>
         Math.Max(options.MinWallLength * 1.35, options.DefaultWallThickness * 12.0);

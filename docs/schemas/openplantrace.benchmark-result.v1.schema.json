@@ -232,6 +232,9 @@
         "importReadiness": {
           "$ref": "#/$defs/importReadiness"
         },
+        "wallPlacement": {
+          "$ref": "#/$defs/wallPlacementSummary"
+        },
         "scanReviewQueue": {
           "$ref": "#/$defs/scanReviewQueueSummary"
         },
@@ -666,6 +669,50 @@
             "$ref": "#/$defs/nonNegativeInteger"
           }
         }
+      }
+    },
+    "wallPlacementSummary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "totalWallCount",
+        "placementReadyWallCount",
+        "placementReviewWallCount",
+        "rejectedNoiseWallCount",
+        "acceptedWallCount",
+        "reviewDecisionWallCount",
+        "rejectedWallCount",
+        "structuralComponentCount",
+        "mainStructuralComponentCount",
+        "secondaryStructuralComponentCount",
+        "objectLikeComponentCount",
+        "isolatedFragmentComponentCount",
+        "topologyEdgeCount",
+        "repairCandidateCount",
+        "topologyImportBlockedRepairCandidateCount",
+        "endpointGapRepairCandidateCount",
+        "endpointOverrunRepairCandidateCount",
+        "highSeverityRepairCandidateCount"
+      ],
+      "properties": {
+        "totalWallCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "placementReadyWallCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "placementReviewWallCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "rejectedNoiseWallCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "acceptedWallCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "reviewDecisionWallCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "rejectedWallCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "structuralComponentCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "mainStructuralComponentCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "secondaryStructuralComponentCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "objectLikeComponentCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "isolatedFragmentComponentCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "topologyEdgeCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "repairCandidateCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "topologyImportBlockedRepairCandidateCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "endpointGapRepairCandidateCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "endpointOverrunRepairCandidateCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "highSeverityRepairCandidateCount": { "$ref": "#/$defs/nonNegativeInteger" }
       }
     },
     "caseIssueSummary": {

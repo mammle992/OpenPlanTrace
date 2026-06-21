@@ -121,5 +121,8 @@ public static class WallPlacementReadinessEvaluator
         && reason.Contains(nameof(WallGraphRepairImportImpact.TopologyImportBlocked), StringComparison.OrdinalIgnoreCase))
         || reason.Contains(
             WallPlacementContextGuards.SecondaryStructuralWithoutRoomBoundarySupportReason,
+            StringComparison.OrdinalIgnoreCase)
+        || reason.Contains(
+            WallPlacementContextGuards.SecondaryStructuralObjectLineworkWithoutRoomBoundarySupportReason,
             StringComparison.OrdinalIgnoreCase);
 }

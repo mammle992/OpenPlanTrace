@@ -48,6 +48,8 @@ public sealed class BenchmarkEvaluatorTests
         Assert.True(benchmark.Counts.Annotations >= 1);
         Assert.True(benchmark.Counts.GridAxes >= 1);
         Assert.True(benchmark.Counts.Walls >= 4);
+        Assert.True(benchmark.WallPlacement.TotalWallCount >= 4);
+        Assert.Equal(result.WallGraph.Edges.Count, benchmark.WallPlacement.TopologyEdgeCount);
         Assert.True(benchmark.PassedAssertionCount > 1);
         Assert.DoesNotContain(benchmark.Assertions, assertion => !assertion.Passed);
         Assert.Contains(benchmark.Assertions, assertion => assertion.Name == "room_label.forbidden.BOILER ROOM" && assertion.Passed);

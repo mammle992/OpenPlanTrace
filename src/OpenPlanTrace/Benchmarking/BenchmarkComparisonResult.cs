@@ -176,6 +176,7 @@ public sealed record BenchmarkComparisonResult(
             AddScanReviewQueueSignals(fixtureId, baseline, candidate, options, caseSignals);
             AddMeasurementSignals(fixtureId, baseline, candidate, options, caseSignals);
             AddImportReadinessSignals(fixtureId, baseline, candidate, options, caseSignals);
+            AddWallPlacementSignals(fixtureId, baseline, candidate, options, caseSignals);
             AddDetectorMetricSignals(fixtureId, baseline, candidate, options, caseSignals);
             AddDiagnosticSignals(fixtureId, baseline, candidate, caseSignals);
             AddDurationSignals(fixtureId, baseline, candidate, options, caseSignals);
@@ -747,6 +748,121 @@ public sealed record BenchmarkComparisonResult(
         else if (!baseline && candidate)
         {
             signals.Add(Improvement(fixtureId, code, improvementMessage, "not ready", "ready"));
+        }
+    }
+
+    private static void AddWallPlacementSignals(
+        string fixtureId,
+        BenchmarkCaseResult baseline,
+        BenchmarkCaseResult candidate,
+        BenchmarkComparisonOptions options,
+        ICollection<BenchmarkComparisonSignal> signals)
+    {
+        var baselineSummary = baseline.WallPlacement;
+        var candidateSummary = candidate.WallPlacement;
+        var baselineText = WallPlacementSummaryText(baselineSummary);
+        var candidateText = WallPlacementSummaryText(candidateSummary);
+
+        AddDecreaseIsRegressionSignal(
+            fixtureId,
+            "wall_placement.ready_walls",
+            baselineSummary.PlacementReadyWallCount,
+            candidateSummary.PlacementReadyWallCount,
+            options.WallPlacementReadyWallRegressionMinimumDelta,
+            "Candidate has fewer placement-ready walls.",
+            "Candidate has more placement-ready walls.",
+            baselineText,
+            candidateText,
+            signals);
+        AddIncreaseIsRegressionSignal(
+            fixtureId,
+            "wall_placement.review_walls",
+            baselineSummary.PlacementReviewWallCount,
+            candidateSummary.PlacementReviewWallCount,
+            options.WallPlacementReviewWallRegressionMinimumDelta,
+            "Candidate moved more walls into placement review.",
+            "Candidate moved fewer walls into placement review.",
+            baselineText,
+            candidateText,
+            signals);
+        AddIncreaseIsRegressionSignal(
+            fixtureId,
+            "wall_placement.isolated_fragments",
+            baselineSummary.IsolatedFragmentComponentCount,
+            candidateSummary.IsolatedFragmentComponentCount,
+            options.WallPlacementFragmentRegressionMinimumDelta,
+            "Candidate produced more isolated wall-fragment components.",
+            "Candidate produced fewer isolated wall-fragment components.",
+            baselineText,
+            candidateText,
+            signals);
+        AddIncreaseIsRegressionSignal(
+            fixtureId,
+            "wall_placement.topology_blocked_repairs",
+            baselineSummary.TopologyImportBlockedRepairCandidateCount,
+            candidateSummary.TopologyImportBlockedRepairCandidateCount,
+            options.WallPlacementRepairRegressionMinimumDelta,
+            "Candidate produced more topology-blocking wall repair candidates.",
+            "Candidate produced fewer topology-blocking wall repair candidates.",
+            baselineText,
+            candidateText,
+            signals);
+        AddIncreaseIsRegressionSignal(
+            fixtureId,
+            "wall_placement.high_severity_repairs",
+            baselineSummary.HighSeverityRepairCandidateCount,
+            candidateSummary.HighSeverityRepairCandidateCount,
+            options.WallPlacementRepairRegressionMinimumDelta,
+            "Candidate produced more high-severity wall repair candidates.",
+            "Candidate produced fewer high-severity wall repair candidates.",
+            baselineText,
+            candidateText,
+            signals);
+    }
+
+    private static void AddDecreaseIsRegressionSignal(
+        string fixtureId,
+        string code,
+        int baseline,
+        int candidate,
+        int minimumDelta,
+        string regressionMessage,
+        string improvementMessage,
+        string baselineSummary,
+        string candidateSummary,
+        ICollection<BenchmarkComparisonSignal> signals)
+    {
+        var threshold = Math.Max(1, minimumDelta);
+        if (baseline - candidate >= threshold)
+        {
+            signals.Add(Regression(fixtureId, code, regressionMessage, baselineSummary, candidateSummary));
+        }
+        else if (candidate - baseline >= threshold)
+        {
+            signals.Add(Improvement(fixtureId, code, improvementMessage, baselineSummary, candidateSummary));
+        }
+    }
+
+    private static void AddIncreaseIsRegressionSignal(
+        string fixtureId,
+        string code,
+        int baseline,
+        int candidate,
+        int minimumDelta,
+        string regressionMessage,
+        string improvementMessage,
+        string baselineSummary,
+        string candidateSummary,
+        ICollection<BenchmarkComparisonSignal> signals)
+    {
+        var threshold = Math.Max(1, minimumDelta);
+        if (candidate - baseline >= threshold)
+        {
+            signals.Add(Regression(fixtureId, code, regressionMessage, baselineSummary, candidateSummary));
+        }
+        else if (baseline - candidate >= threshold)
+        {
+            signals.Add(Improvement(fixtureId, code, improvementMessage, baselineSummary, candidateSummary));
         }
     }
 
@@ -1831,6 +1947,7 @@ public sealed record BenchmarkComparisonResult(
         Add(deltas, "measurementOutliers", baseline?.Counts.MeasurementOutlierCount, candidate?.Counts.MeasurementOutlierCount);
         Add(deltas, "scanReviewQueueItems", baseline?.ScanReviewQueue.Count, candidate?.ScanReviewQueue.Count);
         AddReviewKindDeltas(deltas, baseline?.ScanReviewQueue, candidate?.ScanReviewQueue);
+        AddWallPlacementDeltas(deltas, baseline?.WallPlacement, candidate?.WallPlacement);
         AddFinalArtifactDeltas(deltas, baseline, candidate);
         AddArtifactPlanDeltas(deltas, baseline, candidate);
         AddPipelineHealthDeltas(deltas, baseline, candidate);
@@ -1863,6 +1980,31 @@ public sealed record BenchmarkComparisonResult(
                 baseline is null ? null : ReviewKindCount(baseline, kind),
                 candidate is null ? null : ReviewKindCount(candidate, kind));
         }
+    }
+
+    private static void AddWallPlacementDeltas(
+        ICollection<BenchmarkCountDelta> deltas,
+        BenchmarkWallPlacementSummary? baseline,
+        BenchmarkWallPlacementSummary? candidate)
+    {
+        Add(deltas, "wallPlacement.totalWallCount", baseline?.TotalWallCount, candidate?.TotalWallCount);
+        Add(deltas, "wallPlacement.placementReadyWallCount", baseline?.PlacementReadyWallCount, candidate?.PlacementReadyWallCount);
+        Add(deltas, "wallPlacement.placementReviewWallCount", baseline?.PlacementReviewWallCount, candidate?.PlacementReviewWallCount);
+        Add(deltas, "wallPlacement.rejectedNoiseWallCount", baseline?.RejectedNoiseWallCount, candidate?.RejectedNoiseWallCount);
+        Add(deltas, "wallPlacement.acceptedWallCount", baseline?.AcceptedWallCount, candidate?.AcceptedWallCount);
+        Add(deltas, "wallPlacement.reviewDecisionWallCount", baseline?.ReviewDecisionWallCount, candidate?.ReviewDecisionWallCount);
+        Add(deltas, "wallPlacement.rejectedWallCount", baseline?.RejectedWallCount, candidate?.RejectedWallCount);
+        Add(deltas, "wallPlacement.structuralComponentCount", baseline?.StructuralComponentCount, candidate?.StructuralComponentCount);
+        Add(deltas, "wallPlacement.mainStructuralComponentCount", baseline?.MainStructuralComponentCount, candidate?.MainStructuralComponentCount);
+        Add(deltas, "wallPlacement.secondaryStructuralComponentCount", baseline?.SecondaryStructuralComponentCount, candidate?.SecondaryStructuralComponentCount);
+        Add(deltas, "wallPlacement.objectLikeComponentCount", baseline?.ObjectLikeComponentCount, candidate?.ObjectLikeComponentCount);
+        Add(deltas, "wallPlacement.isolatedFragmentComponentCount", baseline?.IsolatedFragmentComponentCount, candidate?.IsolatedFragmentComponentCount);
+        Add(deltas, "wallPlacement.topologyEdgeCount", baseline?.TopologyEdgeCount, candidate?.TopologyEdgeCount);
+        Add(deltas, "wallPlacement.repairCandidateCount", baseline?.RepairCandidateCount, candidate?.RepairCandidateCount);
+        Add(deltas, "wallPlacement.topologyImportBlockedRepairCandidateCount", baseline?.TopologyImportBlockedRepairCandidateCount, candidate?.TopologyImportBlockedRepairCandidateCount);
+        Add(deltas, "wallPlacement.endpointGapRepairCandidateCount", baseline?.EndpointGapRepairCandidateCount, candidate?.EndpointGapRepairCandidateCount);
+        Add(deltas, "wallPlacement.endpointOverrunRepairCandidateCount", baseline?.EndpointOverrunRepairCandidateCount, candidate?.EndpointOverrunRepairCandidateCount);
+        Add(deltas, "wallPlacement.highSeverityRepairCandidateCount", baseline?.HighSeverityRepairCandidateCount, candidate?.HighSeverityRepairCandidateCount);
     }
 
     private static void AddFinalArtifactDeltas(
@@ -2633,6 +2775,9 @@ public sealed record BenchmarkComparisonResult(
 
     private static string ImportReadinessSummary(PlanImportReadiness readiness) =>
         $"{readiness.Grade}, score {Format(readiness.Score)}, geometry {Ready(readiness.ReadyForGeometryImport)}, metric {Ready(readiness.ReadyForMetricImport)}, routing {Ready(readiness.ReadyForRoutingImport)}, review {Ready(readiness.RequiresReview)}";
+
+    private static string WallPlacementSummaryText(BenchmarkWallPlacementSummary summary) =>
+        $"ready {summary.PlacementReadyWallCount}, review {summary.PlacementReviewWallCount}, rejected {summary.RejectedNoiseWallCount}, structural {summary.StructuralComponentCount}, isolated {summary.IsolatedFragmentComponentCount}, repairs {summary.RepairCandidateCount}, blocked repairs {summary.TopologyImportBlockedRepairCandidateCount}";
 
     private static string Ready(bool value) => value ? "ready" : "not ready";
 

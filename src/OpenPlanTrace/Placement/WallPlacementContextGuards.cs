@@ -5,6 +5,9 @@ public static class WallPlacementContextGuards
     public const string SecondaryStructuralWithoutRoomBoundarySupportReason =
         "secondary structural wall component lacks room-boundary support";
 
+    public const string SecondaryStructuralObjectLineworkWithoutRoomBoundarySupportReason =
+        "secondary structural wall overlaps detected stair/object linework without room-boundary support";
+
     public static IReadOnlyDictionary<string, IReadOnlyList<string>> BuildReviewReasons(PlanScanResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -23,11 +26,24 @@ public static class WallPlacementContextGuards
             .Where(assessment => !string.IsNullOrWhiteSpace(assessment.WallId))
             .ToDictionary(assessment => assessment.WallId, StringComparer.Ordinal);
         var reasonsByWallId = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        var objectLineworkCandidatesByPage = BuildObjectLineworkCandidatesByPage(result.ObjectCandidates);
 
         foreach (var wall in result.Walls)
         {
             componentByWallId.TryGetValue(wall.Id, out var component);
-            if (!SecondaryStructuralComponentHasRoomBoundarySupport(component, roomWallIds)
+            var hasRoomBoundarySupport = SecondaryStructuralComponentHasRoomBoundarySupport(component, roomWallIds);
+            if (!hasRoomBoundarySupport
+                && SecondaryStructuralWallOverlapsObjectLinework(
+                    wall,
+                    component,
+                    objectLineworkCandidatesByPage))
+            {
+                AddReason(
+                    reasonsByWallId,
+                    wall.Id,
+                    SecondaryStructuralObjectLineworkWithoutRoomBoundarySupportReason);
+            }
+            else if (!hasRoomBoundarySupport
                 && !SecondaryStructuralComponentHasTrustedPairedWallBodySupport(
                     component,
                     wallById,
@@ -55,6 +71,128 @@ public static class WallPlacementContextGuards
         }
 
         return component.WallIds.Any(roomWallIds.Contains);
+    }
+
+    private static IReadOnlyDictionary<int, IReadOnlyList<ObjectCandidate>> BuildObjectLineworkCandidatesByPage(
+        IReadOnlyList<ObjectCandidate> objectCandidates)
+    {
+        return objectCandidates
+            .Where(IsWallContaminatingObjectLinework)
+            .GroupBy(candidate => candidate.PageNumber)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<ObjectCandidate>)group.ToArray());
+    }
+
+    private static bool SecondaryStructuralWallOverlapsObjectLinework(
+        WallSegment wall,
+        WallGraphComponent? component,
+        IReadOnlyDictionary<int, IReadOnlyList<ObjectCandidate>> objectLineworkCandidatesByPage)
+    {
+        if (component?.Kind != WallGraphComponentKind.SecondaryStructural
+            || component.ExcludedFromStructuralTopology
+            || wall.WallType == WallType.Exterior
+            || wall.DrawingLength < 36
+            || (!wall.CenterLine.IsHorizontal() && !wall.CenterLine.IsVertical())
+            || !objectLineworkCandidatesByPage.TryGetValue(wall.PageNumber, out var candidates))
+        {
+            return false;
+        }
+
+        var guardTolerance = Math.Max(8, wall.Thickness * 1.5);
+        foreach (var candidate in candidates)
+        {
+            if (LineOverlapsCandidateGuardZone(
+                wall.CenterLine,
+                candidate.Bounds.Inflate(guardTolerance),
+                minimumOverlapLength: Math.Min(42, Math.Max(24, wall.DrawingLength * 0.35)),
+                minimumOverlapRatio: 0.45))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsWallContaminatingObjectLinework(ObjectCandidate candidate) =>
+        candidate.Kind == ObjectCandidateKind.Stair
+        || candidate.Category == ObjectCategory.Stair
+        || candidate.Evidence.Any(item =>
+            item.Contains("nearby text", StringComparison.OrdinalIgnoreCase)
+            && item.Contains("trapp", StringComparison.OrdinalIgnoreCase));
+
+    private static bool LineOverlapsCandidateGuardZone(
+        PlanLineSegment line,
+        PlanRect guardZone,
+        double minimumOverlapLength,
+        double minimumOverlapRatio)
+    {
+        if (guardZone.IsEmpty)
+        {
+            return false;
+        }
+
+        if (line.IsVertical())
+        {
+            var x = (line.Start.X + line.End.X) / 2.0;
+            if (x < guardZone.Left || x > guardZone.Right)
+            {
+                return false;
+            }
+
+            var lineMin = Math.Min(line.Start.Y, line.End.Y);
+            var lineMax = Math.Max(line.Start.Y, line.End.Y);
+            return HasAxisOverlap(
+                lineMin,
+                lineMax,
+                guardZone.Top,
+                guardZone.Bottom,
+                line.Length,
+                minimumOverlapLength,
+                minimumOverlapRatio);
+        }
+
+        if (line.IsHorizontal())
+        {
+            var y = (line.Start.Y + line.End.Y) / 2.0;
+            if (y < guardZone.Top || y > guardZone.Bottom)
+            {
+                return false;
+            }
+
+            var lineMin = Math.Min(line.Start.X, line.End.X);
+            var lineMax = Math.Max(line.Start.X, line.End.X);
+            return HasAxisOverlap(
+                lineMin,
+                lineMax,
+                guardZone.Left,
+                guardZone.Right,
+                line.Length,
+                minimumOverlapLength,
+                minimumOverlapRatio);
+        }
+
+        return false;
+    }
+
+    private static bool HasAxisOverlap(
+        double lineMin,
+        double lineMax,
+        double zoneMin,
+        double zoneMax,
+        double lineLength,
+        double minimumOverlapLength,
+        double minimumOverlapRatio)
+    {
+        var overlap = Math.Min(lineMax, zoneMax) - Math.Max(lineMin, zoneMin);
+        if (overlap <= 0)
+        {
+            return false;
+        }
+
+        return overlap >= minimumOverlapLength
+            && overlap / Math.Max(lineLength, 0.001) >= minimumOverlapRatio;
     }
 
     private static bool SecondaryStructuralComponentHasTrustedPairedWallBodySupport(
