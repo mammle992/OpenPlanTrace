@@ -6,6 +6,33 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.214] - 2026-06-22
+
+### Improved
+- Semantic room seeds can now become coordinate-ready when they are backed by
+  at least four assessed, non-blocking boundary walls and explicit nearby-wall
+  boundary evidence.
+- Approximate label/area-only semantic rooms, low-confidence rooms, rooms with
+  no linked walls, and rooms with review/rejected/omitted boundary walls still
+  remain blocked for review.
+
+### Verified
+- Added placement-export regression coverage for wall-backed semantic room
+  seeds and approximate semantic seeds that must remain review-required.
+- Rescanned the private medium wall-noise PDF: coordinate-ready entities
+  increased from `39` to `42`, review-required entities dropped from `83` to
+  `80`, and placement import score improved from `0.576405` to `0.589117`.
+- Rooms `page:1:room:5`, `page:1:room:6`, and `page:1:room:7` became
+  coordinate-ready; `page:1:room:3` stayed blocked by review wall
+  `page:1:wall:51`, and `page:1:room:4` stayed blocked because it has low
+  confidence and no linked wall evidence.
+- Rendered and inspected the wall-QA screenshot at
+  `%TEMP%/openplantrace-medium-a20-102-20260622-wall-backed-semantic-rooms-v1-wall-qa-review.png`.
+- Validated the generated placement artifact with deep placement checks
+  enabled.
+- Ran targeted room-readiness tests: `3` tests passed.
+- Ran the full test suite: `716` tests passed.
+
 ## [0.02.213] - 2026-06-22
 
 ### Improved

@@ -4702,7 +4702,9 @@ internal static class PlacementReliability
         }
 
         var isSemanticRoomSeed = room.Evidence.Any(item => item.Contains("semantic room seed", StringComparison.OrdinalIgnoreCase));
-        if (isSemanticRoomSeed)
+        var semanticRoomSeedIsWallBacked = !isSemanticRoomSeed
+            || IsWallBackedSemanticRoomSeed(room, boundaryReliability);
+        if (isSemanticRoomSeed && !semanticRoomSeedIsWallBacked)
         {
             reasons.Add("semantic room seed requires review before coordinate placement");
         }
@@ -4732,7 +4734,7 @@ internal static class PlacementReliability
             reasons.Add($"room boundary uses placement-omitted wall geometry: {string.Join(",", boundaryReliability.PlacementOmittedWallIds.Take(12))}");
         }
 
-        var boundaryWallsAreCoordinateReady = !isSemanticRoomSeed
+        var boundaryWallsAreCoordinateReady = semanticRoomSeedIsWallBacked
             && room.WallIds.Count > 0
             && boundaryReliability.CoordinateBlockingWallIds.Count == 0;
 
@@ -4742,6 +4744,42 @@ internal static class PlacementReliability
             calibration.HasReliableMeasurementScale,
             reasons.Count > 0 || !boundaryWallsAreCoordinateReady,
             reasons);
+    }
+
+    private static bool IsWallBackedSemanticRoomSeed(
+        RoomRegion room,
+        PlacementRoomBoundaryReliabilityExport boundaryReliability)
+    {
+        if (room.Confidence.Value < 0.6
+            || room.WallIds.Count < 4
+            || boundaryReliability.BoundaryWallCount < 4
+            || boundaryReliability.AssessedWallCount < boundaryReliability.BoundaryWallCount
+            || boundaryReliability.CoordinateBlockingWallIds.Count > 0
+            || boundaryReliability.ReviewWallIds.Count > 0
+            || boundaryReliability.RejectedWallIds.Count > 0
+            || boundaryReliability.PlacementOmittedWallIds.Count > 0
+            || boundaryReliability.UnassessedWallIds.Count > 0)
+        {
+            return false;
+        }
+
+        var hasBoundedSemanticEvidence = room.Evidence.Any(item =>
+            item.Contains("semantic room seed was bounded by nearby orthogonal wall evidence", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("semantic room boundary inferred from nearby walls", StringComparison.OrdinalIgnoreCase));
+        if (!hasBoundedSemanticEvidence)
+        {
+            return false;
+        }
+
+        var nonBlockingBoundaryWallIds = boundaryReliability.ReadyWallIds
+            .Concat(boundaryReliability.NonBlockingDuplicateWallIds)
+            .Concat(boundaryReliability.OpeningOnlyWallIds)
+            .Concat(boundaryReliability.OpeningDominatedWallIds)
+            .Concat(boundaryReliability.RoomSupportedFragmentWallIds)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .Count();
+        return nonBlockingBoundaryWallIds >= boundaryReliability.BoundaryWallCount;
     }
 
     private static bool IsNonBlockingDuplicateBoundaryWall(

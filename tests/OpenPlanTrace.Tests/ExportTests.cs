@@ -3934,6 +3934,58 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementExporter_AllowsWallBackedSemanticRoomSeedForCoordinatePlacement()
+    {
+        var result = CreateWallBackedSemanticRoomSeedResult();
+        var semanticRoom = result.Rooms.Single();
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var room = document.RootElement
+            .GetProperty("rooms")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == semanticRoom.Id);
+
+        var reliability = room.GetProperty("reliability");
+        Assert.True(reliability.GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.True(reliability.GetProperty("readyForMetricPlacement").GetBoolean());
+        Assert.False(reliability.GetProperty("requiresReview").GetBoolean());
+        Assert.DoesNotContain(
+            reliability.GetProperty("reasons").EnumerateArray(),
+            reason => reason.GetString()?.Contains("semantic room seed requires review", StringComparison.OrdinalIgnoreCase) == true);
+
+        var boundaryReliability = room.GetProperty("boundaryReliability");
+        Assert.Equal(4, boundaryReliability.GetProperty("boundaryWallCount").GetInt32());
+        Assert.Equal(4, boundaryReliability.GetProperty("readyWallIds").GetArrayLength());
+        Assert.Empty(boundaryReliability.GetProperty("coordinateBlockingWallIds").EnumerateArray());
+    }
+
+    [Fact]
+    public void PlacementExporter_KeepsApproximateSemanticRoomSeedForReview()
+    {
+        var result = CreateWallBackedSemanticRoomSeedResult(includeBoundedSemanticEvidence: false);
+        var semanticRoom = result.Rooms.Single();
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var room = document.RootElement
+            .GetProperty("rooms")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == semanticRoom.Id);
+
+        var reliability = room.GetProperty("reliability");
+        Assert.False(reliability.GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.True(reliability.GetProperty("requiresReview").GetBoolean());
+        Assert.Contains(
+            reliability.GetProperty("reasons").EnumerateArray(),
+            reason => reason.GetString()?.Contains("semantic room seed requires review", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
     public async Task PlacementExporter_MarksOpeningsForReviewWhenHostWallEvidenceRequiresReview()
     {
         var result = await CreateScanResultAsync();
@@ -5887,6 +5939,157 @@ public sealed class ExportTests
                 Array.Empty<WallEvidenceBand>(),
                 [assessment],
                 1,
+                0)
+        };
+    }
+
+    private static PlanScanResult CreateWallBackedSemanticRoomSeedResult(
+        bool includeBoundedSemanticEvidence = true)
+    {
+        var walls = new[]
+        {
+            SyntheticWall("semantic-room-wall-top", 80, 80, 220, 80) with { WallType = WallType.Interior },
+            SyntheticWall("semantic-room-wall-right", 220, 80, 220, 170) with { WallType = WallType.Interior },
+            SyntheticWall("semantic-room-wall-bottom", 220, 170, 80, 170) with { WallType = WallType.Interior },
+            SyntheticWall("semantic-room-wall-left", 80, 170, 80, 80) with { WallType = WallType.Interior }
+        };
+        var nodes = new[]
+        {
+            SyntheticNode("semantic-room-node-a", 80, 80, WallNodeKind.Corner),
+            SyntheticNode("semantic-room-node-b", 220, 80, WallNodeKind.Corner),
+            SyntheticNode("semantic-room-node-c", 220, 170, WallNodeKind.Corner),
+            SyntheticNode("semantic-room-node-d", 80, 170, WallNodeKind.Corner)
+        };
+        var edges = new[]
+        {
+            new WallEdge("semantic-room-edge-top", 1, nodes[0].Id, nodes[1].Id, walls[0].Id, Confidence.High),
+            new WallEdge("semantic-room-edge-right", 1, nodes[1].Id, nodes[2].Id, walls[1].Id, Confidence.High),
+            new WallEdge("semantic-room-edge-bottom", 1, nodes[2].Id, nodes[3].Id, walls[2].Id, Confidence.High),
+            new WallEdge("semantic-room-edge-left", 1, nodes[3].Id, nodes[0].Id, walls[3].Id, Confidence.High)
+        };
+        var component = new WallGraphComponent(
+            "semantic-room-component",
+            1,
+            WallGraphComponentKind.MainStructural,
+            UnionBounds(walls.Select(wall => wall.Bounds)),
+            walls.Select(wall => wall.Id).ToArray(),
+            nodes.Select(node => node.Id).ToArray(),
+            edges.Select(edge => edge.Id).ToArray(),
+            walls.SelectMany(wall => wall.SourcePrimitiveIds).ToArray(),
+            walls.Sum(wall => wall.DrawingLength),
+            Confidence.High,
+            ["synthetic clean wall-backed semantic room component"]);
+        string[] roomEvidence = includeBoundedSemanticEvidence
+            ?
+            [
+                "semantic room seed from label 'Storage' and area text '12,6 m 2'",
+                "semantic room seed was bounded by nearby orthogonal wall evidence",
+                $"semantic room boundary inferred from nearby walls {string.Join(",", walls.Select(wall => wall.Id))}",
+                "room use kind Storage"
+            ]
+            :
+            [
+                "semantic room seed from label 'Storage' and area text '12,6 m 2'",
+                "semantic room seed has approximate label/area bounds and requires wall-boundary review",
+                "room use kind Storage"
+            ];
+        var room = new RoomRegion(
+            "semantic-wall-backed-room",
+            1,
+            new PlanRect(80, 80, 140, 90),
+            [
+                new PlanPoint(80, 80),
+                new PlanPoint(220, 80),
+                new PlanPoint(220, 170),
+                new PlanPoint(80, 170)
+            ],
+            walls.Select(wall => wall.Id).ToArray(),
+            new Confidence(0.66))
+        {
+            Label = "Storage",
+            UseKind = RoomUseKind.Storage,
+            Evidence = roomEvidence,
+            AreaSquareMeters = 12.6
+        };
+        var assessments = walls
+            .Select(wall => new WallEvidenceWallAssessment(
+                wall.Id,
+                wall.PageNumber,
+                wall.Bounds,
+                WallEvidenceCategory.StrongWallBody,
+                Confidence.High,
+                PlacementReady: true,
+                RequiresReview: false,
+                RejectedAsNoise: false,
+                wall.SourcePrimitiveIds,
+                ["synthetic strong wall-backed semantic room boundary"])
+            {
+                Decision = WallEvidenceDecision.Accept
+            })
+            .ToArray();
+        var now = DateTimeOffset.UtcNow;
+
+        return new PlanScanResult(
+            new PlanDocument(
+                "wall-backed-semantic-room",
+                [
+                    new PlanPage(
+                        1,
+                        new PlanSize(300, 240),
+                        walls.Select(wall => WallLine(wall.Id, wall.CenterLine.Start, wall.CenterLine.End))
+                            .Cast<PlanPrimitive>()
+                            .ToArray())
+                ])
+            {
+                Metadata = new PlanMetadata
+                {
+                    SourceName = "wall-backed-semantic-room.pdf",
+                    SourcePath = @"C:\plans\wall-backed-semantic-room.pdf",
+                    Properties = new Dictionary<string, string>
+                    {
+                        ["format"] = "pdf",
+                        ["loader"] = "synthetic",
+                        ["sourceKind"] = PlanSourceKind.Pdf.ToString(),
+                        ["effectiveSourceKind"] = PlanSourceKind.Pdf.ToString()
+                    }
+                }
+            },
+            PlanLayerAnalysis.Empty,
+            new PlanCalibration(
+                PlanMeasurementUnit.DrawingUnit,
+                PlanMeasurementUnit.Millimeter,
+                null,
+                25,
+                Confidence.High,
+                Array.Empty<CalibrationEvidence>(),
+                Array.Empty<CalibrationScaleGroup>()),
+            MeasurementConsistencyReport.Empty,
+            Array.Empty<TitleBlockAnalysis>(),
+            Array.Empty<DimensionAnnotation>(),
+            Array.Empty<PlanAnnotationBlock>(),
+            Array.Empty<GridAxis>(),
+            Array.Empty<GridBaySpacing>(),
+            Array.Empty<SheetRegion>(),
+            Array.Empty<SurfacePatternCandidate>(),
+            walls,
+            new WallGraph(nodes, edges, [component]),
+            [room],
+            RoomAdjacencyGraph.Empty,
+            Array.Empty<OpeningCandidate>(),
+            Array.Empty<ObjectCandidate>(),
+            Array.Empty<ObjectCandidateGroup>(),
+            Array.Empty<ObjectAggregate>(),
+            new PipelineDiagnostics(
+                now,
+                now,
+                Array.Empty<PipelineStageReport>(),
+                Array.Empty<PlanDiagnostic>()))
+        {
+            WallEvidenceMap = new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                assessments,
+                walls.Length,
                 0)
         };
     }
