@@ -2552,6 +2552,27 @@ public sealed class ExportTests
                 .GetProperty("wallPlacementOmissionCounts")
                 .GetProperty("fragmented_short_parallel_pair_review_required")
                 .GetInt32());
+
+        var issue = Assert.Single(
+            document.RootElement.GetProperty("issues").EnumerateArray(),
+            item => item.GetProperty("code").GetString() == "placement.review.fragmented_short_parallel_pair"
+                && item.GetProperty("itemId").GetString() == firstWall.Id);
+        Assert.Equal(firstWall.Id, issue.GetProperty("properties").GetProperty("wallId").GetString());
+        Assert.Equal("fragmented_short_parallel_pair_review_required", issue.GetProperty("properties").GetProperty("placementOmissionCode").GetString());
+        Assert.Equal("FragmentedShortParallelPairReview", issue.GetProperty("properties").GetProperty("placementOmissionCategory").GetString());
+        Assert.Equal("False", issue.GetProperty("properties").GetProperty("readyForCoordinatePlacement").GetString());
+        Assert.Contains(
+            issue.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("max face fragments 78", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Contains("source PDF", issue.GetProperty("recommendedAction").GetString(), StringComparison.OrdinalIgnoreCase);
+
+        var importReadiness = summary.GetProperty("importReadiness");
+        Assert.Contains(
+            "placement.wall_pairs.fragmented_short_pairs_require_review",
+            JsonStrings(importReadiness.GetProperty("reviewIssueCodes")));
+        Assert.DoesNotContain(
+            "placement.review.fragmented_short_parallel_pair",
+            JsonStrings(importReadiness.GetProperty("reviewIssueCodes")));
     }
 
     [Fact]

@@ -696,6 +696,8 @@ public sealed record PlacementImportReadinessExport(
                 ? "placement.room_boundary.blockers_require_review"
             : string.Equals(code, "placement.review.thin_exterior_face_pair", StringComparison.Ordinal)
                 ? "placement.wall_exterior.thin_face_pairs_require_review"
+            : string.Equals(code, "placement.review.fragmented_short_parallel_pair", StringComparison.Ordinal)
+                ? "placement.wall_pairs.fragmented_short_pairs_require_review"
             : code;
 
     private static bool ShouldKeepPlacementIssueInformationalForReadiness(string code) =>
@@ -3856,6 +3858,50 @@ public sealed record PlacementIssueExport(
                     (wall.PlacementOmission?.Evidence ?? Array.Empty<string>())
                         .Concat(wall.Reliability.Reasons)
                         .DefaultIfEmpty("Thin exterior face-pair wall candidate is not coordinate-ready.")),
+                properties);
+        }
+
+        foreach (var wall in (placementWallsById?.Values ?? Array.Empty<PlacementWallExport>())
+                     .Where(wall => string.Equals(
+                         wall.PlacementOmission?.Code,
+                         "fragmented_short_parallel_pair_review_required",
+                         StringComparison.Ordinal))
+                     .OrderBy(wall => wall.PageNumber)
+                     .ThenBy(wall => wall.Id, StringComparer.Ordinal))
+        {
+            var properties = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["detector"] = "placementWallReliability",
+                ["wallId"] = wall.Id,
+                ["wallType"] = wall.WallType,
+                ["placementOmissionCode"] = wall.PlacementOmission?.Code ?? string.Empty,
+                ["placementOmissionCategory"] = wall.PlacementOmission?.Category ?? string.Empty,
+                ["thicknessDrawingUnits"] = wall.ThicknessDrawingUnits.ToString("0.###", CultureInfo.InvariantCulture),
+                ["thicknessMillimeters"] = wall.ThicknessMillimeters?.ToString("0.###", CultureInfo.InvariantCulture) ?? string.Empty,
+                ["drawingLength"] = wall.DrawingLength.ToString("0.###", CultureInfo.InvariantCulture),
+                ["lengthMeters"] = wall.LengthMeters?.ToString("0.###", CultureInfo.InvariantCulture) ?? string.Empty,
+                ["readyForCoordinatePlacement"] = wall.Reliability.ReadyForCoordinatePlacement.ToString(CultureInfo.InvariantCulture),
+                ["requiresReview"] = wall.Reliability.RequiresReview.ToString(CultureInfo.InvariantCulture)
+            };
+
+            yield return new PlacementIssueExport(
+                "placement.review.fragmented_short_parallel_pair",
+                DiagnosticSeverity.Warning.ToString(),
+                "Fragmented short parallel-face wall candidate requires review before coordinate placement.",
+                wall.PageNumber,
+                new[] { wall.PageNumber },
+                wall.Id,
+                wall.Bounds,
+                wall.BoundsMillimeters,
+                ClampRatio(wall.Confidence),
+                wall.PlacementOmission?.RecommendedAction
+                    ?? "Review the source PDF before importing this fragmented short wall pair as exact wall geometry.",
+                wall.SourcePrimitiveIds,
+                wall.SourceLayers,
+                BuildIssueEvidence(
+                    (wall.PlacementOmission?.Evidence ?? Array.Empty<string>())
+                        .Concat(wall.Reliability.Reasons)
+                        .DefaultIfEmpty("Fragmented short wall-pair candidate is not coordinate-ready.")),
                 properties);
         }
 

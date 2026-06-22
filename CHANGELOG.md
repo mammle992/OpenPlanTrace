@@ -6,6 +6,29 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.206] - 2026-06-22
+
+### Added
+- Placement export now emits first-class
+  `placement.review.fragmented_short_parallel_pair` issues for short
+  parallel-face wall candidates that are omitted because fragmented/weak face
+  evidence makes exact coordinate placement unsafe.
+- Import readiness maps those review issues to
+  `placement.wall_pairs.fragmented_short_pairs_require_review`, giving
+  downstream importers a stable gate for suspicious short wall-pair geometry.
+
+### Verified
+- Added export regression coverage proving the issue includes wall ID, omission
+  code/category, coordinate-readiness flag, source evidence, recommended
+  action, and import-readiness review code.
+- Rescanned the private medium benchmark PDF: the placement export now reports
+  `2` fragmented short-pair review issues and preserves the existing detector
+  counts.
+- Rendered and inspected the wall/issue QA image at
+  `%TEMP%/openplantrace-private-medium-fragmented-short-pair-issues-v1-wall-overlay.png`.
+- Ran targeted placement/schema tests: `149` tests passed.
+- Ran the full test suite: `703` tests passed.
+
 ## [0.02.205] - 2026-06-22
 
 ### Improved
