@@ -646,6 +646,36 @@ public static class PlanScanQualityAnalyzer
             }
         }
 
+        if (result.Rooms.Count > 0 && structuralWallCount >= 4)
+        {
+            var roomsWithoutWallLinks = result.Rooms
+                .Where(room => room.WallIds.Count == 0)
+                .ToArray();
+            if (roomsWithoutWallLinks.Length > 0)
+            {
+                var detachedRoomRatio = roomsWithoutWallLinks.Length / (double)result.Rooms.Count;
+                risks.Add(new QualityRiskPattern(
+                    "quality.scan_risk.rooms_without_wall_links",
+                    DiagnosticSeverity.Warning,
+                    "Detected rooms lack linked wall-boundary evidence and need review before import-grade room topology is trusted.",
+                    Math.Min(0.07, 0.025 + detachedRoomRatio * 0.06),
+                    new Dictionary<string, string>
+                    {
+                        ["roomCount"] = result.Rooms.Count.ToString(),
+                        ["structuralWallCount"] = structuralWallCount.ToString(),
+                        ["roomsWithoutWallLinks"] = roomsWithoutWallLinks.Length.ToString(),
+                        ["roomsWithoutWallLinksRatio"] = FormatRatio(detachedRoomRatio),
+                        ["roomIds"] = string.Join(",", roomsWithoutWallLinks.Select(room => room.Id).Take(12)),
+                        ["roomLabels"] = string.Join(
+                            ",",
+                            roomsWithoutWallLinks
+                                .Select(room => room.Label)
+                                .Where(label => !string.IsNullOrWhiteSpace(label))
+                                .Take(12))
+                    }));
+            }
+        }
+
         var roomLinkedRoutingPassages = result.RoutingLayer.Passages
             .Where(HasRoomConnectivityEvidence)
             .ToArray();

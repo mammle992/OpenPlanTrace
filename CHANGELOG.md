@@ -6,6 +6,27 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.192] - 2026-06-22
+
+### Improved
+- Scan quality now reports `quality.scan_risk.rooms_without_wall_links` when
+  detected rooms have no linked wall-boundary evidence despite structural walls
+  being present.
+- The issue includes room counts, detached-room ratio, example room IDs, and
+  available room labels so benchmark and review tooling can jump straight to
+  rooms whose geometry is not import-grade yet.
+
+### Verified
+- Added regression coverage for detected rooms without linked wall evidence.
+- Rescanned a supplied medium PDF with a rendered page background and the
+  `placement-review` overlay; the quality report now flags one detached room
+  (`page:1:room:4`, label `Trapperom`) and correctly grades the scan as
+  `ReviewRequired` instead of hiding the issue under a broadly usable result.
+- Rendered and inspected the placement-review screenshot at
+  `%TEMP%/openplantrace-medium-supplied-room-wall-link-risk-v1.png`.
+- Ran targeted scan-quality tests: `31` tests passed.
+- Ran the full test suite: `683` tests passed.
+
 ## [0.02.191] - 2026-06-22
 
 ### Improved

@@ -145,6 +145,35 @@ public sealed class ScanQualityTests
     }
 
     [Fact]
+    public void Analyze_FlagsDetectedRoomsWithoutLinkedWallEvidence()
+    {
+        var walls = new[]
+        {
+            SyntheticWall("w1", 100, 100, 250, 100),
+            SyntheticWall("w2", 250, 100, 250, 250),
+            SyntheticWall("w3", 250, 250, 100, 250),
+            SyntheticWall("w4", 100, 250, 100, 100)
+        };
+        var rooms = new[]
+        {
+            SyntheticRoom("room-linked", new PlanRect(105, 105, 140, 140), ["w1", "w2", "w3", "w4"]),
+            SyntheticRoom("room-detached", new PlanRect(300, 105, 80, 120), [])
+        };
+        var result = CreateSyntheticResult(walls: walls, rooms: rooms);
+
+        var quality = PlanScanQualityAnalyzer.Analyze(result);
+
+        var issue = Assert.Single(
+            quality.Issues,
+            issue => issue.Code == "quality.scan_risk.rooms_without_wall_links");
+        Assert.Equal(DiagnosticSeverity.Warning, issue.Severity);
+        Assert.Equal("2", issue.Properties["roomCount"]);
+        Assert.Equal("1", issue.Properties["roomsWithoutWallLinks"]);
+        Assert.Equal("room-detached", issue.Properties["roomIds"]);
+        Assert.Equal("0.5", issue.Properties["roomsWithoutWallLinksRatio"]);
+    }
+
+    [Fact]
     public void Analyze_FlagsRoomLinkedOpeningsWithoutSideAwareConnections()
     {
         var scenario = CreateTwoRoomOpeningScenario(withSideAwareLinks: false);
