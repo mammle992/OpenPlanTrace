@@ -2,6 +2,9 @@ namespace OpenPlanTrace;
 
 public static class WallPlacementReadinessEvaluator
 {
+    public const string TopologySupportedFragmentedPairPromotionEvidence =
+        "topology-supported fragmented paired wall promoted";
+
     public const string WeakPromotedFragmentRoomBoundaryReason =
         "promoted fragment-merged room boundary has no supported topology endpoint; keep for review until explicit or geometric room-boundary support confirms exact placement";
 
@@ -232,6 +235,7 @@ public static class WallPlacementReadinessEvaluator
                 "collapsed",
                 "merged",
                 "fragment")
+            && !EvidenceContains(evidence, TopologySupportedFragmentedPairPromotionEvidence)
             && !EvidenceContainsAny(
                 evidence,
                 "wall-like layer",

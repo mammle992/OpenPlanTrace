@@ -322,6 +322,63 @@ public sealed class WallPlacementReadinessTests
     }
 
     [Fact]
+    public void Evaluate_AllowsTopologySupportedFragmentedPairPromotionThroughShortDenseGate()
+    {
+        var sourceIds = Enumerable.Range(1, 34)
+            .Select(index => $"pdf:p1:path:{index}:line:1")
+            .ToArray();
+        var wall = Wall("wall:topology-supported-fragmented-pair", Confidence.High) with
+        {
+            CenterLine = new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(140, 100)),
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Interior,
+            SourcePrimitiveIds = sourceIds,
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "first face merged 29 fragments",
+                "first face collapsed 5 duplicate or near-duplicate wall line primitive(s)",
+                "layer (unlayered) classified Unknown (0,35)",
+                "wall evidence: topology-supported fragmented paired wall promoted after both endpoints aligned to trusted structural graph"
+            ]
+        };
+        var component = Component(
+            WallGraphComponentKind.MainStructural,
+            excludedFromStructuralTopology: false,
+            wall.Id);
+        var evidence = Evidence(wall, WallEvidenceCategory.MediumWallBody, placementReady: true) with
+        {
+            Evidence = wall.Evidence,
+            ScoreBreakdown = new WallEvidenceScoreBreakdown(
+                0.7,
+                0,
+                0.7,
+                0.5,
+                0,
+                0.2,
+                0,
+                0,
+                0,
+                new[] { "strong parallel-face wall pair", "both endpoints supported by structural context" },
+                Array.Empty<string>())
+        };
+
+        var readiness = WallPlacementReadinessEvaluator.Evaluate(
+            wall,
+            ReliableCalibration(),
+            component,
+            evidence);
+
+        Assert.True(readiness.ReadyForCoordinatePlacement);
+        Assert.True(readiness.ReadyForMetricPlacement);
+        Assert.False(readiness.RequiresReview);
+        Assert.False(readiness.CoordinatePlacementBlocked);
+        Assert.DoesNotContain(
+            "short high-density unknown-layer wall/detail candidate requires review before exact placement",
+            readiness.Reasons);
+    }
+
+    [Fact]
     public void Evaluate_AllowsShortDenseCandidateWithExplicitRoomBoundarySupport()
     {
         var sourceIds = Enumerable.Range(1, 34)

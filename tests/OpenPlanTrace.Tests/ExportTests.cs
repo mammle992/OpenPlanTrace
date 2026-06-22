@@ -2555,6 +2555,60 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public async Task PlacementExporter_AllowsTopologySupportedFragmentedPairPromotion()
+    {
+        var result = await CreateScanResultAsync();
+        var firstWall = result.Walls[0];
+        result = result with
+        {
+            WallEvidenceMap = new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                new[]
+                {
+                    new WallEvidenceWallAssessment(
+                        firstWall.Id,
+                        firstWall.PageNumber,
+                        firstWall.Bounds,
+                        WallEvidenceCategory.MediumWallBody,
+                        new Confidence(0.84),
+                        PlacementReady: true,
+                        RequiresReview: false,
+                        RejectedAsNoise: false,
+                        SourcePrimitiveIds: firstWall.SourcePrimitiveIds,
+                        Evidence:
+                        [
+                            "wall evidence: short unlayered parallel-face candidate has noisy fragmented face evidence (score 0.718, max face fragments 78, total face fragments 85); keep for topology but block exact placement until reviewed",
+                            "wall evidence: topology-supported fragmented paired wall promoted after both endpoints aligned to trusted structural graph",
+                            "wall evidence: pair score 0.718, max face fragments 78, total face fragments 85, topology-supported endpoints 2"
+                        ])
+                    {
+                        Decision = WallEvidenceDecision.Accept
+                    }
+                })
+        };
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var wall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == firstWall.Id);
+
+        Assert.Equal(JsonValueKind.Null, wall.GetProperty("placementOmission").ValueKind);
+        Assert.True(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.DoesNotContain(
+            "fragmented_short_parallel_pair_review_required",
+            document.RootElement
+                .GetProperty("summary")
+                .GetProperty("wallPlacementOmissionCounts")
+                .EnumerateObject()
+                .Select(item => item.Name));
+    }
+
+    [Fact]
     public async Task PlacementExporter_UsesSpecificOmissionForVeryShortParallelPairReviewWalls()
     {
         var result = await CreateScanResultAsync();
@@ -2786,6 +2840,81 @@ public sealed class ExportTests
         var summary = document.RootElement.GetProperty("summary");
         Assert.Equal(1, summary.GetProperty("placementReadyWallCount").GetInt32());
         Assert.Equal(1, summary.GetProperty("sourceBackedFallbackTopologySpanCount").GetInt32());
+    }
+
+    [Fact]
+    public void PlacementExporter_RecoversSourceBackedSpanWhenTopologySupportedFragmentedPairIsPromoted()
+    {
+        var result = CreateSourceBackedFallbackWallResult(
+            pairScore: 0.718,
+            pairOverlapRatio: 0.83,
+            firstFaceFragmentCount: 7,
+            secondFaceFragmentCount: 78,
+            category: WallEvidenceCategory.MediumWallBody,
+            evidence:
+            [
+                "parallel wall-face pair",
+                "layer (unlayered) classified Unknown (0,35)",
+                "wall evidence: short unlayered parallel-face candidate has noisy fragmented face evidence (score 0.718, max face fragments 78, total face fragments 85); keep for topology but block exact placement until reviewed",
+                "wall evidence: topology-supported fragmented paired wall promoted after both endpoints aligned to trusted structural graph",
+                "wall evidence: pair score 0.718, max face fragments 78, total face fragments 85, topology-supported endpoints 2"
+            ]);
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var wall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == "source-backed-fallback-wall");
+
+        var topologySpan = Assert.Single(wall.GetProperty("topologySpans").EnumerateArray());
+        Assert.Contains("source-backed-fallback", topologySpan.GetProperty("id").GetString(), StringComparison.Ordinal);
+        Assert.Equal(JsonValueKind.Null, wall.GetProperty("placementOmission").ValueKind);
+        Assert.True(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.DoesNotContain(
+            wall.GetProperty("reliability").GetProperty("reasons").EnumerateArray(),
+            reason => reason.GetString()?.Contains("short high-density unknown-layer", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Contains(
+            topologySpan.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("topology-supported fragmented paired wall promoted", StringComparison.OrdinalIgnoreCase) == true);
+
+        var summary = document.RootElement.GetProperty("summary");
+        Assert.Equal(1, summary.GetProperty("placementReadyWallCount").GetInt32());
+        Assert.Equal(1, summary.GetProperty("sourceBackedFallbackTopologySpanCount").GetInt32());
+    }
+
+    [Fact]
+    public void PlacementExporter_DoesNotRecoverSourceBackedSpanWhenFragmentedMediumPairLacksTopologyPromotion()
+    {
+        var result = CreateSourceBackedFallbackWallResult(
+            pairScore: 0.718,
+            pairOverlapRatio: 0.83,
+            firstFaceFragmentCount: 7,
+            secondFaceFragmentCount: 78,
+            category: WallEvidenceCategory.MediumWallBody,
+            evidence:
+            [
+                "parallel wall-face pair",
+                "layer (unlayered) classified Unknown (0,35)",
+                "wall evidence: short unlayered parallel-face candidate has noisy fragmented face evidence (score 0.718, max face fragments 78, total face fragments 85); keep for topology but block exact placement until reviewed"
+            ]);
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var wall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == "source-backed-fallback-wall");
+
+        Assert.Empty(wall.GetProperty("topologySpans").EnumerateArray());
+        Assert.Equal(
+            "fragmented_short_parallel_pair_review_required",
+            wall.GetProperty("placementOmission").GetProperty("code").GetString());
+        Assert.False(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
     }
 
     [Fact]
@@ -4717,6 +4846,9 @@ public sealed class ExportTests
     private static PlanScanResult CreateSourceBackedFallbackWallResult(
         bool includeNearbyGraphSpan = false,
         double pairScore = 0.93,
+        double pairOverlapRatio = 1,
+        int firstFaceFragmentCount = 2,
+        int secondFaceFragmentCount = 2,
         WallEvidenceCategory category = WallEvidenceCategory.StrongWallBody,
         IReadOnlyList<string>? evidence = null)
     {
@@ -4734,10 +4866,10 @@ public sealed class ExportTests
                 new PlanLineSegment(new PlanPoint(80, 116), new PlanPoint(180, 116)),
                 new PlanLineSegment(new PlanPoint(80, 124), new PlanPoint(180, 124)),
                 FaceSeparation: 8,
-                OverlapRatio: 1,
+                OverlapRatio: pairOverlapRatio,
                 Score: pairScore,
-                FirstFaceFragmentCount: 2,
-                SecondFaceFragmentCount: 2,
+                FirstFaceFragmentCount: firstFaceFragmentCount,
+                SecondFaceFragmentCount: secondFaceFragmentCount,
                 FirstFaceSourcePrimitiveIds: ["fallback-face-a"],
                 SecondFaceSourcePrimitiveIds: ["fallback-face-b"]),
             Evidence = wallEvidence

@@ -41,6 +41,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         var oneSidedRoomEvidence = 0;
         var rejectedEvidenceProtected = 0;
         var roomConfirmedPlacementPromoted = 0;
+        var topologySupportedFragmentedPairPromoted = 0;
         var fragmentedPairPlacementDemoted = 0;
         var fragmentedExteriorShellContinuityRetained = 0;
         var geometricRoomBoundaryEvidenceAdded = 0;
@@ -199,6 +200,30 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             }
 
             if (assessment is not null
+                && TryPromoteTopologySupportedFragmentedPairEvidence(
+                    updatedWall,
+                    assessment,
+                    component,
+                    supportedTopologyEndpointCountsByWallId.TryGetValue(wall.Id, out var promotionSupportedEndpointCount)
+                        ? promotionSupportedEndpointCount
+                        : 0,
+                    hasOutdoorRoomReference,
+                    sideEvidence,
+                    context.Options,
+                    out var topologyPromotedAssessment,
+                    out var topologyPromotionEvidence))
+            {
+                updatedAssessmentsByWallId[wall.Id] = topologyPromotedAssessment;
+                updatedWall = updatedWall with
+                {
+                    Evidence = AppendEvidence(updatedWall.Evidence, topologyPromotionEvidence)
+                };
+                topologySupportedFragmentedPairPromoted++;
+                evidenceUpdated++;
+                assessment = topologyPromotedAssessment;
+            }
+
+            if (assessment is not null
                 && hasGeometricRoomBoundarySupport
                 && !assessment.RejectedAsNoise)
             {
@@ -289,6 +314,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             oneSidedRoomEvidence,
             rejectedEvidenceProtected,
             roomConfirmedPlacementPromoted,
+            topologySupportedFragmentedPairPromoted,
             fragmentedPairPlacementDemoted,
             fragmentedExteriorShellContinuityRetained,
             geometricRoomBoundaryEvidenceAdded,
@@ -832,6 +858,87 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             || evidence.Any(item =>
                 item.Contains("supported wall evidence inside exterior envelope", StringComparison.OrdinalIgnoreCase)
                 || item.Contains("structural context", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool TryPromoteTopologySupportedFragmentedPairEvidence(
+        WallSegment wall,
+        WallEvidenceWallAssessment assessment,
+        WallGraphComponent? component,
+        int supportedTopologyEndpointCount,
+        bool hasOutdoorRoomReference,
+        RoomSideEvidence sideEvidence,
+        ScannerOptions options,
+        out WallEvidenceWallAssessment promotedAssessment,
+        out IReadOnlyList<string> promotionEvidence)
+    {
+        promotedAssessment = assessment;
+        promotionEvidence = Array.Empty<string>();
+
+        if (assessment.PlacementReady
+            || !assessment.RequiresReview
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject
+            || assessment.Category != WallEvidenceCategory.MediumWallBody
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.WallType != WallType.Interior
+            || component is null
+            || component.Kind != WallGraphComponentKind.MainStructural
+            || component.ExcludedFromStructuralTopology
+            || supportedTopologyEndpointCount < 2
+            || hasOutdoorRoomReference
+            || sideEvidence.HasOutdoorRoomSide)
+        {
+            return false;
+        }
+
+        if (HasRoomConfirmedPromotionBlocker(wall, assessment))
+        {
+            return false;
+        }
+
+        var evidence = assessment.Evidence
+            .Concat(wall.Evidence)
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(assessment.ScoreBreakdown.NegativeEvidence)
+            .ToArray();
+        if (!evidence.Any(item => item.Contains("noisy fragmented face evidence", StringComparison.OrdinalIgnoreCase))
+            || evidence.Any(item => item.Contains("only one structurally supported endpoint", StringComparison.OrdinalIgnoreCase))
+            || !HasWallBodyEvidence(wall, assessment)
+            || !TryReadPairScore(evidence, out var pairScore)
+            || pairScore < 0.70
+            || !TryReadFaceFragmentCounts(evidence, out var faceFragments)
+            || faceFragments.TotalFaceFragmentCount > 96)
+        {
+            return false;
+        }
+
+        if (TryReadMaxHealedFaceGap(evidence, out var maxHealedGap))
+        {
+            var localThickness = wall.Thickness > 0
+                ? wall.Thickness
+                : options.DefaultWallThickness;
+            var maxTrustedGap = Math.Max(
+                Math.Max(options.WallSnapTolerance * 1.5, 2.5),
+                Math.Min(localThickness * 0.9, wall.DrawingLength * 0.12));
+            if (maxHealedGap > maxTrustedGap)
+            {
+                return false;
+            }
+        }
+
+        promotionEvidence = new[]
+        {
+            $"wall evidence: {WallPlacementReadinessEvaluator.TopologySupportedFragmentedPairPromotionEvidence} after both endpoints aligned to trusted structural graph",
+            $"wall evidence: pair score {pairScore.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}, max face fragments {faceFragments.MaxFaceFragmentCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}, total face fragments {faceFragments.TotalFaceFragmentCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}, topology-supported endpoints {supportedTopologyEndpointCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+        };
+        promotedAssessment = assessment with
+        {
+            PlacementReady = true,
+            RequiresReview = false,
+            Decision = WallEvidenceDecision.Accept,
+            Evidence = AppendEvidence(assessment.Evidence, promotionEvidence)
+        };
+        return true;
     }
 
     private static bool TryDemoteFragmentedPlacementReadyWallEvidence(
@@ -1402,6 +1509,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         int oneSidedRoomEvidence,
         int rejectedEvidenceProtected,
         int roomConfirmedPlacementPromoted,
+        int topologySupportedFragmentedPairPromoted,
         int fragmentedPairPlacementDemoted,
         int fragmentedExteriorShellContinuityRetained,
         int geometricRoomBoundaryEvidenceAdded,
@@ -1432,6 +1540,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
                 ["oneSidedRoomEvidenceWallCount"] = oneSidedRoomEvidence.ToString(),
                 ["rejectedEvidenceProtectedWallCount"] = rejectedEvidenceProtected.ToString(),
                 ["roomConfirmedPlacementPromotedWallCount"] = roomConfirmedPlacementPromoted.ToString(),
+                ["topologySupportedFragmentedPairPromotedWallCount"] = topologySupportedFragmentedPairPromoted.ToString(),
                 ["fragmentedPairPlacementDemotedWallCount"] = fragmentedPairPlacementDemoted.ToString(),
                 ["fragmentedExteriorShellContinuityRetainedWallCount"] = fragmentedExteriorShellContinuityRetained.ToString(),
                 ["explicitRoomBoundaryEvidenceAddedWallCount"] = explicitRoomBoundaryEvidenceAdded.ToString(),

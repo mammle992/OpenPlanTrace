@@ -1105,6 +1105,147 @@ public sealed class WallTypeRefinementTests
     }
 
     [Fact]
+    public async Task WallTypeRefinement_PromotesTopologySupportedFragmentedShortPair()
+    {
+        var firstFace = new PlanLineSegment(new PlanPoint(100, 96), new PlanPoint(148, 96));
+        var secondFace = new PlanLineSegment(new PlanPoint(100, 101), new PlanPoint(148, 101));
+        var wall = new WallSegment(
+            "wall-topology-supported-fragmented-short-pair",
+            1,
+            new PlanLineSegment(new PlanPoint(100, 98.5), new PlanPoint(148, 98.5)),
+            5,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Interior,
+            PairEvidence = new WallPairEvidence(
+                firstFace,
+                secondFace,
+                FaceSeparation: 5,
+                OverlapRatio: 1,
+                Score: 0.718,
+                FirstFaceFragmentCount: 7,
+                SecondFaceFragmentCount: 78,
+                FirstFaceSourcePrimitiveIds: new[] { "face-a" },
+                SecondFaceSourcePrimitiveIds: new[] { "face-b" }),
+            Evidence = new[]
+            {
+                "wall type interior: supported wall evidence inside exterior envelope",
+                "parallel wall-face pair",
+                "pair score 0,718",
+                "first face merged 7 fragments",
+                "second face merged 78 fragments",
+                "second face healed 0,68 drawing units of gaps; max gap 0,68",
+                "layer (unlayered) classified Unknown (0,35)"
+            }
+        };
+        var context = CreateContext("topology-supported-fragmented-pair-promotion");
+        context.Walls.Add(wall);
+        context.WallGraph = SupportedEndpointGraphFor(wall);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.MediumWallBody,
+            placementReady: false,
+            requiresReview: true,
+            rejectedAsNoise: false,
+            new[]
+            {
+                "wall evidence assessment: MediumWallBody / review / confidence 0.88",
+                "parallel wall-face pair",
+                "pair score 0,718",
+                "first face merged 7 fragments",
+                "second face merged 78 fragments",
+                "second face healed 0,68 drawing units of gaps; max gap 0,68",
+                "wall evidence: short unlayered parallel-face candidate has noisy fragmented face evidence (score 0.718, max face fragments 78, total face fragments 85); keep for topology but block exact placement until reviewed"
+            });
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var promoted = Assert.Single(context.WallEvidenceMap.WallAssessments);
+        Assert.True(promoted.PlacementReady);
+        Assert.False(promoted.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Accept, promoted.Decision);
+        Assert.Contains(
+            promoted.Evidence,
+            item => item.Contains("topology-supported fragmented paired wall promoted", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            Assert.Single(context.Walls).Evidence,
+            item => item.Contains("topology-supported endpoints 2", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "walls.architectural_type_refined"
+                && diagnostic.Properties["topologySupportedFragmentedPairPromotedWallCount"] == "1");
+    }
+
+    [Fact]
+    public async Task WallTypeRefinement_DoesNotPromoteWeakOneEndedFragmentedShortPair()
+    {
+        var firstFace = new PlanLineSegment(new PlanPoint(100, 96), new PlanPoint(148, 96));
+        var secondFace = new PlanLineSegment(new PlanPoint(100, 103), new PlanPoint(148, 103));
+        var wall = new WallSegment(
+            "wall-weak-one-ended-fragmented-short-pair",
+            1,
+            new PlanLineSegment(new PlanPoint(100, 99.5), new PlanPoint(148, 99.5)),
+            7,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Interior,
+            PairEvidence = new WallPairEvidence(
+                firstFace,
+                secondFace,
+                FaceSeparation: 7,
+                OverlapRatio: 1,
+                Score: 0.602,
+                FirstFaceFragmentCount: 5,
+                SecondFaceFragmentCount: 4,
+                FirstFaceSourcePrimitiveIds: new[] { "face-a" },
+                SecondFaceSourcePrimitiveIds: new[] { "face-b" }),
+            Evidence = new[]
+            {
+                "wall type interior: supported wall evidence inside exterior envelope",
+                "parallel wall-face pair",
+                "pair score 0,602",
+                "first face merged 5 fragments",
+                "second face merged 4 fragments",
+                "layer (unlayered) classified Unknown (0,35)"
+            }
+        };
+        var context = CreateContext("weak-one-ended-fragmented-pair-stays-review");
+        context.Walls.Add(wall);
+        context.WallGraph = GraphFor(wall);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.MediumWallBody,
+            placementReady: false,
+            requiresReview: true,
+            rejectedAsNoise: false,
+            new[]
+            {
+                "wall evidence assessment: MediumWallBody / review / confidence 0.88",
+                "parallel wall-face pair",
+                "pair score 0,602",
+                "first face merged 5 fragments",
+                "second face merged 4 fragments",
+                "wall evidence: short unlayered parallel-face candidate has only one structurally supported endpoint and weak/fragmented pair evidence (score 0.602, 9 face fragments); keep for topology but block exact placement until reviewed"
+            });
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var retained = Assert.Single(context.WallEvidenceMap.WallAssessments);
+        Assert.False(retained.PlacementReady);
+        Assert.True(retained.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Review, retained.Decision);
+        Assert.DoesNotContain(
+            retained.Evidence,
+            item => item.Contains("topology-supported fragmented paired wall promoted", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "walls.architectural_type_refined"
+                && diagnostic.Properties["topologySupportedFragmentedPairPromotedWallCount"] == "0");
+    }
+
+    [Fact]
     public async Task WallTypeRefinement_DemotesPlacementReadyShortFragmentedUnlayeredPair()
     {
         var wall = new WallSegment(

@@ -31,6 +31,7 @@ internal static class WallTopologySpanVisibility
     private const double MinLongSourceBackedFallbackWallLengthDrawingUnits = 120.0;
     private const int MaxSourceBackedFallbackFaceFragmentCount = 48;
     private const int MaxLongSourceBackedFallbackFaceFragmentCount = 72;
+    private const int MaxTopologySupportedSourceBackedFallbackFaceFragmentCount = 96;
 
     public static IReadOnlyList<WallGraphTopologySpan> BuildVisibleTopologySpans(
         PlanScanResult result,
@@ -268,6 +269,15 @@ internal static class WallTopologySpanVisibility
             return false;
         }
 
+        if (ContainsEvidence(
+                assessment.Evidence
+                    .Concat(span.Evidence)
+                    .Concat(component.Evidence),
+                WallPlacementReadinessEvaluator.TopologySupportedFragmentedPairPromotionEvidence))
+        {
+            return true;
+        }
+
         return ContainsEvidence(
             assessment.Evidence
                 .Concat(span.Evidence)
@@ -338,13 +348,18 @@ internal static class WallTopologySpanVisibility
         var reviewReasons = context.ReviewReasonsByWallId.TryGetValue(wall.Id, out var foundReviewReasons)
             ? foundReviewReasons
             : Array.Empty<string>();
+        var hasTopologySupportedFragmentedPairPromotion = IsTopologySupportedFragmentedPairPromotion(
+            wall,
+            component,
+            assessment);
         if (!IsPlacementReadyStructuralSpan(component, assessment)
             || assessment is null
             || !assessment.PlacementReady
             || assessment.RequiresReview
             || assessment.RejectedAsNoise
             || assessment.Decision == WallEvidenceDecision.Reject
-            || assessment.Category is not (WallEvidenceCategory.StrongWallBody or WallEvidenceCategory.RecoveredWallBody))
+            || (assessment.Category is not (WallEvidenceCategory.StrongWallBody or WallEvidenceCategory.RecoveredWallBody)
+                && !hasTopologySupportedFragmentedPairPromotion))
         {
             return false;
         }
@@ -377,17 +392,24 @@ internal static class WallTopologySpanVisibility
             return false;
         }
 
-        if (pair.Score < MinSourceBackedFallbackStrictPairScore
+        var hasTopologySupportedFragmentedPairPromotion = IsTopologySupportedFragmentedPairPromotion(
+            wall,
+            component,
+            assessment);
+        if (!hasTopologySupportedFragmentedPairPromotion
+            && pair.Score < MinSourceBackedFallbackStrictPairScore
             && pair.OverlapRatio < MinSourceBackedFallbackRelaxedScoreOverlapRatio)
         {
             return false;
         }
 
         var maxFaceFragmentCount = Math.Max(pair.FirstFaceFragmentCount, pair.SecondFaceFragmentCount);
-        var fragmentLimit = wall.DrawingLength >= MinLongSourceBackedFallbackWallLengthDrawingUnits
+        var fragmentLimit = hasTopologySupportedFragmentedPairPromotion
+            ? MaxTopologySupportedSourceBackedFallbackFaceFragmentCount
+            : wall.DrawingLength >= MinLongSourceBackedFallbackWallLengthDrawingUnits
             && component?.Kind == WallGraphComponentKind.MainStructural
-            ? MaxLongSourceBackedFallbackFaceFragmentCount
-            : MaxSourceBackedFallbackFaceFragmentCount;
+                ? MaxLongSourceBackedFallbackFaceFragmentCount
+                : MaxSourceBackedFallbackFaceFragmentCount;
         if (maxFaceFragmentCount > fragmentLimit)
         {
             return false;
@@ -397,6 +419,33 @@ internal static class WallTopologySpanVisibility
         return ContainsEvidence(evidence, "parallel wall-face pair")
             || ContainsEvidence(evidence, "strong double-edge wall body")
             || ContainsEvidence(evidence, "pair score");
+    }
+
+    private static bool IsTopologySupportedFragmentedPairPromotion(
+        WallSegment wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? assessment)
+    {
+        if (assessment is null
+            || assessment.Category != WallEvidenceCategory.MediumWallBody
+            || !assessment.PlacementReady
+            || assessment.RequiresReview
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject
+            || component?.Kind != WallGraphComponentKind.MainStructural
+            || component.ExcludedFromStructuralTopology
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.WallType != WallType.Interior)
+        {
+            return false;
+        }
+
+        return ContainsEvidence(
+            wall.Evidence
+                .Concat(assessment.Evidence)
+                .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+                .Concat(component.Evidence),
+            WallPlacementReadinessEvaluator.TopologySupportedFragmentedPairPromotionEvidence);
     }
 
     private static WallGraphTopologySpan? CreateSourceBackedFallbackSpan(

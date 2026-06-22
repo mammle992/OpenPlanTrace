@@ -1391,7 +1391,11 @@ public sealed record PlacementWallOmissionExport(
                 "Review this candidate as a possible short wall return, door/window frame, fixture edge, or stitched detail before importing it as wall geometry.");
         }
 
-        if (ContainsEvidence(evidence, "unlayered parallel-face candidate")
+        var hasTopologySupportedFragmentedPairPromotion = ContainsEvidence(
+            evidence,
+            WallPlacementReadinessEvaluator.TopologySupportedFragmentedPairPromotionEvidence);
+        if (!hasTopologySupportedFragmentedPairPromotion
+            && ContainsEvidence(evidence, "unlayered parallel-face candidate")
             && (ContainsEvidence(evidence, "noisy fragmented face evidence")
                 || ContainsEvidence(evidence, "weak/fragmented pair evidence")))
         {
@@ -1402,7 +1406,8 @@ public sealed record PlacementWallOmissionExport(
                 "Review the face fragments against the source PDF before importing this wall; it may be a real short return or stitched non-wall detail.");
         }
 
-        if (ContainsEvidence(evidence, "unlayered parallel-face candidate"))
+        if (!hasTopologySupportedFragmentedPairPromotion
+            && ContainsEvidence(evidence, "unlayered parallel-face candidate"))
         {
             return new PlacementWallOmissionClassification(
                 "short_parallel_pair_review_required",
@@ -1442,7 +1447,8 @@ public sealed record PlacementWallOmissionExport(
                 "Keep the raw wall and opening cutout for QA, but do not import the tiny door-adjacent remainder as a structural wall unless reviewed.");
         }
 
-        if (ContainsEvidence(evidence, "short high-density unknown-layer wall/detail candidate requires review"))
+        if (!hasTopologySupportedFragmentedPairPromotion
+            && ContainsEvidence(evidence, "short high-density unknown-layer wall/detail candidate requires review"))
         {
             return new PlacementWallOmissionClassification(
                 "short_dense_detail_review_required",

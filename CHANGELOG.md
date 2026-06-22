@@ -6,6 +6,32 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.195] - 2026-06-22
+
+### Improved
+- Wall refinement now promotes short fragmented paired-wall candidates only when
+  both endpoints are supported by the trusted structural topology graph.
+- Placement readiness and clean topology export now recognize that narrow
+  topology-supported promotion, so one real short wall can be restored without
+  letting weak one-ended fragments or noisy detail lines become placement-ready.
+- Source/graph span visibility now treats the promoted class as trusted
+  short-structural wall evidence while preserving the existing review gates for
+  dense unlayered fragments.
+
+### Verified
+- Added regression coverage for promoted topology-supported fragmented pairs,
+  blocked weak one-ended pairs, short-dense readiness, and clean topology export.
+- Rescanned the supplied medium PDF `A20-102 PLAN 1. ETASJE.pdf` with
+  `wall-qa` and `wall-qa-review`: placement-ready walls increased from `18` to
+  `19`, omitted/review walls dropped from `97` to `96`, and
+  `page:1:wall:11` now exports one clean topology span while nearby weak
+  fragments remain omitted.
+- Rendered and inspected clean/review wall screenshots at
+  `%TEMP%/openplantrace-medium-a20-102-topology-frag-pair-v3-clean.png` and
+  `%TEMP%/openplantrace-medium-a20-102-topology-frag-pair-v3-review.png`.
+- Ran targeted wall readiness/refinement/export tests: `136` tests passed.
+- Ran the full test suite: `693` tests passed.
+
 ## [0.02.194] - 2026-06-22
 
 ### Improved
