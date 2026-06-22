@@ -6,6 +6,37 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.220] - 2026-06-22
+
+### Fixed
+- Placement export now classifies tightly aligned, stable isolated
+  fragment-merged interior wall candidates as duplicates of existing clean
+  topology spans when they are almost fully represented by a trusted span.
+- The relaxed duplicate gate is guarded by wall type, component kind, evidence
+  category, fragment stability, close-axis distance, and no obvious
+  door/object/detail evidence, so uncertain fragments remain review-only.
+- Duplicate-clean-topology diagnostic evidence now uses invariant decimal
+  formatting, keeping exported evidence text consistent across Windows locales.
+
+### Verified
+- Added placement-export regression tests for a near-contained isolated fragment
+  that should be suppressed and a farther offset fragment that must stay
+  `isolated_fragment`.
+- Rescanned the supplied medium PDF: raw wall detections stayed at `115`,
+  placement-ready walls stayed at `21`, clean topology spans stayed at `24`,
+  duplicate-clean-topology omissions rose from `20` to `21`, and isolated
+  fragment omissions dropped from `24` to `23`.
+- Confirmed `page:1:wall:56` moved from `isolated_fragment` to
+  `duplicate_clean_topology_span` with `0.907` overlap and `2.314` drawing-unit
+  axis distance to the clean span.
+- Rendered and inspected wall-QA screenshots at
+  `real-pdf-output/medium-a20-102-20260622-near-duplicate-isolated-v1/wall-qa-review.png`
+  and `real-pdf-output/medium-a20-102-20260622-near-duplicate-isolated-v1/wall-qa-review-crop-middle.png`.
+- Validated the generated scan, placement, and visual-snapshot artifacts with
+  the CLI validator.
+- Ran focused export tests: `117` tests passed.
+- Ran the full test suite: `729` tests passed.
+
 ## [0.02.219] - 2026-06-22
 
 ### Fixed

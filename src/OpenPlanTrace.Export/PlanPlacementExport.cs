@@ -1181,8 +1181,12 @@ public sealed record PlacementWallOmissionExport(
     IReadOnlyList<string> Evidence)
 {
     private const double MinRepresentedByCleanTopologyOverlapRatio = 0.92;
+    private const double MinNearIsolatedFragmentRepresentedOverlapRatio = 0.88;
     private const double MaxInteriorRepresentedByCleanTopologyAxisDistance = 6.0;
     private const double MaxExteriorRepresentedByCleanTopologyAxisDistance = 18.0;
+    private const double MaxNearIsolatedFragmentAxisDistance = 4.0;
+    private const int MaxNearIsolatedFragmentCount = 8;
+    private const double MaxNearIsolatedFragmentGapRatio = 0.001;
     private const double MinDoorAdjacentCleanTopologyPieceLength = 20.0;
 
     public static PlacementWallOmissionExport? From(
@@ -1226,8 +1230,11 @@ public sealed record PlacementWallOmissionExport(
             :
             [
                 $"wall already represented by clean topology span from wall {representedByCleanSpan.WallId}; "
-                + $"overlap {RepresentedByCleanTopologyOverlapRatio(wall, representedByCleanSpan):0.###}; "
-                + $"axis distance {RepresentedByCleanTopologyAxisDistance(wall, representedByCleanSpan):0.###} drawing units"
+                + "overlap "
+                + RepresentedByCleanTopologyOverlapRatio(wall, representedByCleanSpan).ToString("0.###", CultureInfo.InvariantCulture)
+                + "; axis distance "
+                + RepresentedByCleanTopologyAxisDistance(wall, representedByCleanSpan).ToString("0.###", CultureInfo.InvariantCulture)
+                + " drawing units"
             ];
         var suppressedOpeningTopologyEvidence = BuildSuppressedOpeningTopologyEvidence(
             wall,
@@ -1745,13 +1752,82 @@ public sealed record PlacementWallOmissionExport(
                 Overlap = RepresentedByCleanTopologyOverlapRatio(wall, span),
                 AxisDistance = RepresentedByCleanTopologyAxisDistance(wall, span)
             })
-            .Where(item => item.Overlap >= MinRepresentedByCleanTopologyOverlapRatio)
             .Where(item => item.AxisDistance <= RepresentedByCleanTopologyAxisDistanceTolerance(wall, item.Span))
+            .Where(item => item.Overlap >= RepresentedByCleanTopologyOverlapRatioThreshold(
+                wall,
+                component,
+                evidenceAssessment,
+                reliability,
+                item.Span,
+                item.AxisDistance))
             .OrderByDescending(item => item.Overlap)
             .ThenBy(item => item.AxisDistance)
             .ThenByDescending(item => item.Span.DrawingLength)
             .Select(item => item.Span)
             .FirstOrDefault();
+    }
+
+    private static double RepresentedByCleanTopologyOverlapRatioThreshold(
+        WallSegment wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? evidenceAssessment,
+        PlacementReliabilityExport reliability,
+        WallGraphTopologySpan span,
+        double axisDistance) =>
+        IsNearIsolatedFragmentRepresentedByCleanTopologyCandidate(
+            wall,
+            component,
+            evidenceAssessment,
+            reliability,
+            span,
+            axisDistance)
+            ? MinNearIsolatedFragmentRepresentedOverlapRatio
+            : MinRepresentedByCleanTopologyOverlapRatio;
+
+    private static bool IsNearIsolatedFragmentRepresentedByCleanTopologyCandidate(
+        WallSegment wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? evidenceAssessment,
+        PlacementReliabilityExport reliability,
+        WallGraphTopologySpan span,
+        double axisDistance)
+    {
+        if (component?.Kind != WallGraphComponentKind.IsolatedFragment
+            || component.ExcludedFromStructuralTopology
+            || wall.DetectionKind != WallDetectionKind.FragmentMerged
+            || wall.WallType != WallType.Interior
+            || evidenceAssessment?.Category != WallEvidenceCategory.MediumWallBody
+            || evidenceAssessment.Decision != WallEvidenceDecision.Review
+            || evidenceAssessment.RequiresReview != true
+            || evidenceAssessment.RejectedAsNoise
+            || reliability.ReadyForCoordinatePlacement
+            || wall.FragmentEvidence is not { RequiresGeometryReview: false } fragmentEvidence
+            || fragmentEvidence.FragmentCount > MaxNearIsolatedFragmentCount
+            || fragmentEvidence.GapRatio > MaxNearIsolatedFragmentGapRatio
+            || axisDistance > MaxNearIsolatedFragmentAxisDistance)
+        {
+            return false;
+        }
+
+        if (span.SourceWall is { WallType: not WallType.Unknown } sourceWall
+            && sourceWall.WallType != wall.WallType)
+        {
+            return false;
+        }
+
+        return !ContainsAnyEvidence(
+            wall,
+            component,
+            evidenceAssessment,
+            "covered-area",
+            "door",
+            "fixture",
+            "furniture",
+            "object",
+            "opening",
+            "railing",
+            "stair",
+            "terrace");
     }
 
     private static double RepresentedByCleanTopologyOverlapRatio(
@@ -1900,6 +1976,53 @@ public sealed record PlacementWallOmissionExport(
 
     private static bool ContainsEvidence(IReadOnlyList<string> evidence, string text) =>
         evidence.Any(item => item.Contains(text, StringComparison.OrdinalIgnoreCase));
+
+    private static bool ContainsAnyEvidence(
+        WallSegment wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? evidenceAssessment,
+        params string[] text)
+    {
+        return AllEvidence().Any(evidence => text.Any(token => evidence.Contains(token, StringComparison.OrdinalIgnoreCase)));
+
+        IEnumerable<string> AllEvidence()
+        {
+            foreach (var evidence in wall.Evidence)
+            {
+                yield return evidence;
+            }
+
+            foreach (var evidence in wall.FragmentEvidence?.Evidence ?? Array.Empty<string>())
+            {
+                yield return evidence;
+            }
+
+            foreach (var evidence in component?.Evidence ?? Array.Empty<string>())
+            {
+                yield return evidence;
+            }
+
+            if (evidenceAssessment is null)
+            {
+                yield break;
+            }
+
+            foreach (var evidence in evidenceAssessment.Evidence)
+            {
+                yield return evidence;
+            }
+
+            foreach (var evidence in evidenceAssessment.ScoreBreakdown.PositiveEvidence)
+            {
+                yield return evidence;
+            }
+
+            foreach (var evidence in evidenceAssessment.ScoreBreakdown.NegativeEvidence)
+            {
+                yield return evidence;
+            }
+        }
+    }
 
     private sealed record PlacementWallOmissionClassification(
         string Code,

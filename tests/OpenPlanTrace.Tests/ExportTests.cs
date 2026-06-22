@@ -797,6 +797,75 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementExporter_ClassifiesNearIsolatedFragmentAsDuplicateCleanTopology()
+    {
+        var fragmentLine = new PlanLineSegment(
+            new PlanPoint(90, 102),
+            new PlanPoint(190, 102));
+        var result = WithContainedWallAsIsolatedReviewFragment(CreateContainedDuplicatePlacementRunResult(
+            fragmentLine,
+            WallDetectionKind.FragmentMerged,
+            new WallFragmentEvidence(
+                FragmentCount: 6,
+                TotalHealedGap: 0,
+                MaxHealedGap: 0,
+                DuplicatePrimitiveCount: 6,
+                GapRatio: 0,
+                RequiresGeometryReview: false,
+                Evidence: ["synthetic near-duplicate fragment with stable geometry"])));
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var duplicateWall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(wall => wall.GetProperty("id").GetString() == "duplicate-contained-wall");
+        var omission = duplicateWall.GetProperty("placementOmission");
+
+        Assert.Equal("duplicate_clean_topology_span", omission.GetProperty("code").GetString());
+        Assert.Contains(
+            omission.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("overlap 0.9", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Contains(
+            omission.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("axis distance 2", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
+    public void PlacementExporter_DoesNotClassifyDistantIsolatedFragmentAsDuplicateCleanTopology()
+    {
+        var fragmentLine = new PlanLineSegment(
+            new PlanPoint(90, 108),
+            new PlanPoint(190, 108));
+        var result = WithContainedWallAsIsolatedReviewFragment(CreateContainedDuplicatePlacementRunResult(
+            fragmentLine,
+            WallDetectionKind.FragmentMerged,
+            new WallFragmentEvidence(
+                FragmentCount: 6,
+                TotalHealedGap: 0,
+                MaxHealedGap: 0,
+                DuplicatePrimitiveCount: 6,
+                GapRatio: 0,
+                RequiresGeometryReview: false,
+                Evidence: ["synthetic offset fragment with stable geometry"])));
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var duplicateWall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(wall => wall.GetProperty("id").GetString() == "duplicate-contained-wall");
+        var omission = duplicateWall.GetProperty("placementOmission");
+
+        Assert.Equal("isolated_fragment", omission.GetProperty("code").GetString());
+        Assert.DoesNotContain(
+            omission.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("already represented by clean topology span", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
     public void PlacementExporter_LinksRecoveredWallIdsInDuplicateCleanTopologyOmissions()
     {
         var result = RenameSyntheticWall(
@@ -5684,19 +5753,43 @@ public sealed class ExportTests
         };
     }
 
-    private static PlanScanResult CreateContainedDuplicatePlacementRunResult()
+    private static PlanScanResult CreateContainedDuplicatePlacementRunResult(
+        PlanLineSegment? containedWallCenterLine = null,
+        WallDetectionKind containedWallDetectionKind = WallDetectionKind.SingleLine,
+        WallFragmentEvidence? containedWallFragmentEvidence = null)
     {
+        var containedLine = containedWallCenterLine ?? new PlanLineSegment(
+            new PlanPoint(145, 100),
+            new PlanPoint(235, 100));
         var walls = new[]
         {
             SyntheticWall("duplicate-long-wall", 100, 100, 300, 100) with { WallType = WallType.Interior },
-            SyntheticWall("duplicate-contained-wall", 145, 100, 235, 100) with { WallType = WallType.Interior }
+            SyntheticWall(
+                "duplicate-contained-wall",
+                containedLine.Start.X,
+                containedLine.Start.Y,
+                containedLine.End.X,
+                containedLine.End.Y) with
+            {
+                WallType = WallType.Interior,
+                DetectionKind = containedWallDetectionKind,
+                FragmentEvidence = containedWallFragmentEvidence
+            }
         };
         var nodes = new[]
         {
             SyntheticNode("duplicate-long-node-a", 100, 100, WallNodeKind.Endpoint),
             SyntheticNode("duplicate-long-node-b", 300, 100, WallNodeKind.Endpoint),
-            SyntheticNode("duplicate-contained-node-a", 145, 100, WallNodeKind.Endpoint),
-            SyntheticNode("duplicate-contained-node-b", 235, 100, WallNodeKind.Endpoint)
+            SyntheticNode(
+                "duplicate-contained-node-a",
+                containedLine.Start.X,
+                containedLine.Start.Y,
+                WallNodeKind.Endpoint),
+            SyntheticNode(
+                "duplicate-contained-node-b",
+                containedLine.End.X,
+                containedLine.End.Y,
+                WallNodeKind.Endpoint)
         };
         var edges = new[]
         {
