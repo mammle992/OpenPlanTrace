@@ -6,6 +6,31 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.186] - 2026-06-22
+
+### Improved
+- Wall-type refinement now preserves promoted placement-ready evidence when
+  geometric room-boundary support is added later in the same refinement pass.
+- Geometric room-boundary wall IDs are exported from the shared room-boundary
+  reference helper so short dense wall/detail candidates can stay blocked unless
+  reliable room geometry explicitly supports them.
+- Placement-ready short dense walls now carry a clear
+  `geometric room boundary support` evidence trail for downstream consumers and
+  visual QA.
+
+### Verified
+- Added regression coverage for placement-ready short dense walls backed by
+  reliable room-boundary geometry.
+- Rescanned the supplied medium PDF with `--svg-profile wall-qa`; placement-ready
+  walls improved from `19` to `20`, visible clean topology spans improved from
+  `22` to `23`, and dense unknown-detail candidates still remain review-only.
+- Confirmed `page:1:wall:22` is now placement-ready with one clean topology
+  span while nearby `short_dense_detail_review_required` walls remain omitted.
+- Rendered and inspected the wall-QA screenshot at
+  `%TEMP%/openplantrace-a20-102-geometric-boundary-support-v1-wallqa.png`.
+- Ran targeted wall/export tests: `150` tests passed.
+- Ran the full test suite: `673` tests passed.
+
 ## [0.02.185] - 2026-06-22
 
 ### Improved

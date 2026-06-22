@@ -2,6 +2,7 @@ namespace OpenPlanTrace;
 
 internal sealed record RoomBoundaryWallReferenceResult(
     IReadOnlyDictionary<string, string[]> RoomIdsByWallId,
+    IReadOnlySet<string> GeometricRoomBoundaryWallIds,
     int GeometricRoomBoundaryReferencedWallCount,
     int GeometricRoomBoundaryReferenceCount);
 
@@ -67,6 +68,7 @@ internal static class RoomBoundaryWallReferenceBuilder
                 pair => pair.Key,
                 pair => pair.Value.Order(StringComparer.Ordinal).ToArray(),
                 StringComparer.Ordinal),
+            geometryReferencedWallIds,
             geometryReferencedWallIds.Count,
             geometryReferenceCount);
     }

@@ -516,10 +516,83 @@ public sealed class WallTypeRefinementTests
             promoted.Evidence,
             item => item.Contains("room-confirmed wall body promoted", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(
+            promoted.Evidence,
+            item => item.Contains("geometric room boundary support", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
             context.Diagnostics.Build().Messages,
             diagnostic => diagnostic.Code == "walls.architectural_type_refined"
                 && diagnostic.Properties["geometricRoomBoundaryReferencedWallCount"] == "1"
-                && diagnostic.Properties["geometricRoomBoundaryReferenceCount"] == "2");
+                && diagnostic.Properties["geometricRoomBoundaryReferenceCount"] == "2"
+                && diagnostic.Properties["geometricRoomBoundaryEvidenceAddedWallCount"] == "1");
+    }
+
+    [Fact]
+    public async Task WallTypeRefinement_AddsGeometricRoomBoundaryEvidenceToPlacementReadyShortDenseWall()
+    {
+        var sourceIds = Enumerable.Range(1, 34)
+            .Select(index => $"pdf:p1:path:{index}:line:1")
+            .ToArray();
+        var wall = new WallSegment(
+            "wall-short-dense-geometric-room-boundary",
+            1,
+            new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(140, 100)),
+            4,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Interior,
+            SourcePrimitiveIds = sourceIds,
+            Evidence = new[]
+            {
+                "parallel wall-face pair",
+                "first face merged 29 fragments",
+                "first face collapsed 5 duplicate or near-duplicate wall line primitive(s)",
+                "layer (unlayered) classified Unknown (0,35)"
+            }
+        };
+        var room = Room(
+            "room-aligned",
+            RoomUseKind.Office,
+            new PlanRect(90, 100, 80, 90),
+            new[]
+            {
+                new PlanPoint(90, 100),
+                new PlanPoint(170, 100),
+                new PlanPoint(170, 190),
+                new PlanPoint(90, 190)
+            }) with
+            {
+                Evidence = new[] { "semantic room boundary inferred from nearby walls synthetic-short-dense" }
+            };
+        var context = CreateContext("short-dense-geometric-room-boundary-evidence");
+        context.Walls.Add(wall);
+        context.Rooms.Add(room);
+        context.WallGraph = GraphFor(wall);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.StrongWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var updatedWall = Assert.Single(context.Walls);
+        var assessment = Assert.Single(context.WallEvidenceMap.WallAssessments);
+
+        Assert.True(assessment.PlacementReady);
+        Assert.False(assessment.RequiresReview);
+        Assert.Contains(
+            updatedWall.Evidence,
+            item => item.Contains("geometric room boundary support", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            assessment.Evidence,
+            item => item.Contains("geometric room boundary support", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "walls.architectural_type_refined"
+                && diagnostic.Properties["geometricRoomBoundaryEvidenceAddedWallCount"] == "1");
     }
 
     [Fact]

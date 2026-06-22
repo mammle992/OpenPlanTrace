@@ -43,6 +43,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         var roomConfirmedPlacementPromoted = 0;
         var fragmentedPairPlacementDemoted = 0;
         var fragmentedExteriorShellContinuityRetained = 0;
+        var geometricRoomBoundaryEvidenceAdded = 0;
         var updatedAssessmentsByWallId = new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal);
 
         for (var index = 0; index < context.Walls.Count; index++)
@@ -121,6 +122,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
 
             evidenceByWallId.TryGetValue(wall.Id, out var assessment);
             var hasExteriorShellContinuitySupport = exteriorContinuitySupportedWallIds.Contains(wall.Id);
+            var hasGeometricRoomBoundarySupport = roomWallReferences.GeometricRoomBoundaryWallIds.Contains(wall.Id);
             if (assessment is not null
                 && TryDemoteFragmentedPlacementReadyWallEvidence(
                     updatedWall,
@@ -191,6 +193,37 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
                 };
                 roomConfirmedPlacementPromoted++;
                 evidenceUpdated++;
+                assessment = promotedAssessment;
+            }
+
+            if (assessment is not null
+                && hasGeometricRoomBoundarySupport
+                && !assessment.RejectedAsNoise)
+            {
+                var roomBoundaryEvidence = new[]
+                {
+                    "wall evidence: geometric room boundary support from reliable room-boundary alignment"
+                };
+                var assessmentEvidence = AppendEvidence(assessment.Evidence, roomBoundaryEvidence);
+                var wallEvidence = AppendEvidence(updatedWall.Evidence, roomBoundaryEvidence);
+                var addedEvidence =
+                    assessmentEvidence.Count != assessment.Evidence.Count
+                    || wallEvidence.Count != updatedWall.Evidence.Count;
+                var updatedAssessment = assessment with
+                {
+                    Evidence = assessmentEvidence
+                };
+                updatedAssessmentsByWallId[wall.Id] = updatedAssessment;
+                updatedWall = updatedWall with
+                {
+                    Evidence = wallEvidence
+                };
+                assessment = updatedAssessment;
+                if (addedEvidence)
+                {
+                    geometricRoomBoundaryEvidenceAdded++;
+                    evidenceUpdated++;
+                }
             }
 
             if (!ReferenceEquals(updatedWall, wall))
@@ -222,6 +255,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             roomConfirmedPlacementPromoted,
             fragmentedPairPlacementDemoted,
             fragmentedExteriorShellContinuityRetained,
+            geometricRoomBoundaryEvidenceAdded,
             roomWallReferences.GeometricRoomBoundaryReferencedWallCount,
             roomWallReferences.GeometricRoomBoundaryReferenceCount);
         return ValueTask.CompletedTask;
@@ -1246,6 +1280,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         int roomConfirmedPlacementPromoted,
         int fragmentedPairPlacementDemoted,
         int fragmentedExteriorShellContinuityRetained,
+        int geometricRoomBoundaryEvidenceAdded,
         int geometricRoomBoundaryReferencedWallCount,
         int geometricRoomBoundaryReferenceCount)
     {
@@ -1267,6 +1302,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
                 ["roomReferencedWallCount"] = roomReferenced.ToString(),
                 ["geometricRoomBoundaryReferencedWallCount"] = geometricRoomBoundaryReferencedWallCount.ToString(),
                 ["geometricRoomBoundaryReferenceCount"] = geometricRoomBoundaryReferenceCount.ToString(),
+                ["geometricRoomBoundaryEvidenceAddedWallCount"] = geometricRoomBoundaryEvidenceAdded.ToString(),
                 ["twoSidedRoomEvidenceWallCount"] = twoSidedRoomEvidence.ToString(),
                 ["oneSidedRoomEvidenceWallCount"] = oneSidedRoomEvidence.ToString(),
                 ["rejectedEvidenceProtectedWallCount"] = rejectedEvidenceProtected.ToString(),
