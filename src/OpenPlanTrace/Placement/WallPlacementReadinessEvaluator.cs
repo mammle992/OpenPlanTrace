@@ -20,6 +20,8 @@ public static class WallPlacementReadinessEvaluator
     private const int MaxNoisyTopologySupportedFragmentedPairFaceFragments = 64;
     private const double MaxThinExteriorFacePairSeparationDrawingUnits = 3.25;
     private const double MaxThinExteriorFacePairThicknessMillimeters = 65.0;
+    private const double MinRoomBackedThinExteriorLengthDrawingUnits = 80.0;
+    private const double MinRoomBackedThinExteriorPairScore = 0.78;
 
     public static WallPlacementReadiness Evaluate(
         WallSegment wall,
@@ -104,7 +106,7 @@ public static class WallPlacementReadinessEvaluator
         }
 
         var coordinatePlacementBlockedByThinExteriorFacePair =
-            CoordinatePlacementBlockedByThinExteriorFacePairWithoutShellSupport(wall, evidenceAssessment);
+            CoordinatePlacementBlockedByThinExteriorFacePairWithoutShellSupport(wall, component, evidenceAssessment);
         if (coordinatePlacementBlockedByThinExteriorFacePair)
         {
             reasons.Add(ThinExteriorFacePairWithoutShellSupportReason);
@@ -381,6 +383,7 @@ public static class WallPlacementReadinessEvaluator
 
     private static bool CoordinatePlacementBlockedByThinExteriorFacePairWithoutShellSupport(
         WallSegment wall,
+        WallGraphComponent? component,
         WallEvidenceWallAssessment? evidenceAssessment)
     {
         if (evidenceAssessment is null
@@ -411,6 +414,11 @@ public static class WallPlacementReadinessEvaluator
             return false;
         }
 
+        if (HasTrustedOneSidedRoomBackedThinExteriorEvidence(wall, component, evidenceAssessment, pair, evidence))
+        {
+            return false;
+        }
+
         return EvidenceContainsAny(
                 evidence,
                 "layer (unlayered) classified Unknown",
@@ -422,6 +430,49 @@ public static class WallPlacementReadinessEvaluator
                 "local outer boundary",
                 "detected room evidence on one side only",
                 "geometric room boundary support");
+    }
+
+    private static bool HasTrustedOneSidedRoomBackedThinExteriorEvidence(
+        WallSegment wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment evidenceAssessment,
+        WallPairEvidence pair,
+        IReadOnlyList<string> evidence)
+    {
+        if (component?.Kind != WallGraphComponentKind.MainStructural
+            || component.ExcludedFromStructuralTopology
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.DrawingLength < MinRoomBackedThinExteriorLengthDrawingUnits
+            || pair.Score < MinRoomBackedThinExteriorPairScore
+            || pair.OverlapRatio < 0.75
+            || evidenceAssessment.Category != WallEvidenceCategory.StrongWallBody)
+        {
+            return false;
+        }
+
+        if (!EvidenceContainsAny(
+                evidence,
+                "detected room evidence on one side only",
+                "geometric room boundary support"))
+        {
+            return false;
+        }
+
+        return !EvidenceContainsAny(
+            evidence,
+            "outdoor",
+            "terrace",
+            "covered-area",
+            "covered entry",
+            "overbygd",
+            "canopy",
+            "railing",
+            "trim",
+            "glazing",
+            "detail linework",
+            "not trusted",
+            "without shell support",
+            "alone is not trusted");
     }
 
     private static bool EvidenceContainsAny(

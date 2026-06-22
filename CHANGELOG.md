@@ -6,6 +6,29 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.211] - 2026-06-22
+
+### Improved
+- Thin exterior parallel-face walls can now remain coordinate-ready when they
+  are long, high-score, main-structural, and backed by non-outdoor one-sided
+  room evidence.
+- Covered/outdoor/terrace-looking thin exterior candidates remain blocked for
+  review, preserving the covered-entry false-exterior guard.
+
+### Verified
+- Added readiness regression coverage for allowed room-backed thin exterior
+  walls and blocked outdoor-backed thin exterior walls.
+- Rescanned the private medium wall-noise PDF: placement-ready walls increased
+  from `16` to `17`, omitted walls dropped from `99` to `98`, and thin exterior
+  review omissions dropped from `3` to `2`.
+- Rescanned the private easy covered-boundary PDF: placement-ready walls and
+  visible topology spans stayed unchanged, confirming the covered-entry guard
+  did not regress.
+- Rendered and inspected the wall-QA screenshot at
+  `%TEMP%/openplantrace-medium-a20-102-20260622-room-backed-thin-exterior-v1-wall-qa-review.png`.
+- Ran targeted wall/export/refinement tests: `183` tests passed.
+- Ran the full test suite: `710` tests passed.
+
 ## [0.02.210] - 2026-06-22
 
 ### Improved
