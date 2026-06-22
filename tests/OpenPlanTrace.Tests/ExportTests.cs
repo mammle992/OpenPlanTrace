@@ -2661,6 +2661,157 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public async Task PlacementExporter_UsesSpecificOmissionForThinExteriorFacePairWithoutShellSupport()
+    {
+        var result = await CreateScanResultAsync();
+        var firstWall = result.Walls[0];
+        var line = firstWall.CenterLine;
+        var thinExteriorWall = firstWall with
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Exterior,
+            Thickness = 2.8,
+            ThicknessMillimeters = 52,
+            PairEvidence = HorizontalPairEvidenceAround(line, 2.8, 0.81),
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "face separation 2.8 drawing units",
+                "pair score 0.81",
+                "layer (unlayered) classified Unknown (0.35)",
+                "layer evidence: no strong layer name or geometry evidence",
+                "wall type exterior: near detected floorplan/wall envelope or local outer boundary"
+            ]
+        };
+        var assessment = new WallEvidenceWallAssessment(
+            thinExteriorWall.Id,
+            thinExteriorWall.PageNumber,
+            thinExteriorWall.Bounds,
+            WallEvidenceCategory.StrongWallBody,
+            Confidence.High,
+            PlacementReady: true,
+            RequiresReview: false,
+            RejectedAsNoise: false,
+            thinExteriorWall.SourcePrimitiveIds,
+            thinExteriorWall.Evidence)
+        {
+            Decision = WallEvidenceDecision.Accept,
+            ScoreBreakdown = new WallEvidenceScoreBreakdown(
+                PositiveScore: 0.7,
+                NegativeScore: 0,
+                DecisionScore: 0.7,
+                PairSupportScore: 0.5,
+                LayerSupportScore: 0,
+                StructuralSupportScore: 0.2,
+                RecoverySupportScore: 0,
+                NoisePenalty: 0,
+                FragmentReviewPenalty: 0,
+                PositiveEvidence: ["strong parallel-face wall pair", "both endpoints supported by structural context"],
+                NegativeEvidence: [])
+        };
+        result = ReplaceWallAndAssessment(result, thinExteriorWall, assessment);
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var wall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == firstWall.Id);
+
+        var placementOmission = wall.GetProperty("placementOmission");
+        Assert.Equal("thin_exterior_face_pair_review_required", placementOmission.GetProperty("code").GetString());
+        Assert.Equal("ThinExteriorFacePairReview", placementOmission.GetProperty("category").GetString());
+        Assert.Contains("thin exterior", placementOmission.GetProperty("message").GetString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            placementOmission.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains(
+                WallPlacementReadinessEvaluator.ThinExteriorFacePairWithoutShellSupportReason,
+                StringComparison.OrdinalIgnoreCase) == true);
+        Assert.False(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+
+        var summary = document.RootElement.GetProperty("summary");
+        Assert.Equal(
+            1,
+            summary
+                .GetProperty("wallPlacementOmissionCounts")
+                .GetProperty("thin_exterior_face_pair_review_required")
+                .GetInt32());
+    }
+
+    [Fact]
+    public async Task PlacementExporter_KeepsThickerExteriorFacePairPlacementReady()
+    {
+        var result = await CreateScanResultAsync();
+        var firstWall = result.Walls[0];
+        var line = firstWall.CenterLine;
+        var exteriorWall = firstWall with
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Exterior,
+            Thickness = 5.4,
+            ThicknessMillimeters = 92,
+            PairEvidence = HorizontalPairEvidenceAround(line, 5.4, 0.9),
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "face separation 5.4 drawing units",
+                "pair score 0.9",
+                "layer (unlayered) classified Unknown (0.35)",
+                "layer evidence: no strong layer name or geometry evidence",
+                "wall type exterior: near detected floorplan/wall envelope or local outer boundary"
+            ]
+        };
+        var assessment = new WallEvidenceWallAssessment(
+            exteriorWall.Id,
+            exteriorWall.PageNumber,
+            exteriorWall.Bounds,
+            WallEvidenceCategory.StrongWallBody,
+            Confidence.High,
+            PlacementReady: true,
+            RequiresReview: false,
+            RejectedAsNoise: false,
+            exteriorWall.SourcePrimitiveIds,
+            exteriorWall.Evidence)
+        {
+            Decision = WallEvidenceDecision.Accept,
+            ScoreBreakdown = new WallEvidenceScoreBreakdown(
+                PositiveScore: 0.7,
+                NegativeScore: 0,
+                DecisionScore: 0.7,
+                PairSupportScore: 0.5,
+                LayerSupportScore: 0,
+                StructuralSupportScore: 0.2,
+                RecoverySupportScore: 0,
+                NoisePenalty: 0,
+                FragmentReviewPenalty: 0,
+                PositiveEvidence: ["strong parallel-face wall pair", "both endpoints supported by structural context"],
+                NegativeEvidence: [])
+        };
+        result = ReplaceWallAndAssessment(result, exteriorWall, assessment);
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var wall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == firstWall.Id);
+
+        Assert.Equal(JsonValueKind.Null, wall.GetProperty("placementOmission").ValueKind);
+        Assert.True(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.DoesNotContain(
+            "thin_exterior_face_pair_review_required",
+            document.RootElement
+                .GetProperty("summary")
+                .GetProperty("wallPlacementOmissionCounts")
+                .EnumerateObject()
+                .Select(item => item.Name));
+    }
+
+    [Fact]
     public async Task PlacementExporter_UsesSpecificOmissionForRepeatedShortDetailReviewWalls()
     {
         var result = await CreateScanResultAsync();
@@ -5988,6 +6139,48 @@ public sealed class ExportTests
                 .Select(item => item.Id == wallId ? pairedWall : item)
                 .ToArray()
         };
+    }
+
+    private static PlanScanResult ReplaceWallAndAssessment(
+        PlanScanResult result,
+        WallSegment wall,
+        WallEvidenceWallAssessment assessment) =>
+        result with
+        {
+            Walls = result.Walls
+                .Select(item => item.Id == wall.Id ? wall : item)
+                .ToArray(),
+            WallEvidenceMap = new WallEvidenceMap(
+                result.WallEvidenceMap.Segments,
+                result.WallEvidenceMap.Bands,
+                result.WallEvidenceMap.WallAssessments
+                    .Where(item => !string.Equals(item.WallId, wall.Id, StringComparison.Ordinal))
+                    .Append(assessment)
+                    .ToArray(),
+                result.WallEvidenceMap.SourceCandidateWallCount,
+                result.WallEvidenceMap.RecoveredCandidateWallCount)
+        };
+
+    private static WallPairEvidence HorizontalPairEvidenceAround(
+        PlanLineSegment line,
+        double separation,
+        double score)
+    {
+        var offset = separation / 2.0;
+        return new WallPairEvidence(
+            new PlanLineSegment(
+                new PlanPoint(line.Start.X, line.Start.Y - offset),
+                new PlanPoint(line.End.X, line.End.Y - offset)),
+            new PlanLineSegment(
+                new PlanPoint(line.Start.X, line.Start.Y + offset),
+                new PlanPoint(line.End.X, line.End.Y + offset)),
+            FaceSeparation: separation,
+            OverlapRatio: 1,
+            Score: score,
+            FirstFaceFragmentCount: 2,
+            SecondFaceFragmentCount: 2,
+            FirstFaceSourcePrimitiveIds: ["thin-exterior-face-a"],
+            SecondFaceSourcePrimitiveIds: ["thin-exterior-face-b"]);
     }
 
     private static PlanScanResult WithReviewOnlyWallAssessment(

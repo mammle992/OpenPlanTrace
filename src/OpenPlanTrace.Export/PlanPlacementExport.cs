@@ -1390,6 +1390,15 @@ public sealed record PlacementWallOmissionExport(
                 "Review the source PDF and require explicit/geometric room-boundary or endpoint support before importing this stitched fragment as exact wall geometry.");
         }
 
+        if (ContainsEvidence(evidence, WallPlacementReadinessEvaluator.ThinExteriorFacePairWithoutShellSupportReason))
+        {
+            return new PlacementWallOmissionClassification(
+                "thin_exterior_face_pair_review_required",
+                "ThinExteriorFacePairReview",
+                "Wall is omitted from clean placement topology because a thin exterior parallel-face candidate lacks trusted exterior shell or layer support.",
+                "Review the source PDF before importing this as an exterior wall; it may be covered-entry, railing, trim, glazing, or detail linework.");
+        }
+
         if (ContainsEvidence(evidence, "unlayered fragment-merged wall candidate")
             && ContainsEvidence(evidence, "only one trusted structural endpoint"))
         {
@@ -1533,6 +1542,7 @@ public sealed record PlacementWallOmissionExport(
         || evidence.Contains("already represented by clean topology span", StringComparison.OrdinalIgnoreCase)
         || evidence.Contains("unlayered fragment-merged wall candidate", StringComparison.OrdinalIgnoreCase)
         || evidence.Contains("only one trusted structural endpoint", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains(WallPlacementReadinessEvaluator.ThinExteriorFacePairWithoutShellSupportReason, StringComparison.OrdinalIgnoreCase)
         || evidence.Contains("unlayered parallel-face candidate", StringComparison.OrdinalIgnoreCase)
         || evidence.Contains("repeated short unlayered", StringComparison.OrdinalIgnoreCase)
         || evidence.Contains("short high-density unknown-layer wall/detail candidate", StringComparison.OrdinalIgnoreCase)

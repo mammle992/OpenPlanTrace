@@ -3159,6 +3159,7 @@ public sealed class SchemaContractTests
             "fragment_geometry_review",
             "fragmented_pair_review_required",
             "weak_promoted_fragment_room_boundary_review_required",
+            "thin_exterior_face_pair_review_required",
             "one_endpoint_fragment_review_required",
             "fragmented_short_parallel_pair_review_required",
             "very_short_parallel_pair_review_required",

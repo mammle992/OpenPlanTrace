@@ -6,6 +6,29 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.202] - 2026-06-22
+
+### Improved
+- Placement readiness now blocks thin exterior parallel-face wall candidates
+  when they lack trusted exterior shell or wall-layer support.
+- These candidates remain exported as review evidence with the new
+  `thin_exterior_face_pair_review_required` placement omission code instead of
+  being treated as clean coordinate-ready exterior walls.
+- This specifically reduces false exterior-wall output around covered-entry,
+  railing, trim, glazing, and other thin local-boundary/detail bands.
+- The placement schema and schema contract tests now include the new omission
+  code.
+
+### Verified
+- Added export regression coverage proving thin exterior face pairs are omitted
+  for review while thicker exterior face pairs remain placement-ready.
+- Rescanned the supplied medium PDF difficulty case `A20-102 PLAN 1. ETASJE.pdf`:
+  clean exterior spans dropped from `7` to `4`, and the three lower-band thin
+  exterior runs now report `thin_exterior_face_pair_review_required`.
+- Rendered and inspected the wall-only before/after QA image at
+  `%TEMP%/openplantrace-medium-a20-102-thin-exterior-face-guard-v1-before-after-walls.png`.
+- Ran targeted placement/schema tests: `148` tests passed.
+
 ## [0.02.201] - 2026-06-22
 
 ### Added

@@ -8,8 +8,13 @@ public static class WallPlacementReadinessEvaluator
     public const string WeakPromotedFragmentRoomBoundaryReason =
         "promoted fragment-merged room boundary has no supported topology endpoint; keep for review until explicit or geometric room-boundary support confirms exact placement";
 
+    public const string ThinExteriorFacePairWithoutShellSupportReason =
+        "thin exterior parallel-face wall candidate lacks trusted exterior shell support";
+
     private const double MaxShortDenseDetailCandidateLengthDrawingUnits = 55.0;
     private const double MinShortDenseDetailCandidateSourceDensity = 0.65;
+    private const double MaxThinExteriorFacePairSeparationDrawingUnits = 3.25;
+    private const double MaxThinExteriorFacePairThicknessMillimeters = 65.0;
 
     public static WallPlacementReadiness Evaluate(
         WallSegment wall,
@@ -86,6 +91,13 @@ public static class WallPlacementReadinessEvaluator
             reasons.Add(WeakPromotedFragmentRoomBoundaryReason);
         }
 
+        var coordinatePlacementBlockedByThinExteriorFacePair =
+            CoordinatePlacementBlockedByThinExteriorFacePairWithoutShellSupport(wall, evidenceAssessment);
+        if (coordinatePlacementBlockedByThinExteriorFacePair)
+        {
+            reasons.Add(ThinExteriorFacePairWithoutShellSupportReason);
+        }
+
         var readyForCoordinatePlacement =
             wall.Confidence.Value >= 0.5
             && !coordinatePlacementBlocked
@@ -94,6 +106,7 @@ public static class WallPlacementReadinessEvaluator
             && !coordinatePlacementBlockedByShortDenseDetailEvidence
             && !coordinatePlacementBlockedByUntrustedOutdoorBoundaryEvidence
             && !coordinatePlacementBlockedByWeakPromotedFragmentRoomBoundary
+            && !coordinatePlacementBlockedByThinExteriorFacePair
             && wall.FragmentEvidence?.RequiresGeometryReview != true
             && (evidenceAssessment is null || evidenceAssessment.PlacementReady);
         var readyForMetricPlacement =
@@ -109,6 +122,7 @@ public static class WallPlacementReadinessEvaluator
             || coordinatePlacementBlockedByShortDenseDetailEvidence
             || coordinatePlacementBlockedByUntrustedOutdoorBoundaryEvidence
             || coordinatePlacementBlockedByWeakPromotedFragmentRoomBoundary
+            || coordinatePlacementBlockedByThinExteriorFacePair
             || evidenceAssessment?.RequiresReview == true
             || evidenceAssessment?.RejectedAsNoise == true
             || evidenceAssessment?.PlacementReady == false,
@@ -118,7 +132,8 @@ public static class WallPlacementReadinessEvaluator
             || coordinatePlacementBlockedByRecoveredExteriorEvidence
             || coordinatePlacementBlockedByShortDenseDetailEvidence
             || coordinatePlacementBlockedByUntrustedOutdoorBoundaryEvidence
-            || coordinatePlacementBlockedByWeakPromotedFragmentRoomBoundary,
+            || coordinatePlacementBlockedByWeakPromotedFragmentRoomBoundary
+            || coordinatePlacementBlockedByThinExteriorFacePair,
             reasons.Distinct(StringComparer.Ordinal).ToArray());
     }
 
@@ -310,6 +325,51 @@ public static class WallPlacementReadinessEvaluator
             "explicit room boundary support",
             "detected room evidence on both sides",
             "short structural return promoted by room boundary and two supported topology endpoints");
+    }
+
+    private static bool CoordinatePlacementBlockedByThinExteriorFacePairWithoutShellSupport(
+        WallSegment wall,
+        WallEvidenceWallAssessment? evidenceAssessment)
+    {
+        if (evidenceAssessment is null
+            || !evidenceAssessment.PlacementReady
+            || evidenceAssessment.RejectedAsNoise
+            || evidenceAssessment.Decision == WallEvidenceDecision.Reject
+            || wall.WallType != WallType.Exterior
+            || wall.PairEvidence is not { FaceSeparation: > 0 } pair)
+        {
+            return false;
+        }
+
+        var thinInDrawingUnits = pair.FaceSeparation < MaxThinExteriorFacePairSeparationDrawingUnits;
+        var thinInMillimeters = wall.ThicknessMillimeters is > 0
+            && wall.ThicknessMillimeters < MaxThinExteriorFacePairThicknessMillimeters;
+        if (!thinInDrawingUnits && !thinInMillimeters)
+        {
+            return false;
+        }
+
+        var evidence = wall.Evidence
+            .Concat(evidenceAssessment.Evidence)
+            .Concat(evidenceAssessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(evidenceAssessment.ScoreBreakdown.NegativeEvidence)
+            .ToArray();
+        if (evidence.Any(IsTrustedRecoveredExteriorSupportEvidence))
+        {
+            return false;
+        }
+
+        return EvidenceContainsAny(
+                evidence,
+                "layer (unlayered) classified Unknown",
+                "layer evidence: no strong layer",
+                "source layer category Unknown")
+            && EvidenceContainsAny(
+                evidence,
+                "near detected floorplan/wall envelope",
+                "local outer boundary",
+                "detected room evidence on one side only",
+                "geometric room boundary support");
     }
 
     private static bool EvidenceContainsAny(
