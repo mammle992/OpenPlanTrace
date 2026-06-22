@@ -6,6 +6,29 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.219] - 2026-06-22
+
+### Fixed
+- Long thin exterior wall bridges can now become coordinate-ready when they are
+  main-structural, strongly paired, fully overlapping, not over-fragmented, and
+  backed by supported endpoint-overrun or exterior-shell continuity evidence.
+- The thin-exterior guard still blocks the same geometry when covered-entry,
+  overbygd, terrace, canopy, railing, glazing, or detail-line evidence is
+  present, keeping covered-area false walls review-only.
+
+### Verified
+- Added placement-readiness and placement-export regression tests for accepted
+  trusted thin exterior bridges and rejected covered-entry lookalikes.
+- Rescanned the supplied medium PDF: raw wall detections stayed at `115`,
+  placement-ready walls rose from `20` to `21`, thin-exterior omissions dropped
+  from `2` to `1`, and coordinate/metric readiness rose from `0.623188` to
+  `0.637681`.
+- Rendered and inspected the wall-QA screenshot at
+  `real-pdf-output/medium-a20-102-20260622-thin-exterior-bridge-v2/wall-qa-review.png`.
+- Validated the generated scan and placement artifacts with the CLI validator.
+- Ran targeted placement/export/scan-quality tests: `172` tests passed.
+- Ran the full test suite: `727` tests passed.
+
 ## [0.02.218] - 2026-06-22
 
 ### Fixed

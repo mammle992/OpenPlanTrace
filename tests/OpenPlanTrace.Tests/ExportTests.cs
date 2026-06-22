@@ -3291,6 +3291,96 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementExporter_RecoversSourceBackedSpanWhenTrustedThinExteriorBridgeIsSupported()
+    {
+        var result = CreateSourceBackedFallbackWallResult(
+            pairScore: 0.813,
+            pairOverlapRatio: 1,
+            faceSeparation: 2.95,
+            firstFaceFragmentCount: 42,
+            secondFaceFragmentCount: 15,
+            wallLength: 125,
+            wallType: WallType.Exterior,
+            category: WallEvidenceCategory.StrongWallBody,
+            evidence:
+            [
+                "parallel wall-face pair",
+                "face separation 2.949 drawing units",
+                "pair score 0.813",
+                "overlap ratio 1",
+                "first face merged 42 fragments",
+                "second face merged 15 fragments",
+                "layer (unlayered) classified Unknown (0,35)",
+                "layer evidence: no strong layer name or geometry evidence",
+                "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+                "trimmed 1 supported endpoint overrun(s) from wall centerline"
+            ]);
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var wall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == "source-backed-fallback-wall");
+
+        var topologySpan = Assert.Single(wall.GetProperty("topologySpans").EnumerateArray());
+        Assert.Contains("source-backed-fallback", topologySpan.GetProperty("id").GetString(), StringComparison.Ordinal);
+        Assert.Equal(JsonValueKind.Null, wall.GetProperty("placementOmission").ValueKind);
+        Assert.True(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.DoesNotContain(
+            wall.GetProperty("reliability").GetProperty("reasons").EnumerateArray(),
+            reason => reason.GetString() == WallPlacementReadinessEvaluator.ThinExteriorFacePairWithoutShellSupportReason);
+
+        var summary = document.RootElement.GetProperty("summary");
+        Assert.Equal(1, summary.GetProperty("placementReadyWallCount").GetInt32());
+        Assert.Equal(1, summary.GetProperty("sourceBackedFallbackWallCount").GetInt32());
+        Assert.Equal(1, summary.GetProperty("sourceBackedFallbackTopologySpanCount").GetInt32());
+    }
+
+    [Fact]
+    public void PlacementExporter_DoesNotRecoverTrustedThinExteriorBridgeWhenCoveredEntryEvidenceIsPresent()
+    {
+        var result = CreateSourceBackedFallbackWallResult(
+            pairScore: 0.813,
+            pairOverlapRatio: 1,
+            faceSeparation: 2.95,
+            firstFaceFragmentCount: 42,
+            secondFaceFragmentCount: 15,
+            wallLength: 125,
+            wallType: WallType.Exterior,
+            category: WallEvidenceCategory.StrongWallBody,
+            evidence:
+            [
+                "parallel wall-face pair",
+                "layer (unlayered) classified Unknown (0,35)",
+                "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+                "trimmed 1 supported endpoint overrun(s) from wall centerline",
+                "outdoor covered-area boundary near overbygd entry"
+            ]);
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var wall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == "source-backed-fallback-wall");
+
+        Assert.Empty(wall.GetProperty("topologySpans").EnumerateArray());
+        Assert.Equal(
+            "covered_area_boundary_review_required",
+            wall.GetProperty("placementOmission").GetProperty("code").GetString());
+        Assert.False(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+
+        var summary = document.RootElement.GetProperty("summary");
+        Assert.Equal(0, summary.GetProperty("sourceBackedFallbackWallCount").GetInt32());
+        Assert.Equal(0, summary.GetProperty("sourceBackedFallbackTopologySpanCount").GetInt32());
+    }
+
+    [Fact]
     public void PlacementExporter_RecoversSourceBackedSpanWhenCleanPromotedFragmentRoomBoundaryHasNoGraphSpan()
     {
         var result = CreateSourceBackedFragmentFallbackWallResult();
@@ -5812,6 +5902,7 @@ public sealed class ExportTests
         bool includeNearbyGraphSpan = false,
         double pairScore = 0.93,
         double pairOverlapRatio = 1,
+        double faceSeparation = 8,
         int firstFaceFragmentCount = 2,
         int secondFaceFragmentCount = 2,
         double wallLength = 100,
@@ -5833,9 +5924,9 @@ public sealed class ExportTests
             DetectionKind = WallDetectionKind.ParallelLinePair,
             WallType = wallType,
             PairEvidence = new WallPairEvidence(
-                new PlanLineSegment(new PlanPoint(80, 116), new PlanPoint(wallEndX, 116)),
-                new PlanLineSegment(new PlanPoint(80, 124), new PlanPoint(wallEndX, 124)),
-                FaceSeparation: 8,
+                new PlanLineSegment(new PlanPoint(80, 120 - faceSeparation / 2.0), new PlanPoint(wallEndX, 120 - faceSeparation / 2.0)),
+                new PlanLineSegment(new PlanPoint(80, 120 + faceSeparation / 2.0), new PlanPoint(wallEndX, 120 + faceSeparation / 2.0)),
+                FaceSeparation: faceSeparation,
                 OverlapRatio: pairOverlapRatio,
                 Score: pairScore,
                 FirstFaceFragmentCount: firstFaceFragmentCount,

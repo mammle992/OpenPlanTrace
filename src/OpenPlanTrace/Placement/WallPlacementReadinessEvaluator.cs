@@ -25,6 +25,10 @@ public static class WallPlacementReadinessEvaluator
     private const double MaxThinExteriorFacePairThicknessMillimeters = 65.0;
     private const double MinRoomBackedThinExteriorLengthDrawingUnits = 80.0;
     private const double MinRoomBackedThinExteriorPairScore = 0.78;
+    private const double MinTrustedMainStructuralThinExteriorBridgeLengthDrawingUnits = 100.0;
+    private const double MinTrustedMainStructuralThinExteriorBridgePairScore = 0.80;
+    private const double MinTrustedMainStructuralThinExteriorBridgeOverlapRatio = 0.95;
+    private const int MaxTrustedMainStructuralThinExteriorBridgeFaceFragments = 72;
     private const double MinTrustedExteriorShellContinuityLengthDrawingUnits = 80.0;
     private const double MinTrustedExteriorShellContinuityPairScore = 0.60;
     private const double MinTrustedExteriorShellContinuityOverlapRatio = 0.95;
@@ -506,6 +510,11 @@ public static class WallPlacementReadinessEvaluator
             return false;
         }
 
+        if (HasTrustedMainStructuralThinExteriorBridgeEvidence(wall, component, evidenceAssessment, pair, evidence))
+        {
+            return false;
+        }
+
         return EvidenceContainsAny(
                 evidence,
                 "layer (unlayered) classified Unknown",
@@ -555,6 +564,60 @@ public static class WallPlacementReadinessEvaluator
             "canopy",
             "railing",
             "trim",
+            "glazing",
+            "detail linework",
+            "not trusted",
+            "without shell support",
+            "alone is not trusted");
+    }
+
+    private static bool HasTrustedMainStructuralThinExteriorBridgeEvidence(
+        WallSegment wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment evidenceAssessment,
+        WallPairEvidence pair,
+        IReadOnlyList<string> evidence)
+    {
+        if (component?.Kind != WallGraphComponentKind.MainStructural
+            || component.ExcludedFromStructuralTopology
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.DrawingLength < MinTrustedMainStructuralThinExteriorBridgeLengthDrawingUnits
+            || pair.Score < MinTrustedMainStructuralThinExteriorBridgePairScore
+            || pair.OverlapRatio < MinTrustedMainStructuralThinExteriorBridgeOverlapRatio
+            || Math.Max(pair.FirstFaceFragmentCount, pair.SecondFaceFragmentCount) > MaxTrustedMainStructuralThinExteriorBridgeFaceFragments
+            || evidenceAssessment.Category != WallEvidenceCategory.StrongWallBody)
+        {
+            return false;
+        }
+
+        if (!EvidenceContainsAny(
+                evidence,
+                "near detected floorplan/wall envelope",
+                "local outer boundary"))
+        {
+            return false;
+        }
+
+        if (!EvidenceContainsAny(
+                evidence,
+                "supported endpoint overrun",
+                "exterior shell continuity"))
+        {
+            return false;
+        }
+
+        return !EvidenceContainsAny(
+            evidence,
+            "outdoor",
+            "terrace",
+            "covered-area",
+            "covered entry",
+            "covered-entry",
+            "overbygd",
+            "canopy",
+            "railing",
+            "trim linework",
+            "trim/detail",
             "glazing",
             "detail linework",
             "not trusted",

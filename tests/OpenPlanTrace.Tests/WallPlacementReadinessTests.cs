@@ -468,6 +468,112 @@ public sealed class WallPlacementReadinessTests
     }
 
     [Fact]
+    public void Evaluate_AllowsTrustedMainStructuralThinExteriorBridge()
+    {
+        var wall = Wall("wall:trusted-thin-exterior-bridge", Confidence.High) with
+        {
+            CenterLine = new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(225, 100)),
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Exterior,
+            Thickness = 2.95,
+            ThicknessMillimeters = 52,
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(new PlanPoint(100, 98.525), new PlanPoint(225, 98.525)),
+                new PlanLineSegment(new PlanPoint(100, 101.475), new PlanPoint(225, 101.475)),
+                FaceSeparation: 2.95,
+                OverlapRatio: 1,
+                Score: 0.813,
+                FirstFaceFragmentCount: 42,
+                SecondFaceFragmentCount: 15,
+                FirstFaceSourcePrimitiveIds: ["bridge-face-a"],
+                SecondFaceSourcePrimitiveIds: ["bridge-face-b"]),
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "layer (unlayered) classified Unknown (0,35)",
+                "layer evidence: no strong layer name or geometry evidence",
+                "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+                "trimmed 1 supported endpoint overrun(s) from wall centerline"
+            ]
+        };
+        var component = Component(
+            WallGraphComponentKind.MainStructural,
+            excludedFromStructuralTopology: false,
+            wall.Id);
+        var evidence = Evidence(wall, WallEvidenceCategory.StrongWallBody, placementReady: true) with
+        {
+            Evidence = wall.Evidence
+        };
+
+        var readiness = WallPlacementReadinessEvaluator.Evaluate(
+            wall,
+            ReliableCalibration(),
+            component,
+            evidence);
+
+        Assert.True(readiness.ReadyForCoordinatePlacement);
+        Assert.True(readiness.ReadyForMetricPlacement);
+        Assert.False(readiness.RequiresReview);
+        Assert.False(readiness.CoordinatePlacementBlocked);
+        Assert.DoesNotContain(
+            WallPlacementReadinessEvaluator.ThinExteriorFacePairWithoutShellSupportReason,
+            readiness.Reasons);
+    }
+
+    [Fact]
+    public void Evaluate_BlocksTrustedThinExteriorBridgeWhenCoveredEntryEvidenceIsPresent()
+    {
+        var wall = Wall("wall:covered-thin-exterior-bridge", Confidence.High) with
+        {
+            CenterLine = new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(225, 100)),
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Exterior,
+            Thickness = 2.95,
+            ThicknessMillimeters = 52,
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(new PlanPoint(100, 98.525), new PlanPoint(225, 98.525)),
+                new PlanLineSegment(new PlanPoint(100, 101.475), new PlanPoint(225, 101.475)),
+                FaceSeparation: 2.95,
+                OverlapRatio: 1,
+                Score: 0.813,
+                FirstFaceFragmentCount: 42,
+                SecondFaceFragmentCount: 15,
+                FirstFaceSourcePrimitiveIds: ["covered-bridge-face-a"],
+                SecondFaceSourcePrimitiveIds: ["covered-bridge-face-b"]),
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "layer (unlayered) classified Unknown (0,35)",
+                "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+                "trimmed 1 supported endpoint overrun(s) from wall centerline",
+                "outdoor covered-area boundary near overbygd entry"
+            ]
+        };
+        var component = Component(
+            WallGraphComponentKind.MainStructural,
+            excludedFromStructuralTopology: false,
+            wall.Id);
+        var evidence = Evidence(wall, WallEvidenceCategory.StrongWallBody, placementReady: true) with
+        {
+            Evidence = wall.Evidence
+        };
+
+        var readiness = WallPlacementReadinessEvaluator.Evaluate(
+            wall,
+            ReliableCalibration(),
+            component,
+            evidence);
+
+        Assert.False(readiness.ReadyForCoordinatePlacement);
+        Assert.False(readiness.ReadyForMetricPlacement);
+        Assert.True(readiness.RequiresReview);
+        Assert.True(readiness.CoordinatePlacementBlocked);
+        Assert.Contains(
+            WallPlacementReadinessEvaluator.ThinExteriorFacePairWithoutShellSupportReason,
+            readiness.Reasons);
+    }
+
+    [Fact]
     public void Evaluate_BlocksShortDenseUnknownLayerDetailCandidateFromCoordinatePlacement()
     {
         var sourceIds = Enumerable.Range(1, 34)
