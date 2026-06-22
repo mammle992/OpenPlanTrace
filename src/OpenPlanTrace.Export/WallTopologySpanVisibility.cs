@@ -127,6 +127,21 @@ internal static class WallTopologySpanVisibility
         return context.Spans
             .Where(span => span.PageNumber == pageNumber)
             .Where(span => !IsVisibleTopologySpan(span, context, options))
+            .Where(span => options.IncludeSuppressedDetailWallTopologySpans
+                || !IsSuppressedDetailTopologySpan(span, context))
+            .ToArray();
+    }
+
+    public static IReadOnlyList<WallGraphTopologySpan> BuildSuppressedDetailTopologySpans(
+        PlanScanResult result,
+        int pageNumber,
+        SvgOverlayRenderOptions options)
+    {
+        var context = BuildContext(result);
+        return context.Spans
+            .Where(span => span.PageNumber == pageNumber)
+            .Where(span => !IsVisibleTopologySpan(span, context, options))
+            .Where(span => IsSuppressedDetailTopologySpan(span, context))
             .ToArray();
     }
 
@@ -189,6 +204,35 @@ internal static class WallTopologySpanVisibility
         }
 
         return !IsShortDanglingTopologySpan(span, component, assessment, context.NodeDegreeById);
+    }
+
+    private static bool IsSuppressedDetailTopologySpan(
+        WallGraphTopologySpan span,
+        WallTopologySpanVisibilityContext context)
+    {
+        context.ComponentByWallId.TryGetValue(span.WallId, out var component);
+        context.WallEvidenceAssessments.TryGetValue(span.WallId, out var assessment);
+
+        if (component?.ExcludedFromStructuralTopology == true
+            || component?.Kind is WallGraphComponentKind.ObjectLikeIsland or WallGraphComponentKind.IsolatedFragment)
+        {
+            return true;
+        }
+
+        if (assessment is null)
+        {
+            return false;
+        }
+
+        if (assessment.RejectedAsNoise || assessment.Decision == WallEvidenceDecision.Reject)
+        {
+            return true;
+        }
+
+        return assessment.Category is WallEvidenceCategory.DoorOrOpeningSymbol
+            or WallEvidenceCategory.SurfacePatternDetail
+            or WallEvidenceCategory.DimensionOrAnnotation
+            or WallEvidenceCategory.ObjectOrFixtureDetail;
     }
 
     private static WallTopologySpanVisibilityContext BuildContext(PlanScanResult result) =>

@@ -1161,8 +1161,12 @@ public sealed class ExportTests
     {
         var result = WithEndpointToWallHostRepairCandidate(
             WithReviewOnlyWallAssessment(
-                CreateDenseMinorRoutingDetailResult(),
-                "detail-tooth-1"));
+                WithReviewOnlyWallAssessment(
+                    CreateDenseMinorRoutingDetailResult(),
+                    "detail-tooth-1",
+                    WallEvidenceCategory.SurfacePatternDetail),
+                "detail-tooth-2",
+                WallEvidenceCategory.MediumWallBody));
 
         var svg = PlanOverlaySvgRenderer.RenderPage(
             result,
@@ -1170,8 +1174,9 @@ public sealed class ExportTests
             SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.WallQaReview));
 
         Assert.Contains("data-profile=\"wall-qa-review\"", svg);
-        Assert.Contains("Wall QA review (amber is not placement)", svg);
-        Assert.Contains("Dashed amber = omitted/review only", svg);
+        Assert.Contains("Wall QA review (actionable amber only)", svg);
+        Assert.Contains("Dashed amber = review-only wall candidates", svg);
+        Assert.Contains("suppressed detail spans hidden", svg);
         Assert.Contains("Faint source linework context", svg);
         Assert.Contains("id=\"source-context\"", svg);
         Assert.Contains("id=\"wall-body-footprints\"", svg);
@@ -1179,10 +1184,10 @@ public sealed class ExportTests
         Assert.Contains("id=\"wall-topology-review-spans\"", svg);
         Assert.Contains("wall body footprint detail-host:solid-span:1:body-footprint", svg);
         Assert.Contains("clean wall topology span detail-host:clean-run:1", svg);
-        Assert.Contains("non-placement wall topology span edge-tooth-1", svg);
+        Assert.Contains("non-placement wall topology span edge-tooth-2", svg);
+        Assert.DoesNotContain("non-placement wall topology span edge-tooth-1", svg);
         Assert.Contains("1 visible topology spans", svg);
         Assert.Contains("1 visible wall body footprints", svg);
-        Assert.Contains("4 hidden non-placement topology spans", svg);
         Assert.DoesNotContain("id=\"wall-graph-repairs\"", svg);
         Assert.DoesNotContain("id=\"walls\"", svg);
     }
@@ -1369,7 +1374,7 @@ public sealed class ExportTests
         Assert.Contains("wallBodyFootprints", page.VisibleLayerNames);
         Assert.Equal(1, page.Layers.Single(layer => layer.Name == "wallBodyFootprints").Count);
         Assert.Equal(1, page.Layers.Single(layer => layer.Name == "wallTopologySpans").Count);
-        Assert.Equal(4, page.Layers.Single(layer => layer.Name == "wallTopologyReviewSpans").Count);
+        Assert.Equal(3, page.Layers.Single(layer => layer.Name == "wallTopologyReviewSpans").Count);
         Assert.DoesNotContain("walls", page.VisibleLayerNames);
     }
 
@@ -6351,14 +6356,15 @@ public sealed class ExportTests
 
     private static PlanScanResult WithReviewOnlyWallAssessment(
         PlanScanResult result,
-        string wallId)
+        string wallId,
+        WallEvidenceCategory category = WallEvidenceCategory.SurfacePatternDetail)
     {
         var wall = result.Walls.Single(item => item.Id == wallId);
         var assessment = new WallEvidenceWallAssessment(
             wall.Id,
             wall.PageNumber,
             wall.Bounds,
-            WallEvidenceCategory.SurfacePatternDetail,
+            category,
             Confidence.Medium,
             PlacementReady: false,
             RequiresReview: true,

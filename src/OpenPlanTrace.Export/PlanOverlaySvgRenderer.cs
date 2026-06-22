@@ -710,7 +710,7 @@ public static class PlanOverlaySvgRenderer
         else if (options.Profile is SvgOverlayRenderProfile.WallQa or SvgOverlayRenderProfile.WallQaReview or SvgOverlayRenderProfile.WallQaFocus)
         {
             rows.Add(options.Profile == SvgOverlayRenderProfile.WallQaReview
-                ? "Wall QA review (amber is not placement)"
+                ? "Wall QA review (actionable amber only)"
                 : "Walls-only placement QA");
             if (options.CropToFloorplanContent)
             {
@@ -719,7 +719,12 @@ public static class PlanOverlaySvgRenderer
 
             if (options.IncludeReviewOnlyWallTopologySpans)
             {
-                rows.Add("Dashed amber = omitted/review only");
+                rows.Add("Dashed amber = review-only wall candidates");
+            }
+
+            if (!options.IncludeSuppressedDetailWallTopologySpans)
+            {
+                rows.Add($"{SuppressedDetailTopologySpanCount(result, page.Number, options)} suppressed detail spans hidden");
             }
 
             if (options.IncludeSourceContext && string.IsNullOrWhiteSpace(options.BackgroundImageHref))
@@ -1044,6 +1049,12 @@ public static class PlanOverlaySvgRenderer
         int pageNumber,
         SvgOverlayRenderOptions options) =>
         WallTopologySpanVisibility.BuildHiddenNonPlacementTopologySpans(result, pageNumber, options).Count;
+
+    private static int SuppressedDetailTopologySpanCount(
+        PlanScanResult result,
+        int pageNumber,
+        SvgOverlayRenderOptions options) =>
+        WallTopologySpanVisibility.BuildSuppressedDetailTopologySpans(result, pageNumber, options).Count;
 
     private static int CountTopologyExcludedWalls(PlanScanResult result, int pageNumber)
     {

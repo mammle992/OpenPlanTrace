@@ -54,6 +54,8 @@ public sealed record SvgOverlayRenderOptions
 
     public bool IncludeReviewOnlyWallTopologySpans { get; init; } = true;
 
+    public bool IncludeSuppressedDetailWallTopologySpans { get; init; } = true;
+
     public bool IncludeWallGraphRepairs { get; init; } = true;
 
     public bool IncludeRoutingLayer { get; init; }
@@ -161,6 +163,7 @@ public sealed record SvgOverlayRenderOptions
                 IncludeWallTopologySpans = true,
                 IncludeWallBodyFootprints = true,
                 IncludeReviewOnlyWallTopologySpans = true,
+                IncludeSuppressedDetailWallTopologySpans = false,
                 IncludeWallGraphRepairs = false,
                 IncludeRoutingLayer = false,
                 IncludeSourceContext = true

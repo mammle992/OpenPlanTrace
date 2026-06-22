@@ -6,6 +6,28 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.209] - 2026-06-22
+
+### Improved
+- Wall QA review SVGs now hide suppressed non-wall detail topology spans from
+  the amber review overlay by default.
+- The review legend now distinguishes actionable review-only wall candidates
+  from suppressed detail spans, so stairs, fixtures, object-like islands,
+  surface-pattern details, and rejected noise do not look like candidate walls.
+- Full/debug profiles still preserve the broader non-placement topology output
+  for deep inspection.
+
+### Verified
+- Updated SVG and visual-snapshot regression coverage for the new wall-QA review
+  filtering contract.
+- Rescanned the private medium wall-noise PDF with `wall-qa-review`; the new
+  review screenshot reports `81` suppressed detail spans hidden and leaves a
+  much smaller actionable amber set for wall accuracy review.
+- Rendered and inspected the updated screenshot at
+  `%TEMP%/openplantrace-medium-a20-102-20260622-v2-wall-qa-review.png`.
+- Ran targeted export/schema/wall tests: `210` tests passed.
+- Ran the full test suite: `707` tests passed.
+
 ## [0.02.208] - 2026-06-22
 
 ### Improved
