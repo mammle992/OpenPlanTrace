@@ -6,6 +6,32 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.199] - 2026-06-22
+
+### Improved
+- Room boundary reliability now tracks `roomSupportedFragmentWallIds` for
+  low-gap interior fragment-merged wall candidates that are shared by multiple
+  detected rooms and backed by room-boundary or endpoint evidence.
+- These fragments remain review-only as wall geometry, but they no longer block
+  room coordinate placement when the room evidence says they are a likely shared
+  separator rather than random door/object/detail linework.
+- The placement schema now exposes the new boundary bucket so downstream
+  consumers can import room polygons while still keeping the underlying wall
+  candidate out of clean wall topology until reviewed.
+
+### Verified
+- Added placement export and schema regression coverage for shared
+  room-supported fragment boundary walls.
+- Rescanned the supplied medium PDF `A20-102 PLAN 1. ETASJE.pdf`: `page:1:wall:126`
+  moved from `coordinateBlockingWallIds` to `roomSupportedFragmentWallIds` for
+  rooms `page:1:room:1` and `page:1:room:2`, while the more suspicious
+  `page:1:wall:51` stayed coordinate-blocking for the semantic `Gang` room.
+- Rendered and inspected wall-only QA screenshots at
+  `%TEMP%/openplantrace-medium-a20-102-wallqa-room-supported-v1-full.png` and
+  `%TEMP%/openplantrace-medium-a20-102-wallqa-room-supported-v1-bath-entry.png`.
+- Ran targeted placement/schema tests: `144` tests passed.
+- Ran the full test suite: `697` tests passed.
+
 ## [0.02.198] - 2026-06-22
 
 ### Improved

@@ -3244,6 +3244,50 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementExporter_DoesNotBlockRoomForSharedRoomSupportedFragmentBoundaryWall()
+    {
+        var result = CreateSharedRoomSupportedFragmentBoundaryResult();
+        var boundaryWall = result.Walls.Single();
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var rooms = document.RootElement
+            .GetProperty("rooms")
+            .EnumerateArray()
+            .ToArray();
+
+        Assert.Equal(2, rooms.Length);
+        foreach (var room in rooms)
+        {
+            var reliability = room.GetProperty("reliability");
+            Assert.True(reliability.GetProperty("readyForCoordinatePlacement").GetBoolean());
+
+            var boundaryReliability = room.GetProperty("boundaryReliability");
+            Assert.Contains(
+                boundaryReliability.GetProperty("roomSupportedFragmentWallIds").EnumerateArray(),
+                wallId => wallId.GetString() == boundaryWall.Id);
+            Assert.DoesNotContain(
+                boundaryReliability.GetProperty("coordinateBlockingWallIds").EnumerateArray(),
+                wallId => wallId.GetString() == boundaryWall.Id);
+            Assert.DoesNotContain(
+                boundaryReliability.GetProperty("reviewWallIds").EnumerateArray(),
+                wallId => wallId.GetString() == boundaryWall.Id);
+            Assert.Contains(
+                boundaryReliability.GetProperty("evidence").EnumerateArray(),
+                evidence => evidence.GetString()?.Contains("room-supported fragment", StringComparison.OrdinalIgnoreCase) == true);
+        }
+
+        var wall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == boundaryWall.Id);
+        Assert.False(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.True(wall.GetProperty("reliability").GetProperty("requiresReview").GetBoolean());
+    }
+
+    [Fact]
     public async Task PlacementExporter_MarksRoomsWithoutLinkedWallEvidenceForReview()
     {
         var result = await CreateScanResultAsync();
@@ -5606,6 +5650,163 @@ public sealed class ExportTests
             Array.Empty<RoomRegion>(),
             RoomAdjacencyGraph.Empty,
             [opening],
+            Array.Empty<ObjectCandidate>(),
+            Array.Empty<ObjectCandidateGroup>(),
+            Array.Empty<ObjectAggregate>(),
+            new PipelineDiagnostics(
+                now,
+                now,
+                Array.Empty<PipelineStageReport>(),
+                Array.Empty<PlanDiagnostic>()))
+        {
+            WallEvidenceMap = new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                [assessment],
+                1,
+                0)
+        };
+    }
+
+    private static PlanScanResult CreateSharedRoomSupportedFragmentBoundaryResult()
+    {
+        var wall = SyntheticWall("shared-fragment-room-boundary", 160, 80, 160, 180) with
+        {
+            DetectionKind = WallDetectionKind.FragmentMerged,
+            WallType = WallType.Interior,
+            FragmentEvidence = new WallFragmentEvidence(
+                FragmentCount: 6,
+                TotalHealedGap: 3.0,
+                MaxHealedGap: 1.2,
+                DuplicatePrimitiveCount: 0,
+                GapRatio: 0.03,
+                RequiresGeometryReview: false,
+                Evidence: ["fragment evidence low-risk healed gap across room-supported interior boundary"]),
+            Evidence =
+            [
+                "synthetic wall",
+                "wall type refined interior: shared by room adjacency boundary"
+            ]
+        };
+        var nodes = new[]
+        {
+            SyntheticNode("shared-fragment-node-a", 160, 80, WallNodeKind.Endpoint),
+            SyntheticNode("shared-fragment-node-b", 160, 180, WallNodeKind.Endpoint)
+        };
+        var edge = new WallEdge(
+            "shared-fragment-edge",
+            1,
+            nodes[0].Id,
+            nodes[1].Id,
+            wall.Id,
+            Confidence.High);
+        var component = new WallGraphComponent(
+            "shared-fragment-component",
+            1,
+            WallGraphComponentKind.IsolatedFragment,
+            wall.Bounds,
+            [wall.Id],
+            nodes.Select(node => node.Id).ToArray(),
+            [edge.Id],
+            wall.SourcePrimitiveIds,
+            wall.DrawingLength,
+            Confidence.Medium,
+            ["synthetic isolated fragment retained for room-boundary review"]);
+        var assessment = new WallEvidenceWallAssessment(
+            wall.Id,
+            wall.PageNumber,
+            wall.Bounds,
+            WallEvidenceCategory.MediumWallBody,
+            Confidence.Medium,
+            PlacementReady: false,
+            RequiresReview: true,
+            RejectedAsNoise: false,
+            wall.SourcePrimitiveIds,
+            ["medium fragment-merged wall candidate retained for boundary review"])
+        {
+            Decision = WallEvidenceDecision.Review,
+            ScoreBreakdown = new WallEvidenceScoreBreakdown(
+                PositiveScore: 0.72,
+                NegativeScore: 0.25,
+                DecisionScore: 0.47,
+                PairSupportScore: 0,
+                LayerSupportScore: 0.2,
+                StructuralSupportScore: 0.7,
+                RecoverySupportScore: 0.2,
+                NoisePenalty: 0,
+                FragmentReviewPenalty: 0.2,
+                PositiveEvidence: ["both endpoints supported by structural context"],
+                NegativeEvidence: ["isolated fragment still needs exact wall review"])
+        };
+        var rooms = new[]
+        {
+            new RoomRegion(
+                "left-room",
+                1,
+                new PlanRect(80, 80, 80, 100),
+                [
+                    new PlanPoint(80, 80),
+                    new PlanPoint(160, 80),
+                    new PlanPoint(160, 180),
+                    new PlanPoint(80, 180)
+                ],
+                [wall.Id],
+                Confidence.High),
+            new RoomRegion(
+                "right-room",
+                1,
+                new PlanRect(160, 80, 80, 100),
+                [
+                    new PlanPoint(160, 80),
+                    new PlanPoint(240, 80),
+                    new PlanPoint(240, 180),
+                    new PlanPoint(160, 180)
+                ],
+                [wall.Id],
+                Confidence.High)
+        };
+        var now = DateTimeOffset.UtcNow;
+
+        return new PlanScanResult(
+            new PlanDocument(
+                "shared-room-supported-fragment-boundary",
+                [
+                    new PlanPage(
+                        1,
+                        new PlanSize(320, 260),
+                        [
+                            WallLine(wall.Id, wall.CenterLine.Start, wall.CenterLine.End)
+                        ])
+                ])
+            {
+                Metadata = new PlanMetadata
+                {
+                    SourceName = "shared-room-supported-fragment-boundary.pdf",
+                    SourcePath = @"C:\plans\shared-room-supported-fragment-boundary.pdf",
+                    Properties = new Dictionary<string, string>
+                    {
+                        ["format"] = "pdf",
+                        ["loader"] = "synthetic",
+                        ["sourceKind"] = PlanSourceKind.Pdf.ToString(),
+                        ["effectiveSourceKind"] = PlanSourceKind.Pdf.ToString()
+                    }
+                }
+            },
+            PlanLayerAnalysis.Empty,
+            PlanCalibration.Empty,
+            MeasurementConsistencyReport.Empty,
+            Array.Empty<TitleBlockAnalysis>(),
+            Array.Empty<DimensionAnnotation>(),
+            Array.Empty<PlanAnnotationBlock>(),
+            Array.Empty<GridAxis>(),
+            Array.Empty<GridBaySpacing>(),
+            Array.Empty<SheetRegion>(),
+            Array.Empty<SurfacePatternCandidate>(),
+            [wall],
+            new WallGraph(nodes, [edge], [component]),
+            rooms,
+            RoomAdjacencyGraph.Empty,
+            Array.Empty<OpeningCandidate>(),
             Array.Empty<ObjectCandidate>(),
             Array.Empty<ObjectCandidateGroup>(),
             Array.Empty<ObjectAggregate>(),

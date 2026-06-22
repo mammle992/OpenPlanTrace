@@ -116,8 +116,14 @@ public sealed record PlanPlacementExport(
                     : Array.Empty<WallGraphRepairCandidate>()))
             .ToArray();
         var placementWallsById = walls.ToDictionary(wall => wall.Id, StringComparer.Ordinal);
+        var roomBoundaryWallUseCounts = BuildRoomBoundaryWallUseCounts(result.Rooms);
         var rooms = result.Rooms
-            .Select(room => PlacementRoomExport.From(room, result.Calibration, wallEvidenceAssessments, placementWallsById))
+            .Select(room => PlacementRoomExport.From(
+                room,
+                result.Calibration,
+                wallEvidenceAssessments,
+                placementWallsById,
+                roomBoundaryWallUseCounts))
             .ToArray();
         var openings = result.Openings
             .Select(opening => PlacementOpeningExport.From(opening, result.Calibration, sourceLookup, wallEvidenceAssessments))
@@ -261,6 +267,15 @@ public sealed record PlanPlacementExport(
                 .ToArray(),
             StringComparer.Ordinal);
     }
+
+    private static IReadOnlyDictionary<string, int> BuildRoomBoundaryWallUseCounts(
+        IReadOnlyList<RoomRegion> rooms) =>
+        rooms
+            .SelectMany(room => room.WallIds
+                .Where(wallId => !string.IsNullOrWhiteSpace(wallId))
+                .Distinct(StringComparer.Ordinal))
+            .GroupBy(wallId => wallId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
 
     private static IEnumerable<string> OpeningWallIds(OpeningCandidate opening)
     {
@@ -2587,10 +2602,15 @@ public sealed record PlacementRoomExport(
         RoomRegion room,
         PlanCalibration calibration,
         IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceAssessments,
-        IReadOnlyDictionary<string, PlacementWallExport> placementWallsById)
+        IReadOnlyDictionary<string, PlacementWallExport> placementWallsById,
+        IReadOnlyDictionary<string, int>? roomBoundaryWallUseCounts = null)
     {
         var scale = ResolveMillimetersPerDrawingUnit(calibration, room.MeasurementScaleGroupId);
-        var boundaryReliability = PlacementReliability.ForRoomBoundary(room, wallEvidenceAssessments, placementWallsById);
+        var boundaryReliability = PlacementReliability.ForRoomBoundary(
+            room,
+            wallEvidenceAssessments,
+            placementWallsById,
+            roomBoundaryWallUseCounts);
         return new PlacementRoomExport(
             room.Id,
             room.PageNumber,
@@ -2622,6 +2642,7 @@ public sealed record PlacementRoomBoundaryReliabilityExport(
     IReadOnlyList<string> RejectedWallIds,
     IReadOnlyList<string> NonBlockingDuplicateWallIds,
     IReadOnlyList<string> OpeningOnlyWallIds,
+    IReadOnlyList<string> RoomSupportedFragmentWallIds,
     IReadOnlyList<string> UnassessedWallIds,
     IReadOnlyList<string> CoordinateBlockingWallIds,
     IReadOnlyList<string> Evidence);
@@ -4149,7 +4170,8 @@ internal static class PlacementReliability
     public static PlacementRoomBoundaryReliabilityExport ForRoomBoundary(
         RoomRegion room,
         IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceAssessments,
-        IReadOnlyDictionary<string, PlacementWallExport>? placementWallsById)
+        IReadOnlyDictionary<string, PlacementWallExport>? placementWallsById,
+        IReadOnlyDictionary<string, int>? roomBoundaryWallUseCounts = null)
     {
         var wallIds = room.WallIds
             .Where(wallId => !string.IsNullOrWhiteSpace(wallId))
@@ -4161,6 +4183,7 @@ internal static class PlacementReliability
         var rejectedWallIds = new List<string>();
         var nonBlockingDuplicateWallIds = new List<string>();
         var openingOnlyWallIds = new List<string>();
+        var roomSupportedFragmentWallIds = new List<string>();
         var unassessedWallIds = new List<string>();
         var assessedWallCount = 0;
 
@@ -4193,6 +4216,14 @@ internal static class PlacementReliability
             else if (IsNonBlockingDuplicateBoundaryWallEvidence(assessment))
             {
                 nonBlockingDuplicateWallIds.Add(wallId);
+            }
+            else if (IsRoomSupportedFragmentBoundaryWall(
+                wallId,
+                assessment,
+                placementWall,
+                roomBoundaryWallUseCounts))
+            {
+                roomSupportedFragmentWallIds.Add(wallId);
             }
             else if (assessment.Decision == WallEvidenceDecision.Review
                 || assessment.RequiresReview
@@ -4230,6 +4261,11 @@ internal static class PlacementReliability
             evidence.Add($"non-blocking opening-only room boundary wall evidence: {string.Join(",", openingOnlyWallIds.Order(StringComparer.Ordinal))}");
         }
 
+        if (roomSupportedFragmentWallIds.Count > 0)
+        {
+            evidence.Add($"non-blocking room-supported fragment boundary wall evidence: {string.Join(",", roomSupportedFragmentWallIds.Order(StringComparer.Ordinal))}");
+        }
+
         if (unassessedWallIds.Count > 0)
         {
             evidence.Add($"room boundary wall evidence not assessed: {string.Join(",", unassessedWallIds.Order(StringComparer.Ordinal))}");
@@ -4243,6 +4279,7 @@ internal static class PlacementReliability
             rejectedWallIds.Order(StringComparer.Ordinal).ToArray(),
             nonBlockingDuplicateWallIds.Order(StringComparer.Ordinal).ToArray(),
             openingOnlyWallIds.Order(StringComparer.Ordinal).ToArray(),
+            roomSupportedFragmentWallIds.Order(StringComparer.Ordinal).ToArray(),
             unassessedWallIds.Order(StringComparer.Ordinal).ToArray(),
             coordinateBlockingWallIds,
             evidence);
@@ -4296,6 +4333,47 @@ internal static class PlacementReliability
 
         covered += currentEnd - currentStart;
         return Math.Clamp(covered, 0, 1);
+    }
+
+    private static bool IsRoomSupportedFragmentBoundaryWall(
+        string wallId,
+        WallEvidenceWallAssessment assessment,
+        PlacementWallExport? wall,
+        IReadOnlyDictionary<string, int>? roomBoundaryWallUseCounts)
+    {
+        const double maxLowRiskGapRatio = 0.09;
+        const double minBoundaryLength = 40.0;
+
+        if (wall is null
+            || roomBoundaryWallUseCounts is null
+            || !roomBoundaryWallUseCounts.TryGetValue(wallId, out var roomUseCount)
+            || roomUseCount < 2
+            || !string.Equals(wall.DetectionKind, nameof(WallDetectionKind.FragmentMerged), StringComparison.Ordinal)
+            || !string.Equals(wall.WallType, nameof(WallType.Interior), StringComparison.Ordinal)
+            || !string.Equals(wall.WallComponentKind, nameof(WallGraphComponentKind.IsolatedFragment), StringComparison.Ordinal)
+            || wall.DrawingLength < minBoundaryLength
+            || wall.FragmentEvidence is null
+            || wall.FragmentEvidence.RequiresGeometryReview
+            || wall.FragmentEvidence.GapRatio > maxLowRiskGapRatio
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject
+            || assessment.Category is not (WallEvidenceCategory.StrongWallBody
+                or WallEvidenceCategory.MediumWallBody
+                or WallEvidenceCategory.RecoveredWallBody))
+        {
+            return false;
+        }
+
+        var evidence = wall.Evidence
+            .Concat(assessment.Evidence)
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(assessment.ScoreBreakdown.NegativeEvidence)
+            .ToArray();
+
+        return evidence.Any(item =>
+            item.Contains("shared by room adjacency boundary", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("both endpoints supported by structural context", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("room boundary", StringComparison.OrdinalIgnoreCase));
     }
 
     public static PlacementReliabilityExport ForRoom(
