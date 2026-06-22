@@ -3081,7 +3081,7 @@ function drawOverlay() {
         return;
       }
 
-      wallCleanTopologySpans(wall).forEach((span) => {
+      wallReviewTopologySpans(wall).forEach((span) => {
         if (!visibleBySourceLayer(span)) {
           return;
         }
@@ -3229,6 +3229,10 @@ function shouldDrawWallInStructuralCandidateLayer(wall) {
 }
 
 function wallIsPlacementReady(wall) {
+  if (wallCoordinateBlocked(wall) || wallRequiresReliabilityReview(wall)) {
+    return false;
+  }
+
   if (wall?.readyForCoordinatePlacement === false || wall?.requiresReview === true) {
     return false;
   }
@@ -4588,6 +4592,29 @@ function wallCleanTopologySpans(wall) {
     : [];
 
   return mergeViewerCleanTopologyRuns(wall, spans);
+}
+
+function wallReviewTopologySpans(wall) {
+  return (Array.isArray(wall?.topologySpans) ? wall.topologySpans : [])
+    .map((span, index) => {
+      const centerLine = normalizeLine(span?.centerLine ?? span?.line);
+      if (!centerLine) {
+        return null;
+      }
+
+      return {
+        ...span,
+        id: span.id || `${wall.id}:review-topology-span:${index + 1}`,
+        pageNumber: span.pageNumber ?? wall.pageNumber,
+        centerLine,
+        line: centerLine,
+        bounds: normalizeRect(span.bounds) ?? boundsFromLine(centerLine),
+        confidence: span.confidence ?? wall.confidence,
+        wallGraphEdgeId: span.wallGraphEdgeId || null,
+        evidence: span.evidence ?? []
+      };
+    })
+    .filter(Boolean);
 }
 
 function normalizeViewerWallTopologySpan(wall, span) {
@@ -9891,6 +9918,13 @@ function wallTopologySpanCount(scan = state.scan, pageNumber = null, predicate =
     .reduce((total, wall) => total + wallCleanTopologySpans(wall).length, 0);
 }
 
+function wallReviewTopologySpanCount(scan = state.scan, pageNumber = null) {
+  return (scan?.walls ?? [])
+    .filter(shouldDrawWallAsReviewTopologySpan)
+    .filter((wall) => pageNumber == null || wall.pageNumber == null || wall.pageNumber === pageNumber)
+    .reduce((total, wall) => total + wallReviewTopologySpans(wall).length, 0);
+}
+
 function rawWallAuditLineCount(scan = state.scan, pageNumber = null) {
   return (scan?.walls ?? [])
     .filter(shouldDrawRawWallAuditLine)
@@ -9962,7 +9996,7 @@ function layerTotalForKey(scan, key) {
     case "wallTopologySpans":
       return wallTopologySpanCount(scan);
     case "wallTopologyReviewSpans":
-      return wallTopologySpanCount(scan, null, shouldDrawWallAsReviewTopologySpan);
+      return wallReviewTopologySpanCount(scan);
     case "nodes":
       return scan.nodes?.length ?? 0;
     case "rooms":
@@ -10024,7 +10058,7 @@ function layerCountForKey(scan, key) {
     case "wallTopologySpans":
       return wallTopologySpanCount(scan, state.currentPage);
     case "wallTopologyReviewSpans":
-      return wallTopologySpanCount(scan, state.currentPage, shouldDrawWallAsReviewTopologySpan);
+      return wallReviewTopologySpanCount(scan, state.currentPage);
     case "nodes":
       return currentPageOnly(scan.nodes);
     case "rooms":

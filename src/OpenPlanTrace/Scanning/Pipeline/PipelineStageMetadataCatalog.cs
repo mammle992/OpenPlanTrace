@@ -81,7 +81,7 @@ public static class PipelineStageMetadataCatalog
             PipelineStageKind.Quality,
             Reads(PlanArtifactKind.Dimensions, PlanArtifactKind.Calibration),
             Writes(PlanArtifactKind.MeasurementConsistency, PlanArtifactKind.Diagnostics),
-            Capabilities("scale-outlier-detection", "metric-readiness-evidence")),
+            Capabilities("scale-outlier-detection", "metric-readiness-evidence", "dimension-cluster-calibration")),
         Create(
             "dimension-chains",
             "Dimension chain consistency",

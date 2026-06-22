@@ -106,8 +106,11 @@ public sealed class ViewerScriptContractTests
 
         Assert.Contains("wall?.readyForCoordinatePlacement === false || wall?.requiresReview === true", script);
         Assert.Contains("wall?.readyForCoordinatePlacement === false", script);
+        Assert.Contains("wallCoordinateBlocked(wall) || wallRequiresReliabilityReview(wall)", script);
+        Assert.Contains("reliability.readyForCoordinatePlacement === false", script);
         Assert.Contains("function wallIsPlacementReady", script);
         Assert.Contains("function wallCoordinateBlocked", script);
+        Assert.Contains("function wallRequiresReliabilityReview", script);
     }
 
     [Fact]
@@ -128,6 +131,9 @@ public sealed class ViewerScriptContractTests
         Assert.Contains("if (!shouldDrawWallAsPlacementWall(wall))", normalized);
         Assert.Contains("case \"walls\":\n      return wallTopologySpanCount(scan, null, shouldDrawWallAsPlacementWall);", normalized);
         Assert.Contains("case \"walls\":\n      return wallTopologySpanCount(scan, state.currentPage, shouldDrawWallAsPlacementWall);", normalized);
+        Assert.Contains("function wallReviewTopologySpans", normalized);
+        Assert.Contains("case \"wallTopologyReviewSpans\":\n      return wallReviewTopologySpanCount(scan);", normalized);
+        Assert.Contains("case \"wallTopologyReviewSpans\":\n      return wallReviewTopologySpanCount(scan, state.currentPage);", normalized);
     }
 
     [Fact]

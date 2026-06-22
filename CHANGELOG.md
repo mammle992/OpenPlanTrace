@@ -6,6 +6,33 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.184] - 2026-06-22
+
+### Improved
+- Measurement consistency can now select a dominant matched-dimension scale
+  cluster when no title-block or scale-bar calibration was trusted.
+- The selected dimension-derived calibration is exported with scale-group
+  evidence and diagnostics while outlier dimensions still block metric import
+  trust when their spread is too high.
+- The interactive viewer now treats nested placement `reliability` as
+  authoritative, so review-only or coordinate-blocked walls no longer appear in
+  clean placement wall, body-footprint, or clean-span layers.
+- Viewer cache busting was bumped so the clean wall QA rendering update loads
+  without stale browser script state.
+
+### Verified
+- Added regression coverage for dominant dimension-cluster calibration with
+  outliers and for viewer placement-wall reliability gating.
+- Rescanned the supplied medium PDF (`A20-102 PLAN 1. ETASJE.pdf`) with
+  `--svg-profile wall-qa`; calibration is now selected at `17.638862`
+  mm/drawing-unit with `11` consistent and `4` outlier dimensions.
+- Confirmed the fresh scan has `0` pipeline plan warnings and includes the new
+  `measurement_consistency.dimension_cluster_calibration_selected` diagnostic.
+- Rendered and inspected the fresh exported wall-QA SVG plus the viewer clean
+  wall-span screenshot; the viewer clean mode shows `21` trusted spans and no
+  review/noise wall soup.
+- Ran the full test suite: `668` tests passed.
+
 ## [0.02.183] - 2026-06-22
 
 ### Improved

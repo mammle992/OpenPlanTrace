@@ -121,6 +121,57 @@ public sealed class MeasurementConsistencyTests
     }
 
     [Fact]
+    public async Task MeasurementConsistency_SelectsDominantDimensionScaleClusterWhenNoCalibrationExists()
+    {
+        var context = new ScanContext(
+            new PlanDocument(
+                "dimension-cluster-calibration",
+                new[]
+                {
+                    new PlanPage(
+                        1,
+                        new PlanSize(600, 500),
+                        Array.Empty<PlanPrimitive>())
+                })
+            {
+                Metadata = new PlanMetadata
+                {
+                    Properties = new Dictionary<string, string>
+                    {
+                        ["format"] = "pdf"
+                    }
+                }
+            },
+            new ScannerOptions());
+        context.Dimensions.AddRange(new[]
+        {
+            Dimension("dim-cluster-1", 1000, 50),
+            Dimension("dim-cluster-2", 1200, 60),
+            Dimension("dim-cluster-3", 1600, 80),
+            Dimension("dim-cluster-4", 2000, 100),
+            Dimension("dim-cluster-5", 2400, 120),
+            Dimension("dim-outlier-short", 1000, 16),
+            Dimension("dim-outlier-long", 1000, 200)
+        });
+
+        await new MeasurementConsistencyStage().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.True(context.Calibration.HasReliableMeasurementScale);
+        Assert.Equal(PlanMeasurementUnit.PdfPoint, context.Calibration.DrawingUnit);
+        Assert.Equal(20, context.Calibration.MillimetersPerDrawingUnit);
+        var group = Assert.Single(context.Calibration.ScaleGroups);
+        Assert.Equal(CalibrationScaleScope.Dimensions, group.Scope);
+        Assert.Equal(5, group.EvidenceCount);
+        Assert.Equal(5, context.MeasurementConsistency.ConsistentCount);
+        Assert.Equal(2, context.MeasurementConsistency.OutlierCount);
+        Assert.Equal(7, context.MeasurementConsistency.CheckedCount);
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            message => message.Code == "measurement_consistency.dimension_cluster_calibration_selected"
+                && message.Properties["clusterDimensionCount"] == "5");
+    }
+
+    [Fact]
     public async Task JsonExport_IncludesMeasurementConsistencyReport()
     {
         var document = CreateDimensionOnlyDocument(
@@ -265,6 +316,25 @@ public sealed class MeasurementConsistencyTests
             Layer = layer,
             DrawingSpace = SourceDrawingSpace.Paper
         };
+
+    private static DimensionAnnotation Dimension(string id, double millimeters, double drawingLength) =>
+        new(
+            id,
+            1,
+            DimensionKind.Linear,
+            DimensionOrientation.Horizontal,
+            $"{millimeters.ToString("0", System.Globalization.CultureInfo.InvariantCulture)} mm",
+            $"{millimeters.ToString("0", System.Globalization.CultureInfo.InvariantCulture)} mm",
+            new PlanRect(100 + drawingLength, 320, 70, 16),
+            PlanMeasurementUnit.Millimeter,
+            millimeters,
+            new PlanLineSegment(new PlanPoint(100, 320), new PlanPoint(100 + drawingLength, 320)),
+            drawingLength,
+            millimeters / drawingLength,
+            new Confidence(0.7),
+            "page:1:dimensions",
+            new[] { $"{id}:text", $"{id}:line" },
+            Array.Empty<string>());
 
     private static IReadOnlyList<MeasurementConsistencyCheck> CreateChecks(
         int consistentCount,
