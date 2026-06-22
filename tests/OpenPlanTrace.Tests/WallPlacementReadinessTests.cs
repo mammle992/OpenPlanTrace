@@ -131,6 +131,179 @@ public sealed class WallPlacementReadinessTests
         Assert.Contains(repairReason, readiness.Reasons);
     }
 
+    [Fact]
+    public void Evaluate_BlocksRecoveredExteriorFromOneSidedRoomEvidenceWithoutShellSupport()
+    {
+        var wall = Wall("wall:recovered-one-sided-exterior", Confidence.High) with
+        {
+            WallType = WallType.Exterior,
+            Evidence = new[]
+            {
+                "recovered by wall evidence map from unclaimed parallel wall-face evidence",
+                "wall type refined exterior: detected room evidence on one side only"
+            }
+        };
+        var component = Component(
+            WallGraphComponentKind.MainStructural,
+            excludedFromStructuralTopology: false,
+            wall.Id);
+        var evidence = Evidence(wall, WallEvidenceCategory.RecoveredWallBody, placementReady: true);
+
+        var readiness = WallPlacementReadinessEvaluator.Evaluate(
+            wall,
+            ReliableCalibration(),
+            component,
+            evidence);
+
+        Assert.False(readiness.ReadyForCoordinatePlacement);
+        Assert.False(readiness.ReadyForMetricPlacement);
+        Assert.True(readiness.RequiresReview);
+        Assert.True(readiness.CoordinatePlacementBlocked);
+        Assert.Contains(
+            "recovered exterior wall has only one-sided room evidence and no trusted exterior shell support",
+            readiness.Reasons);
+    }
+
+    [Fact]
+    public void Evaluate_AllowsRecoveredExteriorWhenShellSupportIsExplicit()
+    {
+        var wall = Wall("wall:recovered-shell-supported-exterior", Confidence.High) with
+        {
+            WallType = WallType.Exterior,
+            Evidence = new[]
+            {
+                "recovered by wall evidence map from unclaimed parallel wall-face evidence",
+                "wall type refined exterior: detected room evidence on one side only",
+                "wall evidence: retained by exterior shell continuity"
+            }
+        };
+        var component = Component(
+            WallGraphComponentKind.MainStructural,
+            excludedFromStructuralTopology: false,
+            wall.Id);
+        var evidence = Evidence(wall, WallEvidenceCategory.RecoveredWallBody, placementReady: true);
+
+        var readiness = WallPlacementReadinessEvaluator.Evaluate(
+            wall,
+            ReliableCalibration(),
+            component,
+            evidence);
+
+        Assert.True(readiness.ReadyForCoordinatePlacement);
+        Assert.True(readiness.ReadyForMetricPlacement);
+        Assert.False(readiness.RequiresReview);
+        Assert.False(readiness.CoordinatePlacementBlocked);
+        Assert.DoesNotContain(
+            "recovered exterior wall has only one-sided room evidence and no trusted exterior shell support",
+            readiness.Reasons);
+    }
+
+    [Fact]
+    public void Evaluate_BlocksShortDenseUnknownLayerDetailCandidateFromCoordinatePlacement()
+    {
+        var sourceIds = Enumerable.Range(1, 34)
+            .Select(index => $"pdf:p1:path:{index}:line:1")
+            .ToArray();
+        var wall = Wall("wall:short-dense-detail", Confidence.High) with
+        {
+            CenterLine = new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(140, 100)),
+            SourcePrimitiveIds = sourceIds,
+            Evidence = new[]
+            {
+                "parallel wall-face pair",
+                "first face merged 29 fragments",
+                "first face collapsed 5 duplicate or near-duplicate wall line primitive(s)",
+                "layer (unlayered) classified Unknown (0,35)"
+            }
+        };
+        var component = Component(
+            WallGraphComponentKind.MainStructural,
+            excludedFromStructuralTopology: false,
+            wall.Id);
+        var evidence = Evidence(wall, WallEvidenceCategory.StrongWallBody, placementReady: true) with
+        {
+            Evidence = wall.Evidence,
+            ScoreBreakdown = new WallEvidenceScoreBreakdown(
+                0.7,
+                0,
+                0.7,
+                0.5,
+                0,
+                0.2,
+                0,
+                0,
+                0,
+                new[] { "strong parallel-face wall pair", "both endpoints supported by structural context" },
+                Array.Empty<string>())
+        };
+
+        var readiness = WallPlacementReadinessEvaluator.Evaluate(
+            wall,
+            ReliableCalibration(),
+            component,
+            evidence);
+
+        Assert.False(readiness.ReadyForCoordinatePlacement);
+        Assert.False(readiness.ReadyForMetricPlacement);
+        Assert.True(readiness.RequiresReview);
+        Assert.True(readiness.CoordinatePlacementBlocked);
+        Assert.Contains(
+            "short high-density unknown-layer wall/detail candidate requires review before exact placement",
+            readiness.Reasons);
+    }
+
+    [Fact]
+    public void Evaluate_AllowsShortDenseCandidateWithExplicitRoomBoundarySupport()
+    {
+        var sourceIds = Enumerable.Range(1, 34)
+            .Select(index => $"pdf:p1:path:{index}:line:1")
+            .ToArray();
+        var wall = Wall("wall:short-dense-room-boundary", Confidence.High) with
+        {
+            CenterLine = new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(140, 100)),
+            SourcePrimitiveIds = sourceIds,
+            Evidence = new[]
+            {
+                "parallel wall-face pair",
+                "first face merged 29 fragments",
+                "first face collapsed 5 duplicate or near-duplicate wall line primitive(s)",
+                "layer (unlayered) classified Unknown (0,35)",
+                "wall evidence: retained by room boundary support"
+            }
+        };
+        var component = Component(
+            WallGraphComponentKind.MainStructural,
+            excludedFromStructuralTopology: false,
+            wall.Id);
+        var evidence = Evidence(wall, WallEvidenceCategory.StrongWallBody, placementReady: true) with
+        {
+            Evidence = wall.Evidence,
+            ScoreBreakdown = new WallEvidenceScoreBreakdown(
+                0.7,
+                0,
+                0.7,
+                0.5,
+                0,
+                0.2,
+                0,
+                0,
+                0,
+                new[] { "strong parallel-face wall pair", "both endpoints supported by structural context" },
+                Array.Empty<string>())
+        };
+
+        var readiness = WallPlacementReadinessEvaluator.Evaluate(
+            wall,
+            ReliableCalibration(),
+            component,
+            evidence);
+
+        Assert.True(readiness.ReadyForCoordinatePlacement);
+        Assert.True(readiness.ReadyForMetricPlacement);
+        Assert.False(readiness.RequiresReview);
+        Assert.False(readiness.CoordinatePlacementBlocked);
+    }
+
     private static WallSegment Wall(string id, Confidence confidence) =>
         new(
             id,

@@ -41,6 +41,12 @@ public static class PlanOverlaySvgRenderer
             .sheet-image { image-rendering: auto; }
             .source-context { stroke: #242933; stroke-width: 0.34; stroke-linecap: round; stroke-linejoin: round; fill: none; opacity: 0.22; vector-effect: non-scaling-stroke; }
             .source-context-rect { fill: none; opacity: 0.18; }
+            svg[data-profile="wall-qa"] .source-context,
+            svg[data-profile="wall-qa-focus"] .source-context,
+            svg[data-profile="wall-qa-review"] .source-context { stroke: #202631; stroke-width: 0.44; opacity: 0.34; }
+            svg[data-profile="wall-qa"] .source-context-rect,
+            svg[data-profile="wall-qa-focus"] .source-context-rect,
+            svg[data-profile="wall-qa-review"] .source-context-rect { opacity: 0.26; }
             .region { fill: rgba(20, 124, 114, 0.045); stroke: #147c72; stroke-width: 1.1; vector-effect: non-scaling-stroke; }
             .region-title { fill: rgba(201, 124, 24, 0.11); stroke: #c97c18; }
             .region-secondary { fill: rgba(120, 84, 168, 0.09); stroke: #7854a8; }
@@ -70,6 +76,18 @@ public static class PlanOverlaySvgRenderer
             .wall-body-footprint-interior { fill: rgba(15, 122, 72, 0.10); stroke: #0f7a48; }
             .wall-body-footprint-review { fill: rgba(166, 95, 0, 0.075); stroke: #a65f00; stroke-dasharray: 3 3; }
             .wall-body-footprint-excluded { fill: rgba(120, 84, 168, 0.06); stroke: #7854a8; stroke-dasharray: 2 5; }
+            svg[data-profile="wall-qa"] .wall-body-footprint,
+            svg[data-profile="wall-qa-focus"] .wall-body-footprint,
+            svg[data-profile="wall-qa-review"] .wall-body-footprint { fill: rgba(15, 79, 184, 0.16); stroke-width: 0.95; }
+            svg[data-profile="wall-qa"] .wall-body-footprint-interior,
+            svg[data-profile="wall-qa-focus"] .wall-body-footprint-interior,
+            svg[data-profile="wall-qa-review"] .wall-body-footprint-interior { fill: rgba(15, 122, 72, 0.14); }
+            svg[data-profile="wall-qa"] .wall-topology-span,
+            svg[data-profile="wall-qa-focus"] .wall-topology-span,
+            svg[data-profile="wall-qa-review"] .wall-topology-span { stroke-width: 1.75; }
+            svg[data-profile="wall-qa"] .wall-topology-span-exterior,
+            svg[data-profile="wall-qa-focus"] .wall-topology-span-exterior,
+            svg[data-profile="wall-qa-review"] .wall-topology-span-exterior { stroke-width: 2.15; }
             .wall-graph-repair { stroke: #d04b24; stroke-width: 1.35; stroke-linecap: round; stroke-dasharray: 4 3; fill: none; vector-effect: non-scaling-stroke; }
             .wall-graph-repair-low { stroke: #d97706; }
             .wall-graph-repair-medium { stroke: #d04b24; stroke-width: 1.55; }

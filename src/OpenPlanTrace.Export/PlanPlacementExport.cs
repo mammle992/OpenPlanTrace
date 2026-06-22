@@ -1136,6 +1136,7 @@ public sealed record PlacementWallOmissionExport(
     private const double MinRepresentedByCleanTopologyOverlapRatio = 0.92;
     private const double MaxInteriorRepresentedByCleanTopologyAxisDistance = 6.0;
     private const double MaxExteriorRepresentedByCleanTopologyAxisDistance = 18.0;
+    private const double MinDoorAdjacentCleanTopologyPieceLength = 20.0;
 
     public static PlacementWallOmissionExport? From(
         WallSegment wall,
@@ -1144,6 +1145,7 @@ public sealed record PlacementWallOmissionExport(
         PlacementReliabilityExport reliability,
         IReadOnlyList<WallGraphTopologySpan> topologySpans,
         IReadOnlyList<WallGraphTopologySpan>? allCleanTopologySpans,
+        IReadOnlyList<PlacementWallOpeningCutoutExport> openingCutouts,
         bool excludedFromStructuralTopology,
         IReadOnlyList<WallGraphRepairCandidate> repairCandidates,
         IReadOnlyList<string> reviewReasons)
@@ -1180,6 +1182,10 @@ public sealed record PlacementWallOmissionExport(
                 + $"overlap {RepresentedByCleanTopologyOverlapRatio(wall, representedByCleanSpan):0.###}; "
                 + $"axis distance {RepresentedByCleanTopologyAxisDistance(wall, representedByCleanSpan):0.###} drawing units"
             ];
+        var suppressedOpeningTopologyEvidence = BuildSuppressedOpeningTopologyEvidence(
+            wall,
+            topologySpans,
+            openingCutouts);
         var combinedEvidence = BuildEvidence(
             wall,
             component,
@@ -1187,7 +1193,7 @@ public sealed record PlacementWallOmissionExport(
             reliability,
             repairCandidates,
             reviewReasons,
-            representedEvidence);
+            representedEvidence.Concat(suppressedOpeningTopologyEvidence).ToArray());
         var linkedWallIds = ExtractLinkedWallIds(wall.Id, combinedEvidence, repairCandidates);
         var classification = Classify(
             evidenceAssessment,
@@ -1349,6 +1355,24 @@ public sealed record PlacementWallOmissionExport(
                 "Review the source linework and evidence before using this wall for exact placement.");
         }
 
+        if (ContainsEvidence(evidence, "tiny door-adjacent placement topology piece"))
+        {
+            return new PlacementWallOmissionClassification(
+                "tiny_door_adjacent_topology_suppressed",
+                "OpeningSplitReview",
+                "Wall is omitted from clean placement topology because only tiny door-adjacent wall leftovers remained after opening cutouts were applied.",
+                "Keep the raw wall and opening cutout for QA, but do not import the tiny door-adjacent remainder as a structural wall unless reviewed.");
+        }
+
+        if (ContainsEvidence(evidence, "short high-density unknown-layer wall/detail candidate requires review"))
+        {
+            return new PlacementWallOmissionClassification(
+                "short_dense_detail_review_required",
+                "ShortDetailReview",
+                "Wall is omitted from clean placement topology because short dense unknown-layer linework may be door, window, fixture, or detail geometry.",
+                "Review the source PDF before importing this short wall; promote it only if it is a true wall return or partition.");
+        }
+
         if (topologySpans.Count == 0)
         {
             return new PlacementWallOmissionClassification(
@@ -1404,7 +1428,138 @@ public sealed record PlacementWallOmissionExport(
     private static bool IsHighPriorityPlacementOmissionEvidence(string evidence) =>
         evidence.Contains("demoted from placement-ready", StringComparison.OrdinalIgnoreCase)
         || evidence.Contains("severe fragmented-face evidence", StringComparison.OrdinalIgnoreCase)
-        || evidence.Contains("already represented by clean topology span", StringComparison.OrdinalIgnoreCase);
+        || evidence.Contains("already represented by clean topology span", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("tiny door-adjacent placement topology piece", StringComparison.OrdinalIgnoreCase);
+
+    private static IReadOnlyList<string> BuildSuppressedOpeningTopologyEvidence(
+        WallSegment wall,
+        IReadOnlyList<WallGraphTopologySpan> topologySpans,
+        IReadOnlyList<PlacementWallOpeningCutoutExport> openingCutouts)
+    {
+        if (topologySpans.Count > 0
+            || openingCutouts.Count == 0
+            || wall.CenterLine.Length <= 0.001)
+        {
+            return Array.Empty<string>();
+        }
+
+        var cutouts = MergeOpeningCutoutsForSuppressionEvidence(openingCutouts);
+        if (cutouts.Count == 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        var evidence = new List<string>();
+        var cursor = 0.0;
+        PlacementWallOpeningCutoutExport? previous = null;
+        foreach (var cutout in cutouts)
+        {
+            AddSuppressedOpeningTopologyGapEvidence(
+                evidence,
+                wall,
+                cursor,
+                Math.Clamp(cutout.StartParameter, 0, 1),
+                previous,
+                cutout);
+            cursor = Math.Max(cursor, Math.Clamp(cutout.EndParameter, 0, 1));
+            previous = cutout;
+        }
+
+        AddSuppressedOpeningTopologyGapEvidence(
+            evidence,
+            wall,
+            cursor,
+            1.0,
+            previous,
+            nextCutout: null);
+
+        return evidence
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static void AddSuppressedOpeningTopologyGapEvidence(
+        List<string> evidence,
+        WallSegment wall,
+        double startParameter,
+        double endParameter,
+        PlacementWallOpeningCutoutExport? previousCutout,
+        PlacementWallOpeningCutoutExport? nextCutout)
+    {
+        var length = Math.Max(0, endParameter - startParameter) * wall.CenterLine.Length;
+        if (length <= 0.001
+            || length >= MinDoorAdjacentCleanTopologyPieceLength
+            || (!IsDoorLikeCutout(previousCutout) && !IsDoorLikeCutout(nextCutout)))
+        {
+            return;
+        }
+
+        var previous = previousCutout?.OpeningId ?? "-";
+        var next = nextCutout?.OpeningId ?? "-";
+        evidence.Add(
+            $"tiny door-adjacent placement topology piece suppressed; length {length:0.###} drawing units, "
+            + $"threshold {MinDoorAdjacentCleanTopologyPieceLength:0.###}, "
+            + $"wall parameters {startParameter:0.###}-{endParameter:0.###}, "
+            + $"previous opening {previous}, next opening {next}");
+    }
+
+    private static IReadOnlyList<PlacementWallOpeningCutoutExport> MergeOpeningCutoutsForSuppressionEvidence(
+        IReadOnlyList<PlacementWallOpeningCutoutExport> cutouts)
+    {
+        var ordered = cutouts
+            .Where(cutout => cutout.EndParameter > cutout.StartParameter)
+            .OrderBy(cutout => cutout.StartParameter)
+            .ThenBy(cutout => cutout.EndParameter)
+            .ToArray();
+        if (ordered.Length <= 1)
+        {
+            return ordered;
+        }
+
+        var merged = new List<PlacementWallOpeningCutoutExport>();
+        var current = ordered[0];
+        for (var index = 1; index < ordered.Length; index++)
+        {
+            var next = ordered[index];
+            if (next.StartParameter > current.EndParameter + 0.001)
+            {
+                merged.Add(current);
+                current = next;
+                continue;
+            }
+
+            current = current with
+            {
+                EndParameter = Math.Max(current.EndParameter, next.EndParameter),
+                OpeningId = IsDoorLikeCutout(current) ? current.OpeningId : next.OpeningId,
+                Type = IsDoorLikeCutout(current) ? current.Type : next.Type,
+                Operation = IsDoorLikeCutout(current) ? current.Operation : next.Operation,
+                Evidence = current.Evidence
+                    .Concat(next.Evidence)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray()
+            };
+        }
+
+        merged.Add(current);
+        return merged;
+    }
+
+    private static bool IsDoorLikeCutout(PlacementWallOpeningCutoutExport? cutout)
+    {
+        if (cutout is null)
+        {
+            return false;
+        }
+
+        return string.Equals(cutout.Type, OpeningType.Door.ToString(), StringComparison.OrdinalIgnoreCase)
+            || string.Equals(cutout.Type, OpeningType.GenericOpening.ToString(), StringComparison.OrdinalIgnoreCase)
+            || string.Equals(cutout.Operation, OpeningOperation.PassThrough.ToString(), StringComparison.OrdinalIgnoreCase)
+            || string.Equals(cutout.Operation, OpeningOperation.Hinged.ToString(), StringComparison.OrdinalIgnoreCase)
+            || string.Equals(cutout.Operation, OpeningOperation.DoubleSwing.ToString(), StringComparison.OrdinalIgnoreCase)
+            || string.Equals(cutout.Operation, OpeningOperation.Sliding.ToString(), StringComparison.OrdinalIgnoreCase)
+            || string.Equals(cutout.Operation, OpeningOperation.PocketSliding.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
 
     private static WallGraphTopologySpan? FindRepresentingCleanTopologySpan(
         WallSegment wall,
@@ -1746,6 +1901,7 @@ public sealed record PlacementWallExport(
             reliability,
             topologySpans,
             allCleanTopologySpans,
+            cutouts,
             excludedFromStructuralTopology,
             repairCandidates,
             combinedReviewReasons);

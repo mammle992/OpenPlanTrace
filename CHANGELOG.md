@@ -6,6 +6,105 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.176] - 2026-06-22
+
+### Improved
+- Placement readiness now blocks short, high source-density, unknown-layer wall
+  candidates from exact coordinate placement when their evidence looks like
+  repeated door/window/fixture/detail linework.
+- Placement omissions now expose the explicit
+  `short_dense_detail_review_required` code so downstream tools can keep those
+  candidates as review evidence without importing them as clean walls.
+- Wall-QA summaries now prioritize short dense detail omissions in the side
+  legend as `omit: short dense details`.
+
+### Verified
+- Added readiness and schema contract coverage for the short dense detail guard.
+- Rescanned a supplied medium-difficulty PDF with `wall-qa`; placement-ready
+  walls dropped from `17` to `15`, and `3` short dense detail candidates are
+  now omitted with exact evidence instead of appearing as random wall strokes.
+- Rendered and inspected a fresh wall-QA screenshot at
+  `real-pdf-output/medium-a20-102-20260622-short-dense-v1/wall-qa-page-1.png`.
+- Ran the full test suite: `657` tests passed.
+
+## [0.02.175] - 2026-06-22
+
+### Improved
+- Placement omissions now classify tiny door-adjacent leftovers with the
+  specific `tiny_door_adjacent_topology_suppressed` code instead of hiding them
+  under generic `no_clean_topology_spans`.
+- Door-sliver omission evidence now reports leftover length, threshold, wall
+  parameters, and adjacent opening IDs so downstream importers and reviewers can
+  see exactly why the wall was held back.
+- Wall-QA summaries now treat tiny door slivers as a priority omission row.
+- Placement schema `v9` now lists both `duplicate_clean_topology_span` and
+  `tiny_door_adjacent_topology_suppressed`, matching the real JSON emitted by
+  the engine.
+
+### Verified
+- Added/updated export and schema contract coverage for the new omission code.
+- Rescanned a supplied medium-difficulty PDF with `wall-qa`; generic
+  `no_clean_topology_spans` dropped from `4` to `1`, while `3` omitted wall
+  candidates now explain themselves as tiny door-adjacent slivers.
+- Rendered a new wall-QA screenshot confirming the side legend shows
+  `omit: tiny door slivers 3`.
+
+## [0.02.174] - 2026-06-22
+
+### Improved
+- Wall-QA, focused wall-QA, and wall review SVG profiles now show clean wall
+  body footprints by default, making screenshots easier to audit when only wall
+  layers are enabled.
+- Clean placement topology now merges overlapping collinear placement spans
+  across different wall IDs when they share the same axis and wall type,
+  reducing duplicate/noisy wall output around dense door and object clusters.
+- Source-backed fallback spans are now suppressed when they are already covered
+  by a merged clean span that shares the same source primitive or graph-edge
+  evidence.
+
+### Verified
+- Added regression coverage for overlapping collinear clean placement spans so
+  duplicate wall runs collapse into one placement-ready span.
+- Rescanned a supplied medium-difficulty PDF with `wall-qa`; the visual QA now
+  shows clean wall footprints, and the sample dropped from `23` to `17`
+  placement-ready walls by removing duplicate source-backed fallback spans while
+  keeping the main wall runs visible.
+
+## [0.02.173] - 2026-06-21
+
+### Improved
+- Clean wall topology splitting around openings now suppresses tiny
+  door-adjacent paired-wall slivers instead of keeping them as placement-ready
+  wall spans just because the paired wall evidence was otherwise strong.
+
+### Verified
+- Added regression coverage proving sub-threshold hinged-door leftovers are
+  removed from clean topology even when the host wall has trusted paired-face
+  evidence.
+- Rescanned the supplied medium-difficulty A20 PDF with `wall-qa`; raw scanner
+  counts stayed stable, clean topology spans dropped from `29` to `26`, and
+  sub-20-unit clean spans dropped from `3` to `0`.
+
+## [0.02.172] - 2026-06-21
+
+### Improved
+- Placement readiness now blocks recovered exterior wall candidates that were
+  trusted only because room evidence appeared on one side, unless outdoor-room
+  evidence or explicit exterior shell support is present.
+- Wall-QA SVG profiles now draw source context slightly stronger so cropped
+  wall-only screenshots remain readable instead of looking like disconnected
+  line fragments on a blank page.
+
+### Verified
+- Added regression tests proving one-sided recovered exterior wall candidates
+  are held for review, while recovered exterior walls with explicit shell
+  support remain coordinate-ready.
+- Rescanned the supplied medium-difficulty A20 PDF with `wall-qa`; the risky
+  recovered one-sided exterior wall is now omitted from clean placement output
+  with reason `recovered exterior wall has only one-sided room evidence and no
+  trusted exterior shell support` (`27` to `26` placement-ready walls and `30`
+  to `29` clean topology spans).
+
 ## [0.02.171] - 2026-06-21
 
 ### Added

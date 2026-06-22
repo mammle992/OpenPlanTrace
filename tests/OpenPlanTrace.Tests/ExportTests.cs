@@ -717,6 +717,31 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementExporter_MergesOverlappingCollinearCleanPlacementRuns()
+    {
+        var result = CreateOverlappingCollinearPlacementRunResult();
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+
+        var spans = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .SelectMany(wall => wall.GetProperty("topologySpans").EnumerateArray())
+            .ToArray();
+
+        var span = Assert.Single(spans);
+        Assert.Equal(100, span.GetProperty("centerLine").GetProperty("start").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(100, span.GetProperty("centerLine").GetProperty("end").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(60, span.GetProperty("centerLine").GetProperty("start").GetProperty("y").GetDouble(), precision: 3);
+        Assert.Equal(180, span.GetProperty("centerLine").GetProperty("end").GetProperty("y").GetDouble(), precision: 3);
+        Assert.Contains(
+            span.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("clean placement overlap merge", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
     public void PlacementExporter_SuppressesContainedDuplicateCleanPlacementRuns()
     {
         var result = CreateContainedDuplicatePlacementRunResult();
@@ -918,13 +943,18 @@ public sealed class ExportTests
         var wall = Assert.Single(document.RootElement.GetProperty("walls").EnumerateArray());
 
         Assert.Empty(wall.GetProperty("topologySpans").EnumerateArray());
-        Assert.Equal("no_clean_topology_spans", wall.GetProperty("placementOmission").GetProperty("code").GetString());
+        var omission = wall.GetProperty("placementOmission");
+        Assert.Equal("tiny_door_adjacent_topology_suppressed", omission.GetProperty("code").GetString());
+        Assert.Equal("OpeningSplitReview", omission.GetProperty("category").GetString());
+        Assert.Contains(
+            omission.GetProperty("evidence").EnumerateArray(),
+            item => item.GetString()?.Contains("tiny door-adjacent placement topology piece", StringComparison.OrdinalIgnoreCase) == true);
         Assert.False(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
         Assert.Equal(0, document.RootElement.GetProperty("summary").GetProperty("wallTopologySpanCount").GetInt32());
     }
 
     [Fact]
-    public void PlacementExporter_KeepsTrustedShortOpeningAdjacentPairedWallJamb()
+    public void PlacementExporter_SuppressesTrustedShortDoorAdjacentPairedWallJamb()
     {
         var result = WithTrustedPairEvidence(
             CreateOpeningCutoutPlacementReviewResult(startParameter: 0.0, endParameter: 0.969),
@@ -934,18 +964,16 @@ public sealed class ExportTests
             result,
             new PlanPlacementJsonExportOptions { WriteIndented = false }));
         var wall = Assert.Single(document.RootElement.GetProperty("walls").EnumerateArray());
-        var span = Assert.Single(wall.GetProperty("topologySpans").EnumerateArray());
-        var line = span.GetProperty("centerLine");
 
-        Assert.Equal(JsonValueKind.Null, wall.GetProperty("placementOmission").ValueKind);
-        Assert.True(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
-        Assert.Equal(273.8, line.GetProperty("start").GetProperty("x").GetDouble(), precision: 3);
-        Assert.Equal(280, line.GetProperty("end").GetProperty("x").GetDouble(), precision: 3);
-        Assert.Equal(6.2, span.GetProperty("drawingLength").GetDouble(), precision: 3);
+        Assert.Empty(wall.GetProperty("topologySpans").EnumerateArray());
+        var omission = wall.GetProperty("placementOmission");
+        Assert.Equal("tiny_door_adjacent_topology_suppressed", omission.GetProperty("code").GetString());
+        Assert.Equal("OpeningSplitReview", omission.GetProperty("category").GetString());
         Assert.Contains(
-            span.GetProperty("evidence").EnumerateArray(),
-            item => item.GetString()?.Contains("previous adjacent opening cutout cutout-door", StringComparison.Ordinal) == true);
-        Assert.Equal(1, document.RootElement.GetProperty("summary").GetProperty("wallTopologySpanCount").GetInt32());
+            omission.GetProperty("evidence").EnumerateArray(),
+            item => item.GetString()?.Contains("tiny door-adjacent placement topology piece", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.False(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.Equal(0, document.RootElement.GetProperty("summary").GetProperty("wallTopologySpanCount").GetInt32());
     }
 
     [Fact]
@@ -1116,12 +1144,13 @@ public sealed class ExportTests
         Assert.Contains("Walls-only placement QA", svg);
         Assert.Contains("Faint source linework context", svg);
         Assert.Contains("id=\"source-context\"", svg);
+        Assert.Contains("id=\"wall-body-footprints\"", svg);
         Assert.Contains("id=\"wall-topology-spans\"", svg);
+        Assert.Contains("wall body footprint detail-host:solid-span:1:body-footprint", svg);
         Assert.Contains("clean wall topology span detail-host:clean-run:1", svg);
         Assert.Contains("1 visible topology spans", svg);
-        Assert.Contains("1 wall body footprints hidden", svg);
+        Assert.Contains("1 visible wall body footprints", svg);
         Assert.Contains("1 wall graph repairs hidden (1 blocking)", svg);
-        Assert.DoesNotContain("id=\"wall-body-footprints\"", svg);
         Assert.DoesNotContain("id=\"wall-graph-repairs\"", svg);
         Assert.DoesNotContain("id=\"walls\"", svg);
         Assert.DoesNotContain("edge-tooth-1", svg);
@@ -1145,13 +1174,15 @@ public sealed class ExportTests
         Assert.Contains("Includes non-placement wall spans", svg);
         Assert.Contains("Faint source linework context", svg);
         Assert.Contains("id=\"source-context\"", svg);
+        Assert.Contains("id=\"wall-body-footprints\"", svg);
         Assert.Contains("id=\"wall-topology-spans\"", svg);
         Assert.Contains("id=\"wall-topology-review-spans\"", svg);
+        Assert.Contains("wall body footprint detail-host:solid-span:1:body-footprint", svg);
         Assert.Contains("clean wall topology span detail-host:clean-run:1", svg);
         Assert.Contains("non-placement wall topology span edge-tooth-1", svg);
         Assert.Contains("1 visible topology spans", svg);
+        Assert.Contains("1 visible wall body footprints", svg);
         Assert.Contains("4 hidden non-placement topology spans", svg);
-        Assert.DoesNotContain("id=\"wall-body-footprints\"", svg);
         Assert.DoesNotContain("id=\"wall-graph-repairs\"", svg);
         Assert.DoesNotContain("id=\"walls\"", svg);
     }
@@ -1335,10 +1366,26 @@ public sealed class ExportTests
         Assert.Contains("wallTopologySpans", page.VisibleLayerNames);
         Assert.Contains("wallTopologyReviewSpans", page.VisibleLayerNames);
         Assert.Contains("sourceContext", page.VisibleLayerNames);
+        Assert.Contains("wallBodyFootprints", page.VisibleLayerNames);
+        Assert.Equal(1, page.Layers.Single(layer => layer.Name == "wallBodyFootprints").Count);
         Assert.Equal(1, page.Layers.Single(layer => layer.Name == "wallTopologySpans").Count);
         Assert.Equal(4, page.Layers.Single(layer => layer.Name == "wallTopologyReviewSpans").Count);
-        Assert.DoesNotContain("wallBodyFootprints", page.VisibleLayerNames);
         Assert.DoesNotContain("walls", page.VisibleLayerNames);
+    }
+
+    [Fact]
+    public void PlacementJsonExporter_SuppressesTinyDoorAdjacentCleanTopologySlivers()
+    {
+        var result = CreateDoorOpeningSplitTopologyResult();
+
+        using var parsed = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(result));
+        var wall = Assert.Single(parsed.RootElement.GetProperty("walls").EnumerateArray());
+        var topologySpans = wall.GetProperty("topologySpans").EnumerateArray().ToArray();
+
+        var span = Assert.Single(topologySpans);
+        Assert.Equal("door-split-wall:clean-run:1:opening-piece:1", span.GetProperty("id").GetString());
+        Assert.Equal(20, span.GetProperty("drawingLength").GetDouble(), 3);
+        Assert.DoesNotContain(topologySpans, item => item.GetProperty("drawingLength").GetDouble() < 20);
     }
 
     [Fact]
@@ -3670,8 +3717,131 @@ public sealed class ExportTests
                 now,
                 now,
                 Array.Empty<PipelineStageReport>(),
-              Array.Empty<PlanDiagnostic>()));
+                Array.Empty<PlanDiagnostic>()));
       }
+
+    private static PlanScanResult CreateDoorOpeningSplitTopologyResult()
+    {
+        var wall = SyntheticWall("door-split-wall", 100, 100, 200, 100) with
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Interior,
+            Thickness = 6,
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(new PlanPoint(100, 97), new PlanPoint(200, 97)),
+                new PlanLineSegment(new PlanPoint(100, 103), new PlanPoint(200, 103)),
+                FaceSeparation: 6,
+                OverlapRatio: 1,
+                Score: 0.9,
+                FirstFaceFragmentCount: 1,
+                SecondFaceFragmentCount: 1,
+                FirstFaceSourcePrimitiveIds: ["door-split-wall-face-a"],
+                SecondFaceSourcePrimitiveIds: ["door-split-wall-face-b"]),
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "pair score 0.9",
+                "synthetic accepted wall body evidence"
+            ]
+        };
+        var nodes = new[]
+        {
+            SyntheticNode("door-split-node-a", 100, 100, WallNodeKind.Endpoint),
+            SyntheticNode("door-split-node-b", 200, 100, WallNodeKind.Endpoint)
+        };
+        var edge = new WallEdge("door-split-edge", 1, nodes[0].Id, nodes[1].Id, wall.Id, Confidence.High);
+        var component = new WallGraphComponent(
+            "door-split-component",
+            1,
+            WallGraphComponentKind.MainStructural,
+            wall.Bounds,
+            [wall.Id],
+            nodes.Select(node => node.Id).ToArray(),
+            [edge.Id],
+            wall.SourcePrimitiveIds,
+            wall.DrawingLength,
+            Confidence.High,
+            ["synthetic door split structural wall"]);
+        var assessment = new WallEvidenceWallAssessment(
+            wall.Id,
+            wall.PageNumber,
+            wall.Bounds,
+            WallEvidenceCategory.StrongWallBody,
+            Confidence.High,
+            PlacementReady: true,
+            RequiresReview: false,
+            RejectedAsNoise: false,
+            wall.SourcePrimitiveIds,
+            ["synthetic accepted wall body evidence"])
+        {
+            Decision = WallEvidenceDecision.Accept
+        };
+        var opening = AnchoredOpening(
+            "door-split-opening",
+            wall,
+            OpeningType.Door,
+            OpeningOperation.Hinged,
+            startParameter: 0.20,
+            endParameter: 0.94);
+        var now = DateTimeOffset.UtcNow;
+
+        return new PlanScanResult(
+            new PlanDocument(
+                "door-opening-split-topology",
+                [
+                    new PlanPage(
+                        1,
+                        new PlanSize(320, 220),
+                        [
+                            WallLine(wall.Id, wall.CenterLine.Start, wall.CenterLine.End)
+                        ])
+                ])
+            {
+                Metadata = new PlanMetadata
+                {
+                    SourceName = "door-opening-split-topology.pdf",
+                    SourcePath = @"C:\plans\door-opening-split-topology.pdf",
+                    Properties = new Dictionary<string, string>
+                    {
+                        ["format"] = "pdf",
+                        ["loader"] = "synthetic",
+                        ["sourceKind"] = PlanSourceKind.Pdf.ToString(),
+                        ["effectiveSourceKind"] = PlanSourceKind.Pdf.ToString()
+                    }
+                }
+            },
+            PlanLayerAnalysis.Empty,
+            PlanCalibration.Empty,
+            MeasurementConsistencyReport.Empty,
+            Array.Empty<TitleBlockAnalysis>(),
+            Array.Empty<DimensionAnnotation>(),
+            Array.Empty<PlanAnnotationBlock>(),
+            Array.Empty<GridAxis>(),
+            Array.Empty<GridBaySpacing>(),
+            Array.Empty<SheetRegion>(),
+            Array.Empty<SurfacePatternCandidate>(),
+            [wall],
+            new WallGraph(nodes, [edge], [component]),
+            Array.Empty<RoomRegion>(),
+            RoomAdjacencyGraph.Empty,
+            [opening],
+            Array.Empty<ObjectCandidate>(),
+            Array.Empty<ObjectCandidateGroup>(),
+            Array.Empty<ObjectAggregate>(),
+            new PipelineDiagnostics(
+                now,
+                now,
+                Array.Empty<PipelineStageReport>(),
+                Array.Empty<PlanDiagnostic>()))
+        {
+            WallEvidenceMap = new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                [assessment],
+                SourceCandidateWallCount: 1,
+                RecoveredCandidateWallCount: 0)
+        };
+    }
 
     private static PlanScanResult CreateJitteredPlacementRunResult()
     {
@@ -3745,6 +3915,116 @@ public sealed class ExportTests
                 {
                     SourceName = "jittered-placement-run.pdf",
                     SourcePath = @"C:\plans\jittered-placement-run.pdf",
+                    Properties = new Dictionary<string, string>
+                    {
+                        ["format"] = "pdf",
+                        ["loader"] = "synthetic",
+                        ["sourceKind"] = PlanSourceKind.Pdf.ToString(),
+                        ["effectiveSourceKind"] = PlanSourceKind.Pdf.ToString()
+                    }
+                }
+            },
+            PlanLayerAnalysis.Empty,
+            PlanCalibration.Empty,
+            MeasurementConsistencyReport.Empty,
+            Array.Empty<TitleBlockAnalysis>(),
+            Array.Empty<DimensionAnnotation>(),
+            Array.Empty<PlanAnnotationBlock>(),
+            Array.Empty<GridAxis>(),
+            Array.Empty<GridBaySpacing>(),
+            Array.Empty<SheetRegion>(),
+            Array.Empty<SurfacePatternCandidate>(),
+            walls,
+            new WallGraph(nodes, edges, [component]),
+            Array.Empty<RoomRegion>(),
+            RoomAdjacencyGraph.Empty,
+            Array.Empty<OpeningCandidate>(),
+            Array.Empty<ObjectCandidate>(),
+            Array.Empty<ObjectCandidateGroup>(),
+            Array.Empty<ObjectAggregate>(),
+            new PipelineDiagnostics(
+                now,
+                now,
+                Array.Empty<PipelineStageReport>(),
+                Array.Empty<PlanDiagnostic>()))
+        {
+            WallEvidenceMap = new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                assessments,
+                walls.Length,
+            0)
+        };
+    }
+
+    private static PlanScanResult CreateOverlappingCollinearPlacementRunResult()
+    {
+        var walls = new[]
+        {
+            SyntheticWall("overlap-wall-a", 100, 60, 100, 130) with { WallType = WallType.Interior },
+            SyntheticWall("overlap-wall-b", 100, 120, 100, 180) with { WallType = WallType.Interior }
+        };
+        var nodes = new[]
+        {
+            SyntheticNode("overlap-node-a1", 100, 60, WallNodeKind.Endpoint),
+            SyntheticNode("overlap-node-a2", 100, 130, WallNodeKind.Endpoint),
+            SyntheticNode("overlap-node-b1", 100, 120, WallNodeKind.Endpoint),
+            SyntheticNode("overlap-node-b2", 100, 180, WallNodeKind.Endpoint)
+        };
+        var edges = new[]
+        {
+            new WallEdge("overlap-edge-a", 1, "overlap-node-a1", "overlap-node-a2", walls[0].Id, Confidence.High),
+            new WallEdge("overlap-edge-b", 1, "overlap-node-b1", "overlap-node-b2", walls[1].Id, Confidence.High)
+        };
+        var component = new WallGraphComponent(
+            "overlap-component",
+            1,
+            WallGraphComponentKind.MainStructural,
+            new PlanRect(96, 56, 8, 128),
+            walls.Select(wall => wall.Id).ToArray(),
+            nodes.Select(node => node.Id).ToArray(),
+            edges.Select(edge => edge.Id).ToArray(),
+            walls.SelectMany(wall => wall.SourcePrimitiveIds).ToArray(),
+            walls.Sum(wall => wall.DrawingLength),
+            Confidence.High,
+            ["synthetic overlapping collinear placement run"]);
+        var assessments = walls
+            .Select(wall => new WallEvidenceWallAssessment(
+                wall.Id,
+                wall.PageNumber,
+                wall.Bounds,
+                WallEvidenceCategory.StrongWallBody,
+                Confidence.High,
+                PlacementReady: true,
+                RequiresReview: false,
+                RejectedAsNoise: false,
+                wall.SourcePrimitiveIds,
+                ["synthetic accepted wall body evidence"])
+            {
+                Decision = WallEvidenceDecision.Accept
+            })
+            .ToArray();
+        var now = DateTimeOffset.UtcNow;
+
+        return new PlanScanResult(
+            new PlanDocument(
+                "overlapping-collinear-placement-run",
+                [
+                    new PlanPage(
+                        1,
+                        new PlanSize(240, 240),
+                        walls.Select(wall => WallLine(
+                                wall.Id,
+                                wall.CenterLine.Start,
+                                wall.CenterLine.End))
+                            .Cast<PlanPrimitive>()
+                            .ToArray())
+                ])
+            {
+                Metadata = new PlanMetadata
+                {
+                    SourceName = "overlapping-collinear-placement-run.pdf",
+                    SourcePath = @"C:\plans\overlapping-collinear-placement-run.pdf",
                     Properties = new Dictionary<string, string>
                     {
                         ["format"] = "pdf",
@@ -5148,6 +5428,78 @@ public sealed class ExportTests
             SourcePrimitiveIds = [id],
             Evidence = ["synthetic wall"]
         };
+
+    private static OpeningCandidate AnchoredOpening(
+        string id,
+        WallSegment hostWall,
+        OpeningType type,
+        OpeningOperation operation,
+        double startParameter,
+        double endParameter)
+    {
+        var referenceLine = hostWall.CenterLine;
+        var startPoint = referenceLine.PointAt(startParameter);
+        var endPoint = referenceLine.PointAt(endParameter);
+        var openingLine = new PlanLineSegment(startPoint, endPoint);
+        var length = referenceLine.Length;
+        var openingLength = openingLine.Length;
+        var alongVector = new PlanVector(
+            referenceLine.End.X - referenceLine.Start.X,
+            referenceLine.End.Y - referenceLine.Start.Y).Normalize();
+        var normalVector = new PlanVector(-alongVector.Y, alongVector.X);
+        var depth = Math.Max(hostWall.Thickness, 4);
+        var footprint = openingLine.Bounds.Inflate(depth / 2.0);
+
+        return new OpeningCandidate(
+            id,
+            hostWall.PageNumber,
+            type,
+            footprint,
+            Confidence.High)
+        {
+            HostWallIds = [hostWall.Id],
+            CenterLine = openingLine,
+            Orientation = openingLine.IsHorizontal()
+                ? OpeningOrientation.Horizontal
+                : openingLine.IsVertical()
+                    ? OpeningOrientation.Vertical
+                    : OpeningOrientation.Unknown,
+            Operation = operation,
+            Placement = new OpeningPlacement(
+                hostWall.Id,
+                [hostWall.Id],
+                referenceLine,
+                startPoint,
+                endPoint,
+                startParameter * length,
+                endParameter * length,
+                ((startParameter + endParameter) / 2.0) * length,
+                openingLength,
+                footprint,
+                [
+                    new PlanPoint(footprint.Left, footprint.Top),
+                    new PlanPoint(footprint.Right, footprint.Top),
+                    new PlanPoint(footprint.Right, footprint.Bottom),
+                    new PlanPoint(footprint.Left, footprint.Bottom)
+                ],
+                new PlanLineSegment(startPoint, startPoint.Translate(normalVector.X * depth, normalVector.Y * depth)),
+                new PlanLineSegment(endPoint, endPoint.Translate(normalVector.X * depth, normalVector.Y * depth)),
+                depth,
+                null,
+                null,
+                null,
+                null,
+                null,
+                startParameter,
+                endParameter,
+                (startParameter + endParameter) / 2.0,
+                alongVector,
+                normalVector,
+                0,
+                Confidence.High,
+                ["synthetic anchored opening placement"])
+        };
+    }
 
     private static PlanRect UnionBounds(IEnumerable<PlanRect> bounds)
     {

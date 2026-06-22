@@ -1,4 +1,5 @@
 using System.Globalization;
+using static OpenPlanTrace.Export.PlacementMetricTransform;
 
 namespace OpenPlanTrace.Export;
 
@@ -41,6 +42,8 @@ internal static class WallPlacementOmissionSummary
     [
         "fragmented_pair_review_required",
         "fragmented_interior_without_room_boundary_support",
+        "tiny_door_adjacent_topology_suppressed",
+        "short_dense_detail_review_required",
         "topology_import_blocked",
         "fragment_geometry_review"
     ];
@@ -57,6 +60,7 @@ internal static class WallPlacementOmissionSummary
             BuildWallReviewReasons(result.Diagnostics.Messages),
             WallPlacementContextGuards.BuildReviewReasons(result));
         var repairCandidatesByWallId = BuildWallGraphRepairCandidateLookup(result.WallGraph.RepairCandidates);
+        var openingsByWallId = BuildWallOpeningLookup(result.Openings);
         var cleanTopologySpans = WallTopologySpanVisibility
             .BuildCleanPlacementTopologySpans(result)
             .Where(span => span.PageNumber == pageNumber)
@@ -86,6 +90,18 @@ internal static class WallPlacementOmissionSummary
             var topologySpans = topologySpansByWallId.TryGetValue(wall.Id, out var spans)
                 ? spans
                 : Array.Empty<WallGraphTopologySpan>();
+            var scale = ResolveMillimetersPerDrawingUnit(result.Calibration, wall.MeasurementScaleGroupId);
+            var cutouts = openingsByWallId.TryGetValue(wall.Id, out var wallOpenings)
+                ? wallOpenings
+                    .Select((opening, index) => PlacementWallOpeningCutoutExport.From(wall, opening, scale, index + 1))
+                    .Where(cutout => cutout is not null)
+                    .Select(cutout => cutout!)
+                    .DistinctBy(cutout => cutout.OpeningId, StringComparer.Ordinal)
+                    .OrderBy(cutout => cutout.StartParameter)
+                    .ThenBy(cutout => cutout.EndParameter)
+                    .ThenBy(cutout => cutout.OpeningId, StringComparer.Ordinal)
+                    .ToArray()
+                : Array.Empty<PlacementWallOpeningCutoutExport>();
             var excludedFromStructuralTopology =
                 WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, assessment);
             var reliability = PlacementReliability.ForWall(
@@ -101,6 +117,7 @@ internal static class WallPlacementOmissionSummary
                 reliability,
                 topologySpans,
                 cleanTopologySpans,
+                cutouts,
                 excludedFromStructuralTopology,
                 repairCandidates,
                 combinedReviewReasons);
@@ -214,6 +231,7 @@ internal static class WallPlacementOmissionSummary
             "wall_evidence_review_required" => 20,
             "fragmented_interior_without_room_boundary_support" => 24,
             "secondary_object_linework_without_room_boundary_support" => 25,
+            "short_dense_detail_review_required" => 26,
             "secondary_without_room_boundary_support" => 30,
             "isolated_fragment" => 40,
             "rejected_wall_evidence" => 50,
@@ -321,6 +339,63 @@ internal static class WallPlacementOmissionSummary
         return lookup;
     }
 
+    private static IReadOnlyDictionary<string, IReadOnlyList<OpeningCandidate>> BuildWallOpeningLookup(
+        IReadOnlyList<OpeningCandidate> openings)
+    {
+        var lookup = new Dictionary<string, List<OpeningCandidate>>(StringComparer.Ordinal);
+        foreach (var opening in openings.Where(opening => opening.Placement is not null))
+        {
+            foreach (var wallId in OpeningWallIds(opening))
+            {
+                if (!lookup.TryGetValue(wallId, out var wallOpenings))
+                {
+                    wallOpenings = new List<OpeningCandidate>();
+                    lookup[wallId] = wallOpenings;
+                }
+
+                wallOpenings.Add(opening);
+            }
+        }
+
+        return lookup.ToDictionary(
+            pair => pair.Key,
+            pair => (IReadOnlyList<OpeningCandidate>)pair.Value
+                .DistinctBy(opening => opening.Id, StringComparer.Ordinal)
+                .OrderBy(opening => opening.Placement?.HostWallCenterParameter ?? 0)
+                .ThenBy(opening => opening.Id, StringComparer.Ordinal)
+                .ToArray(),
+            StringComparer.Ordinal);
+    }
+
+    private static IEnumerable<string> OpeningWallIds(OpeningCandidate opening)
+    {
+        if (opening.Placement?.HostWallId is { Length: > 0 } hostWallId)
+        {
+            yield return hostWallId;
+        }
+
+        foreach (var wallId in opening.HostWallIds)
+        {
+            if (!string.IsNullOrWhiteSpace(wallId))
+            {
+                yield return wallId;
+            }
+        }
+
+        if (opening.Placement is null)
+        {
+            yield break;
+        }
+
+        foreach (var wallId in opening.Placement.AnchorWallIds)
+        {
+            if (!string.IsNullOrWhiteSpace(wallId))
+            {
+                yield return wallId;
+            }
+        }
+    }
+
     private static string OmissionLabel(string code) =>
         code switch
         {
@@ -334,6 +409,8 @@ internal static class WallPlacementOmissionSummary
             "rejected_wall_evidence" => "rejected evidence",
             "secondary_object_linework_without_room_boundary_support" => "secondary object linework",
             "secondary_without_room_boundary_support" => "secondary no room",
+            "short_dense_detail_review_required" => "short dense details",
+            "tiny_door_adjacent_topology_suppressed" => "tiny door slivers",
             "topology_import_blocked" => "blocked repairs",
             "wall_evidence_review_required" => "review evidence",
             _ => code.Replace('_', ' ')

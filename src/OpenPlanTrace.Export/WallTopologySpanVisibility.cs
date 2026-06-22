@@ -9,6 +9,7 @@ internal static class WallTopologySpanVisibility
     private const double MinOpeningAdjacentCleanRunLengthDrawingUnits = 20.0;
     private const double MinTrustedOpeningAdjacentCleanRunLengthDrawingUnits = 6.0;
     private const double MaxContainedDuplicateAxisDistanceDrawingUnits = 1.25;
+    private const double MaxOverlappingCollinearMergeAxisDistanceDrawingUnits = 1.25;
     private const double MinContainedDuplicateOverlapRatio = 0.92;
     private const double MinExteriorFacePairAxisDistanceDrawingUnits = 2.0;
     private const double MaxExteriorFacePairAxisDistanceDrawingUnits = 18.0;
@@ -666,7 +667,186 @@ internal static class WallTopologySpanVisibility
 
     private static IReadOnlyList<WallGraphTopologySpan> FinalizeCleanPlacementSpans(
         IReadOnlyList<WallGraphTopologySpan> spans) =>
-        SuppressContainedDuplicatePlacementSpans(CanonicalizeExteriorParallelFaceSpans(spans));
+        SuppressContainedDuplicatePlacementSpans(
+            MergeOverlappingCollinearPlacementSpans(
+                CanonicalizeExteriorParallelFaceSpans(spans)));
+
+    private static IReadOnlyList<WallGraphTopologySpan> MergeOverlappingCollinearPlacementSpans(
+        IReadOnlyList<WallGraphTopologySpan> spans)
+    {
+        if (spans.Count <= 1)
+        {
+            return spans;
+        }
+
+        var merged = new List<WallGraphTopologySpan>();
+        var axisAlignedSpanIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var group in spans
+            .Where(IsAxisAlignedPlacementSpan)
+            .GroupBy(span => new PlacementRegularizationKey(
+                span.PageNumber,
+                span.SourceWall?.WallType ?? WallType.Unknown,
+                ResolveAxisOrientation(span.CenterLine))))
+        {
+            var ordered = group
+                .OrderBy(AxisCoordinate)
+                .ThenBy(span => AxisMin(span.CenterLine))
+                .ThenByDescending(span => span.DrawingLength)
+                .ThenBy(span => span.Id, StringComparer.Ordinal)
+                .ToArray();
+            var clusters = new List<List<WallGraphTopologySpan>>();
+            foreach (var span in ordered)
+            {
+                axisAlignedSpanIds.Add(span.Id);
+                var current = clusters.Count == 0 ? null : clusters[^1];
+                if (current is null
+                    || Math.Abs(AxisCoordinate(span) - WeightedAxisCoordinate(current))
+                        > MaxOverlappingCollinearMergeAxisDistanceDrawingUnits)
+                {
+                    clusters.Add([span]);
+                    continue;
+                }
+
+                current.Add(span);
+            }
+
+            foreach (var cluster in clusters)
+            {
+                merged.AddRange(MergeOverlappingCollinearPlacementCluster(cluster));
+            }
+        }
+
+        merged.AddRange(spans.Where(span => !axisAlignedSpanIds.Contains(span.Id)));
+        return merged
+            .OrderBy(span => span.PageNumber)
+            .ThenBy(span => span.Bounds.Y)
+            .ThenBy(span => span.Bounds.X)
+            .ThenBy(span => span.WallId, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<WallGraphTopologySpan> MergeOverlappingCollinearPlacementCluster(
+        IReadOnlyList<WallGraphTopologySpan> cluster)
+    {
+        if (cluster.Count <= 1)
+        {
+            return cluster;
+        }
+
+        var merged = new List<WallGraphTopologySpan>();
+        WallGraphTopologySpan? current = null;
+        foreach (var span in cluster
+            .OrderBy(span => AxisMin(span.CenterLine))
+            .ThenByDescending(span => span.DrawingLength)
+            .ThenBy(span => span.Id, StringComparer.Ordinal))
+        {
+            if (current is null)
+            {
+                current = span;
+                continue;
+            }
+
+            if (ShouldMergeOverlappingCollinearPlacementSpans(current, span))
+            {
+                current = CreateMergedCollinearPlacementSpan(current, span);
+                continue;
+            }
+
+            merged.Add(current);
+            current = span;
+        }
+
+        if (current is not null)
+        {
+            merged.Add(current);
+        }
+
+        return merged;
+    }
+
+    private static bool ShouldMergeOverlappingCollinearPlacementSpans(
+        WallGraphTopologySpan first,
+        WallGraphTopologySpan second)
+    {
+        if (first.WallId == second.WallId
+            || IsSourceBackedFallbackSpan(first)
+            || IsSourceBackedFallbackSpan(second)
+            || ResolveAxisOrientation(first.CenterLine) != ResolveAxisOrientation(second.CenterLine)
+            || Math.Abs(AxisCoordinate(first) - AxisCoordinate(second))
+                > MaxOverlappingCollinearMergeAxisDistanceDrawingUnits)
+        {
+            return false;
+        }
+
+        var overlap = Math.Min(AxisMax(first.CenterLine), AxisMax(second.CenterLine))
+            - Math.Max(AxisMin(first.CenterLine), AxisMin(second.CenterLine));
+        if (overlap <= 0.001)
+        {
+            return false;
+        }
+
+        var shorterLength = Math.Max(Math.Min(first.DrawingLength, second.DrawingLength), 0.001);
+        return overlap / shorterLength < MinContainedDuplicateOverlapRatio;
+    }
+
+    private static WallGraphTopologySpan CreateMergedCollinearPlacementSpan(
+        WallGraphTopologySpan first,
+        WallGraphTopologySpan second)
+    {
+        var orientation = ResolveAxisOrientation(first.CenterLine);
+        var targetCoordinate = WeightedAxisCoordinate([first, second]);
+        var start = Math.Min(AxisMin(first.CenterLine), AxisMin(second.CenterLine));
+        var end = Math.Max(AxisMax(first.CenterLine), AxisMax(second.CenterLine));
+        var line = orientation == PlacementRunOrientation.Horizontal
+            ? new PlanLineSegment(new PlanPoint(start, targetCoordinate), new PlanPoint(end, targetCoordinate))
+            : new PlanLineSegment(new PlanPoint(targetCoordinate, start), new PlanPoint(targetCoordinate, end));
+        var axisShift = Math.Max(
+            Math.Abs(AxisCoordinate(first) - targetCoordinate),
+            Math.Abs(AxisCoordinate(second) - targetCoordinate));
+        var thickness = Math.Max(first.Thickness, second.Thickness);
+        var bounds = line.Bounds.Inflate(Math.Max(thickness / 2.0, 0.5));
+        var evidence = first.Evidence
+            .Concat(second.Evidence)
+            .Append(
+                "clean placement overlap merge: merged collinear placement spans "
+                + $"{first.Id} and {second.Id}; axis shift {axisShift:0.###} drawing units")
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        return first with
+        {
+            Id = $"{first.Id}:merged",
+            ToNodeId = second.ToNodeId,
+            CenterLine = line,
+            Bounds = bounds,
+            DrawingLength = line.Length,
+            SourceWallStartOffsetDrawingUnits = MinNullable(first.SourceWallStartOffsetDrawingUnits, second.SourceWallStartOffsetDrawingUnits),
+            SourceWallEndOffsetDrawingUnits = MaxNullable(first.SourceWallEndOffsetDrawingUnits, second.SourceWallEndOffsetDrawingUnits),
+            SourceWallProjectedLengthDrawingUnits = MaxNullable(first.SourceWallProjectedLengthDrawingUnits, second.SourceWallProjectedLengthDrawingUnits),
+            SourceWallStartParameter = MinNullable(first.SourceWallStartParameter, second.SourceWallStartParameter),
+            SourceWallEndParameter = MaxNullable(first.SourceWallEndParameter, second.SourceWallEndParameter),
+            SourceWallCenterParameter = AverageNullable(
+                MinNullable(first.SourceWallStartParameter, second.SourceWallStartParameter),
+                MaxNullable(first.SourceWallEndParameter, second.SourceWallEndParameter)),
+            SourceWallStartProjectionDistanceDrawingUnits = MaxNullable(
+                first.SourceWallStartProjectionDistanceDrawingUnits,
+                axisShift),
+            SourceWallEndProjectionDistanceDrawingUnits = MaxNullable(
+                first.SourceWallEndProjectionDistanceDrawingUnits,
+                axisShift),
+            Thickness = thickness,
+            Confidence = new Confidence(Math.Min(first.Confidence.Value, second.Confidence.Value)),
+            SourcePrimitiveIds = first.SourcePrimitiveIds
+                .Concat(second.SourcePrimitiveIds)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray(),
+            SourceWallGraphEdgeIds = first.SourceWallGraphEdgeIds
+                .Concat(second.SourceWallGraphEdgeIds)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray(),
+            Evidence = evidence
+        };
+    }
 
     private static IReadOnlyList<WallGraphTopologySpan> CanonicalizeExteriorParallelFaceSpans(
         IReadOnlyList<WallGraphTopologySpan> spans)
@@ -900,7 +1080,24 @@ internal static class WallTopologySpanVisibility
     private static bool IsSameSourceBackedFallbackPlacement(
         WallGraphTopologySpan candidate,
         WallGraphTopologySpan kept) =>
-        string.Equals(candidate.WallId, kept.WallId, StringComparison.Ordinal);
+        string.Equals(candidate.WallId, kept.WallId, StringComparison.Ordinal)
+        || HasSharedSourceReference(candidate.SourcePrimitiveIds, kept.SourcePrimitiveIds)
+        || HasSharedSourceReference(candidate.SourceWallGraphEdgeIds, kept.SourceWallGraphEdgeIds);
+
+    private static bool HasSharedSourceReference(
+        IReadOnlyList<string> first,
+        IReadOnlyList<string> second)
+    {
+        if (first.Count == 0 || second.Count == 0)
+        {
+            return false;
+        }
+
+        var lookup = first
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.Ordinal);
+        return second.Any(id => lookup.Contains(id));
+    }
 
     private static bool IsSourceBackedFallbackSpan(WallGraphTopologySpan span) =>
         span.Id.Contains(":source-backed-fallback:", StringComparison.Ordinal);
@@ -969,7 +1166,7 @@ internal static class WallTopologySpanVisibility
         var pieces = new List<WallGraphTopologySpan>();
         var cursor = spanStart;
         var sequence = 1;
-        string? previousOpeningId = null;
+        PlacementWallOpeningCutoutExport? previousCutout = null;
         foreach (var cutout in cutouts)
         {
             var start = Math.Max(spanStart, cutout.StartParameter);
@@ -986,10 +1183,10 @@ internal static class WallTopologySpanVisibility
                 cursor,
                 Math.Min(start, spanEnd),
                 ref sequence,
-                previousOpeningId,
-                cutout.OpeningId);
+                previousCutout,
+                cutout);
             cursor = Math.Max(cursor, end);
-            previousOpeningId = cutout.OpeningId;
+            previousCutout = cutout;
         }
 
         AddSplitPiece(
@@ -999,8 +1196,8 @@ internal static class WallTopologySpanVisibility
             cursor,
             spanEnd,
             ref sequence,
-            previousOpeningId,
-            nextOpeningId: null);
+            previousCutout,
+            nextCutout: null);
 
         return pieces.Count == 0 ? Array.Empty<WallGraphTopologySpan>() : pieces.ToArray();
     }
@@ -1012,15 +1209,15 @@ internal static class WallTopologySpanVisibility
         double startParameter,
         double endParameter,
         ref int sequence,
-        string? previousOpeningId,
-        string? nextOpeningId)
+        PlacementWallOpeningCutoutExport? previousCutout,
+        PlacementWallOpeningCutoutExport? nextCutout)
     {
         var length = (endParameter - startParameter) * sourceWall.CenterLine.Length;
         var minimumLength = OpeningAdjacentMinimumCleanRunLength(
             span,
             sourceWall,
-            previousOpeningId,
-            nextOpeningId);
+            previousCutout,
+            nextCutout);
         if (length < minimumLength)
         {
             return;
@@ -1032,24 +1229,45 @@ internal static class WallTopologySpanVisibility
             startParameter,
             endParameter,
             sequence++,
-            previousOpeningId,
-            nextOpeningId));
+            previousCutout?.OpeningId,
+            nextCutout?.OpeningId));
     }
 
     private static double OpeningAdjacentMinimumCleanRunLength(
         WallGraphTopologySpan span,
         WallSegment sourceWall,
-        string? previousOpeningId,
-        string? nextOpeningId)
+        PlacementWallOpeningCutoutExport? previousCutout,
+        PlacementWallOpeningCutoutExport? nextCutout)
     {
-        if (previousOpeningId is null && nextOpeningId is null)
+        if (previousCutout is null && nextCutout is null)
         {
             return MinCleanRunLengthDrawingUnits;
+        }
+
+        if (HasDoorLikeAdjacentCutout(previousCutout) || HasDoorLikeAdjacentCutout(nextCutout))
+        {
+            return MinOpeningAdjacentCleanRunLengthDrawingUnits;
         }
 
         return IsTrustedOpeningAdjacentShortRun(span, sourceWall)
             ? MinTrustedOpeningAdjacentCleanRunLengthDrawingUnits
             : MinOpeningAdjacentCleanRunLengthDrawingUnits;
+    }
+
+    private static bool HasDoorLikeAdjacentCutout(PlacementWallOpeningCutoutExport? cutout)
+    {
+        if (cutout is null)
+        {
+            return false;
+        }
+
+        return string.Equals(cutout.Type, OpeningType.Door.ToString(), StringComparison.OrdinalIgnoreCase)
+            || string.Equals(cutout.Type, OpeningType.GenericOpening.ToString(), StringComparison.OrdinalIgnoreCase)
+            || string.Equals(cutout.Operation, OpeningOperation.PassThrough.ToString(), StringComparison.OrdinalIgnoreCase)
+            || string.Equals(cutout.Operation, OpeningOperation.Hinged.ToString(), StringComparison.OrdinalIgnoreCase)
+            || string.Equals(cutout.Operation, OpeningOperation.DoubleSwing.ToString(), StringComparison.OrdinalIgnoreCase)
+            || string.Equals(cutout.Operation, OpeningOperation.Sliding.ToString(), StringComparison.OrdinalIgnoreCase)
+            || string.Equals(cutout.Operation, OpeningOperation.PocketSliding.ToString(), StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsTrustedOpeningAdjacentShortRun(
@@ -1448,6 +1666,21 @@ internal static class WallTopologySpanVisibility
 
     private static double MaxNullable(double? existing, double candidate) =>
         Math.Max(existing ?? 0, candidate);
+
+    private static double? MinNullable(double? first, double? second) =>
+        first.HasValue && second.HasValue
+            ? Math.Min(first.Value, second.Value)
+            : first ?? second;
+
+    private static double? MaxNullable(double? first, double? second) =>
+        first.HasValue && second.HasValue
+            ? Math.Max(first.Value, second.Value)
+            : first ?? second;
+
+    private static double? AverageNullable(double? first, double? second) =>
+        first.HasValue && second.HasValue
+            ? (first.Value + second.Value) / 2.0
+            : first ?? second;
 
     private static IReadOnlyDictionary<string, WallGraphComponent> BuildWallComponentLookup(
         IReadOnlyList<WallGraphComponent> components)

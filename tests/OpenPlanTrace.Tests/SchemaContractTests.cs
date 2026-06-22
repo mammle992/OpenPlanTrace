@@ -3145,6 +3145,7 @@ public sealed class SchemaContractTests
         var expected = new[]
         {
             "topology_import_blocked",
+            "duplicate_clean_topology_span",
             "duplicate_wall_face",
             "rejected_wall_evidence",
             "object_like_linework",
@@ -3155,6 +3156,8 @@ public sealed class SchemaContractTests
             "structural_topology_excluded",
             "fragment_geometry_review",
             "fragmented_pair_review_required",
+            "tiny_door_adjacent_topology_suppressed",
+            "short_dense_detail_review_required",
             "wall_evidence_review_required",
             "no_clean_topology_spans",
             "coordinate_review_required",

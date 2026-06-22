@@ -2,6 +2,9 @@ namespace OpenPlanTrace;
 
 public static class WallPlacementReadinessEvaluator
 {
+    private const double MaxShortDenseDetailCandidateLengthDrawingUnits = 55.0;
+    private const double MinShortDenseDetailCandidateSourceDensity = 0.65;
+
     public static WallPlacementReadiness Evaluate(
         WallSegment wall,
         PlanCalibration calibration,
@@ -49,10 +52,26 @@ public static class WallPlacementReadinessEvaluator
 
         var coordinatePlacementBlocked = CoordinatePlacementBlockedByComponent(component);
         var coordinatePlacementBlockedByReviewReason = reviewReasonList.Any(IsCoordinateBlockingReviewReason);
+        var coordinatePlacementBlockedByRecoveredExteriorEvidence =
+            CoordinatePlacementBlockedByRecoveredOneSidedExteriorEvidence(wall, evidenceAssessment);
+        if (coordinatePlacementBlockedByRecoveredExteriorEvidence)
+        {
+            reasons.Add("recovered exterior wall has only one-sided room evidence and no trusted exterior shell support");
+        }
+
+        var coordinatePlacementBlockedByShortDenseDetailEvidence =
+            CoordinatePlacementBlockedByShortDenseDetailEvidence(wall, evidenceAssessment);
+        if (coordinatePlacementBlockedByShortDenseDetailEvidence)
+        {
+            reasons.Add("short high-density unknown-layer wall/detail candidate requires review before exact placement");
+        }
+
         var readyForCoordinatePlacement =
             wall.Confidence.Value >= 0.5
             && !coordinatePlacementBlocked
             && !coordinatePlacementBlockedByReviewReason
+            && !coordinatePlacementBlockedByRecoveredExteriorEvidence
+            && !coordinatePlacementBlockedByShortDenseDetailEvidence
             && wall.FragmentEvidence?.RequiresGeometryReview != true
             && (evidenceAssessment is null || evidenceAssessment.PlacementReady);
         var readyForMetricPlacement =
@@ -65,11 +84,15 @@ public static class WallPlacementReadinessEvaluator
             reasons.Count > 0
             || coordinatePlacementBlocked
             || coordinatePlacementBlockedByReviewReason
+            || coordinatePlacementBlockedByShortDenseDetailEvidence
             || evidenceAssessment?.RequiresReview == true
             || evidenceAssessment?.RejectedAsNoise == true
             || evidenceAssessment?.PlacementReady == false,
             wall.Confidence,
-            coordinatePlacementBlocked || coordinatePlacementBlockedByReviewReason,
+            coordinatePlacementBlocked
+            || coordinatePlacementBlockedByReviewReason
+            || coordinatePlacementBlockedByRecoveredExteriorEvidence
+            || coordinatePlacementBlockedByShortDenseDetailEvidence,
             reasons.Distinct(StringComparer.Ordinal).ToArray());
     }
 
@@ -115,6 +138,87 @@ public static class WallPlacementReadinessEvaluator
     private static bool CoordinatePlacementBlockedByComponent(WallGraphComponent? component) =>
         component?.ExcludedFromStructuralTopology == true
         || component?.Kind is WallGraphComponentKind.ObjectLikeIsland or WallGraphComponentKind.IsolatedFragment;
+
+    private static bool CoordinatePlacementBlockedByRecoveredOneSidedExteriorEvidence(
+        WallSegment wall,
+        WallEvidenceWallAssessment? evidenceAssessment)
+    {
+        if (evidenceAssessment?.Category != WallEvidenceCategory.RecoveredWallBody
+            || wall.WallType != WallType.Exterior)
+        {
+            return false;
+        }
+
+        var evidence = wall.Evidence
+            .Concat(evidenceAssessment.Evidence)
+            .ToArray();
+        if (!evidence.Any(item => item.Contains("detected room evidence on one side only", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        return !evidence.Any(IsTrustedRecoveredExteriorSupportEvidence);
+    }
+
+    private static bool IsTrustedRecoveredExteriorSupportEvidence(string evidence) =>
+        evidence.Contains("exterior shell", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("outdoor/terrace", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("outdoor room", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("terrace room", StringComparison.OrdinalIgnoreCase);
+
+    private static bool CoordinatePlacementBlockedByShortDenseDetailEvidence(
+        WallSegment wall,
+        WallEvidenceWallAssessment? evidenceAssessment)
+    {
+        if (evidenceAssessment is null
+            || !evidenceAssessment.PlacementReady
+            || evidenceAssessment.Category is not (WallEvidenceCategory.StrongWallBody or WallEvidenceCategory.MediumWallBody)
+            || wall.DrawingLength <= 0.001
+            || wall.DrawingLength > MaxShortDenseDetailCandidateLengthDrawingUnits)
+        {
+            return false;
+        }
+
+        var sourceDensity = evidenceAssessment.SourcePrimitiveIds
+            .Concat(wall.SourcePrimitiveIds)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .Count() / wall.DrawingLength;
+        if (sourceDensity < MinShortDenseDetailCandidateSourceDensity)
+        {
+            return false;
+        }
+
+        var evidence = wall.Evidence
+            .Concat(evidenceAssessment.Evidence)
+            .Concat(evidenceAssessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(evidenceAssessment.ScoreBreakdown.NegativeEvidence)
+            .ToArray();
+
+        return EvidenceContains(evidence, "layer (unlayered) classified Unknown")
+            && EvidenceContainsAny(
+                evidence,
+                "collapsed",
+                "merged",
+                "fragment")
+            && !EvidenceContainsAny(
+                evidence,
+                "wall-like layer",
+                "room boundary",
+                "exterior shell",
+                "outdoor/terrace",
+                "trusted benchmark");
+    }
+
+    private static bool EvidenceContainsAny(
+        IReadOnlyList<string> evidence,
+        params string[] fragments) =>
+        fragments.Any(fragment => EvidenceContains(evidence, fragment));
+
+    private static bool EvidenceContains(
+        IReadOnlyList<string> evidence,
+        string fragment) =>
+        evidence.Any(item => item.Contains(fragment, StringComparison.OrdinalIgnoreCase));
 
     private static bool IsCoordinateBlockingReviewReason(string reason) =>
         (reason.Contains("wall graph repair candidate", StringComparison.OrdinalIgnoreCase)
