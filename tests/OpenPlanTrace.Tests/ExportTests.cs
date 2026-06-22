@@ -3171,6 +3171,79 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementExporter_DoesNotBlockRoomForOpeningOnlyBoundaryWall()
+    {
+        var result = CreateOpeningCutoutPlacementReviewResult(startParameter: 0.0, endParameter: 1.0);
+        var boundaryWall = result.Walls.Single();
+        var roomRegion = new RoomRegion(
+            "opening-only-boundary-room",
+            1,
+            new PlanRect(80, 80, 200, 90),
+            [
+                new PlanPoint(80, 80),
+                new PlanPoint(280, 80),
+                new PlanPoint(280, 170),
+                new PlanPoint(80, 170)
+            ],
+            [boundaryWall.Id],
+            Confidence.High)
+        {
+            Label = "ENTRY",
+            UseKind = RoomUseKind.Lobby,
+            Evidence = ["synthetic room uses one fully cut-out opening boundary wall"]
+        };
+
+        result = result with
+        {
+            Rooms = [roomRegion],
+            WallEvidenceMap = new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                [
+                    new WallEvidenceWallAssessment(
+                        boundaryWall.Id,
+                        boundaryWall.PageNumber,
+                        boundaryWall.Bounds,
+                        WallEvidenceCategory.MediumWallBody,
+                        Confidence.Medium,
+                        PlacementReady: false,
+                        RequiresReview: true,
+                        RejectedAsNoise: false,
+                        SourcePrimitiveIds: boundaryWall.SourcePrimitiveIds,
+                        Evidence: ["test evidence: fully cut-out boundary wall requires review as a wall"])
+                    {
+                        Decision = WallEvidenceDecision.Review
+                    }
+                ])
+        };
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var room = document.RootElement
+            .GetProperty("rooms")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == roomRegion.Id);
+
+        var reliability = room.GetProperty("reliability");
+        Assert.True(reliability.GetProperty("readyForCoordinatePlacement").GetBoolean());
+        var boundaryReliability = room.GetProperty("boundaryReliability");
+        Assert.Contains(
+            boundaryReliability.GetProperty("openingOnlyWallIds").EnumerateArray(),
+            wallId => wallId.GetString() == boundaryWall.Id);
+        Assert.DoesNotContain(
+            boundaryReliability.GetProperty("coordinateBlockingWallIds").EnumerateArray(),
+            wallId => wallId.GetString() == boundaryWall.Id);
+        Assert.DoesNotContain(
+            boundaryReliability.GetProperty("reviewWallIds").EnumerateArray(),
+            wallId => wallId.GetString() == boundaryWall.Id);
+        Assert.Contains(
+            boundaryReliability.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("opening-only", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
     public async Task PlacementExporter_MarksRoomsWithoutLinkedWallEvidenceForReview()
     {
         var result = await CreateScanResultAsync();

@@ -1772,6 +1772,7 @@
         "reviewWallIds",
         "rejectedWallIds",
         "nonBlockingDuplicateWallIds",
+        "openingOnlyWallIds",
         "unassessedWallIds",
         "coordinateBlockingWallIds",
         "evidence"
@@ -1793,6 +1794,9 @@
           "$ref": "#/$defs/stringArray"
         },
         "nonBlockingDuplicateWallIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "openingOnlyWallIds": {
           "$ref": "#/$defs/stringArray"
         },
         "unassessedWallIds": {

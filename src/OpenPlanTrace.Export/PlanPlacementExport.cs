@@ -115,8 +115,9 @@ public sealed record PlanPlacementExport(
                     ? repairCandidates
                     : Array.Empty<WallGraphRepairCandidate>()))
             .ToArray();
+        var placementWallsById = walls.ToDictionary(wall => wall.Id, StringComparer.Ordinal);
         var rooms = result.Rooms
-            .Select(room => PlacementRoomExport.From(room, result.Calibration, wallEvidenceAssessments))
+            .Select(room => PlacementRoomExport.From(room, result.Calibration, wallEvidenceAssessments, placementWallsById))
             .ToArray();
         var openings = result.Openings
             .Select(opening => PlacementOpeningExport.From(opening, result.Calibration, sourceLookup, wallEvidenceAssessments))
@@ -2585,10 +2586,11 @@ public sealed record PlacementRoomExport(
     public static PlacementRoomExport From(
         RoomRegion room,
         PlanCalibration calibration,
-        IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceAssessments)
+        IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceAssessments,
+        IReadOnlyDictionary<string, PlacementWallExport> placementWallsById)
     {
         var scale = ResolveMillimetersPerDrawingUnit(calibration, room.MeasurementScaleGroupId);
-        var boundaryReliability = PlacementReliability.ForRoomBoundary(room, wallEvidenceAssessments);
+        var boundaryReliability = PlacementReliability.ForRoomBoundary(room, wallEvidenceAssessments, placementWallsById);
         return new PlacementRoomExport(
             room.Id,
             room.PageNumber,
@@ -2619,6 +2621,7 @@ public sealed record PlacementRoomBoundaryReliabilityExport(
     IReadOnlyList<string> ReviewWallIds,
     IReadOnlyList<string> RejectedWallIds,
     IReadOnlyList<string> NonBlockingDuplicateWallIds,
+    IReadOnlyList<string> OpeningOnlyWallIds,
     IReadOnlyList<string> UnassessedWallIds,
     IReadOnlyList<string> CoordinateBlockingWallIds,
     IReadOnlyList<string> Evidence);
@@ -4136,13 +4139,17 @@ internal static class PlacementReliability
         PlanCalibration calibration,
         IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceAssessments)
     {
-        var boundaryReliability = ForRoomBoundary(room, wallEvidenceAssessments);
+        var boundaryReliability = ForRoomBoundary(
+            room,
+            wallEvidenceAssessments,
+            placementWallsById: null);
         return ForRoom(room, calibration, boundaryReliability);
     }
 
     public static PlacementRoomBoundaryReliabilityExport ForRoomBoundary(
         RoomRegion room,
-        IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceAssessments)
+        IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceAssessments,
+        IReadOnlyDictionary<string, PlacementWallExport>? placementWallsById)
     {
         var wallIds = room.WallIds
             .Where(wallId => !string.IsNullOrWhiteSpace(wallId))
@@ -4153,11 +4160,25 @@ internal static class PlacementReliability
         var reviewWallIds = new List<string>();
         var rejectedWallIds = new List<string>();
         var nonBlockingDuplicateWallIds = new List<string>();
+        var openingOnlyWallIds = new List<string>();
         var unassessedWallIds = new List<string>();
         var assessedWallCount = 0;
 
         foreach (var wallId in wallIds)
         {
+            PlacementWallExport? placementWall = null;
+            placementWallsById?.TryGetValue(wallId, out placementWall);
+            if (IsOpeningOnlyBoundaryWall(placementWall))
+            {
+                openingOnlyWallIds.Add(wallId);
+                if (wallEvidenceAssessments.ContainsKey(wallId))
+                {
+                    assessedWallCount++;
+                }
+
+                continue;
+            }
+
             if (!wallEvidenceAssessments.TryGetValue(wallId, out var assessment))
             {
                 unassessedWallIds.Add(wallId);
@@ -4204,6 +4225,11 @@ internal static class PlacementReliability
             evidence.Add($"non-blocking duplicate room boundary wall evidence: {string.Join(",", nonBlockingDuplicateWallIds.Order(StringComparer.Ordinal))}");
         }
 
+        if (openingOnlyWallIds.Count > 0)
+        {
+            evidence.Add($"non-blocking opening-only room boundary wall evidence: {string.Join(",", openingOnlyWallIds.Order(StringComparer.Ordinal))}");
+        }
+
         if (unassessedWallIds.Count > 0)
         {
             evidence.Add($"room boundary wall evidence not assessed: {string.Join(",", unassessedWallIds.Order(StringComparer.Ordinal))}");
@@ -4216,9 +4242,60 @@ internal static class PlacementReliability
             reviewWallIds.Order(StringComparer.Ordinal).ToArray(),
             rejectedWallIds.Order(StringComparer.Ordinal).ToArray(),
             nonBlockingDuplicateWallIds.Order(StringComparer.Ordinal).ToArray(),
+            openingOnlyWallIds.Order(StringComparer.Ordinal).ToArray(),
             unassessedWallIds.Order(StringComparer.Ordinal).ToArray(),
             coordinateBlockingWallIds,
             evidence);
+    }
+
+    private static bool IsOpeningOnlyBoundaryWall(PlacementWallExport? wall)
+    {
+        if (wall is null
+            || wall.OpeningCutouts.Count == 0
+            || wall.TopologySpans.Count > 0
+            || wall.SolidSpans.Count > 0
+            || wall.DrawingLength <= 0.001)
+        {
+            return false;
+        }
+
+        return OpeningCutoutCoverageRatio(wall.OpeningCutouts) >= 0.98;
+    }
+
+    private static double OpeningCutoutCoverageRatio(IReadOnlyList<PlacementWallOpeningCutoutExport> cutouts)
+    {
+        var intervals = cutouts
+            .Select(cutout => (
+                Start: Math.Clamp(cutout.StartParameter, 0, 1),
+                End: Math.Clamp(cutout.EndParameter, 0, 1)))
+            .Where(interval => interval.End > interval.Start)
+            .OrderBy(interval => interval.Start)
+            .ThenBy(interval => interval.End)
+            .ToArray();
+        if (intervals.Length == 0)
+        {
+            return 0;
+        }
+
+        var covered = 0.0;
+        var currentStart = intervals[0].Start;
+        var currentEnd = intervals[0].End;
+        for (var index = 1; index < intervals.Length; index++)
+        {
+            var interval = intervals[index];
+            if (interval.Start > currentEnd)
+            {
+                covered += currentEnd - currentStart;
+                currentStart = interval.Start;
+                currentEnd = interval.End;
+                continue;
+            }
+
+            currentEnd = Math.Max(currentEnd, interval.End);
+        }
+
+        covered += currentEnd - currentStart;
+        return Math.Clamp(covered, 0, 1);
     }
 
     public static PlacementReliabilityExport ForRoom(

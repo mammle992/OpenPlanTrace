@@ -6,6 +6,29 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.198] - 2026-06-22
+
+### Improved
+- Room boundary reliability now tracks `openingOnlyWallIds` for boundary wall
+  candidates that are fully consumed by anchored opening cutouts and have no
+  solid placement span left to import.
+- Opening-only boundary walls remain visible as wall/review evidence, but they
+  no longer make a room look coordinate-blocked as if a solid wall still existed.
+- This makes downstream placement output cleaner for doorway/window-heavy areas
+  where short isolated wall candidates are really opening geometry.
+
+### Verified
+- Added placement export and schema regression coverage for opening-only room
+  boundary walls.
+- Rescanned the supplied medium PDF `A20-102 PLAN 1. ETASJE.pdf` with
+  `wall-qa-focus`: `page:1:wall:23` moved from `coordinateBlockingWallIds` to
+  `openingOnlyWallIds` for `page:1:room:6`, while scan counts stayed stable at
+  `115` wall candidates and `19` placement-ready walls.
+- Rendered and inspected the wall-QA screenshot at
+  `%TEMP%/openplantrace-medium-a20-102-opening-only-boundary-v1.png`.
+- Ran targeted placement/schema tests: `6` tests passed.
+- Ran the full test suite: `696` tests passed.
+
 ## [0.02.197] - 2026-06-22
 
 ### Improved
