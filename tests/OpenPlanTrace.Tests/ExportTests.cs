@@ -3392,6 +3392,26 @@ public sealed class ExportTests
         Assert.Contains(
             boundaryReliability.GetProperty("evidence").EnumerateArray(),
             evidence => evidence.GetString()?.Contains("placement-omitted", StringComparison.OrdinalIgnoreCase) == true);
+
+        var issue = Assert.Single(
+            document.RootElement.GetProperty("issues").EnumerateArray(),
+            item => item.GetProperty("code").GetString() == "placement.review.room_boundary_blocker"
+                && item.GetProperty("itemId").GetString() == roomRegion.Id);
+        Assert.Equal(roomRegion.Bounds.X, issue.GetProperty("bounds").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(boundaryWall.Id, issue.GetProperty("properties").GetProperty("coordinateBlockingWallIds").GetString());
+        Assert.Equal(boundaryWall.Id, issue.GetProperty("properties").GetProperty("placementOmittedWallIds").GetString());
+        Assert.Contains(boundaryWall.Id, JsonStrings(issue.GetProperty("sourcePrimitiveIds")));
+        Assert.Contains(
+            issue.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("room boundary uses placement-omitted wall geometry", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Contains("room polygon", issue.GetProperty("recommendedAction").GetString(), StringComparison.OrdinalIgnoreCase);
+
+        var importReadiness = document.RootElement
+            .GetProperty("summary")
+            .GetProperty("importReadiness");
+        Assert.Contains(
+            "placement.room_boundary.blockers_require_review",
+            JsonStrings(importReadiness.GetProperty("reviewIssueCodes")));
     }
 
     [Fact]

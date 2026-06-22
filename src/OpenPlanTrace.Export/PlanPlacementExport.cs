@@ -142,7 +142,7 @@ public sealed record PlanPlacementExport(
             wallComponentLookup,
             wallEvidenceAssessments);
         var placementRoutingLayer = PlacementRoutingLayerExport.From(routingLayer, result.Calibration, sourceLookup);
-        var issues = PlacementIssueExport.From(result, sourceLookup).ToArray();
+        var issues = PlacementIssueExport.From(result, sourceLookup, rooms, placementWallsById).ToArray();
 
         return new PlanPlacementExport(
             CurrentSchemaVersion,
@@ -692,6 +692,8 @@ public sealed record PlacementImportReadinessExport(
                 ? "placement.wall_graph.surface_pattern_wall_overlaps.require_review"
             : string.Equals(code, "placement.review.wall_evidence_requires_review", StringComparison.Ordinal)
                 ? "placement.wall_evidence.requires_review"
+            : string.Equals(code, "placement.review.room_boundary_blocker", StringComparison.Ordinal)
+                ? "placement.room_boundary.blockers_require_review"
             : code;
 
     private static bool ShouldKeepPlacementIssueInformationalForReadiness(string code) =>
@@ -3601,7 +3603,9 @@ public sealed record PlacementIssueExport(
 
     public static IEnumerable<PlacementIssueExport> From(
         PlanScanResult result,
-        IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup)
+        IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup,
+        IReadOnlyList<PlacementRoomExport>? placementRooms = null,
+        IReadOnlyDictionary<string, PlacementWallExport>? placementWallsById = null)
     {
         var wallsById = result.Walls
             .Where(wall => !string.IsNullOrWhiteSpace(wall.Id))
@@ -3730,6 +3734,68 @@ public sealed record PlacementIssueExport(
                 sourcePrimitiveIds,
                 ExportSourceHelpers.SourceLayers(sourcePrimitiveIds, sourceLookup),
                 BuildIssueEvidence(new[] { diagnostic.Message }.Concat(patternEvidence).Concat(countEvidence)),
+                properties);
+        }
+
+        foreach (var room in (placementRooms ?? Array.Empty<PlacementRoomExport>())
+                     .Where(room => room.BoundaryReliability.CoordinateBlockingWallIds.Count > 0)
+                     .OrderBy(room => room.PageNumber)
+                     .ThenBy(room => room.Id, StringComparer.Ordinal))
+        {
+            var scale = room.MillimetersPerDrawingUnit;
+            var blockerWallIds = room.BoundaryReliability.CoordinateBlockingWallIds
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+            var blockerWalls = blockerWallIds
+                .Select(id => placementWallsById is not null && placementWallsById.TryGetValue(id, out var wall)
+                    ? wall
+                    : null)
+                .OfType<PlacementWallExport>()
+                .ToArray();
+            var sourcePrimitiveIds = blockerWalls
+                .SelectMany(wall => wall.SourcePrimitiveIds)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+            var properties = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["detector"] = "placementRoomBoundaryReliability",
+                ["roomId"] = room.Id,
+                ["roomLabel"] = room.Label ?? string.Empty,
+                ["roomUseKind"] = room.UseKind,
+                ["coordinateBlockingWallIds"] = string.Join(",", blockerWallIds),
+                ["reviewWallIds"] = string.Join(",", room.BoundaryReliability.ReviewWallIds),
+                ["rejectedWallIds"] = string.Join(",", room.BoundaryReliability.RejectedWallIds),
+                ["placementOmittedWallIds"] = string.Join(",", room.BoundaryReliability.PlacementOmittedWallIds),
+                ["readyWallIds"] = string.Join(",", room.BoundaryReliability.ReadyWallIds),
+                ["nonBlockingDuplicateWallIds"] = string.Join(",", room.BoundaryReliability.NonBlockingDuplicateWallIds),
+                ["openingOnlyWallIds"] = string.Join(",", room.BoundaryReliability.OpeningOnlyWallIds),
+                ["roomSupportedFragmentWallIds"] = string.Join(",", room.BoundaryReliability.RoomSupportedFragmentWallIds),
+                ["boundaryWallCount"] = room.BoundaryReliability.BoundaryWallCount.ToString(CultureInfo.InvariantCulture),
+                ["assessedWallCount"] = room.BoundaryReliability.AssessedWallCount.ToString(CultureInfo.InvariantCulture)
+            };
+
+            yield return new PlacementIssueExport(
+                "placement.review.room_boundary_blocker",
+                DiagnosticSeverity.Warning.ToString(),
+                "Room boundary references wall geometry that is not safe for coordinate placement.",
+                room.PageNumber,
+                new[] { room.PageNumber },
+                room.Id,
+                room.Bounds,
+                ScaleRect(ToPlanRect(room.Bounds), scale),
+                ClampRatio(room.Confidence),
+                "Review or correct the listed boundary wall IDs before importing this room polygon as exact placement geometry.",
+                sourcePrimitiveIds,
+                ExportSourceHelpers.SourceLayers(sourcePrimitiveIds, sourceLookup),
+                BuildIssueEvidence(
+                    room.BoundaryReliability.Evidence
+                        .Concat(room.Reliability.Reasons)
+                        .Concat(blockerWalls.SelectMany(wall => wall.Evidence.Take(3)))
+                        .DefaultIfEmpty("Room boundary has coordinate-blocking wall evidence.")),
                 properties);
         }
 
@@ -4072,6 +4138,9 @@ public sealed record PlacementIssueExport(
             .Where(item => !string.IsNullOrWhiteSpace(item))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
+
+    private static PlanRect ToPlanRect(RectExport rect) =>
+        new(rect.X, rect.Y, rect.Width, rect.Height);
 
     private static IReadOnlyDictionary<string, WallGraphComponent> BuildComponentLookup(
         IReadOnlyList<WallGraphComponent> components)

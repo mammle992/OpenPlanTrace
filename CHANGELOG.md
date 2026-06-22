@@ -6,6 +6,34 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.201] - 2026-06-22
+
+### Added
+- Placement export now emits first-class
+  `placement.review.room_boundary_blocker` issues for rooms whose boundary
+  polygons reference wall geometry that is not safe for exact coordinate
+  placement.
+- Room-boundary blocker issues include the room bounds, blocking wall IDs,
+  placement-omitted/review/rejected boundary buckets, source primitive IDs,
+  source layers, evidence, confidence, and a reviewer action.
+- Import readiness now maps those findings to
+  `placement.room_boundary.blockers_require_review` so downstream engines can
+  block/review unsafe room polygons without scraping nested room reliability
+  text.
+- README placement-contract notes now document the new room-boundary blocker
+  issue and import-readiness code.
+
+### Verified
+- Added placement export regression coverage for emitted room-boundary blocker
+  issues and import-readiness review codes.
+- Rescanned the supplied medium PDF difficulty case `A20-102 PLAN 1. ETASJE.pdf`:
+  the placement export now reports `3` room-boundary blocker issues for the
+  remaining unsafe room polygons while leaving scan counts stable.
+- Rendered and inspected the wall-only QA screenshot at
+  `%TEMP%/openplantrace-medium-a20-102-room-boundary-blocker-issues-v1-bath-entry.png`.
+- Ran targeted placement/schema tests: `146` tests passed.
+- Ran the full test suite: `699` tests passed.
+
 ## [0.02.200] - 2026-06-22
 
 ### Improved
