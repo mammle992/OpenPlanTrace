@@ -6,6 +6,29 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.204] - 2026-06-22
+
+### Added
+- Placement export now emits first-class
+  `placement.review.thin_exterior_face_pair` issues for thin exterior
+  parallel-face wall candidates that are omitted from coordinate-ready wall
+  placement.
+- Import readiness maps those review issues to
+  `placement.wall_exterior.thin_face_pairs_require_review` so downstream
+  importers can see that exterior wall geometry needs review without parsing
+  individual wall omission records.
+
+### Verified
+- Added export regression coverage proving the issue includes wall ID, wall
+  type, omission code, thickness, evidence, and import-readiness review code.
+- Rescanned the private medium benchmark PDF: the placement export now reports
+  `3` thin-exterior review issues for the previously noisy lower-band wall
+  candidates while keeping detector counts stable.
+- Rendered and inspected the wall/issue QA image at
+  `%TEMP%/openplantrace-private-medium-thin-exterior-issues-v1-wall-issue-qa.png`.
+- Ran targeted placement/schema tests: `148` tests passed.
+- Ran the full test suite: `701` tests passed.
+
 ## [0.02.203] - 2026-06-22
 
 ### Improved

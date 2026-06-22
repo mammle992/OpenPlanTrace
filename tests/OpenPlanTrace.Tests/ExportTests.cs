@@ -2738,6 +2738,26 @@ public sealed class ExportTests
                 .GetProperty("wallPlacementOmissionCounts")
                 .GetProperty("thin_exterior_face_pair_review_required")
                 .GetInt32());
+
+        var issue = Assert.Single(
+            document.RootElement.GetProperty("issues").EnumerateArray(),
+            item => item.GetProperty("code").GetString() == "placement.review.thin_exterior_face_pair"
+                && item.GetProperty("itemId").GetString() == firstWall.Id);
+        Assert.Equal(firstWall.Id, issue.GetProperty("properties").GetProperty("wallId").GetString());
+        Assert.Equal("Exterior", issue.GetProperty("properties").GetProperty("wallType").GetString());
+        Assert.Equal(
+            "thin_exterior_face_pair_review_required",
+            issue.GetProperty("properties").GetProperty("placementOmissionCode").GetString());
+        Assert.Equal("2.8", issue.GetProperty("properties").GetProperty("thicknessDrawingUnits").GetString());
+        Assert.Contains(
+            issue.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains(
+                WallPlacementReadinessEvaluator.ThinExteriorFacePairWithoutShellSupportReason,
+                StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Contains("exterior wall", issue.GetProperty("recommendedAction").GetString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "placement.wall_exterior.thin_face_pairs_require_review",
+            JsonStrings(summary.GetProperty("importReadiness").GetProperty("reviewIssueCodes")));
     }
 
     [Fact]
