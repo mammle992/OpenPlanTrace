@@ -693,6 +693,56 @@ public sealed class WallEvidenceRecoveryTests
     }
 
     [Fact]
+    public async Task WallEvidenceRefinement_DoesNotRecoverRepeatedCollinearShortTicksAsWalls()
+    {
+        var document = new PlanDocument(
+            "wall-evidence-repeated-short-collinear-tick-recovery-gate",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(340, 220),
+                    new PlanPrimitive[]
+                    {
+                        Line("tick-detail-a", new PlanPoint(80, 90), new PlanPoint(102, 90)),
+                        Line("tick-detail-b", new PlanPoint(150, 90), new PlanPoint(172, 90)),
+                        Line("tick-detail-c", new PlanPoint(220, 90), new PlanPoint(242, 90)),
+                        Line("real-short-wall", new PlanPoint(80, 160), new PlanPoint(102, 160), "A-WALL")
+                    })
+            });
+        var context = new ScanContext(
+            document,
+            new ScannerOptions
+            {
+                DefaultWallThickness = 4,
+                MinWallFragmentLength = 4,
+                MinWallLength = 36
+            });
+        context.LayerAnalysis = new PlanLayerAnalysis(new[]
+        {
+            Layer("A-WALL", LayerCategory.Wall)
+        });
+        foreach (var x in new[] { 80, 102, 150, 172, 220, 242 })
+        {
+            context.WallCandidates.Add(HostWall($"host-{x}", new PlanPoint(x, 50), new PlanPoint(x, 180)));
+        }
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.DoesNotContain(
+            context.Walls.SelectMany(wall => wall.SourcePrimitiveIds),
+            source => source.StartsWith("tick-detail-", StringComparison.Ordinal));
+
+        var recoveredWall = Assert.Single(context.Walls.Where(wall => wall.SourcePrimitiveIds.Contains("real-short-wall")));
+        Assert.Equal(WallDetectionKind.SingleLine, recoveredWall.DetectionKind);
+
+        var diagnostic = Assert.Single(context.Diagnostics.Build().Messages, item => item.Code == "wall_evidence.short_repeated_slots_suppressed");
+        Assert.Equal("3", diagnostic.Properties["suppressedSourceCount"]);
+        Assert.Contains("tick-detail-a", diagnostic.SourcePrimitiveIds);
+        Assert.Contains("tick-detail-c", diagnostic.SourcePrimitiveIds);
+    }
+
+    [Fact]
     public async Task WallEvidenceRefinement_PromotesShortPairedWallWithCollinearShellContinuity()
     {
         var document = new PlanDocument(

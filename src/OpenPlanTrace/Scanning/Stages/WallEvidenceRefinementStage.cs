@@ -2118,6 +2118,8 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
         var suppressed = new HashSet<string>(StringComparer.Ordinal);
         var coordinateTolerance = Math.Max(options.DefaultWallThickness * 8.0, options.WallSnapTolerance * 8.0);
         var minimumCoordinateSpan = Math.Max(options.DefaultWallThickness * 3.0, options.WallSnapTolerance * 4.0);
+        var collinearCoordinateTolerance = Math.Max(options.DefaultWallThickness * 1.5, options.WallSnapTolerance * 2.0);
+        var minimumAlongSpan = Math.Max(options.DefaultWallThickness * 12.0, options.MinWallLength * 2.0);
 
         foreach (var group in candidates
             .Where(candidate => !IsWallLikeCategory(candidate.LayerCategory))
@@ -2174,6 +2176,42 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
                     suppressed.Add(candidate.SourceId);
                 }
             }
+
+            var coordinateBuckets = ordered
+                .GroupBy(candidate => (int)Math.Round(candidate.Coordinate / Math.Max(collinearCoordinateTolerance, 0.001)))
+                .Select(bucket => bucket.OrderBy(candidate => candidate.MinAlong).ToArray());
+            foreach (var bucket in coordinateBuckets)
+            {
+                for (var index = 0; index < bucket.Length; index++)
+                {
+                    var seed = bucket[index];
+                    var cluster = new List<PrimitiveLineCandidate> { seed };
+                    for (var otherIndex = 0; otherIndex < bucket.Length; otherIndex++)
+                    {
+                        if (otherIndex == index)
+                        {
+                            continue;
+                        }
+
+                        var other = bucket[otherIndex];
+                        if (Math.Abs(other.Coordinate - seed.Coordinate) <= collinearCoordinateTolerance
+                            && IsRepeatedCollinearShortDetailNeighbor(seed, other, options))
+                        {
+                            cluster.Add(other);
+                        }
+                    }
+
+                    if (cluster.Count < 3 || ShortCandidateAlongSpan(cluster) < minimumAlongSpan)
+                    {
+                        continue;
+                    }
+
+                    foreach (var candidate in cluster)
+                    {
+                        suppressed.Add(candidate.SourceId);
+                    }
+                }
+            }
         }
 
         return suppressed;
@@ -2202,10 +2240,39 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
         return lengthRatio >= 0.70;
     }
 
+    private static bool IsRepeatedCollinearShortDetailNeighbor(
+        PrimitiveLineCandidate first,
+        PrimitiveLineCandidate second,
+        ScannerOptions options)
+    {
+        var lengthRatio = Math.Min(first.Length, second.Length) / Math.Max(1, Math.Max(first.Length, second.Length));
+        if (lengthRatio < 0.70)
+        {
+            return false;
+        }
+
+        var gap = Math.Max(first.MinAlong, second.MinAlong) - Math.Min(first.MaxAlong, second.MaxAlong);
+        var minimumGap = Math.Max(
+            options.DefaultWallThickness * 2.0,
+            Math.Min(first.Length, second.Length) * 0.45);
+        var maximumGap = Math.Max(options.MinWallLength * 5.0, options.DefaultWallThickness * 36.0);
+        return gap >= minimumGap && gap <= maximumGap;
+    }
+
     private static double ShortCandidateCoordinateSpan(IReadOnlyList<PrimitiveLineCandidate> candidates)
     {
         var coordinates = candidates.Select(candidate => candidate.Coordinate).ToArray();
         return coordinates.Length == 0 ? 0 : coordinates.Max() - coordinates.Min();
+    }
+
+    private static double ShortCandidateAlongSpan(IReadOnlyList<PrimitiveLineCandidate> candidates)
+    {
+        if (candidates.Count == 0)
+        {
+            return 0;
+        }
+
+        return candidates.Max(candidate => candidate.MaxAlong) - candidates.Min(candidate => candidate.MinAlong);
     }
 
     private static void AddRepeatedShortRecoveryNoiseDiagnostic(

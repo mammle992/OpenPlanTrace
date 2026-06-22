@@ -260,6 +260,23 @@ internal static class WallBodyFootprintBuilder
         var firstEnd = pairEvidence.FirstFaceLine.PointAt(endParameter);
         var secondStart = pairEvidence.SecondFaceLine.PointAt(startParameter);
         var secondEnd = pairEvidence.SecondFaceLine.PointAt(endParameter);
+        var sameDirectionDistance = firstStart.DistanceTo(secondStart) + firstEnd.DistanceTo(secondEnd);
+        var reverseDirectionDistance = firstStart.DistanceTo(secondEnd) + firstEnd.DistanceTo(secondStart);
+        if (reverseDirectionDistance < sameDirectionDistance)
+        {
+            (secondStart, secondEnd) = (secondEnd, secondStart);
+        }
+
+        if (!PairFaceCapsAreOrthogonal(
+            firstStart,
+            firstEnd,
+            secondStart,
+            secondEnd,
+            pairEvidence.FaceSeparation))
+        {
+            return false;
+        }
+
         var faceNormal = pairEvidence.SecondFaceLine.Midpoint - pairEvidence.FirstFaceLine.Midpoint;
         var normalizedFaceNormal = faceNormal.Normalize();
         if (normalizedFaceNormal.Length > 0.001)
@@ -305,10 +322,34 @@ internal static class WallBodyFootprintBuilder
             (secondStart, secondEnd) = (secondEnd, secondStart);
         }
 
+        if (!PairFaceCapsAreOrthogonal(
+            firstStart,
+            firstEnd,
+            secondStart,
+            secondEnd,
+            pairEvidence.FaceSeparation))
+        {
+            return false;
+        }
+
         centerLine = new PlanLineSegment(
             Midpoint(firstStart, secondStart),
             Midpoint(firstEnd, secondEnd));
         return centerLine.Length > 0.001;
+    }
+
+    private static bool PairFaceCapsAreOrthogonal(
+        PlanPoint firstStart,
+        PlanPoint firstEnd,
+        PlanPoint secondStart,
+        PlanPoint secondEnd,
+        double faceSeparation)
+    {
+        var alongVector = (firstEnd - firstStart).Normalize();
+        var capSkewTolerance = Math.Max(0.5, faceSeparation * 0.35);
+        return alongVector.Length > 0.001
+            && Math.Abs((secondStart - firstStart).Dot(alongVector)) <= capSkewTolerance
+            && Math.Abs((secondEnd - firstEnd).Dot(alongVector)) <= capSkewTolerance;
     }
 
     private static PlanPoint Midpoint(PlanPoint first, PlanPoint second) =>

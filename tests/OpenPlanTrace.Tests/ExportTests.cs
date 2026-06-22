@@ -2174,6 +2174,63 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public async Task PlacementExporter_FallsBackToCleanRectangleForSkewedPairedFaceCaps()
+    {
+        var result = await CreateScanResultAsync();
+        var sourceWall = result.Walls.First(wall => wall.CenterLine.IsHorizontal());
+        var line = sourceWall.CenterLine;
+        var firstFace = new PlanLineSegment(
+            new PlanPoint(line.Start.X, line.Start.Y - 3),
+            new PlanPoint(line.End.X, line.End.Y - 3));
+        var secondFace = new PlanLineSegment(
+            new PlanPoint(line.Start.X, line.Start.Y + 7),
+            new PlanPoint(line.End.X + 12, line.End.Y + 7));
+        var wallWithSkewedPairEvidence = sourceWall with
+        {
+            Thickness = 10,
+            PairEvidence = new WallPairEvidence(
+                firstFace,
+                secondFace,
+                10,
+                1,
+                0.95,
+                1,
+                1,
+                ["first-face"],
+                ["skewed-second-face"])
+        };
+        result = result with
+        {
+            Walls = result.Walls
+                .Select(wall => wall.Id == sourceWall.Id ? wallWithSkewedPairEvidence : wall)
+                .ToArray()
+        };
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var wall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == sourceWall.Id);
+        var span = Assert.Single(wall.GetProperty("solidSpans").EnumerateArray());
+        var body = span.GetProperty("bodyPolygon");
+        var evidence = span.GetProperty("evidence").EnumerateArray().Select(item => item.GetString()).ToArray();
+
+        Assert.Equal(line.Start.Y, span.GetProperty("centerLine").GetProperty("start").GetProperty("y").GetDouble(), 3);
+        Assert.Equal(line.End.Y, span.GetProperty("centerLine").GetProperty("end").GetProperty("y").GetDouble(), 3);
+        Assert.Equal(line.Start.X, body[0].GetProperty("x").GetDouble(), 3);
+        Assert.Equal(line.Start.Y - 5, body[0].GetProperty("y").GetDouble(), 3);
+        Assert.Equal(line.End.X, body[1].GetProperty("x").GetDouble(), 3);
+        Assert.Equal(line.End.Y - 5, body[1].GetProperty("y").GetDouble(), 3);
+        Assert.Equal(line.End.X, body[2].GetProperty("x").GetDouble(), 3);
+        Assert.Equal(line.End.Y + 5, body[2].GetProperty("y").GetDouble(), 3);
+        Assert.Equal(line.Start.X, body[3].GetProperty("x").GetDouble(), 3);
+        Assert.Equal(line.Start.Y + 5, body[3].GetProperty("y").GetDouble(), 3);
+        Assert.Contains(evidence, item => item?.Contains("centerline plus wall thickness", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
     public async Task PlacementExporter_UsesWallEvidenceAssessmentForReviewReadiness()
     {
         var result = await CreateScanResultAsync();

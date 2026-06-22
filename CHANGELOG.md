@@ -6,6 +6,30 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.188] - 2026-06-22
+
+### Improved
+- Recovered-wall filtering now suppresses repeated short collinear tick/detail
+  linework, not just stacked short slot patterns, so dense marker rows are less
+  likely to become recovered wall segments.
+- Wall body footprint generation now rejects paired wall-face polygons whose end
+  caps skew along the wall axis; those cases fall back to a clean centerline plus
+  thickness rectangle instead of exporting diagonal or trapezoid wall bodies.
+- The interactive viewer uses the same paired-face cap guard for wall-body
+  overlays, so older scan JSON is easier to review without visual kink noise.
+
+### Verified
+- Added regression coverage for repeated collinear tick suppression and skewed
+  paired-face solid-span body polygons.
+- Rescanned the supplied medium PDF with `--svg-profile wall-qa`; scan counts
+  stayed stable at `115` walls, `20` placement-ready walls, and `23` visible
+  clean topology spans while the skewed recovered-wall body footprint became a
+  clean rectangle.
+- Rendered and inspected the wall-QA screenshot at
+  `%TEMP%/openplantrace-a20-102-pair-cap-skew-guard-v1-wallqa.png`.
+- Ran targeted wall/export tests: `110` tests passed.
+- Ran the full test suite: `678` tests passed.
+
 ## [0.02.187] - 2026-06-22
 
 ### Improved

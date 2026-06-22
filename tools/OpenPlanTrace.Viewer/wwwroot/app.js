@@ -4941,8 +4941,25 @@ function wallBodyPolygonFromPairEvidence(wall, span) {
 
   const firstStart = pointAtLine(firstFaceLine, startParameter);
   const firstEnd = pointAtLine(firstFaceLine, endParameter);
-  const secondEnd = pointAtLine(secondFaceLine, endParameter);
-  const secondStart = pointAtLine(secondFaceLine, startParameter);
+  let secondEnd = pointAtLine(secondFaceLine, endParameter);
+  let secondStart = pointAtLine(secondFaceLine, startParameter);
+  const sameDirectionDistance = distanceBetweenPoints(firstStart, secondStart) + distanceBetweenPoints(firstEnd, secondEnd);
+  const reverseDirectionDistance = distanceBetweenPoints(firstStart, secondEnd) + distanceBetweenPoints(firstEnd, secondStart);
+  if (reverseDirectionDistance < sameDirectionDistance) {
+    [secondStart, secondEnd] = [secondEnd, secondStart];
+  }
+
+  const along = normalizeVector({
+    x: firstEnd.x - firstStart.x,
+    y: firstEnd.y - firstStart.y
+  });
+  const faceSeparation = Number(pair?.faceSeparation ?? wall?.thickness ?? span?.thickness ?? 0);
+  const capSkewTolerance = Math.max(0.5, Math.max(0, faceSeparation) * 0.35);
+  if (!along || Math.abs(dotVector({ x: secondStart.x - firstStart.x, y: secondStart.y - firstStart.y }, along)) > capSkewTolerance
+    || Math.abs(dotVector({ x: secondEnd.x - firstEnd.x, y: secondEnd.y - firstEnd.y }, along)) > capSkewTolerance) {
+    return null;
+  }
+
   return [firstStart, firstEnd, secondEnd, secondStart, firstStart];
 }
 
@@ -5014,6 +5031,24 @@ function lineVector(line) {
     x: Number(line.end.x) - Number(line.start.x),
     y: Number(line.end.y) - Number(line.start.y)
   };
+}
+
+function distanceBetweenPoints(first, second) {
+  return Math.hypot(Number(first.x) - Number(second.x), Number(first.y) - Number(second.y));
+}
+
+function normalizeVector(vector) {
+  const length = Math.hypot(Number(vector.x), Number(vector.y));
+  return length <= 0.000001
+    ? null
+    : {
+      x: Number(vector.x) / length,
+      y: Number(vector.y) / length
+    };
+}
+
+function dotVector(first, second) {
+  return (Number(first.x) * Number(second.x)) + (Number(first.y) * Number(second.y));
 }
 
 function translatePoint(point, dx, dy) {
