@@ -379,6 +379,73 @@ public sealed class WallPlacementReadinessTests
     }
 
     [Fact]
+    public void Evaluate_BlocksTopologySupportedFragmentedPairWhenOneFaceIsExtremelyFragmented()
+    {
+        var sourceIds = Enumerable.Range(1, 34)
+            .Select(index => $"pdf:p1:path:{index}:line:1")
+            .ToArray();
+        var wall = Wall("wall:noisy-topology-supported-fragmented-pair", Confidence.High) with
+        {
+            CenterLine = new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(146, 100)),
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Interior,
+            SourcePrimitiveIds = sourceIds,
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(new PlanPoint(100, 97), new PlanPoint(146, 97)),
+                new PlanLineSegment(new PlanPoint(100, 103), new PlanPoint(146, 103)),
+                FaceSeparation: 6,
+                OverlapRatio: 1,
+                Score: 0.718,
+                FirstFaceFragmentCount: 7,
+                SecondFaceFragmentCount: 78,
+                FirstFaceSourcePrimitiveIds: ["face-a"],
+                SecondFaceSourcePrimitiveIds: ["face-b"]),
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "layer (unlayered) classified Unknown (0,35)",
+                "wall evidence: short unlayered parallel-face candidate has noisy fragmented face evidence (score 0.718, max face fragments 78, total face fragments 85); keep for topology but block exact placement until reviewed",
+                "wall evidence: topology-supported fragmented paired wall promoted after both endpoints aligned to trusted structural graph",
+                "wall evidence: pair score 0.718, max face fragments 78, total face fragments 85, topology-supported endpoints 2"
+            ]
+        };
+        var component = Component(
+            WallGraphComponentKind.MainStructural,
+            excludedFromStructuralTopology: false,
+            wall.Id);
+        var evidence = Evidence(wall, WallEvidenceCategory.MediumWallBody, placementReady: true) with
+        {
+            Evidence = wall.Evidence,
+            ScoreBreakdown = new WallEvidenceScoreBreakdown(
+                0.718,
+                0,
+                0.718,
+                0.5,
+                0,
+                0.2,
+                0,
+                0,
+                0,
+                new[] { "strong parallel-face wall pair", "both endpoints supported by structural context" },
+                Array.Empty<string>())
+        };
+
+        var readiness = WallPlacementReadinessEvaluator.Evaluate(
+            wall,
+            ReliableCalibration(),
+            component,
+            evidence);
+
+        Assert.False(readiness.ReadyForCoordinatePlacement);
+        Assert.False(readiness.ReadyForMetricPlacement);
+        Assert.True(readiness.RequiresReview);
+        Assert.True(readiness.CoordinatePlacementBlocked);
+        Assert.Contains(
+            WallPlacementReadinessEvaluator.NoisyTopologySupportedFragmentedPairReason,
+            readiness.Reasons);
+    }
+
+    [Fact]
     public void Evaluate_AllowsShortDenseCandidateWithExplicitRoomBoundarySupport()
     {
         var sourceIds = Enumerable.Range(1, 34)

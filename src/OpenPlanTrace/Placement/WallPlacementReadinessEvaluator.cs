@@ -11,8 +11,13 @@ public static class WallPlacementReadinessEvaluator
     public const string ThinExteriorFacePairWithoutShellSupportReason =
         "thin exterior parallel-face wall candidate lacks trusted exterior shell support";
 
+    public const string NoisyTopologySupportedFragmentedPairReason =
+        "topology-supported fragmented paired wall has excessive face fragmentation for exact placement";
+
     private const double MaxShortDenseDetailCandidateLengthDrawingUnits = 55.0;
     private const double MinShortDenseDetailCandidateSourceDensity = 0.65;
+    private const double MaxNoisyTopologySupportedFragmentedPairLengthDrawingUnits = 72.0;
+    private const int MaxNoisyTopologySupportedFragmentedPairFaceFragments = 64;
     private const double MaxThinExteriorFacePairSeparationDrawingUnits = 3.25;
     private const double MaxThinExteriorFacePairThicknessMillimeters = 65.0;
 
@@ -91,6 +96,13 @@ public static class WallPlacementReadinessEvaluator
             reasons.Add(WeakPromotedFragmentRoomBoundaryReason);
         }
 
+        var coordinatePlacementBlockedByNoisyTopologySupportedFragmentedPair =
+            CoordinatePlacementBlockedByNoisyTopologySupportedFragmentedPair(wall, evidenceAssessment);
+        if (coordinatePlacementBlockedByNoisyTopologySupportedFragmentedPair)
+        {
+            reasons.Add(NoisyTopologySupportedFragmentedPairReason);
+        }
+
         var coordinatePlacementBlockedByThinExteriorFacePair =
             CoordinatePlacementBlockedByThinExteriorFacePairWithoutShellSupport(wall, evidenceAssessment);
         if (coordinatePlacementBlockedByThinExteriorFacePair)
@@ -106,6 +118,7 @@ public static class WallPlacementReadinessEvaluator
             && !coordinatePlacementBlockedByShortDenseDetailEvidence
             && !coordinatePlacementBlockedByUntrustedOutdoorBoundaryEvidence
             && !coordinatePlacementBlockedByWeakPromotedFragmentRoomBoundary
+            && !coordinatePlacementBlockedByNoisyTopologySupportedFragmentedPair
             && !coordinatePlacementBlockedByThinExteriorFacePair
             && wall.FragmentEvidence?.RequiresGeometryReview != true
             && (evidenceAssessment is null || evidenceAssessment.PlacementReady);
@@ -122,6 +135,7 @@ public static class WallPlacementReadinessEvaluator
             || coordinatePlacementBlockedByShortDenseDetailEvidence
             || coordinatePlacementBlockedByUntrustedOutdoorBoundaryEvidence
             || coordinatePlacementBlockedByWeakPromotedFragmentRoomBoundary
+            || coordinatePlacementBlockedByNoisyTopologySupportedFragmentedPair
             || coordinatePlacementBlockedByThinExteriorFacePair
             || evidenceAssessment?.RequiresReview == true
             || evidenceAssessment?.RejectedAsNoise == true
@@ -133,6 +147,7 @@ public static class WallPlacementReadinessEvaluator
             || coordinatePlacementBlockedByShortDenseDetailEvidence
             || coordinatePlacementBlockedByUntrustedOutdoorBoundaryEvidence
             || coordinatePlacementBlockedByWeakPromotedFragmentRoomBoundary
+            || coordinatePlacementBlockedByNoisyTopologySupportedFragmentedPair
             || coordinatePlacementBlockedByThinExteriorFacePair,
             reasons.Distinct(StringComparer.Ordinal).ToArray());
     }
@@ -325,6 +340,43 @@ public static class WallPlacementReadinessEvaluator
             "explicit room boundary support",
             "detected room evidence on both sides",
             "short structural return promoted by room boundary and two supported topology endpoints");
+    }
+
+    private static bool CoordinatePlacementBlockedByNoisyTopologySupportedFragmentedPair(
+        WallSegment wall,
+        WallEvidenceWallAssessment? evidenceAssessment)
+    {
+        if (evidenceAssessment is null
+            || !evidenceAssessment.PlacementReady
+            || evidenceAssessment.RejectedAsNoise
+            || evidenceAssessment.Decision == WallEvidenceDecision.Reject
+            || evidenceAssessment.Category != WallEvidenceCategory.MediumWallBody
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.WallType != WallType.Interior
+            || wall.DrawingLength > MaxNoisyTopologySupportedFragmentedPairLengthDrawingUnits
+            || wall.PairEvidence is not { } pair)
+        {
+            return false;
+        }
+
+        var evidence = wall.Evidence
+            .Concat(evidenceAssessment.Evidence)
+            .Concat(evidenceAssessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(evidenceAssessment.ScoreBreakdown.NegativeEvidence)
+            .ToArray();
+        if (!EvidenceContains(evidence, TopologySupportedFragmentedPairPromotionEvidence)
+            || EvidenceContainsAny(
+                evidence,
+                "wall-like layer",
+                "explicit room boundary support",
+                "detected room evidence on both sides",
+                "short structural return promoted by room boundary"))
+        {
+            return false;
+        }
+
+        return Math.Max(pair.FirstFaceFragmentCount, pair.SecondFaceFragmentCount)
+            > MaxNoisyTopologySupportedFragmentedPairFaceFragments;
     }
 
     private static bool CoordinatePlacementBlockedByThinExteriorFacePairWithoutShellSupport(

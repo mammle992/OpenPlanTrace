@@ -3089,6 +3089,53 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementExporter_DoesNotRecoverShortTopologySupportedPairWhenOneFaceIsExtremelyFragmented()
+    {
+        var result = CreateSourceBackedFallbackWallResult(
+            pairScore: 0.718,
+            pairOverlapRatio: 0.83,
+            firstFaceFragmentCount: 7,
+            secondFaceFragmentCount: 78,
+            wallLength: 46,
+            category: WallEvidenceCategory.MediumWallBody,
+            evidence:
+            [
+                "parallel wall-face pair",
+                "layer (unlayered) classified Unknown (0,35)",
+                "wall evidence: short unlayered parallel-face candidate has noisy fragmented face evidence (score 0.718, max face fragments 78, total face fragments 85); keep for topology but block exact placement until reviewed",
+                "wall evidence: topology-supported fragmented paired wall promoted after both endpoints aligned to trusted structural graph",
+                "wall evidence: pair score 0.718, max face fragments 78, total face fragments 85, topology-supported endpoints 2"
+            ]);
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var wall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == "source-backed-fallback-wall");
+
+        Assert.Empty(wall.GetProperty("topologySpans").EnumerateArray());
+        Assert.Equal(
+            "fragmented_short_parallel_pair_review_required",
+            wall.GetProperty("placementOmission").GetProperty("code").GetString());
+        Assert.False(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.Contains(
+            wall.GetProperty("reliability").GetProperty("reasons").EnumerateArray(),
+            reason => reason.GetString() == WallPlacementReadinessEvaluator.NoisyTopologySupportedFragmentedPairReason);
+
+        var summary = document.RootElement.GetProperty("summary");
+        Assert.Equal(0, summary.GetProperty("sourceBackedFallbackTopologySpanCount").GetInt32());
+        Assert.Equal(
+            1,
+            summary
+                .GetProperty("wallPlacementOmissionCounts")
+                .GetProperty("fragmented_short_parallel_pair_review_required")
+                .GetInt32());
+    }
+
+    [Fact]
     public void PlacementExporter_DoesNotRecoverSourceBackedSpanWhenLowerScorePairLacksFullOverlap()
     {
         var result = CreateSourceBackedFallbackWallResult(pairScore: 0.702);
@@ -5331,22 +5378,24 @@ public sealed class ExportTests
         double pairOverlapRatio = 1,
         int firstFaceFragmentCount = 2,
         int secondFaceFragmentCount = 2,
+        double wallLength = 100,
         WallEvidenceCategory category = WallEvidenceCategory.StrongWallBody,
         IReadOnlyList<string>? evidence = null)
     {
+        var wallEndX = 80 + wallLength;
         var wallEvidence = evidence ??
         [
             "parallel wall-face pair",
             "wall evidence: strong double-edge wall body",
             $"pair score {pairScore.ToString(CultureInfo.InvariantCulture)}"
         ];
-        var wall = SyntheticWall("source-backed-fallback-wall", 80, 120, 180, 120) with
+        var wall = SyntheticWall("source-backed-fallback-wall", 80, 120, wallEndX, 120) with
         {
             DetectionKind = WallDetectionKind.ParallelLinePair,
             WallType = WallType.Interior,
             PairEvidence = new WallPairEvidence(
-                new PlanLineSegment(new PlanPoint(80, 116), new PlanPoint(180, 116)),
-                new PlanLineSegment(new PlanPoint(80, 124), new PlanPoint(180, 124)),
+                new PlanLineSegment(new PlanPoint(80, 116), new PlanPoint(wallEndX, 116)),
+                new PlanLineSegment(new PlanPoint(80, 124), new PlanPoint(wallEndX, 124)),
                 FaceSeparation: 8,
                 OverlapRatio: pairOverlapRatio,
                 Score: pairScore,

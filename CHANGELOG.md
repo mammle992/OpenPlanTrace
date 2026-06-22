@@ -6,6 +6,28 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.205] - 2026-06-22
+
+### Improved
+- Clean wall placement now blocks short topology-supported fragmented paired
+  walls when one paired face is excessively fragmented.
+- These candidates stay in the existing
+  `fragmented_short_parallel_pair_review_required` omission bucket instead of
+  being exported as exact placement-ready wall geometry.
+- README placement notes now call out this guarded promotion rule for
+  downstream importers.
+
+### Verified
+- Added readiness and placement-export regression coverage for a short
+  topology-supported paired wall with `78` fragments on one face.
+- Rescanned the private medium benchmark PDF: clean placement spans dropped
+  from `19` to `18`, and the noisy promoted wall moved to review-only with the
+  excessive-face-fragmentation reliability reason.
+- Rendered and inspected the updated wall overlay at
+  `%TEMP%/openplantrace-private-medium-noisy-fragment-guard-v1-wall-overlay.png`.
+- Ran targeted wall readiness/export tests: `120` tests passed.
+- Ran the full test suite: `703` tests passed.
+
 ## [0.02.204] - 2026-06-22
 
 ### Added

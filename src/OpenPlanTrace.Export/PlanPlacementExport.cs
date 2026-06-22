@@ -1423,10 +1423,14 @@ public sealed record PlacementWallOmissionExport(
         var hasTopologySupportedFragmentedPairPromotion = ContainsEvidence(
             evidence,
             WallPlacementReadinessEvaluator.TopologySupportedFragmentedPairPromotionEvidence);
-        if (!hasTopologySupportedFragmentedPairPromotion
+        var hasNoisyTopologySupportedFragmentedPair = ContainsEvidence(
+            evidence,
+            WallPlacementReadinessEvaluator.NoisyTopologySupportedFragmentedPairReason);
+        if ((!hasTopologySupportedFragmentedPairPromotion || hasNoisyTopologySupportedFragmentedPair)
             && ContainsEvidence(evidence, "unlayered parallel-face candidate")
             && (ContainsEvidence(evidence, "noisy fragmented face evidence")
-                || ContainsEvidence(evidence, "weak/fragmented pair evidence")))
+                || ContainsEvidence(evidence, "weak/fragmented pair evidence")
+                || hasNoisyTopologySupportedFragmentedPair))
         {
             return new PlacementWallOmissionClassification(
                 "fragmented_short_parallel_pair_review_required",
