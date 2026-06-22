@@ -2033,9 +2033,7 @@ internal static class OpenPlanTraceCli
         var suppressedObjects = hasRoutingLayer ? ReadArrayProperty(routingLayer, "suppressedObjects", "Placement routingLayer", messages) : Array.Empty<JsonElement>();
         var suppressedObjectCandidateIds = hasRoutingLayer ? ReadStringArrayForDeep(routingLayer, "suppressedObjectCandidateIds").ToArray() : Array.Empty<string>();
         var routingItemCount = barriers.Length + passages.Length + obstacles.Length + roomUseHints.Length + suppressedObjects.Length;
-        var structuralWalls = walls
-            .Where(wall => ReadBooleanProperty(wall, "excludedFromStructuralTopology") != true)
-            .ToArray();
+        var structuralWalls = walls.Where(IsPlacementReliabilityTrackedWall).ToArray();
         var placementReadyWallCount = PlacementReadyWallCount(walls);
         var placementOmittedWallCount = PlacementOmittedWallCount(walls);
         var wallTopologySpanCount = WallSpanCount(walls, "topologySpans");
@@ -2043,12 +2041,12 @@ internal static class OpenPlanTraceCli
         var sourceBackedFallbackTopologySpanCount = SourceBackedFallbackTopologySpanCount(walls);
         var wallSolidSpanCount = WallSpanCount(walls, "solidSpans");
         var wallPlacementOmissionCounts = WallPlacementOmissionCounts(walls);
-        var reliabilityTrackedEntityCount = walls.Length + rooms.Length + openings.Length + objectAggregates.Length;
-        var coordinateReadyEntityCount = ReliabilityCount(walls, "readyForCoordinatePlacement")
+        var reliabilityTrackedEntityCount = structuralWalls.Length + rooms.Length + openings.Length + objectAggregates.Length;
+        var coordinateReadyEntityCount = ReliabilityCount(structuralWalls, "readyForCoordinatePlacement")
             + ReliabilityCount(rooms, "readyForCoordinatePlacement")
             + ReliabilityCount(openings, "readyForCoordinatePlacement")
             + ReliabilityCount(objectAggregates, "readyForCoordinatePlacement");
-        var metricReadyEntityCount = ReliabilityCount(walls, "readyForMetricPlacement")
+        var metricReadyEntityCount = ReliabilityCount(structuralWalls, "readyForMetricPlacement")
             + ReliabilityCount(rooms, "readyForMetricPlacement")
             + ReliabilityCount(openings, "readyForMetricPlacement")
             + ReliabilityCount(objectAggregates, "readyForMetricPlacement");
@@ -2197,9 +2195,7 @@ internal static class OpenPlanTraceCli
         }
 
         var pageWalls = walls.Where(item => ReadInt32Property(item, "pageNumber") == pageNumber.Value).ToArray();
-        var pageStructuralWalls = pageWalls
-            .Where(wall => ReadBooleanProperty(wall, "excludedFromStructuralTopology") != true)
-            .ToArray();
+        var pageStructuralWalls = pageWalls.Where(IsPlacementReliabilityTrackedWall).ToArray();
         var placementReadyWallCount = PlacementReadyWallCount(pageWalls);
         var placementOmittedWallCount = PlacementOmittedWallCount(pageWalls);
         var wallTopologySpanCount = WallSpanCount(pageWalls, "topologySpans");
@@ -2232,9 +2228,9 @@ internal static class OpenPlanTraceCli
         AddExpectedIntegerMessage(prefix, "unanchoredOpeningCount", pageOpenings.Count(opening => !HasPlacementObject(opening)), summary, messages);
         AddExpectedIntegerMessage(prefix, "objectAggregateCount", pageObjectAggregates.Length, summary, messages);
         AddExpectedIntegerMessage(prefix, "routingItemCount", routingItemCount, summary, messages);
-        AddExpectedIntegerMessage(prefix, "reliabilityTrackedEntityCount", pageWalls.Length + pageRooms.Length + pageOpenings.Length + pageObjectAggregates.Length, summary, messages);
-        AddExpectedIntegerMessage(prefix, "coordinateReadyEntityCount", ReliabilityCount(pageWalls, "readyForCoordinatePlacement") + ReliabilityCount(pageRooms, "readyForCoordinatePlacement") + ReliabilityCount(pageOpenings, "readyForCoordinatePlacement") + ReliabilityCount(pageObjectAggregates, "readyForCoordinatePlacement"), summary, messages);
-        AddExpectedIntegerMessage(prefix, "metricReadyEntityCount", ReliabilityCount(pageWalls, "readyForMetricPlacement") + ReliabilityCount(pageRooms, "readyForMetricPlacement") + ReliabilityCount(pageOpenings, "readyForMetricPlacement") + ReliabilityCount(pageObjectAggregates, "readyForMetricPlacement"), summary, messages);
+        AddExpectedIntegerMessage(prefix, "reliabilityTrackedEntityCount", pageStructuralWalls.Length + pageRooms.Length + pageOpenings.Length + pageObjectAggregates.Length, summary, messages);
+        AddExpectedIntegerMessage(prefix, "coordinateReadyEntityCount", ReliabilityCount(pageStructuralWalls, "readyForCoordinatePlacement") + ReliabilityCount(pageRooms, "readyForCoordinatePlacement") + ReliabilityCount(pageOpenings, "readyForCoordinatePlacement") + ReliabilityCount(pageObjectAggregates, "readyForCoordinatePlacement"), summary, messages);
+        AddExpectedIntegerMessage(prefix, "metricReadyEntityCount", ReliabilityCount(pageStructuralWalls, "readyForMetricPlacement") + ReliabilityCount(pageRooms, "readyForMetricPlacement") + ReliabilityCount(pageOpenings, "readyForMetricPlacement") + ReliabilityCount(pageObjectAggregates, "readyForMetricPlacement"), summary, messages);
         AddExpectedIntegerMessage(prefix, "reviewRequiredEntityCount", ReliabilityCount(pageStructuralWalls, "requiresReview") + ReliabilityCount(pageRooms, "requiresReview") + ReliabilityCount(pageOpenings, "requiresReview") + ReliabilityCount(pageObjectAggregates, "requiresReview"), summary, messages);
         AddExpectedIntegerMessage(prefix, "issueCount", issues.Count(issue => ReadInt32Property(issue, "pageNumber") == pageNumber.Value), summary, messages);
     }
@@ -2244,6 +2240,23 @@ internal static class OpenPlanTraceCli
             item.TryGetProperty("reliability", out var reliability)
             && reliability.ValueKind == JsonValueKind.Object
             && ReadBooleanProperty(reliability, propertyName) == true);
+
+    private static bool IsPlacementReliabilityTrackedWall(JsonElement wall)
+    {
+        if (ReadBooleanProperty(wall, "excludedFromStructuralTopology") == true)
+        {
+            return false;
+        }
+
+        var omissionCode = PlacementOmissionCode(wall);
+        return omissionCode is not (
+            "duplicate_clean_topology_span"
+            or "duplicate_wall_face"
+            or "rejected_wall_evidence"
+            or "object_like_linework"
+            or "isolated_fragment"
+            or "structural_topology_excluded");
+    }
 
     private static int PlacementReadyWallCount(JsonElement[] walls) =>
         walls.Count(wall => !HasPlacementOmission(wall)

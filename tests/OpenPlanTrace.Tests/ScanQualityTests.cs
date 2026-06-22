@@ -1985,7 +1985,7 @@ public sealed class ScanQualityTests
         Assert.Equal(6, summary.GetProperty("wallCount").GetInt32());
         Assert.Equal(4, summary.GetProperty("structuralWallCount").GetInt32());
         Assert.Equal(2, summary.GetProperty("excludedWallCount").GetInt32());
-        Assert.True(summary.GetProperty("coordinateReadyRatio").GetDouble() < 1);
+        Assert.Equal(1, summary.GetProperty("coordinateReadyRatio").GetDouble());
         Assert.False(summary.GetProperty("importReadiness").GetProperty("requiresReview").GetBoolean());
         Assert.Contains(
             JsonStrings(summary.GetProperty("importReadiness").GetProperty("evidence")),

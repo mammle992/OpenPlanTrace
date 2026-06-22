@@ -6,6 +6,36 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.217] - 2026-06-22
+
+### Improved
+- Placement summaries now calculate readiness ratios from import-relevant
+  walls instead of every raw wall-like candidate kept for QA.
+- Duplicate clean topology spans, duplicate wall faces, rejected wall
+  evidence, object-like linework, isolated fragments, and structurally
+  excluded walls still stay in placement JSON, but no longer drag down
+  `reliabilityTrackedEntityCount`, `coordinateReadyRatio`, or
+  `metricReadyRatio`.
+- The CLI placement validator now uses the same import-tracked wall rules as
+  the exporter, so generated placement artifacts validate against the cleaner
+  readiness accounting.
+
+### Verified
+- Added placement-export regression coverage showing an isolated fragment
+  increases raw and omitted wall counts without changing import-readiness
+  entity counts.
+- Updated rejected-wall evidence coverage so rejected non-wall candidates no
+  longer reduce placement coordinate readiness.
+- Rescanned the medium architectural PDF: placement `coordinateReadyRatio`
+  and `metricReadyRatio` improved from `0.276316` to `0.617647` while raw wall
+  detections remained unchanged.
+- Rendered and inspected the wall-QA screenshot at
+  `real-pdf-output/medium-a20-102-20260622-placement-readiness-denominator-v1/wall-qa-review.png`.
+- Validated the generated scan and placement artifacts with the CLI validator.
+- Ran targeted export/scan-quality/placement-validation tests: `159` tests
+  passed.
+- Ran the full test suite: `719` tests passed.
+
 ## [0.02.216] - 2026-06-22
 
 ### Improved

@@ -1128,6 +1128,49 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementSummary_DoesNotCountIsolatedFragmentsAsImportTrackedWalls()
+    {
+        var baseResult = CreateDenseMinorRoutingDetailResult();
+        var isolatedResult = WithPlacementReadyIsolatedFragment(baseResult);
+
+        using var baseDocument = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            baseResult,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        using var isolatedDocument = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            isolatedResult,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+
+        var baseSummary = baseDocument.RootElement.GetProperty("summary");
+        var isolatedSummary = isolatedDocument.RootElement.GetProperty("summary");
+        Assert.Equal(
+            baseSummary.GetProperty("wallCount").GetInt32() + 1,
+            isolatedSummary.GetProperty("wallCount").GetInt32());
+        Assert.Equal(
+            baseSummary.GetProperty("placementOmittedWallCount").GetInt32() + 1,
+            isolatedSummary.GetProperty("placementOmittedWallCount").GetInt32());
+        Assert.Equal(
+            baseSummary.GetProperty("structuralWallCount").GetInt32(),
+            isolatedSummary.GetProperty("structuralWallCount").GetInt32());
+        Assert.Equal(
+            baseSummary.GetProperty("reliabilityTrackedEntityCount").GetInt32(),
+            isolatedSummary.GetProperty("reliabilityTrackedEntityCount").GetInt32());
+        Assert.Equal(
+            baseSummary.GetProperty("coordinateReadyEntityCount").GetInt32(),
+            isolatedSummary.GetProperty("coordinateReadyEntityCount").GetInt32());
+        Assert.Equal(
+            baseSummary.GetProperty("metricReadyEntityCount").GetInt32(),
+            isolatedSummary.GetProperty("metricReadyEntityCount").GetInt32());
+
+        var isolatedWall = isolatedDocument.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(wall => wall.GetProperty("id").GetString() == "isolated-clean-fragment");
+        Assert.Equal(
+            "isolated_fragment",
+            isolatedWall.GetProperty("placementOmission").GetProperty("code").GetString());
+    }
+
+    [Fact]
     public void SvgRenderer_WallQaProfileDrawsCleanWallPlacementLinesWithSourceContext()
     {
         var result = WithEndpointToWallHostRepairCandidate(

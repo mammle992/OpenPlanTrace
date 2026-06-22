@@ -380,9 +380,7 @@ public sealed record PlacementSummaryExport(
         IReadOnlyList<PlacementIssueExport> issues)
     {
         var routingItemCount = CountRoutingItems(routingLayer);
-        var structuralWalls = walls
-            .Where(wall => !wall.ExcludedFromStructuralTopology)
-            .ToArray();
+        var structuralWalls = walls.Where(IsReliabilityTrackedWall).ToArray();
         var placementReadyWallCount = CountPlacementReadyWalls(walls);
         var placementOmittedWallCount = walls.Count(wall => wall.PlacementOmission is not null);
         var wallTopologySpanCount = walls.Sum(wall => wall.TopologySpans.Count);
@@ -390,14 +388,14 @@ public sealed record PlacementSummaryExport(
         var sourceBackedFallbackTopologySpanCount = CountSourceBackedFallbackTopologySpans(walls);
         var wallSolidSpanCount = walls.Sum(wall => wall.SolidSpans.Count);
         var wallPlacementOmissionCounts = BuildWallPlacementOmissionCounts(walls);
-        var reliabilityTrackedEntityCount = walls.Count + rooms.Count + openings.Count + objectAggregates.Count;
+        var reliabilityTrackedEntityCount = structuralWalls.Length + rooms.Count + openings.Count + objectAggregates.Count;
         var coordinateReadyEntityCount =
-            walls.Count(item => item.Reliability.ReadyForCoordinatePlacement)
+            structuralWalls.Count(item => item.Reliability.ReadyForCoordinatePlacement)
             + rooms.Count(item => item.Reliability.ReadyForCoordinatePlacement)
             + openings.Count(item => item.Reliability.ReadyForCoordinatePlacement)
             + objectAggregates.Count(item => item.Reliability.ReadyForCoordinatePlacement);
         var metricReadyEntityCount =
-            walls.Count(item => item.Reliability.ReadyForMetricPlacement)
+            structuralWalls.Count(item => item.Reliability.ReadyForMetricPlacement)
             + rooms.Count(item => item.Reliability.ReadyForMetricPlacement)
             + openings.Count(item => item.Reliability.ReadyForMetricPlacement)
             + objectAggregates.Count(item => item.Reliability.ReadyForMetricPlacement);
@@ -434,8 +432,8 @@ public sealed record PlacementSummaryExport(
             mainFloorplanRegions.Length,
             surfacePatterns.Count,
             walls.Count,
-            walls.Count(wall => !wall.ExcludedFromStructuralTopology),
-            walls.Count(wall => wall.ExcludedFromStructuralTopology),
+            structuralWalls.Length,
+            walls.Count - structuralWalls.Length,
             placementReadyWallCount,
             placementOmittedWallCount,
             wallTopologySpanCount,
@@ -509,6 +507,22 @@ public sealed record PlacementSummaryExport(
 
     internal static int CountPlacementReadyWalls(IEnumerable<PlacementWallExport> walls) =>
         walls.Count(wall => wall.PlacementOmission is null && wall.Reliability.ReadyForCoordinatePlacement);
+
+    internal static bool IsReliabilityTrackedWall(PlacementWallExport wall)
+    {
+        if (wall.ExcludedFromStructuralTopology)
+        {
+            return false;
+        }
+
+        return wall.PlacementOmission?.Code is not (
+            "duplicate_clean_topology_span"
+            or "duplicate_wall_face"
+            or "rejected_wall_evidence"
+            or "object_like_linework"
+            or "isolated_fragment"
+            or "structural_topology_excluded");
+    }
 
     internal static int CountSourceBackedFallbackWalls(IEnumerable<PlacementWallExport> walls) =>
         walls.Count(wall => wall.TopologySpans.Any(IsSourceBackedFallbackTopologySpan));
@@ -755,7 +769,7 @@ public sealed record PlacementPageSummaryExport(
     {
         var pageSurfacePatterns = surfacePatterns.Where(pattern => pattern.PageNumber == page.PageNumber).ToArray();
         var pageWalls = walls.Where(wall => wall.PageNumber == page.PageNumber).ToArray();
-        var pageStructuralWalls = pageWalls.Where(wall => !wall.ExcludedFromStructuralTopology).ToArray();
+        var pageStructuralWalls = pageWalls.Where(PlacementSummaryExport.IsReliabilityTrackedWall).ToArray();
         var placementReadyWallCount = PlacementSummaryExport.CountPlacementReadyWalls(pageWalls);
         var placementOmittedWallCount = pageWalls.Count(wall => wall.PlacementOmission is not null);
         var wallTopologySpanCount = pageWalls.Sum(wall => wall.TopologySpans.Count);
@@ -768,14 +782,14 @@ public sealed record PlacementPageSummaryExport(
         var pageObjectAggregates = objectAggregates.Where(aggregate => aggregate.PageNumber == page.PageNumber).ToArray();
         var pageWallGraphRepairCandidateCount = wallGraphRepairCandidates.Count(candidate => candidate.PageNumber == page.PageNumber);
         var routingItems = CountRoutingItemsForPage(routingLayer, page.PageNumber);
-        var reliabilityTrackedEntityCount = pageWalls.Length + pageRooms.Length + pageOpenings.Length + pageObjectAggregates.Length;
+        var reliabilityTrackedEntityCount = pageStructuralWalls.Length + pageRooms.Length + pageOpenings.Length + pageObjectAggregates.Length;
         var coordinateReadyEntityCount =
-            pageWalls.Count(item => item.Reliability.ReadyForCoordinatePlacement)
+            pageStructuralWalls.Count(item => item.Reliability.ReadyForCoordinatePlacement)
             + pageRooms.Count(item => item.Reliability.ReadyForCoordinatePlacement)
             + pageOpenings.Count(item => item.Reliability.ReadyForCoordinatePlacement)
             + pageObjectAggregates.Count(item => item.Reliability.ReadyForCoordinatePlacement);
         var metricReadyEntityCount =
-            pageWalls.Count(item => item.Reliability.ReadyForMetricPlacement)
+            pageStructuralWalls.Count(item => item.Reliability.ReadyForMetricPlacement)
             + pageRooms.Count(item => item.Reliability.ReadyForMetricPlacement)
             + pageOpenings.Count(item => item.Reliability.ReadyForMetricPlacement)
             + pageObjectAggregates.Count(item => item.Reliability.ReadyForMetricPlacement);
@@ -790,8 +804,8 @@ public sealed record PlacementPageSummaryExport(
             Union(BoundsForPage(page.PageNumber, pageSurfacePatterns, pageWalls, pageRooms, pageOpenings, pageObjectAggregates, routingLayer, metric: true)),
             pageSurfacePatterns.Length,
             pageWalls.Length,
-            pageWalls.Count(wall => !wall.ExcludedFromStructuralTopology),
-            pageWalls.Count(wall => wall.ExcludedFromStructuralTopology),
+            pageStructuralWalls.Length,
+            pageWalls.Length - pageStructuralWalls.Length,
             placementReadyWallCount,
             placementOmittedWallCount,
             wallTopologySpanCount,
