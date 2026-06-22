@@ -647,6 +647,106 @@ public sealed class WallTypeRefinementTests
     }
 
     [Fact]
+    public async Task WallTypeRefinement_AddsExplicitRoomBoundaryEvidenceToPlacementReadyShortDenseWall()
+    {
+        var sourceIds = Enumerable.Range(1, 34)
+            .Select(index => $"pdf:p1:path:{index}:line:1")
+            .ToArray();
+        var wall = new WallSegment(
+            "wall-short-dense-explicit-room-boundary",
+            1,
+            new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(140, 100)),
+            4,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Interior,
+            SourcePrimitiveIds = sourceIds,
+            Evidence = new[]
+            {
+                "parallel wall-face pair",
+                "first face merged 29 fragments",
+                "first face collapsed 5 duplicate or near-duplicate wall line primitive(s)",
+                "layer (unlayered) classified Unknown (0,35)"
+            }
+        };
+        var context = CreateContext("short-dense-explicit-room-boundary-evidence");
+        context.Walls.Add(wall);
+        context.Rooms.Add(Room("room-explicit", RoomUseKind.Storage, wall.Id));
+        context.WallGraph = GraphFor(wall);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.StrongWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var updatedWall = Assert.Single(context.Walls);
+        var assessment = Assert.Single(context.WallEvidenceMap.WallAssessments);
+
+        Assert.Contains(
+            updatedWall.Evidence,
+            item => item.Contains("explicit room boundary support", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            assessment.Evidence,
+            item => item.Contains("explicit room boundary support", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "walls.architectural_type_refined"
+                && diagnostic.Properties["explicitRoomBoundaryEvidenceAddedWallCount"] == "1");
+    }
+
+    [Fact]
+    public async Task WallTypeRefinement_DoesNotAddExplicitRoomBoundaryEvidenceForOutdoorRoom()
+    {
+        var wall = new WallSegment(
+            "wall-outdoor-explicit-boundary",
+            1,
+            new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(140, 100)),
+            4,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Interior,
+            Evidence = new[]
+            {
+                "parallel wall-face pair",
+                "layer (unlayered) classified Unknown (0,35)"
+            }
+        };
+        var context = CreateContext("outdoor-explicit-boundary-no-evidence");
+        context.Walls.Add(wall);
+        context.Rooms.Add(Room("covered-entry", RoomUseKind.Outdoor, wall.Id));
+        context.WallGraph = GraphFor(wall);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.StrongWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var updatedWall = Assert.Single(context.Walls);
+        var assessment = Assert.Single(context.WallEvidenceMap.WallAssessments);
+
+        Assert.DoesNotContain(
+            updatedWall.Evidence,
+            item => item.Contains("explicit room boundary support", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(
+            assessment.Evidence,
+            item => item.Contains("explicit room boundary support", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "walls.architectural_type_refined"
+                && diagnostic.Properties["explicitRoomBoundaryEvidenceAddedWallCount"] == "0");
+    }
+
+    [Fact]
     public async Task WallTypeRefinement_DoesNotUseOutdoorBoundaryGeometryToPromoteWallEvidence()
     {
         var wall = new WallSegment(

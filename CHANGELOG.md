@@ -6,6 +6,32 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.191] - 2026-06-22
+
+### Improved
+- Wall-type refinement now emits explicit room-boundary support evidence for
+  placement-ready paired interior walls that are directly referenced by detected
+  indoor rooms and belong to the main structural wall component.
+- Outdoor room references, secondary/detail components, object-like components,
+  rejected evidence, and review-only wall assessments are still excluded from
+  that support signal.
+- This lets downstream placement explain some short dense candidates as already
+  represented room-boundary geometry instead of leaving them as ambiguous
+  dense-detail review items.
+
+### Verified
+- Added regression coverage for explicit indoor room-boundary support evidence
+  and for blocking the same evidence on outdoor room references.
+- Rescanned a supplied medium PDF with a rendered page background and the
+  `placement-review` overlay; placement-ready walls stayed at `20`, omitted
+  walls stayed at `95`, hidden non-placement topology spans dropped from `94`
+  to `92`, and the remaining short dense candidate became a duplicate clean
+  topology span instead of a `short_dense_detail_review_required` wall.
+- Rendered and inspected the placement-review screenshot at
+  `%TEMP%/openplantrace-medium-supplied-explicit-room-boundary-support-v1.png`.
+- Ran targeted wall refinement/readiness tests: `36` tests passed.
+- Ran the full test suite: `682` tests passed.
+
 ## [0.02.190] - 2026-06-22
 
 ### Improved

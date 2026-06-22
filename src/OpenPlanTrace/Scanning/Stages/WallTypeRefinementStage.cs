@@ -44,6 +44,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         var fragmentedPairPlacementDemoted = 0;
         var fragmentedExteriorShellContinuityRetained = 0;
         var geometricRoomBoundaryEvidenceAdded = 0;
+        var explicitRoomBoundaryEvidenceAdded = 0;
         var updatedAssessmentsByWallId = new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal);
 
         for (var index = 0; index < context.Walls.Count; index++)
@@ -227,6 +228,40 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
                 }
             }
 
+            if (assessment is not null
+                && ShouldAddExplicitRoomBoundarySupportEvidence(
+                    updatedWall,
+                    assessment,
+                    component,
+                    wallRoomIds.Length,
+                    hasOutdoorRoomReference))
+            {
+                var explicitRoomBoundaryEvidence = new[]
+                {
+                    "wall evidence: explicit room boundary support from detected room wall reference"
+                };
+                var assessmentEvidence = AppendEvidence(assessment.Evidence, explicitRoomBoundaryEvidence);
+                var wallEvidence = AppendEvidence(updatedWall.Evidence, explicitRoomBoundaryEvidence);
+                var addedEvidence =
+                    assessmentEvidence.Count != assessment.Evidence.Count
+                    || wallEvidence.Count != updatedWall.Evidence.Count;
+                var updatedAssessment = assessment with
+                {
+                    Evidence = assessmentEvidence
+                };
+                updatedAssessmentsByWallId[wall.Id] = updatedAssessment;
+                updatedWall = updatedWall with
+                {
+                    Evidence = wallEvidence
+                };
+                assessment = updatedAssessment;
+                if (addedEvidence)
+                {
+                    explicitRoomBoundaryEvidenceAdded++;
+                    evidenceUpdated++;
+                }
+            }
+
             if (!ReferenceEquals(updatedWall, wall))
             {
                 context.Walls[index] = updatedWall;
@@ -257,6 +292,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             fragmentedPairPlacementDemoted,
             fragmentedExteriorShellContinuityRetained,
             geometricRoomBoundaryEvidenceAdded,
+            explicitRoomBoundaryEvidenceAdded,
             roomWallReferences.GeometricRoomBoundaryReferencedWallCount,
             roomWallReferences.GeometricRoomBoundaryReferenceCount);
         return ValueTask.CompletedTask;
@@ -920,6 +956,40 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             && component.DrawingLength >= 240;
     }
 
+    private static bool ShouldAddExplicitRoomBoundarySupportEvidence(
+        WallSegment wall,
+        WallEvidenceWallAssessment assessment,
+        WallGraphComponent? component,
+        int roomReferenceCount,
+        bool hasOutdoorRoomReference)
+    {
+        if (roomReferenceCount < 1
+            || hasOutdoorRoomReference
+            || wall.WallType != WallType.Interior
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || component is null
+            || component.Kind != WallGraphComponentKind.MainStructural
+            || component.ExcludedFromStructuralTopology)
+        {
+            return false;
+        }
+
+        if (!assessment.PlacementReady
+            || assessment.RequiresReview
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject)
+        {
+            return false;
+        }
+
+        if (assessment.Category is not (WallEvidenceCategory.StrongWallBody or WallEvidenceCategory.MediumWallBody))
+        {
+            return false;
+        }
+
+        return !HasRoomConfirmedPromotionBlocker(wall, assessment);
+    }
+
     private static bool IsTrustedShortStructuralReturnWall(
         WallSegment wall,
         WallEvidenceWallAssessment assessment,
@@ -1335,6 +1405,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         int fragmentedPairPlacementDemoted,
         int fragmentedExteriorShellContinuityRetained,
         int geometricRoomBoundaryEvidenceAdded,
+        int explicitRoomBoundaryEvidenceAdded,
         int geometricRoomBoundaryReferencedWallCount,
         int geometricRoomBoundaryReferenceCount)
     {
@@ -1363,6 +1434,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
                 ["roomConfirmedPlacementPromotedWallCount"] = roomConfirmedPlacementPromoted.ToString(),
                 ["fragmentedPairPlacementDemotedWallCount"] = fragmentedPairPlacementDemoted.ToString(),
                 ["fragmentedExteriorShellContinuityRetainedWallCount"] = fragmentedExteriorShellContinuityRetained.ToString(),
+                ["explicitRoomBoundaryEvidenceAddedWallCount"] = explicitRoomBoundaryEvidenceAdded.ToString(),
                 ["exteriorWallCount"] = exterior.ToString(),
                 ["interiorWallCount"] = interior.ToString(),
                 ["unknownWallCount"] = unknown.ToString()
