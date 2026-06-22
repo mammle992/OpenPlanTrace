@@ -6,6 +6,27 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.207] - 2026-06-22
+
+### Improved
+- Scan-level import readiness now exposes
+  `placement.wall_pairs.fragmented_short_pairs_require_review` when structural
+  wall placement is blocked by noisy topology-supported fragmented short
+  parallel-face wall pairs.
+- The scanner and placement exporter now agree on this review gate, so
+  downstream consumers can detect the risk from `scan.json` without parsing
+  placement-only wall omission records.
+
+### Verified
+- Added regression coverage for a short topology-promoted fragmented wall pair
+  with excessive face fragmentation.
+- Rescanned the private medium wall-noise PDF: both scan and placement import
+  readiness now include the fragmented short wall-pair review code, and
+  placement still reports `2` matching review issues.
+- Rendered and inspected the wall-only QA screenshot at
+  `%TEMP%/openplantrace-private-medium-wall-readiness-20260622-v1-wall-qa.png`.
+- Ran targeted scan quality/export/golden fixture tests: `140` tests passed.
+
 ## [0.02.206] - 2026-06-22
 
 ### Added

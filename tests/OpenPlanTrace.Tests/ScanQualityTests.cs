@@ -633,6 +633,75 @@ public sealed class ScanQualityTests
     }
 
     [Fact]
+    public void ImportReadiness_ExposesFragmentedShortWallPairReviewCode()
+    {
+        var regions = new[]
+        {
+            new SheetRegion("sheet", 1, RegionKind.Sheet, new PlanRect(0, 0, 600, 400), Confidence.High),
+            new SheetRegion("main", 1, RegionKind.MainFloorPlan, new PlanRect(0, 0, 600, 400), Confidence.High)
+        };
+        var wall = SyntheticWall("fragmented-short-pair", 100, 100, 160, 100) with
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Interior,
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(new PlanPoint(100, 97), new PlanPoint(160, 97)),
+                new PlanLineSegment(new PlanPoint(100, 103), new PlanPoint(160, 103)),
+                6,
+                0.91,
+                0.72,
+                78,
+                7,
+                ["fragmented-face-a"],
+                ["fragmented-face-b"]),
+            Evidence =
+            [
+                "wall evidence: topology-supported fragmented paired wall promoted after both endpoints aligned to trusted structural graph"
+            ]
+        };
+        var assessment = new WallEvidenceWallAssessment(
+            wall.Id,
+            wall.PageNumber,
+            wall.Bounds,
+            WallEvidenceCategory.MediumWallBody,
+            new Confidence(0.84),
+            PlacementReady: true,
+            RequiresReview: false,
+            RejectedAsNoise: false,
+            wall.SourcePrimitiveIds,
+            [
+                "wall evidence: short unlayered parallel-face candidate has noisy fragmented face evidence (score 0.72, max face fragments 78, total face fragments 85); keep for topology but block exact placement until reviewed",
+                "wall evidence: topology-supported fragmented paired wall promoted after both endpoints aligned to trusted structural graph"
+            ])
+        {
+            Decision = WallEvidenceDecision.Accept
+        };
+        var result = CreateSyntheticResult(
+            regions: regions,
+            walls: [wall],
+            rooms: [SyntheticRoom("r1", new PlanRect(110, 120, 80, 60), [wall.Id])],
+            wallEvidenceMap: new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                [assessment])) with
+        {
+            Quality = UsableQuality()
+        };
+
+        var readiness = PlanImportReadiness.FromScanResult(result);
+
+        Assert.False(readiness.ReadyForGeometryImport);
+        Assert.True(readiness.RequiresReview);
+        Assert.Contains("placement.wall_pairs.fragmented_short_pairs_require_review", readiness.ReviewIssueCodes);
+        Assert.Contains(
+            readiness.RecommendedActions,
+            action => action.Contains("fragmented short parallel wall-pair", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            readiness.Evidence,
+            evidence => evidence.Contains("wall/room/opening/evidence entities 1", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void ImportReadiness_BlocksSecondaryStructuralComponentWithoutRoomBoundarySupport()
     {
         var regions = new[]

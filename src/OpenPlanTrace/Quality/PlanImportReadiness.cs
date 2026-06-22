@@ -30,6 +30,7 @@ public sealed record PlanImportReadiness(
     private const string RoutingPassageRoomSideLinksIncompleteIssueCode = "quality.scan_risk.routing_passage_room_side_links_incomplete";
     private const string OpeningPlacementInconsistentIssueCode = "placement.opening.placement_inconsistent";
     private const string WallEvidenceRequiresReviewIssueCode = "placement.wall_evidence.requires_review";
+    private const string FragmentedShortWallPairsRequireReviewIssueCode = "placement.wall_pairs.fragmented_short_pairs_require_review";
 
     public static PlanImportReadiness Empty { get; } =
         new(
@@ -73,6 +74,7 @@ public sealed record PlanImportReadiness(
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
         var wallReady = 0;
         var wallReview = 0;
+        var fragmentedShortWallPairsRequireReview = false;
         foreach (var wall in structuralWalls)
         {
             componentsByWallId.TryGetValue(wall.Id, out var component);
@@ -95,6 +97,13 @@ public sealed record PlanImportReadiness(
             {
                 wallReview++;
             }
+
+            if (readiness.Reasons.Contains(
+                    WallPlacementReadinessEvaluator.NoisyTopologySupportedFragmentedPairReason,
+                    StringComparer.Ordinal))
+            {
+                fragmentedShortWallPairsRequireReview = true;
+            }
         }
 
         var roomReady = result.Rooms.Count(room => room.Confidence.Value >= 0.5 && room.Boundary.Count >= 3);
@@ -112,6 +121,14 @@ public sealed record PlanImportReadiness(
             : 0;
         var reviewRequiredEntityCount = wallReview + roomReview + openingReview;
 
+        var issues = IssuesFromScanResult(result).ToList();
+        if (fragmentedShortWallPairsRequireReview)
+        {
+            issues.Add(new PlanImportReadinessIssue(
+                FragmentedShortWallPairsRequireReviewIssueCode,
+                DiagnosticSeverity.Warning));
+        }
+
         return FromCounts(
             result,
             result.Document.Pages.Count,
@@ -121,7 +138,7 @@ public sealed record PlanImportReadiness(
             Ratio(coordinateReadyEntityCount, reliabilityTrackedEntityCount),
             Ratio(metricReadyEntityCount, reliabilityTrackedEntityCount),
             reviewRequiredEntityCount,
-            IssuesFromScanResult(result).ToArray(),
+            issues,
             coordinateReadyEntityCount,
             metricReadyEntityCount,
             reliabilityTrackedEntityCount);
@@ -437,6 +454,11 @@ public sealed record PlanImportReadiness(
             yield return "Review Wall Evidence V2 wall candidates before importing weak or recovered walls as exact structural geometry.";
         }
 
+        if (reviewIssueCodes.Contains(FragmentedShortWallPairsRequireReviewIssueCode, StringComparer.Ordinal))
+        {
+            yield return "Review fragmented short parallel wall-pair candidates before importing exact wall coordinates.";
+        }
+
         if (reviewIssueCodes.Contains(OpeningRoomSideLinksIncompleteIssueCode, StringComparer.Ordinal)
             || reviewIssueCodes.Contains(RoutingPassageRoomSideLinksIncompleteIssueCode, StringComparer.Ordinal))
         {
@@ -550,6 +572,7 @@ public sealed record PlanImportReadiness(
         && !string.Equals(code, "placement.wall_graph.endpoint_gaps.require_review", StringComparison.Ordinal)
         && !string.Equals(code, "placement.wall_graph.surface_pattern_wall_overlaps.require_review", StringComparison.Ordinal)
         && !string.Equals(code, WallEvidenceRequiresReviewIssueCode, StringComparison.Ordinal)
+        && !string.Equals(code, FragmentedShortWallPairsRequireReviewIssueCode, StringComparison.Ordinal)
         && !string.Equals(code, PdfRasterOcrRequiredIssueCode, StringComparison.Ordinal)
         && !string.Equals(code, RasterNoExtractedPrimitivesIssueCode, StringComparison.Ordinal)
         && !string.Equals(code, RasterLowExtractionConfidenceIssueCode, StringComparison.Ordinal)
