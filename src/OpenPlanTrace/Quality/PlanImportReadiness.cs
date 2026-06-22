@@ -121,7 +121,10 @@ public sealed record PlanImportReadiness(
             Ratio(coordinateReadyEntityCount, reliabilityTrackedEntityCount),
             Ratio(metricReadyEntityCount, reliabilityTrackedEntityCount),
             reviewRequiredEntityCount,
-            IssuesFromScanResult(result).ToArray());
+            IssuesFromScanResult(result).ToArray(),
+            coordinateReadyEntityCount,
+            metricReadyEntityCount,
+            reliabilityTrackedEntityCount);
     }
 
     private static IReadOnlyDictionary<string, WallGraphComponent> BuildComponentsByWallId(WallGraph graph)
@@ -150,7 +153,10 @@ public sealed record PlanImportReadiness(
         double coordinateReadyRatio,
         double metricReadyRatio,
         int reviewRequiredEntityCount,
-        IReadOnlyList<PlanImportReadinessIssue> issues)
+        IReadOnlyList<PlanImportReadinessIssue> issues,
+        int? coordinateReadyEntityCount = null,
+        int? metricReadyEntityCount = null,
+        int? reliabilityTrackedEntityCount = null)
     {
         ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(issues);
@@ -258,6 +264,9 @@ public sealed record PlanImportReadiness(
                 coordinateReadyRatio,
                 metricReadyRatio,
                 reviewRequiredEntityCount,
+                coordinateReadyEntityCount,
+                metricReadyEntityCount,
+                reliabilityTrackedEntityCount,
                 QualitySummary(result.Quality),
                 MeasurementOutlierSummary(result.MeasurementConsistency)).ToArray());
     }
@@ -469,6 +478,9 @@ public sealed record PlanImportReadiness(
         double coordinateReadyRatio,
         double metricReadyRatio,
         int reviewRequiredEntityCount,
+        int? coordinateReadyEntityCount,
+        int? metricReadyEntityCount,
+        int? reliabilityTrackedEntityCount,
         string qualitySummary,
         string measurementOutlierSummary)
     {
@@ -476,12 +488,29 @@ public sealed record PlanImportReadiness(
         yield return $"geometry import ready: {readyForGeometryImport}";
         yield return $"metric import ready: {readyForMetricImport}";
         yield return $"routing import ready: {readyForRoutingImport}";
-        yield return $"coordinate readiness ratio {coordinateReadyRatio:0.###}";
-        yield return $"metric readiness ratio {metricReadyRatio:0.###}";
+        yield return ReadinessRatioEvidence(
+            "structural import coordinate readiness ratio",
+            coordinateReadyRatio,
+            coordinateReadyEntityCount,
+            reliabilityTrackedEntityCount);
+        yield return ReadinessRatioEvidence(
+            "structural import metric readiness ratio",
+            metricReadyRatio,
+            metricReadyEntityCount,
+            reliabilityTrackedEntityCount);
         yield return $"review-required wall/room/opening/evidence entities {reviewRequiredEntityCount}";
         yield return qualitySummary;
         yield return measurementOutlierSummary;
     }
+
+    private static string ReadinessRatioEvidence(
+        string label,
+        double ratio,
+        int? readyEntityCount,
+        int? trackedEntityCount) =>
+        readyEntityCount.HasValue && trackedEntityCount.HasValue
+            ? $"{label} {ratio:0.###} ({readyEntityCount.Value}/{trackedEntityCount.Value} structural import entities)"
+            : $"{label} {ratio:0.###}";
 
     private static string QualitySummary(PlanScanQualityReport quality) =>
         $"scan quality {quality.Grade} at {quality.OverallConfidence.Value:0.###} confidence";

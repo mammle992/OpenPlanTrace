@@ -6,6 +6,31 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.189] - 2026-06-22
+
+### Improved
+- Placement/import-readiness evidence now distinguishes whole-packet coordinate
+  readiness from structural import readiness and includes explicit entity counts,
+  so downstream consumers can tell why the ratios differ.
+- Compact secondary wall components with excessive source/detail linework and
+  object-like overlap are now blocked from clean placement even when weak room
+  boundary evidence exists.
+- Added the `secondary_over_sourced_detail_linework` placement omission code and
+  wall-QA legend label so noisy stair/detail-style components are explainable
+  instead of silently becoming trusted walls.
+
+### Verified
+- Added regression coverage for over-sourced secondary detail linework with room
+  boundary evidence and for structural import readiness evidence counts.
+- Rescanned the supplied medium PDF with `--svg-profile wall-qa-focus`;
+  placement-ready walls dropped from `20` to `19`, visible clean topology spans
+  dropped from `23` to `22`, and the suspicious secondary vertical detail wall is
+  now omitted with `secondary_over_sourced_detail_linework`.
+- Rendered and inspected the wall-QA screenshot at
+  `%TEMP%/openplantrace-medium-oversourced-secondary-guard-v1-wallqa.png`.
+- Ran targeted placement/schema/export tests: `178` tests passed.
+- Ran the full test suite: `679` tests passed.
+
 ## [0.02.188] - 2026-06-22
 
 ### Improved

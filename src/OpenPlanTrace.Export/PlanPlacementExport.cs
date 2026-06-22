@@ -462,7 +462,10 @@ public sealed record PlacementSummaryExport(
                 Ratio(importCoordinateReadyEntityCount, importReliabilityTrackedEntityCount),
                 Ratio(importMetricReadyEntityCount, importReliabilityTrackedEntityCount),
                 importReviewRequiredEntityCount,
-                issues),
+                issues,
+                importCoordinateReadyEntityCount,
+                importMetricReadyEntityCount,
+                importReliabilityTrackedEntityCount),
             pages.Select(page => PlacementPageSummaryExport.From(
                     page,
                     mainFloorplanRegions,
@@ -617,7 +620,10 @@ public sealed record PlacementImportReadinessExport(
         double coordinateReadyRatio,
         double metricReadyRatio,
         int reviewRequiredEntityCount,
-        IReadOnlyList<PlacementIssueExport> issues)
+        IReadOnlyList<PlacementIssueExport> issues,
+        int? coordinateReadyEntityCount = null,
+        int? metricReadyEntityCount = null,
+        int? reliabilityTrackedEntityCount = null)
     {
         var readiness = PlanImportReadiness.FromCounts(
             result,
@@ -631,7 +637,10 @@ public sealed record PlacementImportReadinessExport(
             issues
                 .Where(ShouldIncludePlacementIssueForImportReadiness)
                 .Select(ToReadinessIssue)
-                .ToArray());
+                .ToArray(),
+            coordinateReadyEntityCount,
+            metricReadyEntityCount,
+            reliabilityTrackedEntityCount);
 
         return From(readiness);
     }
@@ -1290,6 +1299,17 @@ public sealed record PlacementWallOmissionExport(
                 "SecondaryObjectLineworkReview",
                 "Wall is omitted from clean placement topology because it overlaps detected stair/object linework and is not used by any detected room boundary.",
                 "Review the wall against the source PDF before importing it; it may be stair, fixture, or symbol linework rather than a true wall.");
+        }
+
+        if (ContainsEvidence(
+            evidence,
+            WallPlacementContextGuards.SecondaryStructuralOverSourcedDetailLineworkReason))
+        {
+            return new PlacementWallOmissionClassification(
+                "secondary_over_sourced_detail_linework",
+                "SecondaryObjectLineworkReview",
+                "Wall is omitted from clean placement topology because a compact secondary wall component has excessive source/detail linework contamination despite room-boundary evidence.",
+                "Review the wall against the source PDF before importing it; it may be stair, fixture, symbol, or detail linework that only looks like a wall.");
         }
 
         if (ContainsEvidence(

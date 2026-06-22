@@ -8,6 +8,9 @@ public static class WallPlacementContextGuards
     public const string SecondaryStructuralObjectLineworkWithoutRoomBoundarySupportReason =
         "secondary structural wall overlaps detected stair/object linework without room-boundary support";
 
+    public const string SecondaryStructuralOverSourcedDetailLineworkReason =
+        "secondary structural wall has excessive detail/source linework contamination despite room-boundary support";
+
     public const string FragmentMergedInteriorWithoutRoomBoundarySupportReason =
         "fragment-merged interior wall has suspicious linework and lacks room-boundary support";
 
@@ -34,6 +37,7 @@ public static class WallPlacementContextGuards
             .ToDictionary(assessment => assessment.WallId, StringComparer.Ordinal);
         var reasonsByWallId = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         var objectLineworkCandidatesByPage = BuildObjectLineworkCandidatesByPage(result.ObjectCandidates);
+        var detailLineworkCandidatesByPage = BuildDetailLineworkCandidatesByPage(result.ObjectCandidates);
 
         foreach (var wall in result.Walls)
         {
@@ -52,7 +56,20 @@ public static class WallPlacementContextGuards
                     FragmentMergedInteriorWithoutRoomBoundarySupportReason);
             }
 
-            if (!hasRoomBoundarySupport
+            if (hasRoomBoundarySupport
+                && SecondaryStructuralWallHasOverSourcedDetailLineworkRisk(
+                    wall,
+                    component,
+                    wallById,
+                    wallEvidenceByWallId,
+                    detailLineworkCandidatesByPage))
+            {
+                AddReason(
+                    reasonsByWallId,
+                    wall.Id,
+                    SecondaryStructuralOverSourcedDetailLineworkReason);
+            }
+            else if (!hasRoomBoundarySupport
                 && SecondaryStructuralWallOverlapsObjectLinework(
                     wall,
                     component,
@@ -104,6 +121,17 @@ public static class WallPlacementContextGuards
                 group => (IReadOnlyList<ObjectCandidate>)group.ToArray());
     }
 
+    private static IReadOnlyDictionary<int, IReadOnlyList<ObjectCandidate>> BuildDetailLineworkCandidatesByPage(
+        IReadOnlyList<ObjectCandidate> objectCandidates)
+    {
+        return objectCandidates
+            .Where(IsWallContaminatingDetailLinework)
+            .GroupBy(candidate => candidate.PageNumber)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<ObjectCandidate>)group.ToArray());
+    }
+
     private static bool SecondaryStructuralWallOverlapsObjectLinework(
         WallSegment wall,
         WallGraphComponent? component,
@@ -133,6 +161,75 @@ public static class WallPlacementContextGuards
         }
 
         return false;
+    }
+
+    private static bool SecondaryStructuralWallHasOverSourcedDetailLineworkRisk(
+        WallSegment wall,
+        WallGraphComponent? component,
+        IReadOnlyDictionary<string, WallSegment> wallById,
+        IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceByWallId,
+        IReadOnlyDictionary<int, IReadOnlyList<ObjectCandidate>> detailLineworkCandidatesByPage)
+    {
+        if (component?.Kind != WallGraphComponentKind.SecondaryStructural
+            || component.ExcludedFromStructuralTopology
+            || component.WallIds.Count is < 1 or > 3
+            || wall.WallType == WallType.Exterior
+            || wall.DrawingLength < 48
+            || (!wall.CenterLine.IsHorizontal() && !wall.CenterLine.IsVertical())
+            || !LooksLikeOverSourcedCompactSecondaryComponent(component, wallById, wallEvidenceByWallId)
+            || !detailLineworkCandidatesByPage.TryGetValue(wall.PageNumber, out var candidates))
+        {
+            return false;
+        }
+
+        var guardTolerance = Math.Max(8, wall.Thickness * 2.0);
+        return candidates.Any(candidate =>
+            LineOverlapsCandidateGuardZone(
+                wall.CenterLine,
+                candidate.Bounds.Inflate(guardTolerance),
+                minimumOverlapLength: Math.Min(48, Math.Max(24, wall.DrawingLength * 0.30)),
+                minimumOverlapRatio: 0.35));
+    }
+
+    private static bool LooksLikeOverSourcedCompactSecondaryComponent(
+        WallGraphComponent component,
+        IReadOnlyDictionary<string, WallSegment> wallById,
+        IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceByWallId)
+    {
+        var shortSide = Math.Min(component.Bounds.Width, component.Bounds.Height);
+        var longSide = Math.Max(component.Bounds.Width, component.Bounds.Height);
+        if (shortSide <= 0.001
+            || longSide < 72
+            || shortSide > 18
+            || longSide / Math.Max(shortSide, 0.001) < 8)
+        {
+            return false;
+        }
+
+        var distinctSourcePrimitiveCount = component.SourcePrimitiveIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .Count();
+        if (distinctSourcePrimitiveCount < Math.Max(24, component.WallIds.Count * 12))
+        {
+            return false;
+        }
+
+        var walls = component.WallIds
+            .Select(wallId => wallById.TryGetValue(wallId, out var wall) ? wall : null)
+            .OfType<WallSegment>()
+            .ToArray();
+        if (walls.Length != component.WallIds.Count
+            || walls.Any(wall => wall.DetectionKind != WallDetectionKind.ParallelLinePair))
+        {
+            return false;
+        }
+
+        return walls.Any(wall =>
+            wall.SourcePrimitiveIds.Count >= 18
+            || (wallEvidenceByWallId.TryGetValue(wall.Id, out var assessment)
+                && assessment.SourcePrimitiveIds.Count >= 18)
+            || wall.Evidence.Any(IsHeavyMergedOrCollapsedFaceEvidence));
     }
 
     private static bool FragmentMergedInteriorWallNeedsRoomBoundaryReview(
@@ -173,6 +270,41 @@ public static class WallPlacementContextGuards
         || candidate.Evidence.Any(item =>
             item.Contains("nearby text", StringComparison.OrdinalIgnoreCase)
             && item.Contains("trapp", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsWallContaminatingDetailLinework(ObjectCandidate candidate) =>
+        IsWallContaminatingObjectLinework(candidate)
+        || (candidate.SourceKind == ObjectCandidateSourceKind.WallComponentIsland
+            && candidate.SourceWallComponentKind is WallGraphComponentKind.ObjectLikeIsland or WallGraphComponentKind.IsolatedFragment)
+        || (candidate.SourceKind == ObjectCandidateSourceKind.CompositeLinework
+            && candidate.Kind == ObjectCandidateKind.Symbol
+            && candidate.Category == ObjectCategory.GenericSymbol);
+
+    private static bool IsHeavyMergedOrCollapsedFaceEvidence(string evidence)
+    {
+        var value = TryReadEvidenceCount(evidence, "face merged ")
+            ?? TryReadEvidenceCount(evidence, "face collapsed ");
+        return value >= 18;
+    }
+
+    private static int? TryReadEvidenceCount(string evidence, string marker)
+    {
+        var markerIndex = evidence.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (markerIndex < 0)
+        {
+            return null;
+        }
+
+        var start = markerIndex + marker.Length;
+        var end = start;
+        while (end < evidence.Length && char.IsDigit(evidence[end]))
+        {
+            end++;
+        }
+
+        return end > start && int.TryParse(evidence[start..end], out var value)
+            ? value
+            : null;
+    }
 
     private static bool LineOverlapsCandidateGuardZone(
         PlanLineSegment line,

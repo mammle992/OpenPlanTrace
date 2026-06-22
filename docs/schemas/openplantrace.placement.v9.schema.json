@@ -1133,6 +1133,7 @@
             "object_like_linework",
             "isolated_fragment",
             "secondary_object_linework_without_room_boundary_support",
+            "secondary_over_sourced_detail_linework",
             "fragmented_interior_without_room_boundary_support",
             "secondary_without_room_boundary_support",
             "structural_topology_excluded",

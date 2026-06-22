@@ -49,8 +49,9 @@ internal static class WallPlacementOmissionSummary
         "repeated_short_detail_review_required",
         "tiny_door_adjacent_topology_suppressed",
         "short_dense_detail_review_required",
+        "secondary_over_sourced_detail_linework",
         "topology_import_blocked",
-        "fragment_geometry_review"
+        "fragment_geometry_review",
     ];
 
     public static PlanOverlayWallPlacementSummary From(
@@ -237,7 +238,8 @@ internal static class WallPlacementOmissionSummary
             "fragmented_interior_without_room_boundary_support" => 24,
             "one_endpoint_fragment_review_required" => 24,
             "secondary_object_linework_without_room_boundary_support" => 25,
-            "short_dense_detail_review_required" => 26,
+            "secondary_over_sourced_detail_linework" => 26,
+            "short_dense_detail_review_required" => 27,
             "fragmented_short_parallel_pair_review_required" => 27,
             "very_short_parallel_pair_review_required" => 28,
             "short_parallel_pair_review_required" => 29,
@@ -421,6 +423,7 @@ internal static class WallPlacementOmissionSummary
             "fragmented_short_parallel_pair_review_required" => "fragmented short pairs",
             "repeated_short_detail_review_required" => "repeated short details",
             "secondary_object_linework_without_room_boundary_support" => "secondary object linework",
+            "secondary_over_sourced_detail_linework" => "secondary source clutter",
             "secondary_without_room_boundary_support" => "secondary no room",
             "short_dense_detail_review_required" => "short dense details",
             "short_parallel_pair_review_required" => "short paired reviews",
