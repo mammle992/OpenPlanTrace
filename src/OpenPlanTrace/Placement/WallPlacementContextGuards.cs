@@ -176,6 +176,7 @@ public static class WallPlacementContextGuards
             || wall.WallType == WallType.Exterior
             || wall.DrawingLength < 48
             || (!wall.CenterLine.IsHorizontal() && !wall.CenterLine.IsVertical())
+            || HasTrustedTwoSidedRoomBoundarySupport(wall, wallEvidenceByWallId)
             || !LooksLikeOverSourcedCompactSecondaryComponent(component, wallById, wallEvidenceByWallId)
             || !detailLineworkCandidatesByPage.TryGetValue(wall.PageNumber, out var candidates))
         {
@@ -189,6 +190,27 @@ public static class WallPlacementContextGuards
                 candidate.Bounds.Inflate(guardTolerance),
                 minimumOverlapLength: Math.Min(48, Math.Max(24, wall.DrawingLength * 0.30)),
                 minimumOverlapRatio: 0.35));
+    }
+
+    private static bool HasTrustedTwoSidedRoomBoundarySupport(
+        WallSegment wall,
+        IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceByWallId)
+    {
+        if (wall.WallType != WallType.Interior
+            || !wallEvidenceByWallId.TryGetValue(wall.Id, out var assessment)
+            || assessment.Category != WallEvidenceCategory.StrongWallBody
+            || !assessment.PlacementReady
+            || assessment.RequiresReview
+            || assessment.RejectedAsNoise)
+        {
+            return false;
+        }
+
+        return wall.Evidence
+            .Concat(assessment.Evidence)
+            .Any(item =>
+                item.Contains("detected room evidence on both sides", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("shared by room adjacency boundary", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool LooksLikeOverSourcedCompactSecondaryComponent(

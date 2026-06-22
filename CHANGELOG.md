@@ -6,6 +6,27 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.210] - 2026-06-22
+
+### Improved
+- Wall placement now keeps strong two-sided interior room-boundary walls
+  coordinate-ready even when their compact secondary component carries heavy
+  source/detail linework.
+- The over-sourced detail guard still blocks weak or one-sided secondary
+  detail walls, preserving the noisy false-wall protection from earlier scans.
+
+### Verified
+- Added regression coverage for a two-sided strong secondary wall that must
+  remain placement-ready, while retaining the existing one-sided block test.
+- Rescanned the private medium wall-noise PDF: placement-ready walls increased
+  from `15` to `16`, omitted walls dropped from `100` to `99`, and the
+  `secondary_over_sourced_detail_linework` omission cleared for the recovered
+  room-boundary wall.
+- Rendered and inspected the wall-QA screenshot at
+  `%TEMP%/openplantrace-medium-a20-102-20260622-two-sided-room-wall-v1-wall-qa-review.png`.
+- Ran targeted scan/export/wall tests: `181` tests passed.
+- Ran the full test suite: `708` tests passed.
+
 ## [0.02.209] - 2026-06-22
 
 ### Improved

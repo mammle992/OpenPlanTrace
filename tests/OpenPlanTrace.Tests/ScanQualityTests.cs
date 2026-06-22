@@ -1161,6 +1161,94 @@ public sealed class ScanQualityTests
     }
 
     [Fact]
+    public void PlacementExporter_AllowsOverSourcedSecondaryStrongWallWithTwoSidedRoomEvidence()
+    {
+        var regions = new[]
+        {
+            new SheetRegion("sheet", 1, RegionKind.Sheet, new PlanRect(0, 0, 600, 400), Confidence.High),
+            new SheetRegion("main", 1, RegionKind.MainFloorPlan, new PlanRect(0, 0, 600, 400), Confidence.High)
+        };
+        var noisySourceIds = Enumerable.Range(1, 36)
+            .Select(index => $"detail-source-{index}")
+            .ToArray();
+        var wall = SyntheticWall("over-sourced-two-sided-room-wall", 307, 420, 307, 566) with
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Interior,
+            SourcePrimitiveIds = noisySourceIds,
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "wall evidence: strong double-edge wall body",
+                "first face merged 22 fragments",
+                "second face collapsed 4 duplicate or near-duplicate wall line primitive(s)",
+                "wall type refined interior: detected room evidence on both sides"
+            ]
+        };
+        var wallGraph = new WallGraph(
+            [SyntheticNode("n1", 307, 420), SyntheticNode("n2", 307, 566)],
+            [SyntheticEdge("e1", "n1", "n2", wall.Id)],
+            [
+                new WallGraphComponent(
+                    "secondary-component",
+                    1,
+                    WallGraphComponentKind.SecondaryStructural,
+                    new PlanRect(303, 420, 8, 146),
+                    [wall.Id],
+                    ["n1", "n2"],
+                    ["e1"],
+                    noisySourceIds,
+                    146,
+                    Confidence.High,
+                    ["anchored single paired-wall body"])
+            ]);
+        var detailObject = new ObjectCandidate(
+            "generic-detail-object",
+            1,
+            ObjectCandidateKind.Symbol,
+            new PlanRect(241, 442, 65, 152),
+            Confidence.Medium)
+        {
+            Category = ObjectCategory.GenericSymbol,
+            SourceKind = ObjectCandidateSourceKind.WallComponentIsland,
+            SourceWallComponentKind = WallGraphComponentKind.ObjectLikeIsland,
+            Evidence = ["wall graph component island exported as generic object/detail linework"]
+        };
+        var result = CreateSyntheticResult(
+            regions: regions,
+            walls: [wall],
+            wallGraph: wallGraph,
+            rooms:
+            [
+                SyntheticRoom("r1", new PlanRect(280, 420, 27, 146), [wall.Id]),
+                SyntheticRoom("r2", new PlanRect(307, 420, 133, 146), [wall.Id])
+            ],
+            objects: [detailObject],
+            wallEvidenceMap: new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                [StrongPairedWallEvidence(wall, "both endpoints supported by structural context")])) with
+        {
+            Quality = UsableQuality()
+        };
+
+        var reasons = WallPlacementContextGuards.BuildReviewReasons(result);
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var exportedWall = document.RootElement.GetProperty("walls").EnumerateArray().Single(item =>
+            item.GetProperty("id").GetString() == wall.Id);
+
+        Assert.DoesNotContain(wall.Id, reasons.Keys);
+        Assert.True(exportedWall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, exportedWall.GetProperty("placementOmission").ValueKind);
+        Assert.False(
+            document.RootElement.GetProperty("summary").GetProperty("wallPlacementOmissionCounts")
+                .TryGetProperty("secondary_over_sourced_detail_linework", out _));
+    }
+
+    [Fact]
     public void PlacementExporter_BlocksFragmentMergedInteriorWithoutRoomBoundarySupport()
     {
         var regions = new[]
