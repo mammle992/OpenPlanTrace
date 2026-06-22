@@ -6,6 +6,34 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.213] - 2026-06-22
+
+### Improved
+- Clean promoted fragment-merged interior room boundaries with structural
+  endpoint support can now become placement-ready instead of being blocked as
+  weak promoted fragments.
+- Source-backed fallback topology now also supports strict clean fragment wall
+  bodies, while noisy/gappy fragment bodies remain omitted for review.
+- This recovers real short/medium partition spans that the wall graph failed to
+  expose cleanly, without promoting isolated object/detail fragments.
+
+### Verified
+- Added readiness and placement-export regression coverage for structurally
+  supported promoted fragment room boundaries and blocked noisy fragment
+  fallback.
+- Rescanned the private medium wall-noise PDF: placement-ready walls increased
+  from `17` to `19`, omitted/review walls dropped from `98` to `96`, and clean
+  topology spans increased from `20` to `22`.
+- `page:1:wall:144` and `page:1:wall:150` now export topology spans and no
+  longer block their rooms; `page:1:wall:51` remains review-only because it is
+  short, gappy, and isolated.
+- Rendered and inspected the wall-QA screenshot at
+  `%TEMP%/openplantrace-medium-a20-102-20260622-fragment-fallback-v1-wall-qa-review.png`.
+- Validated the generated placement artifact with deep placement checks
+  enabled.
+- Ran targeted readiness/export tests: `5` tests passed.
+- Ran the full test suite: `714` tests passed.
+
 ## [0.02.212] - 2026-06-22
 
 ### Improved

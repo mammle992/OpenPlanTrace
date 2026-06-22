@@ -341,7 +341,8 @@ public static class WallPlacementReadinessEvaluator
             "geometric room boundary support",
             "explicit room boundary support",
             "detected room evidence on both sides",
-            "short structural return promoted by room boundary and two supported topology endpoints");
+            "short structural return promoted by room boundary and two supported topology endpoints",
+            "both endpoints supported by structural context");
     }
 
     private static bool CoordinatePlacementBlockedByNoisyTopologySupportedFragmentedPair(

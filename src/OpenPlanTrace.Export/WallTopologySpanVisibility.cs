@@ -378,7 +378,6 @@ internal static class WallTopologySpanVisibility
         WallTopologySpanVisibilityContext context)
     {
         if (wall.CenterLine.Length < MinSourceBackedFallbackWallLengthDrawingUnits
-            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
             || wall.WallType == WallType.Unknown
             || wall.FragmentEvidence?.RequiresGeometryReview == true
             || ResolveDominantOrthogonalOrientation(wall.CenterLine) == PlacementRunOrientation.Unknown
@@ -396,6 +395,10 @@ internal static class WallTopologySpanVisibility
             wall,
             component,
             assessment);
+        var hasTrustedFragmentMergedPromotion = IsTrustedSourceBackedFallbackFragmentEvidence(
+            wall,
+            component,
+            assessment);
         if (!IsPlacementReadyStructuralSpan(component, assessment)
             || assessment is null
             || !assessment.PlacementReady
@@ -403,7 +406,8 @@ internal static class WallTopologySpanVisibility
             || assessment.RejectedAsNoise
             || assessment.Decision == WallEvidenceDecision.Reject
             || (assessment.Category is not (WallEvidenceCategory.StrongWallBody or WallEvidenceCategory.RecoveredWallBody)
-                && !hasTopologySupportedFragmentedPairPromotion))
+                && !hasTopologySupportedFragmentedPairPromotion
+                && !hasTrustedFragmentMergedPromotion))
         {
             return false;
         }
@@ -418,7 +422,62 @@ internal static class WallTopologySpanVisibility
             return false;
         }
 
-        return HasTrustedSourceBackedFallbackPairEvidence(wall, component, assessment);
+        return HasTrustedSourceBackedFallbackPairEvidence(wall, component, assessment)
+            || hasTrustedFragmentMergedPromotion;
+    }
+
+    private static bool IsTrustedSourceBackedFallbackFragmentEvidence(
+        WallSegment wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? assessment)
+    {
+        if (assessment is null
+            || assessment.Category != WallEvidenceCategory.MediumWallBody
+            || !assessment.PlacementReady
+            || assessment.RequiresReview
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject
+            || wall.DetectionKind != WallDetectionKind.FragmentMerged
+            || wall.WallType != WallType.Interior
+            || wall.PairEvidence is not null
+            || component is null
+            || component.ExcludedFromStructuralTopology
+            || component.Kind is WallGraphComponentKind.ObjectLikeIsland or WallGraphComponentKind.IsolatedFragment
+            || wall.FragmentEvidence is not { RequiresGeometryReview: false } fragmentEvidence)
+        {
+            return false;
+        }
+
+        if (wall.DrawingLength < Math.Max(72.0, wall.Thickness * 10.0))
+        {
+            return false;
+        }
+
+        var uniqueSourcePrimitiveCount = Math.Max(0, wall.SourcePrimitiveIds.Count - fragmentEvidence.DuplicatePrimitiveCount);
+        var fragmentCount = Math.Max(fragmentEvidence.FragmentCount, uniqueSourcePrimitiveCount);
+        if (fragmentCount is < 2 or > 4
+            || fragmentEvidence.DuplicatePrimitiveCount > 8
+            || fragmentEvidence.GapRatio > 0.001
+            || fragmentEvidence.TotalHealedGap > 0.001)
+        {
+            return false;
+        }
+
+        var evidence = wall.Evidence
+            .Concat(assessment.Evidence)
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(assessment.ScoreBreakdown.NegativeEvidence)
+            .Concat(component.Evidence)
+            .ToArray();
+        if (!ContainsEvidence(evidence, "clean fragment-merged interior room boundary promoted")
+            || !ContainsEvidence(evidence, "supported wall evidence inside exterior envelope"))
+        {
+            return false;
+        }
+
+        return ContainsEvidence(evidence, "both endpoints supported by structural context")
+            || ContainsEvidence(evidence, "geometric room boundary support")
+            || ContainsEvidence(evidence, "explicit room boundary support");
     }
 
     private static bool HasTrustedSourceBackedFallbackPairEvidence(
@@ -513,9 +572,17 @@ internal static class WallTopologySpanVisibility
         var evidence = new List<string>
         {
             "source-backed clean placement fallback: wall graph did not provide enough clean topology coverage",
-            $"source-backed fallback previous clean coverage {existingCoverageRatio:0.###}",
-            "source-backed fallback accepted only because paired wall-face evidence is placement-ready"
+            $"source-backed fallback previous clean coverage {existingCoverageRatio:0.###}"
         };
+        if (wall.DetectionKind == WallDetectionKind.FragmentMerged)
+        {
+            evidence.Add("source-backed fallback accepted because clean promoted fragment wall-body evidence is placement-ready");
+        }
+        else
+        {
+            evidence.Add("source-backed fallback accepted only because paired wall-face evidence is placement-ready");
+        }
+
         if (placementAxis.UsesPairedFaceEvidence)
         {
             evidence.Add($"source-backed fallback centered between paired wall faces using {placementAxis.GeometrySource}");
@@ -527,6 +594,11 @@ internal static class WallTopologySpanVisibility
                 $"source-backed fallback pair score {pair.Score:0.###}, overlap {pair.OverlapRatio:0.###}, face separation {pair.FaceSeparation:0.###} drawing units");
             evidence.Add(
                 $"source-backed fallback face fragments {pair.FirstFaceFragmentCount} and {pair.SecondFaceFragmentCount}");
+        }
+        else if (wall.FragmentEvidence is { } fragment)
+        {
+            evidence.Add(
+                $"source-backed fallback fragment wall body {fragment.FragmentCount} fragment(s), healed gap ratio {fragment.GapRatio:0.###}");
         }
 
         evidence.AddRange(wall.Evidence);

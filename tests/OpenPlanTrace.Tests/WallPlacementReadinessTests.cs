@@ -702,6 +702,64 @@ public sealed class WallPlacementReadinessTests
     }
 
     [Fact]
+    public void Evaluate_AllowsWeakPromotedFragmentRoomBoundaryWithStructuralEndpointSupport()
+    {
+        var wall = Wall("wall:structural-context-promoted-fragment-boundary", Confidence.High) with
+        {
+            WallType = WallType.Interior,
+            DetectionKind = WallDetectionKind.FragmentMerged,
+            FragmentEvidence = new WallFragmentEvidence(
+                FragmentCount: 4,
+                TotalHealedGap: 0,
+                MaxHealedGap: 0,
+                DuplicatePrimitiveCount: 0,
+                GapRatio: 0,
+                RequiresGeometryReview: false,
+                Evidence: Array.Empty<string>()),
+            Evidence = new[]
+            {
+                "wall evidence: room-confirmed wall body promoted to placement-ready after room adjacency refinement",
+                "wall evidence: room references 1, shared adjacency False, two-sided room evidence False, topology-supported endpoints 0",
+                "wall evidence: clean fragment-merged interior room boundary promoted after room refinement confirmed it belongs to a detected room boundary"
+            }
+        };
+        var component = Component(
+            WallGraphComponentKind.SecondaryStructural,
+            excludedFromStructuralTopology: false,
+            wall.Id);
+        var evidence = Evidence(wall, WallEvidenceCategory.MediumWallBody, placementReady: true) with
+        {
+            Evidence = wall.Evidence,
+            ScoreBreakdown = new WallEvidenceScoreBreakdown(
+                PositiveScore: 0.82,
+                NegativeScore: 0.14,
+                DecisionScore: 0.68,
+                PairSupportScore: 0,
+                LayerSupportScore: 0,
+                StructuralSupportScore: 0.85,
+                RecoverySupportScore: 0,
+                NoisePenalty: 0,
+                FragmentReviewPenalty: 0,
+                PositiveEvidence: ["both endpoints supported by structural context"],
+                NegativeEvidence: Array.Empty<string>())
+        };
+
+        var readiness = WallPlacementReadinessEvaluator.Evaluate(
+            wall,
+            ReliableCalibration(),
+            component,
+            evidence);
+
+        Assert.True(readiness.ReadyForCoordinatePlacement);
+        Assert.True(readiness.ReadyForMetricPlacement);
+        Assert.False(readiness.RequiresReview);
+        Assert.False(readiness.CoordinatePlacementBlocked);
+        Assert.DoesNotContain(
+            WallPlacementReadinessEvaluator.WeakPromotedFragmentRoomBoundaryReason,
+            readiness.Reasons);
+    }
+
+    [Fact]
     public void Evaluate_AllowsPromotedFragmentRoomBoundaryWithGeometricSupport()
     {
         var wall = Wall("wall:geometric-promoted-fragment-boundary", Confidence.High) with
