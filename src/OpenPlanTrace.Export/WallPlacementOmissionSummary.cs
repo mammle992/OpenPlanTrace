@@ -42,6 +42,7 @@ internal static class WallPlacementOmissionSummary
     [
         "fragmented_pair_review_required",
         "fragmented_interior_without_room_boundary_support",
+        "weak_promoted_fragment_room_boundary_review_required",
         "one_endpoint_fragment_review_required",
         "fragmented_short_parallel_pair_review_required",
         "very_short_parallel_pair_review_required",
@@ -236,6 +237,7 @@ internal static class WallPlacementOmissionSummary
             "no_clean_topology_spans" => 10,
             "wall_evidence_review_required" => 20,
             "fragmented_interior_without_room_boundary_support" => 24,
+            "weak_promoted_fragment_room_boundary_review_required" => 24,
             "one_endpoint_fragment_review_required" => 24,
             "secondary_object_linework_without_room_boundary_support" => 25,
             "secondary_over_sourced_detail_linework" => 26,
@@ -418,6 +420,7 @@ internal static class WallPlacementOmissionSummary
             "isolated_fragment" => "isolated fragments",
             "no_clean_topology_spans" => "no clean spans",
             "object_like_linework" => "object linework",
+            "weak_promoted_fragment_room_boundary_review_required" => "weak promoted fragments",
             "one_endpoint_fragment_review_required" => "one-ended fragments",
             "rejected_wall_evidence" => "rejected evidence",
             "fragmented_short_parallel_pair_review_required" => "fragmented short pairs",

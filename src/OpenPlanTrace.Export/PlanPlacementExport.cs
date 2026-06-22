@@ -1363,6 +1363,15 @@ public sealed record PlacementWallOmissionExport(
                 "Review the source PDF linework before importing this wall; it may be stitched door, opening, fixture, or detail geometry rather than a wall.");
         }
 
+        if (ContainsEvidence(evidence, WallPlacementReadinessEvaluator.WeakPromotedFragmentRoomBoundaryReason))
+        {
+            return new PlacementWallOmissionClassification(
+                "weak_promoted_fragment_room_boundary_review_required",
+                "WeakFragmentRoomBoundaryReview",
+                "Wall is omitted from clean placement topology because a fragment-merged room boundary was promoted with no supported topology endpoint.",
+                "Review the source PDF and require explicit/geometric room-boundary or endpoint support before importing this stitched fragment as exact wall geometry.");
+        }
+
         if (ContainsEvidence(evidence, "unlayered fragment-merged wall candidate")
             && ContainsEvidence(evidence, "only one trusted structural endpoint"))
         {

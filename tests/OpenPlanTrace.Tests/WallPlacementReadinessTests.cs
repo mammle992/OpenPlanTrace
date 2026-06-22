@@ -425,6 +425,99 @@ public sealed class WallPlacementReadinessTests
         Assert.False(readiness.CoordinatePlacementBlocked);
     }
 
+    [Fact]
+    public void Evaluate_BlocksWeakPromotedFragmentRoomBoundaryWithoutTopologySupport()
+    {
+        var wall = Wall("wall:weak-promoted-fragment-boundary", Confidence.High) with
+        {
+            WallType = WallType.Interior,
+            DetectionKind = WallDetectionKind.FragmentMerged,
+            FragmentEvidence = new WallFragmentEvidence(
+                FragmentCount: 4,
+                TotalHealedGap: 0,
+                MaxHealedGap: 0,
+                DuplicatePrimitiveCount: 0,
+                GapRatio: 0,
+                RequiresGeometryReview: false,
+                Evidence: Array.Empty<string>()),
+            Evidence = new[]
+            {
+                "wall evidence: room-confirmed wall body promoted to placement-ready after room adjacency refinement",
+                "wall evidence: room references 1, shared adjacency False, two-sided room evidence False, topology-supported endpoints 0",
+                "wall evidence: clean fragment-merged interior room boundary promoted after room refinement confirmed it belongs to a detected room boundary"
+            }
+        };
+        var component = Component(
+            WallGraphComponentKind.SecondaryStructural,
+            excludedFromStructuralTopology: false,
+            wall.Id);
+        var evidence = Evidence(wall, WallEvidenceCategory.MediumWallBody, placementReady: true) with
+        {
+            Evidence = wall.Evidence
+        };
+
+        var readiness = WallPlacementReadinessEvaluator.Evaluate(
+            wall,
+            ReliableCalibration(),
+            component,
+            evidence);
+
+        Assert.False(readiness.ReadyForCoordinatePlacement);
+        Assert.False(readiness.ReadyForMetricPlacement);
+        Assert.True(readiness.RequiresReview);
+        Assert.True(readiness.CoordinatePlacementBlocked);
+        Assert.Contains(
+            WallPlacementReadinessEvaluator.WeakPromotedFragmentRoomBoundaryReason,
+            readiness.Reasons);
+    }
+
+    [Fact]
+    public void Evaluate_AllowsPromotedFragmentRoomBoundaryWithGeometricSupport()
+    {
+        var wall = Wall("wall:geometric-promoted-fragment-boundary", Confidence.High) with
+        {
+            WallType = WallType.Interior,
+            DetectionKind = WallDetectionKind.FragmentMerged,
+            FragmentEvidence = new WallFragmentEvidence(
+                FragmentCount: 4,
+                TotalHealedGap: 0,
+                MaxHealedGap: 0,
+                DuplicatePrimitiveCount: 0,
+                GapRatio: 0,
+                RequiresGeometryReview: false,
+                Evidence: Array.Empty<string>()),
+            Evidence = new[]
+            {
+                "wall evidence: room-confirmed wall body promoted to placement-ready after room adjacency refinement",
+                "wall evidence: room references 1, shared adjacency False, two-sided room evidence False, topology-supported endpoints 0",
+                "wall evidence: clean fragment-merged interior room boundary promoted after room refinement confirmed it belongs to a detected room boundary",
+                "wall evidence: geometric room boundary support from reliable room-boundary alignment"
+            }
+        };
+        var component = Component(
+            WallGraphComponentKind.SecondaryStructural,
+            excludedFromStructuralTopology: false,
+            wall.Id);
+        var evidence = Evidence(wall, WallEvidenceCategory.MediumWallBody, placementReady: true) with
+        {
+            Evidence = wall.Evidence
+        };
+
+        var readiness = WallPlacementReadinessEvaluator.Evaluate(
+            wall,
+            ReliableCalibration(),
+            component,
+            evidence);
+
+        Assert.True(readiness.ReadyForCoordinatePlacement);
+        Assert.True(readiness.ReadyForMetricPlacement);
+        Assert.False(readiness.RequiresReview);
+        Assert.False(readiness.CoordinatePlacementBlocked);
+        Assert.DoesNotContain(
+            WallPlacementReadinessEvaluator.WeakPromotedFragmentRoomBoundaryReason,
+            readiness.Reasons);
+    }
+
     private static WallSegment Wall(string id, Confidence confidence) =>
         new(
             id,

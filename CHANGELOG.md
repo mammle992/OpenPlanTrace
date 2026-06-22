@@ -6,6 +6,32 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.193] - 2026-06-22
+
+### Improved
+- Placement readiness now blocks weak promoted fragment-merged room boundaries
+  when they have no supported topology endpoint and no explicit/geometric
+  room-boundary support.
+- Placement omission reports now classify those cases as
+  `weak_promoted_fragment_room_boundary_review_required`, with a dedicated
+  visual snapshot label of `weak promoted fragments`.
+- This keeps the stitched wall evidence available for review while preventing
+  weak one-sided room-boundary fragments from being exported as coordinate-ready
+  wall geometry.
+
+### Verified
+- Added regression coverage for blocking weak promoted fragment boundaries and
+  allowing the same pattern when reliable geometric room-boundary support exists.
+- Rescanned the supplied medium PDF `A20-102 PLAN 1. ETASJE.pdf` with a rendered
+  page background and the `wall-qa-focus` overlay. Placement-ready walls dropped
+  from `20` to `18`, omitted/review walls increased from `95` to `97`, and
+  `page:1:wall:144` plus `page:1:wall:150` are now omitted with
+  `weak_promoted_fragment_room_boundary_review_required`.
+- Rendered and inspected the wall-QA screenshot at
+  `%TEMP%/openplantrace-medium-a20-102-wall-qa-weak-fragment-v4.png`.
+- Ran targeted wall readiness/export tests: `106` tests passed.
+- Ran the full test suite: `685` tests passed.
+
 ## [0.02.192] - 2026-06-22
 
 ### Improved

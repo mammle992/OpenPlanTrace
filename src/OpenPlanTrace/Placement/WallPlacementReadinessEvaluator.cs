@@ -2,6 +2,9 @@ namespace OpenPlanTrace;
 
 public static class WallPlacementReadinessEvaluator
 {
+    public const string WeakPromotedFragmentRoomBoundaryReason =
+        "promoted fragment-merged room boundary has no supported topology endpoint; keep for review until explicit or geometric room-boundary support confirms exact placement";
+
     private const double MaxShortDenseDetailCandidateLengthDrawingUnits = 55.0;
     private const double MinShortDenseDetailCandidateSourceDensity = 0.65;
 
@@ -73,6 +76,13 @@ public static class WallPlacementReadinessEvaluator
             reasons.Add("outdoor/terrace room evidence alone is not trusted as exterior wall placement support");
         }
 
+        var coordinatePlacementBlockedByWeakPromotedFragmentRoomBoundary =
+            CoordinatePlacementBlockedByWeakPromotedFragmentRoomBoundary(wall, evidenceAssessment);
+        if (coordinatePlacementBlockedByWeakPromotedFragmentRoomBoundary)
+        {
+            reasons.Add(WeakPromotedFragmentRoomBoundaryReason);
+        }
+
         var readyForCoordinatePlacement =
             wall.Confidence.Value >= 0.5
             && !coordinatePlacementBlocked
@@ -80,6 +90,7 @@ public static class WallPlacementReadinessEvaluator
             && !coordinatePlacementBlockedByRecoveredExteriorEvidence
             && !coordinatePlacementBlockedByShortDenseDetailEvidence
             && !coordinatePlacementBlockedByUntrustedOutdoorBoundaryEvidence
+            && !coordinatePlacementBlockedByWeakPromotedFragmentRoomBoundary
             && wall.FragmentEvidence?.RequiresGeometryReview != true
             && (evidenceAssessment is null || evidenceAssessment.PlacementReady);
         var readyForMetricPlacement =
@@ -94,6 +105,7 @@ public static class WallPlacementReadinessEvaluator
             || coordinatePlacementBlockedByReviewReason
             || coordinatePlacementBlockedByShortDenseDetailEvidence
             || coordinatePlacementBlockedByUntrustedOutdoorBoundaryEvidence
+            || coordinatePlacementBlockedByWeakPromotedFragmentRoomBoundary
             || evidenceAssessment?.RequiresReview == true
             || evidenceAssessment?.RejectedAsNoise == true
             || evidenceAssessment?.PlacementReady == false,
@@ -102,7 +114,8 @@ public static class WallPlacementReadinessEvaluator
             || coordinatePlacementBlockedByReviewReason
             || coordinatePlacementBlockedByRecoveredExteriorEvidence
             || coordinatePlacementBlockedByShortDenseDetailEvidence
-            || coordinatePlacementBlockedByUntrustedOutdoorBoundaryEvidence,
+            || coordinatePlacementBlockedByUntrustedOutdoorBoundaryEvidence
+            || coordinatePlacementBlockedByWeakPromotedFragmentRoomBoundary,
             reasons.Distinct(StringComparer.Ordinal).ToArray());
     }
 
@@ -255,6 +268,44 @@ public static class WallPlacementReadinessEvaluator
         }
 
         return !evidence.Any(IsTrustedRecoveredExteriorSupportEvidence);
+    }
+
+    private static bool CoordinatePlacementBlockedByWeakPromotedFragmentRoomBoundary(
+        WallSegment wall,
+        WallEvidenceWallAssessment? evidenceAssessment)
+    {
+        if (evidenceAssessment is null
+            || !evidenceAssessment.PlacementReady
+            || evidenceAssessment.RejectedAsNoise
+            || evidenceAssessment.Decision == WallEvidenceDecision.Reject
+            || wall.DetectionKind != WallDetectionKind.FragmentMerged
+            || wall.WallType != WallType.Interior
+            || wall.PairEvidence is not null
+            || wall.FragmentEvidence?.RequiresGeometryReview == true)
+        {
+            return false;
+        }
+
+        var evidence = wall.Evidence
+            .Concat(evidenceAssessment.Evidence)
+            .Concat(evidenceAssessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(evidenceAssessment.ScoreBreakdown.NegativeEvidence)
+            .ToArray();
+        if (!EvidenceContains(evidence, "clean fragment-merged interior room boundary promoted")
+            || !EvidenceContains(evidence, "room references 1")
+            || !EvidenceContains(evidence, "shared adjacency False")
+            || !EvidenceContains(evidence, "two-sided room evidence False")
+            || !EvidenceContains(evidence, "topology-supported endpoints 0"))
+        {
+            return false;
+        }
+
+        return !EvidenceContainsAny(
+            evidence,
+            "geometric room boundary support",
+            "explicit room boundary support",
+            "detected room evidence on both sides",
+            "short structural return promoted by room boundary and two supported topology endpoints");
     }
 
     private static bool EvidenceContainsAny(
