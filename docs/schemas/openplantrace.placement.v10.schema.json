@@ -1,0 +1,3740 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:openplantrace:schema:placement:v10",
+  "title": "OpenPlanTrace Placement Export",
+  "description": "Schema for compact downstream placement packets emitted by OpenPlanTrace. This artifact is meant for software that needs page-local coordinates, metric transforms when calibration is reliable, structural geometry, openings, object aggregates, routing hints, and explicit trust gates without consuming the full scanner result.",
+  "type": "object",
+  "additionalProperties": true,
+  "x-openplantrace-schemaVersion": "openplantrace.placement.v10",
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "scanSchemaVersion",
+    "document",
+    "coordinateSystem",
+    "calibration",
+    "qualityGate",
+    "summary",
+    "pages",
+    "surfacePatterns",
+    "walls",
+    "rooms",
+    "openings",
+    "objectAggregates",
+    "wallGraphRepairCandidates",
+    "wallGraph",
+    "routingLayer",
+    "issues"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "openplantrace.placement.v10"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "scanSchemaVersion": {
+      "type": "string",
+      "pattern": "^openplantrace\\.scan\\.v[0-9]+$"
+    },
+    "document": {
+      "$ref": "#/$defs/document"
+    },
+    "coordinateSystem": {
+      "$ref": "#/$defs/coordinateSystem"
+    },
+    "calibration": {
+      "$ref": "#/$defs/calibration"
+    },
+    "qualityGate": {
+      "$ref": "#/$defs/qualityGate"
+    },
+    "summary": {
+      "$ref": "#/$defs/summary"
+    },
+    "pages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/page"
+      }
+    },
+    "surfacePatterns": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/surfacePattern"
+      }
+    },
+    "walls": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/wall"
+      }
+    },
+    "rooms": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/room"
+      }
+    },
+    "openings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/opening"
+      }
+    },
+    "objectAggregates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/objectAggregate"
+      }
+    },
+    "wallGraphRepairCandidates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/wallGraphRepairCandidate"
+      }
+    },
+    "wallGraph": {
+      "$ref": "#/$defs/wallGraph"
+    },
+    "routingLayer": {
+      "$ref": "#/$defs/routingLayer"
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/issue"
+      }
+    }
+  },
+  "$defs": {
+    "ratio": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "pageNumber": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nonNegativeNumber": {
+      "type": "number",
+      "minimum": 0
+    },
+    "nullableString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "nullableNumber": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "nullableRect": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/rect"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "nullablePoint": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/point"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "nullableLine": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/line"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "stringArray": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "integerMap": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/nonNegativeInteger"
+      }
+    },
+    "document": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "sourceName",
+        "sourcePath",
+        "sourceFormat",
+        "loader",
+        "sourceKind",
+        "effectiveSourceKind",
+        "clipboardContentKind",
+        "fileExtension",
+        "contentType",
+        "isDwgDerived",
+        "dwgConversion",
+        "dwgConverter",
+        "dwgIntermediateFormat",
+        "dwgIntermediateLoader",
+        "rasterAdapter",
+        "rasterExtractor",
+        "rasterExtractorVersion",
+        "rasterModelName",
+        "rasterModelVersion",
+        "properties"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceName": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "sourcePath": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "sourceFormat": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "loader": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "sourceKind": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "effectiveSourceKind": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "clipboardContentKind": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "fileExtension": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "contentType": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "isDwgDerived": {
+          "type": "boolean"
+        },
+        "dwgConversion": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "dwgConverter": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "dwgIntermediateFormat": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "dwgIntermediateLoader": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "rasterAdapter": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "rasterExtractor": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "rasterExtractorVersion": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "rasterModelName": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "rasterModelVersion": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "properties": {
+          "$ref": "#/$defs/stringMap"
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "pageCount",
+        "mainFloorplanRegionCount",
+        "surfacePatternCount",
+        "wallCount",
+        "structuralWallCount",
+        "excludedWallCount",
+        "placementReadyWallCount",
+        "placementOmittedWallCount",
+        "wallTopologySpanCount",
+        "sourceBackedFallbackWallCount",
+        "sourceBackedFallbackTopologySpanCount",
+        "wallSolidSpanCount",
+        "wallPlacementOmissionCounts",
+        "roomCount",
+        "openingCount",
+        "anchoredOpeningCount",
+        "unanchoredOpeningCount",
+        "objectAggregateCount",
+        "wallGraphRepairCandidateCount",
+        "suppressedChildObjectCount",
+        "routingBarrierCount",
+        "routingPassageCount",
+        "routingObstacleCount",
+        "routingRoomUseHintCount",
+        "routingSuppressedObjectCount",
+        "routingItemCount",
+        "totalPlacementEntityCount",
+        "reliabilityTrackedEntityCount",
+        "coordinateReadyEntityCount",
+        "metricReadyEntityCount",
+        "reviewRequiredEntityCount",
+        "coordinateReadyRatio",
+        "metricReadyRatio",
+        "issueCount",
+        "infoIssueCount",
+        "warningIssueCount",
+        "errorIssueCount",
+        "sourcePrimitiveReferenceCount",
+        "uniqueSourcePrimitiveReferenceCount",
+        "importReadiness",
+        "pageSummaries",
+        "evidence"
+      ],
+      "properties": {
+        "pageCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "mainFloorplanRegionCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "surfacePatternCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "wallCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "structuralWallCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "excludedWallCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "placementReadyWallCount": {
+          "$ref": "#/$defs/nonNegativeInteger",
+          "description": "Walls that are ready for coordinate placement and have no placementOmission."
+        },
+        "placementOmittedWallCount": {
+          "$ref": "#/$defs/nonNegativeInteger",
+          "description": "Walls that remain exported for evidence/review but are omitted from clean coordinate-placement topology."
+        },
+        "wallTopologySpanCount": {
+          "$ref": "#/$defs/nonNegativeInteger",
+          "description": "Total clean wall topology span count across exported walls."
+        },
+        "sourceBackedFallbackWallCount": {
+          "$ref": "#/$defs/nonNegativeInteger",
+          "description": "Walls that have at least one clean topology span recovered directly from strong source wall-body evidence."
+        },
+        "sourceBackedFallbackTopologySpanCount": {
+          "$ref": "#/$defs/nonNegativeInteger",
+          "description": "Clean wall topology spans recovered directly from source wall-body evidence when graph topology had no surviving clean span."
+        },
+        "wallSolidSpanCount": {
+          "$ref": "#/$defs/nonNegativeInteger",
+          "description": "Total placement solid wall span count after opening cutouts."
+        },
+        "wallPlacementOmissionCounts": {
+          "$ref": "#/$defs/integerMap",
+          "description": "Counts by wall placementOmission.code."
+        },
+        "roomCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "openingCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "anchoredOpeningCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "unanchoredOpeningCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "objectAggregateCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "wallGraphRepairCandidateCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "suppressedChildObjectCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "routingBarrierCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "routingPassageCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "routingObstacleCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "routingRoomUseHintCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "routingSuppressedObjectCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "routingItemCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "totalPlacementEntityCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "reliabilityTrackedEntityCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "coordinateReadyEntityCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "metricReadyEntityCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "reviewRequiredEntityCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "coordinateReadyRatio": {
+          "$ref": "#/$defs/ratio"
+        },
+        "metricReadyRatio": {
+          "$ref": "#/$defs/ratio"
+        },
+        "issueCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "infoIssueCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "warningIssueCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "errorIssueCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "sourcePrimitiveReferenceCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "uniqueSourcePrimitiveReferenceCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "importReadiness": {
+          "$ref": "#/$defs/importReadiness"
+        },
+        "pageSummaries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pageSummary"
+          }
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "importReadiness": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "grade",
+        "score",
+        "readyForGeometryImport",
+        "readyForMetricImport",
+        "readyForRoutingImport",
+        "requiresReview",
+        "blockingIssueCodes",
+        "reviewIssueCodes",
+        "recommendedActions",
+        "evidence"
+      ],
+      "properties": {
+        "grade": {
+          "type": "string",
+          "minLength": 1
+        },
+        "score": {
+          "$ref": "#/$defs/ratio"
+        },
+        "readyForGeometryImport": {
+          "type": "boolean"
+        },
+        "readyForMetricImport": {
+          "type": "boolean"
+        },
+        "readyForRoutingImport": {
+          "type": "boolean"
+        },
+        "requiresReview": {
+          "type": "boolean"
+        },
+        "blockingIssueCodes": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "reviewIssueCodes": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "recommendedActions": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "pageSummary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "pageNumber",
+        "pageBounds",
+        "mainFloorplanBounds",
+        "detectionBounds",
+        "detectionBoundsMillimeters",
+        "surfacePatternCount",
+        "wallCount",
+        "structuralWallCount",
+        "excludedWallCount",
+        "placementReadyWallCount",
+        "placementOmittedWallCount",
+        "wallTopologySpanCount",
+        "sourceBackedFallbackWallCount",
+        "sourceBackedFallbackTopologySpanCount",
+        "wallSolidSpanCount",
+        "wallPlacementOmissionCounts",
+        "roomCount",
+        "openingCount",
+        "anchoredOpeningCount",
+        "unanchoredOpeningCount",
+        "objectAggregateCount",
+        "wallGraphRepairCandidateCount",
+        "routingItemCount",
+        "reliabilityTrackedEntityCount",
+        "coordinateReadyEntityCount",
+        "metricReadyEntityCount",
+        "reviewRequiredEntityCount",
+        "issueCount"
+      ],
+      "properties": {
+        "pageNumber": {
+          "$ref": "#/$defs/pageNumber"
+        },
+        "pageBounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "mainFloorplanBounds": {
+          "$ref": "#/$defs/nullableRect"
+        },
+        "detectionBounds": {
+          "$ref": "#/$defs/nullableRect"
+        },
+        "detectionBoundsMillimeters": {
+          "$ref": "#/$defs/nullableRect"
+        },
+        "surfacePatternCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "wallCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "structuralWallCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "excludedWallCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "placementReadyWallCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "placementOmittedWallCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "wallTopologySpanCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "sourceBackedFallbackWallCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "sourceBackedFallbackTopologySpanCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "wallSolidSpanCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "wallPlacementOmissionCounts": {
+          "$ref": "#/$defs/integerMap"
+        },
+        "roomCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "openingCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "anchoredOpeningCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "unanchoredOpeningCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "objectAggregateCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "wallGraphRepairCandidateCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "routingItemCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "reliabilityTrackedEntityCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "coordinateReadyEntityCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "metricReadyEntityCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "reviewRequiredEntityCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "issueCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        }
+      }
+    },
+    "coordinateSystem": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "coordinateSpace",
+        "unit",
+        "origin",
+        "xAxisDirection",
+        "yAxisDirection",
+        "geometryBasis",
+        "coordinateOrder",
+        "boundsKind",
+        "precision",
+        "realWorldUnit",
+        "millimetersPerDrawingUnit",
+        "note",
+        "pageFrames"
+      ],
+      "properties": {
+        "coordinateSpace": {
+          "const": "OpenPlanTracePageCoordinates"
+        },
+        "unit": {
+          "const": "drawing-unit"
+        },
+        "origin": {
+          "const": "TopLeft"
+        },
+        "xAxisDirection": {
+          "const": "Right"
+        },
+        "yAxisDirection": {
+          "const": "Down"
+        },
+        "geometryBasis": {
+          "type": "string",
+          "minLength": 1
+        },
+        "coordinateOrder": {
+          "const": "x,y"
+        },
+        "boundsKind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "precision": {
+          "const": "double"
+        },
+        "realWorldUnit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "millimetersPerDrawingUnit": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "note": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pageFrames": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pageCoordinateFrame"
+          }
+        }
+      }
+    },
+    "calibration": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "drawingUnit",
+        "realWorldUnit",
+        "millimetersPerDrawingUnit",
+        "hasReliableMeasurementScale",
+        "metricCoordinateStatus",
+        "measurementCheckedCount",
+        "measurementOutlierCount",
+        "scaleGroups",
+        "evidence"
+      ],
+      "properties": {
+        "drawingUnit": {
+          "type": "string"
+        },
+        "realWorldUnit": {
+          "type": "string"
+        },
+        "millimetersPerDrawingUnit": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "hasReliableMeasurementScale": {
+          "type": "boolean"
+        },
+        "metricCoordinateStatus": {
+          "enum": [
+            "Unavailable",
+            "Available",
+            "AvailableWithOutlierReview"
+          ]
+        },
+        "measurementCheckedCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "measurementOutlierCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "scaleGroups": {
+          "type": "array"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "qualityGate": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "coordinateTrust",
+        "metricTrust",
+        "readyForCoordinatePlacement",
+        "readyForMetricPlacement",
+        "qualityGrade",
+        "qualityConfidence",
+        "requiresReview",
+        "hasReliableCalibration",
+        "evidence"
+      ],
+      "properties": {
+        "coordinateTrust": {
+          "enum": [
+            "Blocked",
+            "Usable",
+            "UsableWithReview"
+          ]
+        },
+        "metricTrust": {
+          "enum": [
+            "Uncalibrated",
+            "Calibrated",
+            "CalibratedWithOutlierReview"
+          ]
+        },
+        "readyForCoordinatePlacement": {
+          "type": "boolean"
+        },
+        "readyForMetricPlacement": {
+          "type": "boolean"
+        },
+        "qualityGrade": {
+          "type": "string"
+        },
+        "qualityConfidence": {
+          "$ref": "#/$defs/ratio"
+        },
+        "requiresReview": {
+          "type": "boolean"
+        },
+        "hasReliableCalibration": {
+          "type": "boolean"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "pageNumber",
+        "width",
+        "height",
+        "bounds"
+      ],
+      "properties": {
+        "pageNumber": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "height": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        }
+      }
+    },
+    "pageCoordinateFrame": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "pageNumber",
+        "width",
+        "height",
+        "bounds",
+        "pageToNormalizedTransform",
+        "normalizedToPageTransform"
+      ],
+      "properties": {
+        "pageNumber": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "height": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "pageToNormalizedTransform": {
+          "$ref": "#/$defs/affineTransform"
+        },
+        "normalizedToPageTransform": {
+          "$ref": "#/$defs/affineTransform"
+        }
+      }
+    },
+    "surfacePattern": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "pageNumber",
+        "kind",
+        "orientation",
+        "bounds",
+        "boundsMillimeters",
+        "center",
+        "centerMillimeters",
+        "millimetersPerDrawingUnit",
+        "sourceRegionId",
+        "lineCount",
+        "horizontalLineCount",
+        "verticalLineCount",
+        "intersectionCount",
+        "horizontalMedianSpacing",
+        "verticalMedianSpacing",
+        "medianSpacing",
+        "excludedFromWallDetection",
+        "excludedFromStructuralTopology",
+        "confidence",
+        "requiresReview",
+        "recommendedAction",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "pageNumber": {
+          "$ref": "#/$defs/pageNumber"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "DenseOrthogonalGrid",
+            "DenseParallelBand"
+          ]
+        },
+        "orientation": {
+          "type": "string",
+          "enum": [
+            "Unknown",
+            "Orthogonal",
+            "Horizontal",
+            "Vertical"
+          ]
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "boundsMillimeters": {
+          "$ref": "#/$defs/nullableRect"
+        },
+        "center": {
+          "$ref": "#/$defs/point"
+        },
+        "centerMillimeters": {
+          "$ref": "#/$defs/nullablePoint"
+        },
+        "millimetersPerDrawingUnit": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "sourceRegionId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "lineCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "horizontalLineCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "verticalLineCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "intersectionCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "horizontalMedianSpacing": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "verticalMedianSpacing": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "medianSpacing": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "excludedFromWallDetection": {
+          "type": "boolean"
+        },
+        "excludedFromStructuralTopology": {
+          "type": "boolean"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ratio"
+        },
+        "requiresReview": {
+          "type": "boolean"
+        },
+        "recommendedAction": {
+          "type": "string"
+        },
+        "sourcePrimitiveIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourceLayers": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "wall": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "pageNumber",
+        "centerLine",
+        "bounds",
+        "drawingLength",
+        "thicknessDrawingUnits",
+        "wallType",
+        "confidence",
+        "fragmentEvidence",
+        "reliability",
+        "wallGraphRepairCandidateIds",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pageNumber": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "centerLine": {
+          "$ref": "#/$defs/line"
+        },
+        "centerLineMillimeters": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/line"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "topologySpans": {
+          "type": "array",
+          "description": "Trusted wall graph spans derived from graph nodes. These are the trimmed/split topology segments consumers should prefer over raw wall centerlines when available.",
+          "items": {
+            "$ref": "#/$defs/wallTopologySpan"
+          }
+        },
+        "openingCutouts": {
+          "type": "array",
+          "description": "Anchored openings projected onto this wall centerline. Consumers can subtract these cutouts from the raw wall line when a detector exports a continuous wall through a door or window.",
+          "items": {
+            "$ref": "#/$defs/wallOpeningCutout"
+          }
+        },
+        "solidSpans": {
+          "type": "array",
+          "description": "Solid wall centerline spans after anchored opening cutouts are subtracted. Consumers must inspect each span's readyForCoordinatePlacement/requiresReview fields before importing it; omitted or review-only walls may retain spans for QA/body-footprint review.",
+          "items": {
+            "$ref": "#/$defs/wallSolidSpan"
+          }
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "drawingLength": {
+          "type": "number",
+          "minimum": 0
+        },
+        "thicknessDrawingUnits": {
+          "type": "number",
+          "minimum": 0
+        },
+        "wallType": {
+          "type": "string",
+          "enum": [
+            "Unknown",
+            "Exterior",
+            "Interior"
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/ratio"
+        },
+        "fragmentEvidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/wallFragmentEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reliability": {
+          "$ref": "#/$defs/reliability"
+        },
+        "placementOmission": {
+          "description": "Structured reason why this wall is omitted from clean placement topology. Null means the wall has not been omitted from coordinate-placement topology by the exporter.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/wallPlacementOmission"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "wallGraphRepairCandidateIds": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Wall graph repair candidate IDs that affect this wall. Consumers should inspect these before applying snap or trim topology corrections to this wall."
+        },
+        "sourcePrimitiveIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourceLayers": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "wallPlacementOmission": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "code",
+        "category",
+        "message",
+        "recommendedAction",
+        "linkedWallIds",
+        "repairCandidateIds",
+        "evidence"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "topology_import_blocked",
+            "duplicate_clean_topology_span",
+            "duplicate_wall_face",
+            "rejected_wall_evidence",
+            "object_like_linework",
+            "isolated_fragment",
+            "secondary_object_linework_without_room_boundary_support",
+            "secondary_over_sourced_detail_linework",
+            "fragmented_interior_without_room_boundary_support",
+            "secondary_without_room_boundary_support",
+            "structural_topology_excluded",
+            "fragment_geometry_review",
+            "fragmented_pair_review_required",
+            "weak_promoted_fragment_room_boundary_review_required",
+            "thin_exterior_face_pair_review_required",
+            "one_endpoint_fragment_review_required",
+            "fragmented_short_parallel_pair_review_required",
+            "very_short_parallel_pair_review_required",
+            "short_parallel_pair_review_required",
+            "repeated_short_detail_review_required",
+            "tiny_door_adjacent_topology_suppressed",
+            "short_dense_detail_review_required",
+            "wall_evidence_review_required",
+            "no_clean_topology_spans",
+            "coordinate_review_required",
+            "not_placement_ready"
+          ]
+        },
+        "category": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "recommendedAction": {
+          "type": "string"
+        },
+        "linkedWallIds": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Other wall IDs related to this omission, such as the stronger paired wall body or walls involved in a repair candidate."
+        },
+        "repairCandidateIds": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Wall graph repair candidates responsible for or relevant to this omission."
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "wallOpeningCutout": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "openingId",
+        "pageNumber",
+        "type",
+        "operation",
+        "centerLine",
+        "startPoint",
+        "endPoint",
+        "startParameter",
+        "endParameter",
+        "centerParameter",
+        "startOffsetDrawingUnits",
+        "endOffsetDrawingUnits",
+        "centerOffsetDrawingUnits",
+        "lengthDrawingUnits",
+        "sourceHostWallId",
+        "anchorWallIds",
+        "crossWallOffsetDrawingUnits",
+        "confidence",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "openingId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pageNumber": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "type": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "centerLine": {
+          "$ref": "#/$defs/line"
+        },
+        "centerLineMillimeters": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/line"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startPoint": {
+          "$ref": "#/$defs/point"
+        },
+        "startPointMillimeters": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/point"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endPoint": {
+          "$ref": "#/$defs/point"
+        },
+        "endPointMillimeters": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/point"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startParameter": {
+          "$ref": "#/$defs/ratio"
+        },
+        "endParameter": {
+          "$ref": "#/$defs/ratio"
+        },
+        "centerParameter": {
+          "$ref": "#/$defs/ratio"
+        },
+        "startOffsetDrawingUnits": {
+          "type": "number",
+          "minimum": 0
+        },
+        "endOffsetDrawingUnits": {
+          "type": "number",
+          "minimum": 0
+        },
+        "centerOffsetDrawingUnits": {
+          "type": "number",
+          "minimum": 0
+        },
+        "lengthDrawingUnits": {
+          "type": "number",
+          "minimum": 0
+        },
+        "startOffsetMillimeters": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "endOffsetMillimeters": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "centerOffsetMillimeters": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "lengthMillimeters": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "sourceHostWallId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "anchorWallIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "crossWallOffsetDrawingUnits": {
+          "type": "number"
+        },
+        "crossWallOffsetMillimeters": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/ratio"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "wallSolidSpan": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "pageNumber",
+        "wallId",
+        "sequence",
+        "readyForCoordinatePlacement",
+        "readyForMetricPlacement",
+        "requiresReview",
+        "reviewReasons",
+        "placementOmissionCode",
+        "centerLine",
+        "centerLineMillimeters",
+        "bodyPolygon",
+        "bodyPolygonMillimeters",
+        "bodyBounds",
+        "bodyBoundsMillimeters",
+        "alongVector",
+        "normalVector",
+        "thicknessDrawingUnits",
+        "thicknessMillimeters",
+        "startParameter",
+        "endParameter",
+        "centerParameter",
+        "startOffsetDrawingUnits",
+        "endOffsetDrawingUnits",
+        "centerOffsetDrawingUnits",
+        "drawingLength",
+        "lengthMeters",
+        "adjacentOpeningIds",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pageNumber": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "wallId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "readyForCoordinatePlacement": {
+          "type": "boolean",
+          "description": "True only when this solid span belongs to wall geometry that passed coordinate-placement readiness checks."
+        },
+        "readyForMetricPlacement": {
+          "type": "boolean",
+          "description": "True only when this solid span is coordinate-ready and has reliable metric calibration."
+        },
+        "requiresReview": {
+          "type": "boolean",
+          "description": "True when this solid span is retained for QA/review but should not be imported as clean placement geometry without correction."
+        },
+        "reviewReasons": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Wall-level reliability reasons copied onto the span so consumers can make per-span import decisions without resolving parent wall state."
+        },
+        "placementOmissionCode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Parent wall placementOmission.code when the span is retained for review/QA rather than clean coordinate placement."
+        },
+        "centerLine": {
+          "$ref": "#/$defs/line"
+        },
+        "centerLineMillimeters": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/line"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bodyPolygon": {
+          "type": "array",
+          "description": "Closed page-space wall body footprint ring for this solid span, ordered start-minus-normal, end-minus-normal, end-plus-normal, start-plus-normal, start-minus-normal.",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/point"
+          }
+        },
+        "bodyPolygonMillimeters": {
+          "anyOf": [
+            {
+              "type": "array",
+              "description": "Metric version of bodyPolygon when calibration is reliable.",
+              "minItems": 5,
+              "maxItems": 5,
+              "items": {
+                "$ref": "#/$defs/point"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bodyBounds": {
+          "$ref": "#/$defs/rect",
+          "description": "Axis-aligned page-space bounds of bodyPolygon."
+        },
+        "bodyBoundsMillimeters": {
+          "$ref": "#/$defs/nullableRect"
+        },
+        "alongVector": {
+          "$ref": "#/$defs/vector",
+          "description": "Unit vector from the solid span start point to end point."
+        },
+        "normalVector": {
+          "$ref": "#/$defs/vector",
+          "description": "Unit wall-normal vector used to offset the body polygon by half thickness."
+        },
+        "thicknessDrawingUnits": {
+          "type": "number",
+          "minimum": 0
+        },
+        "thicknessMillimeters": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "startParameter": {
+          "$ref": "#/$defs/ratio"
+        },
+        "endParameter": {
+          "$ref": "#/$defs/ratio"
+        },
+        "centerParameter": {
+          "$ref": "#/$defs/ratio"
+        },
+        "startOffsetDrawingUnits": {
+          "type": "number",
+          "minimum": 0
+        },
+        "endOffsetDrawingUnits": {
+          "type": "number",
+          "minimum": 0
+        },
+        "centerOffsetDrawingUnits": {
+          "type": "number",
+          "minimum": 0
+        },
+        "drawingLength": {
+          "type": "number",
+          "minimum": 0
+        },
+        "lengthMeters": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "adjacentOpeningIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "wallFragmentEvidence": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "fragmentCount",
+        "totalHealedGap",
+        "maxHealedGap",
+        "duplicatePrimitiveCount",
+        "gapRatio",
+        "requiresGeometryReview",
+        "evidence"
+      ],
+      "properties": {
+        "fragmentCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalHealedGap": {
+          "type": "number",
+          "minimum": 0
+        },
+        "maxHealedGap": {
+          "type": "number",
+          "minimum": 0
+        },
+        "duplicatePrimitiveCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gapRatio": {
+          "type": "number",
+          "minimum": 0
+        },
+        "requiresGeometryReview": {
+          "type": "boolean"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "wallTopologySpan": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "wallGraphEdgeId",
+        "sourceWallGraphEdgeIds",
+        "pageNumber",
+        "wallId",
+        "fromNodeId",
+        "toNodeId",
+        "centerLine",
+        "centerLineMillimeters",
+        "bounds",
+        "boundsMillimeters",
+        "drawingLength",
+        "lengthMeters",
+        "thicknessDrawingUnits",
+        "thicknessMillimeters",
+        "confidence",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "wallGraphEdgeId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceWallGraphEdgeIds": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Raw wall graph edge IDs merged into or represented by this clean placement topology span."
+        },
+        "pageNumber": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "wallId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fromNodeId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "toNodeId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "centerLine": {
+          "$ref": "#/$defs/line"
+        },
+        "centerLineMillimeters": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/line"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "boundsMillimeters": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/rect"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "drawingLength": {
+          "type": "number",
+          "minimum": 0
+        },
+        "lengthMeters": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "sourceWallStartOffsetDrawingUnits": {
+          "$ref": "#/$defs/nullableNumber",
+          "description": "Projected span start offset along the source wall centerline in drawing units."
+        },
+        "sourceWallEndOffsetDrawingUnits": {
+          "$ref": "#/$defs/nullableNumber",
+          "description": "Projected span end offset along the source wall centerline in drawing units."
+        },
+        "sourceWallProjectedLengthDrawingUnits": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "sourceWallStartOffsetMillimeters": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "sourceWallEndOffsetMillimeters": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "sourceWallProjectedLengthMillimeters": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "sourceWallStartParameter": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "sourceWallEndParameter": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "sourceWallCenterParameter": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "sourceWallStartProjectionDistanceDrawingUnits": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "sourceWallEndProjectionDistanceDrawingUnits": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "sourceWallStartProjectionDistanceMillimeters": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "sourceWallEndProjectionDistanceMillimeters": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "thicknessDrawingUnits": {
+          "type": "number",
+          "minimum": 0
+        },
+        "thicknessMillimeters": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ratio"
+        },
+        "sourcePrimitiveIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourceLayers": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "room": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "pageNumber",
+        "bounds",
+        "center",
+        "boundary",
+        "wallIds",
+        "drawingArea",
+        "confidence",
+        "boundaryReliability",
+        "reliability",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pageNumber": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "center": {
+          "$ref": "#/$defs/point"
+        },
+        "boundary": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/point"
+          }
+        },
+        "wallIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "drawingArea": {
+          "type": "number",
+          "minimum": 0
+        },
+        "confidence": {
+          "$ref": "#/$defs/ratio"
+        },
+        "boundaryReliability": {
+          "$ref": "#/$defs/roomBoundaryReliability"
+        },
+        "reliability": {
+          "$ref": "#/$defs/reliability"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "roomBoundaryReliability": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "boundaryWallCount",
+        "assessedWallCount",
+        "readyWallIds",
+        "reviewWallIds",
+        "rejectedWallIds",
+        "nonBlockingDuplicateWallIds",
+        "openingOnlyWallIds",
+        "openingDominatedWallIds",
+        "roomSupportedFragmentWallIds",
+        "placementOmittedWallIds",
+        "unassessedWallIds",
+        "coordinateBlockingWallIds",
+        "evidence"
+      ],
+      "properties": {
+        "boundaryWallCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "assessedWallCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "readyWallIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "reviewWallIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "rejectedWallIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "nonBlockingDuplicateWallIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "openingOnlyWallIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "openingDominatedWallIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "roomSupportedFragmentWallIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "placementOmittedWallIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "unassessedWallIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "coordinateBlockingWallIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "opening": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "pageNumber",
+        "type",
+        "operation",
+        "orientation",
+        "centerLine",
+        "bounds",
+        "drawingWidth",
+        "placementStatus",
+        "placement",
+        "hostWallIds",
+        "connectedRoomIds",
+        "connectedRoomLabels",
+        "connectedRoomLinks",
+        "roomAdjacencyIds",
+        "confidence",
+        "reliability",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pageNumber": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "type": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "orientation": {
+          "type": "string"
+        },
+        "centerLine": {
+          "$ref": "#/$defs/line"
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "drawingWidth": {
+          "type": "number",
+          "minimum": 0
+        },
+        "placementStatus": {
+          "enum": [
+            "Anchored",
+            "Unanchored"
+          ]
+        },
+        "placement": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/openingPlacement"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hostWallIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "connectedRoomIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "connectedRoomLabels": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "connectedRoomLinks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/openingRoomConnection"
+          }
+        },
+        "roomAdjacencyIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ratio"
+        },
+        "reliability": {
+          "$ref": "#/$defs/reliability"
+        },
+        "sourcePrimitiveIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourceLayers": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "openingRoomConnection": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "roomId",
+        "roomLabel",
+        "roomUseKind",
+        "roomAdjacencyIds",
+        "side",
+        "roomSidePoint",
+        "nearestBoundaryPoint",
+        "signedDistanceFromOpening",
+        "distanceToOpening",
+        "sharesHostWall",
+        "confidence",
+        "evidence"
+      ],
+      "properties": {
+        "roomId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "roomLabel": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "roomUseKind": {
+          "type": "string"
+        },
+        "roomAdjacencyIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "side": {
+          "type": "string",
+          "description": "Room side relative to the opening normal vector."
+        },
+        "roomSidePoint": {
+          "$ref": "#/$defs/nullablePoint"
+        },
+        "nearestBoundaryPoint": {
+          "$ref": "#/$defs/nullablePoint"
+        },
+        "signedDistanceFromOpening": {
+          "type": "number"
+        },
+        "distanceToOpening": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sharesHostWall": {
+          "type": "boolean"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ratio"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "openingPlacement": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "hostWallId",
+        "anchorWallIds",
+        "referenceLine",
+        "referenceLineMillimeters",
+        "startPoint",
+        "startPointMillimeters",
+        "endPoint",
+        "endPointMillimeters",
+        "startOffsetDrawingUnits",
+        "endOffsetDrawingUnits",
+        "centerOffsetDrawingUnits",
+        "lengthDrawingUnits",
+        "footprintBounds",
+        "footprintBoundsMillimeters",
+        "footprintCorners",
+        "footprintCornersMillimeters",
+        "startJambLine",
+        "startJambLineMillimeters",
+        "endJambLine",
+        "endJambLineMillimeters",
+        "depthDrawingUnits",
+        "depthMillimeters",
+        "startOffsetMillimeters",
+        "endOffsetMillimeters",
+        "centerOffsetMillimeters",
+        "lengthMillimeters",
+        "hostWallStartParameter",
+        "hostWallEndParameter",
+        "hostWallCenterParameter",
+        "alongVector",
+        "normalVector",
+        "crossWallOffsetDrawingUnits",
+        "crossWallOffsetMillimeters",
+        "confidence",
+        "evidence"
+      ],
+      "properties": {
+        "hostWallId": {
+          "$ref": "#/$defs/nullableString",
+          "description": "Primary wall identifier used as the placement anchor when one is available."
+        },
+        "anchorWallIds": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Wall segment ids used to derive the placement reference line. Split-wall openings can include both adjacent wall fragments."
+        },
+        "referenceLine": {
+          "$ref": "#/$defs/line",
+          "description": "Page-space line used as the local placement axis for offsets and direction vectors."
+        },
+        "referenceLineMillimeters": {
+          "$ref": "#/$defs/nullableLine",
+          "description": "Metric version of referenceLine when calibration is reliable."
+        },
+        "startPoint": {
+          "$ref": "#/$defs/point"
+        },
+        "startPointMillimeters": {
+          "$ref": "#/$defs/nullablePoint"
+        },
+        "endPoint": {
+          "$ref": "#/$defs/point"
+        },
+        "endPointMillimeters": {
+          "$ref": "#/$defs/nullablePoint"
+        },
+        "startOffsetDrawingUnits": {
+          "type": "number"
+        },
+        "endOffsetDrawingUnits": {
+          "type": "number"
+        },
+        "centerOffsetDrawingUnits": {
+          "type": "number"
+        },
+        "lengthDrawingUnits": {
+          "type": "number",
+          "minimum": 0
+        },
+        "footprintBounds": {
+          "$ref": "#/$defs/rect",
+          "description": "Axis-aligned page-space bounds of the opening footprint across the wall-normal depth."
+        },
+        "footprintBoundsMillimeters": {
+          "$ref": "#/$defs/nullableRect"
+        },
+        "footprintCorners": {
+          "type": "array",
+          "description": "Four page-space footprint corners ordered start-minus-normal, end-minus-normal, end-plus-normal, start-plus-normal.",
+          "items": {
+            "$ref": "#/$defs/point"
+          }
+        },
+        "footprintCornersMillimeters": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/point"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startJambLine": {
+          "$ref": "#/$defs/line",
+          "description": "Wall-normal jamb line at the opening start point."
+        },
+        "startJambLineMillimeters": {
+          "$ref": "#/$defs/nullableLine"
+        },
+        "endJambLine": {
+          "$ref": "#/$defs/line",
+          "description": "Wall-normal jamb line at the opening end point."
+        },
+        "endJambLineMillimeters": {
+          "$ref": "#/$defs/nullableLine"
+        },
+        "depthDrawingUnits": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Wall-normal footprint depth in drawing units."
+        },
+        "depthMillimeters": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "startOffsetMillimeters": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "endOffsetMillimeters": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "centerOffsetMillimeters": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "lengthMillimeters": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "hostWallStartParameter": {
+          "type": "number",
+          "description": "Opening start parameter on referenceLine where 0 is referenceLine.start and 1 is referenceLine.end."
+        },
+        "hostWallEndParameter": {
+          "type": "number"
+        },
+        "hostWallCenterParameter": {
+          "type": "number"
+        },
+        "alongVector": {
+          "$ref": "#/$defs/vector"
+        },
+        "normalVector": {
+          "$ref": "#/$defs/vector"
+        },
+        "crossWallOffsetDrawingUnits": {
+          "type": "number",
+          "minimum": 0
+        },
+        "crossWallOffsetMillimeters": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ratio"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "objectAggregate": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "pageNumber",
+        "bounds",
+        "boundsMillimeters",
+        "center",
+        "centerMillimeters",
+        "millimetersPerDrawingUnit",
+        "category",
+        "kind",
+        "routingInfluence",
+        "structuralInfluence",
+        "suppressChildObjectsForRouting",
+        "childObjectCount",
+        "childObjectIds",
+        "composition",
+        "requiresReview",
+        "confidence",
+        "reliability",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pageNumber": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "boundsMillimeters": {
+          "$ref": "#/$defs/nullableRect"
+        },
+        "center": {
+          "$ref": "#/$defs/point"
+        },
+        "centerMillimeters": {
+          "$ref": "#/$defs/nullablePoint"
+        },
+        "millimetersPerDrawingUnit": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "category": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "routingInfluence": {
+          "type": "string"
+        },
+        "structuralInfluence": {
+          "type": "string"
+        },
+        "suppressChildObjectsForRouting": {
+          "type": "boolean"
+        },
+        "childObjectCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "childObjectIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "composition": {
+          "$ref": "#/$defs/objectAggregateComposition",
+          "description": "Machine-readable child-object makeup for this aggregate, including per-child placement bounds and metric bounds when calibration is reliable."
+        },
+        "requiresReview": {
+          "type": "boolean"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ratio"
+        },
+        "reliability": {
+          "$ref": "#/$defs/reliability"
+        },
+        "sourcePrimitiveIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourceLayers": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "objectAggregateComposition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "categoryCounts",
+        "kindCounts",
+        "sourceKindCounts",
+        "sourceWallComponentKindCounts",
+        "sourceWallComponentIds",
+        "children"
+      ],
+      "properties": {
+        "categoryCounts": {
+          "$ref": "#/$defs/objectAggregateCompositionCounts"
+        },
+        "kindCounts": {
+          "$ref": "#/$defs/objectAggregateCompositionCounts"
+        },
+        "sourceKindCounts": {
+          "$ref": "#/$defs/objectAggregateCompositionCounts"
+        },
+        "sourceWallComponentKindCounts": {
+          "$ref": "#/$defs/objectAggregateCompositionCounts"
+        },
+        "sourceWallComponentIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/objectAggregateChildObject"
+          }
+        }
+      }
+    },
+    "objectAggregateCompositionCounts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/objectAggregateCompositionCount"
+      }
+    },
+    "objectAggregateCompositionCount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "count"
+      ],
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "objectAggregateChildObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "objectId",
+        "bounds",
+        "boundsMillimeters",
+        "center",
+        "centerMillimeters",
+        "category",
+        "kind",
+        "sourceKind",
+        "sourceWallComponentId",
+        "sourceWallComponentKind",
+        "label",
+        "symbolName",
+        "detectedTag",
+        "confidence",
+        "sourcePrimitiveIds"
+      ],
+      "properties": {
+        "objectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "boundsMillimeters": {
+          "$ref": "#/$defs/nullableRect"
+        },
+        "center": {
+          "$ref": "#/$defs/point"
+        },
+        "centerMillimeters": {
+          "$ref": "#/$defs/nullablePoint"
+        },
+        "category": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "sourceKind": {
+          "type": "string"
+        },
+        "sourceWallComponentId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "sourceWallComponentKind": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "label": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "symbolName": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "detectedTag": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ratio"
+        },
+        "sourcePrimitiveIds": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "wallGraph": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "summary",
+        "nodes",
+        "edges",
+        "components",
+        "repairCandidateIds",
+        "evidence"
+      ],
+      "properties": {
+        "summary": {
+          "$ref": "#/$defs/wallGraphSummary"
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/wallGraphNode"
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/wallGraphEdge"
+          }
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/wallGraphComponent"
+          }
+        },
+        "repairCandidateIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "wallGraphSummary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "nodeCount",
+        "edgeCount",
+        "componentCount",
+        "mainStructuralComponentCount",
+        "secondaryStructuralComponentCount",
+        "objectLikeComponentCount",
+        "isolatedFragmentComponentCount",
+        "structuralEdgeCount",
+        "excludedEdgeCount",
+        "repairCandidateCount",
+        "highSeverityRepairCandidateCount",
+        "reviewRepairCandidateCount",
+        "blockingRepairCandidateCount"
+      ],
+      "properties": {
+        "nodeCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "edgeCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "componentCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "mainStructuralComponentCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "secondaryStructuralComponentCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "objectLikeComponentCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "isolatedFragmentComponentCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "structuralEdgeCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "excludedEdgeCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "repairCandidateCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "highSeverityRepairCandidateCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "reviewRepairCandidateCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "blockingRepairCandidateCount": { "$ref": "#/$defs/nonNegativeInteger" }
+      }
+    },
+    "wallGraphNode": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "pageNumber",
+        "position",
+        "positionMillimeters",
+        "kind",
+        "degree",
+        "directions",
+        "confidence",
+        "evidence"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "pageNumber": { "$ref": "#/$defs/pageNumber" },
+        "position": { "$ref": "#/$defs/point" },
+        "positionMillimeters": { "$ref": "#/$defs/nullablePoint" },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "Endpoint",
+            "Inline",
+            "Corner",
+            "TJunction",
+            "Crossing",
+            "Junction"
+          ]
+        },
+        "degree": { "$ref": "#/$defs/nonNegativeInteger" },
+        "directions": { "$ref": "#/$defs/stringArray" },
+        "confidence": { "$ref": "#/$defs/ratio" },
+        "evidence": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "wallGraphEdge": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "pageNumber",
+        "fromNodeId",
+        "toNodeId",
+        "wallId",
+        "wallComponentId",
+        "wallComponentKind",
+        "excludedFromStructuralTopology",
+        "centerLine",
+        "centerLineMillimeters",
+        "bounds",
+        "boundsMillimeters",
+        "drawingLength",
+        "lengthMeters",
+        "thicknessDrawingUnits",
+        "thicknessMillimeters",
+        "millimetersPerDrawingUnit",
+        "confidence",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "evidence"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "pageNumber": { "$ref": "#/$defs/pageNumber" },
+        "fromNodeId": { "$ref": "#/$defs/id" },
+        "toNodeId": { "$ref": "#/$defs/id" },
+        "wallId": { "$ref": "#/$defs/id" },
+        "wallComponentId": { "$ref": "#/$defs/nullableString" },
+        "wallComponentKind": { "$ref": "#/$defs/nullableString" },
+        "excludedFromStructuralTopology": { "type": "boolean" },
+        "centerLine": { "$ref": "#/$defs/nullableLine" },
+        "centerLineMillimeters": { "$ref": "#/$defs/nullableLine" },
+        "bounds": { "$ref": "#/$defs/nullableRect" },
+        "boundsMillimeters": { "$ref": "#/$defs/nullableRect" },
+        "drawingLength": { "$ref": "#/$defs/nonNegativeNumber" },
+        "lengthMeters": { "$ref": "#/$defs/nullableNumber" },
+        "thicknessDrawingUnits": { "$ref": "#/$defs/nonNegativeNumber" },
+        "thicknessMillimeters": { "$ref": "#/$defs/nullableNumber" },
+        "millimetersPerDrawingUnit": { "$ref": "#/$defs/nullableNumber" },
+        "confidence": { "$ref": "#/$defs/ratio" },
+        "sourcePrimitiveIds": { "$ref": "#/$defs/stringArray" },
+        "sourceLayers": { "$ref": "#/$defs/stringArray" },
+        "evidence": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "wallGraphComponent": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "pageNumber",
+        "kind",
+        "bounds",
+        "boundsMillimeters",
+        "wallIds",
+        "nodeIds",
+        "edgeIds",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "wallCount",
+        "nodeCount",
+        "edgeCount",
+        "drawingLength",
+        "lengthMeters",
+        "confidence",
+        "excludedFromStructuralTopology",
+        "evidence"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "pageNumber": { "$ref": "#/$defs/pageNumber" },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "MainStructural",
+            "SecondaryStructural",
+            "ObjectLikeIsland",
+            "IsolatedFragment"
+          ]
+        },
+        "bounds": { "$ref": "#/$defs/rect" },
+        "boundsMillimeters": { "$ref": "#/$defs/nullableRect" },
+        "wallIds": { "$ref": "#/$defs/stringArray" },
+        "nodeIds": { "$ref": "#/$defs/stringArray" },
+        "edgeIds": { "$ref": "#/$defs/stringArray" },
+        "sourcePrimitiveIds": { "$ref": "#/$defs/stringArray" },
+        "sourceLayers": { "$ref": "#/$defs/stringArray" },
+        "wallCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "nodeCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "edgeCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "drawingLength": { "$ref": "#/$defs/nonNegativeNumber" },
+        "lengthMeters": { "$ref": "#/$defs/nullableNumber" },
+        "confidence": { "$ref": "#/$defs/ratio" },
+        "excludedFromStructuralTopology": { "type": "boolean" },
+        "evidence": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "wallGraphRepairCandidate": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "pageNumber",
+        "kind",
+        "suggestedAction",
+        "severity",
+        "importImpact",
+        "applicability",
+        "sourceNodeId",
+        "sourcePoint",
+        "sourcePointMillimeters",
+        "targetPoint",
+        "targetPointMillimeters",
+        "targetNodeId",
+        "hostWallId",
+        "gapDistanceDrawingUnits",
+        "gapDistanceMillimeters",
+        "safeSnapDistanceDrawingUnits",
+        "safeSnapDistanceMillimeters",
+        "reviewDistanceLimitDrawingUnits",
+        "reviewDistanceLimitMillimeters",
+        "excessDistanceBeyondSafeSnapDrawingUnits",
+        "excessDistanceBeyondSafeSnapMillimeters",
+        "repairLine",
+        "repairLineMillimeters",
+        "bounds",
+        "boundsMillimeters",
+        "wallIds",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "confidence",
+        "requiresReview",
+        "recommendedAction",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "pageNumber": {
+          "$ref": "#/$defs/pageNumber"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "EndpointToWall",
+            "EndpointToEndpoint",
+            "EndpointOverrun"
+          ]
+        },
+        "suggestedAction": {
+          "type": "string",
+          "enum": [
+            "SnapEndpointToWall",
+            "SnapEndpointToEndpoint",
+            "TrimEndpointOverrun"
+          ]
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "Low",
+            "Medium",
+            "High"
+          ]
+        },
+        "importImpact": {
+          "type": "string",
+          "enum": [
+            "TopologyReviewRequired",
+            "TopologyImportBlocked"
+          ]
+        },
+        "applicability": {
+          "type": "string",
+          "enum": [
+            "ReviewAndApplySuggestedSnap",
+            "ReviewAndApplySuggestedTrim",
+            "ManualCorrectionRecommended"
+          ]
+        },
+        "sourceNodeId": {
+          "$ref": "#/$defs/id"
+        },
+        "sourcePoint": {
+          "$ref": "#/$defs/point"
+        },
+        "sourcePointMillimeters": {
+          "$ref": "#/$defs/nullablePoint"
+        },
+        "targetPoint": {
+          "$ref": "#/$defs/point"
+        },
+        "targetPointMillimeters": {
+          "$ref": "#/$defs/nullablePoint"
+        },
+        "targetNodeId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "hostWallId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "gapDistanceDrawingUnits": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "gapDistanceMillimeters": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "safeSnapDistanceDrawingUnits": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "safeSnapDistanceMillimeters": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "reviewDistanceLimitDrawingUnits": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "reviewDistanceLimitMillimeters": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "excessDistanceBeyondSafeSnapDrawingUnits": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "excessDistanceBeyondSafeSnapMillimeters": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "repairLine": {
+          "$ref": "#/$defs/line"
+        },
+        "repairLineMillimeters": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/line"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "boundsMillimeters": {
+          "$ref": "#/$defs/nullableRect"
+        },
+        "wallIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourcePrimitiveIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourceLayers": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ratio"
+        },
+        "requiresReview": {
+          "type": "boolean"
+        },
+        "recommendedAction": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "routingLayer": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "barriers",
+        "passages",
+        "obstacles",
+        "roomUseHints",
+        "suppressedObjects",
+        "ignoredObjects",
+        "suppressedObjectCandidateIds",
+        "ignoredObjectCandidateIds",
+        "evidence"
+      ],
+      "properties": {
+        "barriers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/routingBarrier"
+          }
+        },
+        "passages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/routingPassage"
+          }
+        },
+        "obstacles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/routingObstacle"
+          }
+        },
+        "roomUseHints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/routingRoomUseHint"
+          }
+        },
+        "suppressedObjects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/routingSuppressedObject"
+          },
+          "description": "Detailed per-object routing suppression records. These explain why a raw object candidate should not be independently consumed and which aggregate obstacle or room-use hint replaces it."
+        },
+        "ignoredObjects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/routingIgnoredObject"
+          },
+          "description": "Detailed object candidates intentionally omitted from routing obstacles, including reason, page and metric bounds, source evidence, and optional suppression or room-use links."
+        },
+        "suppressedObjectCandidateIds": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Object candidate IDs that should not be independently consumed by route/loop/layout tools because a higher-level aggregate already represents them."
+        },
+        "ignoredObjectCandidateIds": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Object candidate IDs that are intentionally not exported as routing obstacles."
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "routingBarrier": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "pageNumber",
+        "sourceId",
+        "sourceKind",
+        "centerLine",
+        "centerLineMillimeters",
+        "bounds",
+        "boundsMillimeters",
+        "thickness",
+        "drawingLength",
+        "lengthMeters",
+        "thicknessMillimeters",
+        "measurementScaleGroupId",
+        "millimetersPerDrawingUnit",
+        "wallComponentId",
+        "wallComponentKind",
+        "excludedFromStructuralTopology",
+        "confidence",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "pageNumber": {
+          "$ref": "#/$defs/pageNumber"
+        },
+        "sourceId": {
+          "$ref": "#/$defs/id"
+        },
+        "sourceKind": {
+          "type": "string"
+        },
+        "centerLine": {
+          "$ref": "#/$defs/line"
+        },
+        "centerLineMillimeters": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/line"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "boundsMillimeters": {
+          "$ref": "#/$defs/nullableRect"
+        },
+        "thickness": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "drawingLength": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "lengthMeters": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "thicknessMillimeters": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "measurementScaleGroupId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "millimetersPerDrawingUnit": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "wallComponentId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "wallComponentKind": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "excludedFromStructuralTopology": {
+          "type": "boolean"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ratio"
+        },
+        "sourcePrimitiveIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourceLayers": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "routingPassage": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "pageNumber",
+        "sourceId",
+        "sourceKind",
+        "type",
+        "operation",
+        "orientation",
+        "centerLine",
+        "centerLineMillimeters",
+        "bounds",
+        "boundsMillimeters",
+        "drawingWidth",
+        "widthMillimeters",
+        "measurementScaleGroupId",
+        "millimetersPerDrawingUnit",
+        "hostWallIds",
+        "connectedRoomIds",
+        "connectedRoomLabels",
+        "connectedRoomLinks",
+        "roomAdjacencyIds",
+        "placement",
+        "placementStatus",
+        "readyForCoordinatePlacement",
+        "requiresReview",
+        "reviewReasons",
+        "confidence",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "pageNumber": {
+          "$ref": "#/$defs/pageNumber"
+        },
+        "sourceId": {
+          "$ref": "#/$defs/id"
+        },
+        "sourceKind": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "orientation": {
+          "type": "string"
+        },
+        "centerLine": {
+          "$ref": "#/$defs/line"
+        },
+        "centerLineMillimeters": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/line"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "boundsMillimeters": {
+          "$ref": "#/$defs/nullableRect"
+        },
+        "drawingWidth": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "widthMillimeters": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "measurementScaleGroupId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "millimetersPerDrawingUnit": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "hostWallIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "connectedRoomIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "connectedRoomLabels": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "connectedRoomLinks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/openingRoomConnection"
+          }
+        },
+        "roomAdjacencyIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "placement": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/openingPlacement"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "placementStatus": {
+          "enum": [
+            "Anchored",
+            "Unanchored"
+          ]
+        },
+        "readyForCoordinatePlacement": {
+          "type": "boolean",
+          "description": "True only when the passage's opening placement is internally coherent enough for exact downstream coordinates."
+        },
+        "requiresReview": {
+          "type": "boolean",
+          "description": "True when opening placement, operation, confidence, or related routing evidence requires human review before exact downstream use."
+        },
+        "reviewReasons": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ratio"
+        },
+        "sourcePrimitiveIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourceLayers": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "routingObstacle": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "pageNumber",
+        "sourceId",
+        "sourceKind",
+        "obstacleKind",
+        "routingInfluence",
+        "structuralInfluence",
+        "category",
+        "objectKind",
+        "bounds",
+        "boundsMillimeters",
+        "center",
+        "centerMillimeters",
+        "millimetersPerDrawingUnit",
+        "label",
+        "roomId",
+        "roomLabel",
+        "suppressesChildObjects",
+        "childObjectIds",
+        "confidence",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "pageNumber": {
+          "$ref": "#/$defs/pageNumber"
+        },
+        "sourceId": {
+          "$ref": "#/$defs/id"
+        },
+        "sourceKind": {
+          "type": "string"
+        },
+        "obstacleKind": {
+          "type": "string",
+          "enum": [
+            "Unknown",
+            "SoftObstacle",
+            "HardObstacle",
+            "StructuralBarrier"
+          ]
+        },
+        "routingInfluence": {
+          "type": "string",
+          "enum": [
+            "Unknown",
+            "Ignore",
+            "RoomUseEvidenceOnly",
+            "SoftObstacle",
+            "HardObstacle",
+            "StructuralBarrier"
+          ]
+        },
+        "structuralInfluence": {
+          "type": "string",
+          "enum": [
+            "Unknown",
+            "None",
+            "NonStructural",
+            "FixedEquipment",
+            "Structural"
+          ]
+        },
+        "category": {
+          "type": "string"
+        },
+        "objectKind": {
+          "type": "string"
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "boundsMillimeters": {
+          "$ref": "#/$defs/nullableRect"
+        },
+        "center": {
+          "$ref": "#/$defs/point"
+        },
+        "centerMillimeters": {
+          "$ref": "#/$defs/nullablePoint"
+        },
+        "millimetersPerDrawingUnit": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "label": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "roomId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "roomLabel": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "suppressesChildObjects": {
+          "type": "boolean"
+        },
+        "childObjectIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ratio"
+        },
+        "sourcePrimitiveIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourceLayers": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "routingRoomUseHint": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "pageNumber",
+        "sourceId",
+        "sourceKind",
+        "roomUseKind",
+        "bounds",
+        "boundsMillimeters",
+        "center",
+        "centerMillimeters",
+        "millimetersPerDrawingUnit",
+        "roomId",
+        "roomLabel",
+        "confidence",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "pageNumber": {
+          "$ref": "#/$defs/pageNumber"
+        },
+        "sourceId": {
+          "$ref": "#/$defs/id"
+        },
+        "sourceKind": {
+          "type": "string"
+        },
+        "roomUseKind": {
+          "type": "string"
+        },
+        "bounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "boundsMillimeters": {
+          "$ref": "#/$defs/nullableRect"
+        },
+        "center": {
+          "$ref": "#/$defs/point"
+        },
+        "centerMillimeters": {
+          "$ref": "#/$defs/nullablePoint"
+        },
+        "millimetersPerDrawingUnit": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "roomId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "roomLabel": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ratio"
+        },
+        "sourcePrimitiveIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourceLayers": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "routingSuppressedObject": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "pageNumber",
+        "objectCandidateId",
+        "suppressedByAggregateId",
+        "reason",
+        "action",
+        "replacementRoutingObstacleId",
+        "roomUseHintId",
+        "aggregateRoutingInfluence",
+        "aggregateStructuralInfluence",
+        "candidateCategory",
+        "candidateKind",
+        "candidateBounds",
+        "candidateBoundsMillimeters",
+        "candidateCenter",
+        "candidateCenterMillimeters",
+        "millimetersPerDrawingUnit",
+        "candidateLabel",
+        "roomId",
+        "roomLabel",
+        "confidence",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "pageNumber": {
+          "$ref": "#/$defs/pageNumber"
+        },
+        "objectCandidateId": {
+          "$ref": "#/$defs/id"
+        },
+        "suppressedByAggregateId": {
+          "$ref": "#/$defs/id",
+          "description": "Object aggregate that replaces or explains this raw child object for routing/loop/layout consumers."
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "Unknown",
+            "ReplacedByObjectAggregate",
+            "AggregateRoomUseEvidenceOnly"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "Unknown",
+            "IgnoreForRouting",
+            "UseAggregateObstacle",
+            "UseAggregateRoomUseHint"
+          ],
+          "description": "Recommended downstream action for route/loop/layout consumers."
+        },
+        "replacementRoutingObstacleId": {
+          "$ref": "#/$defs/nullableString",
+          "description": "Routing obstacle ID to consume instead of the child object, when the aggregate is an obstacle."
+        },
+        "roomUseHintId": {
+          "$ref": "#/$defs/nullableString",
+          "description": "Room-use hint ID to consume instead of the child object, when the aggregate is semantic evidence only."
+        },
+        "aggregateRoutingInfluence": {
+          "type": "string",
+          "enum": [
+            "Unknown",
+            "Ignore",
+            "RoomUseEvidenceOnly",
+            "SoftObstacle",
+            "HardObstacle",
+            "StructuralBarrier"
+          ]
+        },
+        "aggregateStructuralInfluence": {
+          "type": "string",
+          "enum": [
+            "Unknown",
+            "None",
+            "NonStructural",
+            "FixedEquipment",
+            "Structural"
+          ]
+        },
+        "candidateCategory": {
+          "type": "string"
+        },
+        "candidateKind": {
+          "type": "string"
+        },
+        "candidateBounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "candidateBoundsMillimeters": {
+          "$ref": "#/$defs/nullableRect"
+        },
+        "candidateCenter": {
+          "$ref": "#/$defs/point"
+        },
+        "candidateCenterMillimeters": {
+          "$ref": "#/$defs/nullablePoint"
+        },
+        "millimetersPerDrawingUnit": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "candidateLabel": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "roomId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "roomLabel": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ratio"
+        },
+        "sourcePrimitiveIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourceLayers": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "routingIgnoredObject": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "pageNumber",
+        "objectCandidateId",
+        "reason",
+        "routingInfluence",
+        "structuralInfluence",
+        "candidateCategory",
+        "candidateKind",
+        "candidateSourceKind",
+        "sourceWallComponentId",
+        "sourceWallComponentKind",
+        "candidateBounds",
+        "candidateBoundsMillimeters",
+        "candidateCenter",
+        "candidateCenterMillimeters",
+        "millimetersPerDrawingUnit",
+        "candidateLabel",
+        "roomId",
+        "roomLabel",
+        "suppressedObjectId",
+        "suppressedByAggregateId",
+        "roomUseHintId",
+        "confidence",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "pageNumber": {
+          "$ref": "#/$defs/pageNumber"
+        },
+        "objectCandidateId": {
+          "$ref": "#/$defs/id"
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "Unknown",
+            "SuppressedByAggregate",
+            "ExplicitlyIgnored",
+            "RoomUseEvidenceOnly",
+            "UnclassifiedReviewCandidate",
+            "UnknownRoutingInfluence"
+          ],
+          "description": "Why this object candidate is not exported as a routing obstacle."
+        },
+        "routingInfluence": {
+          "type": "string",
+          "enum": [
+            "Unknown",
+            "Ignore",
+            "RoomUseEvidenceOnly",
+            "SoftObstacle",
+            "HardObstacle",
+            "StructuralBarrier"
+          ]
+        },
+        "structuralInfluence": {
+          "type": "string",
+          "enum": [
+            "Unknown",
+            "None",
+            "NonStructural",
+            "FixedEquipment",
+            "Structural"
+          ]
+        },
+        "candidateCategory": {
+          "type": "string"
+        },
+        "candidateKind": {
+          "type": "string"
+        },
+        "candidateSourceKind": {
+          "type": "string"
+        },
+        "sourceWallComponentId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "sourceWallComponentKind": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "candidateBounds": {
+          "$ref": "#/$defs/rect"
+        },
+        "candidateBoundsMillimeters": {
+          "$ref": "#/$defs/nullableRect"
+        },
+        "candidateCenter": {
+          "$ref": "#/$defs/point"
+        },
+        "candidateCenterMillimeters": {
+          "$ref": "#/$defs/nullablePoint"
+        },
+        "millimetersPerDrawingUnit": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "candidateLabel": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "roomId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "roomLabel": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "suppressedObjectId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "suppressedByAggregateId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "roomUseHintId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ratio"
+        },
+        "sourcePrimitiveIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourceLayers": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "issue": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "code",
+        "severity",
+        "message",
+        "pageNumber",
+        "pageNumbers",
+        "itemId",
+        "bounds",
+        "boundsMillimeters",
+        "confidence",
+        "recommendedAction",
+        "sourcePrimitiveIds",
+        "sourceLayers",
+        "evidence",
+        "properties"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pageNumber": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "pageNumbers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pageNumber"
+          }
+        },
+        "itemId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "bounds": {
+          "$ref": "#/$defs/nullableRect"
+        },
+        "boundsMillimeters": {
+          "$ref": "#/$defs/nullableRect"
+        },
+        "confidence": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ratio"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recommendedAction": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourcePrimitiveIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourceLayers": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "evidence": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "reliability": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "readyForCoordinatePlacement",
+        "readyForMetricPlacement",
+        "requiresReview",
+        "confidence",
+        "reasons"
+      ],
+      "properties": {
+        "readyForCoordinatePlacement": {
+          "type": "boolean"
+        },
+        "readyForMetricPlacement": {
+          "type": "boolean"
+        },
+        "requiresReview": {
+          "type": "boolean"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ratio"
+        },
+        "reasons": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "rect": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number"
+        },
+        "height": {
+          "type": "number"
+        }
+      }
+    },
+    "point": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "x",
+        "y"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      }
+    },
+    "line": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "start",
+        "end"
+      ],
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/point"
+        },
+        "end": {
+          "$ref": "#/$defs/point"
+        }
+      }
+    },
+    "vector": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "x",
+        "y"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      }
+    },
+    "affineTransform": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "type": "number"
+      }
+    }
+  }
+}
+

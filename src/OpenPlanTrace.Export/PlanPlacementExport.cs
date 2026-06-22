@@ -66,7 +66,7 @@ public sealed record PlanPlacementExport(
     PlacementRoutingLayerExport RoutingLayer,
     IReadOnlyList<PlacementIssueExport> Issues)
 {
-    public const string CurrentSchemaVersion = "openplantrace.placement.v9";
+    public const string CurrentSchemaVersion = "openplantrace.placement.v10";
 
     public static PlanPlacementExport From(PlanScanResult result)
     {
@@ -2674,6 +2674,7 @@ public sealed record PlacementRoomBoundaryReliabilityExport(
     IReadOnlyList<string> RejectedWallIds,
     IReadOnlyList<string> NonBlockingDuplicateWallIds,
     IReadOnlyList<string> OpeningOnlyWallIds,
+    IReadOnlyList<string> OpeningDominatedWallIds,
     IReadOnlyList<string> RoomSupportedFragmentWallIds,
     IReadOnlyList<string> PlacementOmittedWallIds,
     IReadOnlyList<string> UnassessedWallIds,
@@ -3803,6 +3804,7 @@ public sealed record PlacementIssueExport(
                 ["readyWallIds"] = string.Join(",", room.BoundaryReliability.ReadyWallIds),
                 ["nonBlockingDuplicateWallIds"] = string.Join(",", room.BoundaryReliability.NonBlockingDuplicateWallIds),
                 ["openingOnlyWallIds"] = string.Join(",", room.BoundaryReliability.OpeningOnlyWallIds),
+                ["openingDominatedWallIds"] = string.Join(",", room.BoundaryReliability.OpeningDominatedWallIds),
                 ["roomSupportedFragmentWallIds"] = string.Join(",", room.BoundaryReliability.RoomSupportedFragmentWallIds),
                 ["boundaryWallCount"] = room.BoundaryReliability.BoundaryWallCount.ToString(CultureInfo.InvariantCulture),
                 ["assessedWallCount"] = room.BoundaryReliability.AssessedWallCount.ToString(CultureInfo.InvariantCulture)
@@ -4413,6 +4415,7 @@ internal static class PlacementReliability
         var rejectedWallIds = new List<string>();
         var nonBlockingDuplicateWallIds = new List<string>();
         var openingOnlyWallIds = new List<string>();
+        var openingDominatedWallIds = new List<string>();
         var roomSupportedFragmentWallIds = new List<string>();
         var placementOmittedWallIds = new List<string>();
         var unassessedWallIds = new List<string>();
@@ -4456,6 +4459,10 @@ internal static class PlacementReliability
             {
                 roomSupportedFragmentWallIds.Add(wallId);
             }
+            else if (IsOpeningDominatedTrustedBoundaryWall(assessment, placementWall))
+            {
+                openingDominatedWallIds.Add(wallId);
+            }
             else if (assessment.Decision == WallEvidenceDecision.Review
                 || assessment.RequiresReview
                 || !assessment.PlacementReady)
@@ -4497,6 +4504,11 @@ internal static class PlacementReliability
             evidence.Add($"non-blocking opening-only room boundary wall evidence: {string.Join(",", openingOnlyWallIds.Order(StringComparer.Ordinal))}");
         }
 
+        if (openingDominatedWallIds.Count > 0)
+        {
+            evidence.Add($"non-blocking opening-dominated room boundary wall evidence: {string.Join(",", openingDominatedWallIds.Order(StringComparer.Ordinal))}");
+        }
+
         if (roomSupportedFragmentWallIds.Count > 0)
         {
             evidence.Add($"non-blocking room-supported fragment boundary wall evidence: {string.Join(",", roomSupportedFragmentWallIds.Order(StringComparer.Ordinal))}");
@@ -4520,6 +4532,7 @@ internal static class PlacementReliability
             rejectedWallIds.Order(StringComparer.Ordinal).ToArray(),
             nonBlockingDuplicateWallIds.Order(StringComparer.Ordinal).ToArray(),
             openingOnlyWallIds.Order(StringComparer.Ordinal).ToArray(),
+            openingDominatedWallIds.Order(StringComparer.Ordinal).ToArray(),
             roomSupportedFragmentWallIds.Order(StringComparer.Ordinal).ToArray(),
             placementOmittedWallIds.Order(StringComparer.Ordinal).ToArray(),
             unassessedWallIds.Order(StringComparer.Ordinal).ToArray(),
@@ -4539,6 +4552,55 @@ internal static class PlacementReliability
         }
 
         return OpeningCutoutCoverageRatio(wall.OpeningCutouts) >= 0.98;
+    }
+
+    private static bool IsOpeningDominatedTrustedBoundaryWall(
+        WallEvidenceWallAssessment assessment,
+        PlacementWallExport? wall)
+    {
+        const double minimumOpeningCoverageRatio = 0.80;
+        const double maximumResidualWallLength = 20.0;
+
+        if (wall is null
+            || wall.OpeningCutouts.Count == 0
+            || wall.TopologySpans.Count > 0
+            || wall.DrawingLength <= 0.001
+            || wall.PlacementOmission?.Code != "tiny_door_adjacent_topology_suppressed"
+            || !assessment.PlacementReady
+            || assessment.RequiresReview
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject
+            || assessment.Category is not (WallEvidenceCategory.StrongWallBody or WallEvidenceCategory.MediumWallBody))
+        {
+            return false;
+        }
+
+        var coveredRatio = OpeningCutoutCoverageRatio(wall.OpeningCutouts);
+        if (coveredRatio < minimumOpeningCoverageRatio)
+        {
+            return false;
+        }
+
+        var largestResidualSpan = wall.SolidSpans.Count == 0
+            ? Math.Max(0, wall.DrawingLength * (1 - coveredRatio))
+            : wall.SolidSpans.Max(span => span.DrawingLength);
+        if (largestResidualSpan > maximumResidualWallLength)
+        {
+            return false;
+        }
+
+        var evidence = wall.Evidence
+            .Concat(wall.PlacementOmission?.Evidence ?? Array.Empty<string>())
+            .Concat(assessment.Evidence)
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(assessment.ScoreBreakdown.NegativeEvidence)
+            .ToArray();
+
+        return evidence.Any(item =>
+            item.Contains("room boundary", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("detected room evidence on both sides", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("shared by room adjacency boundary", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("explicit room boundary support", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool IsPlacementOmittedBoundaryWall(PlacementWallExport? wall) =>

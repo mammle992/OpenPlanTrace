@@ -6,6 +6,28 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.212] - 2026-06-22
+
+### Improved
+- Placement JSON is now schema-versioned as `openplantrace.placement.v10`.
+- Room boundary reliability now includes `openingDominatedWallIds`, separating
+  trusted room boundaries that are mostly consumed by anchored doors/openings
+  from true coordinate-blocking placement omissions.
+- Tiny door-adjacent wall remnants can stay omitted from exact wall geometry
+  without incorrectly blocking the whole room polygon.
+
+### Verified
+- Added regression coverage for opening-only and opening-dominated room
+  boundary walls, plus placement schema contract coverage for v10.
+- Rescanned the private medium wall-noise PDF: `page:1:wall:16` moved from
+  room coordinate blockers into `openingDominatedWallIds` while the remaining
+  real blockers stayed visible for review.
+- Rendered and inspected the wall-QA screenshot at
+  `%TEMP%/openplantrace-medium-a20-102-20260622-opening-dominated-boundary-v1-wall-qa-review.png`.
+- Validated the generated placement artifact with deep placement checks enabled.
+- Ran targeted exporter/schema tests: `6` tests passed.
+- Ran the full test suite: `711` tests passed.
+
 ## [0.02.211] - 2026-06-22
 
 ### Improved
