@@ -223,6 +223,7 @@ public static class WallPlacementReadinessEvaluator
                 evidence,
                 "wall-like layer",
                 "room boundary",
+                "detected room evidence on both sides",
                 "exterior shell",
                 "outdoor/terrace",
                 "trusted benchmark");

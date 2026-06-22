@@ -6,6 +6,26 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.190] - 2026-06-22
+
+### Improved
+- Short dense wall/detail candidates can now remain placement-ready when the
+  wall-type refinement stage has already found room evidence on both sides.
+- This recovers small real room-boundary partitions without trusting one-sided,
+  outdoor, object-like, over-sourced, or rejected detail linework.
+
+### Verified
+- Added regression coverage for short dense candidates supported by two-sided
+  room evidence.
+- Rescanned a supplied medium PDF with a rendered PDF page background and the
+  `placement-review` overlay; placement-ready walls increased from `19` to `20`,
+  visible topology spans increased from `22` to `23`, and omitted/review walls
+  dropped from `96` to `95`.
+- Rendered and inspected the placement-review screenshot at
+  `%TEMP%/openplantrace-medium-supplied-two-sided-room-dense-recovery-v1.png`.
+- Ran targeted placement-readiness tests: `12` tests passed.
+- Ran the full test suite: `680` tests passed.
+
 ## [0.02.189] - 2026-06-22
 
 ### Improved
