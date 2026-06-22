@@ -556,6 +556,62 @@ public sealed class WallTypeRefinementTests
     }
 
     [Fact]
+    public async Task WallTypeRefinement_PromotesCleanFragmentMergedInteriorRoomBoundary()
+    {
+        var wall = new WallSegment(
+            "wall-fragment-room-boundary",
+            1,
+            new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(100, 205)),
+            6,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.FragmentMerged,
+            WallType = WallType.Interior,
+            SourcePrimitiveIds = new[] { "fragment-a", "fragment-b", "fragment-c", "fragment-d" },
+            FragmentEvidence = new WallFragmentEvidence(
+                FragmentCount: 4,
+                TotalHealedGap: 0,
+                MaxHealedGap: 0,
+                DuplicatePrimitiveCount: 0,
+                GapRatio: 0,
+                RequiresGeometryReview: false,
+                Evidence: Array.Empty<string>()),
+            Evidence = new[]
+            {
+                "merged collinear wall fragments",
+                "fragment geometry: 4 fragment(s)",
+                "fragment geometry healed gap ratio 0",
+                "wall type interior: supported wall evidence inside exterior envelope"
+            }
+        };
+        var context = CreateContext("clean-fragment-room-boundary-promotion");
+        context.Walls.Add(wall);
+        context.Rooms.Add(Room("room-a", RoomUseKind.Bathroom, wall.Id));
+        context.WallGraph = GraphFor(wall);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.MediumWallBody,
+            placementReady: false,
+            requiresReview: true,
+            rejectedAsNoise: false,
+            new[]
+            {
+                "merged collinear wall fragments",
+                "wall evidence: unlayered fragment-merged wall candidate has only one trusted structural endpoint (4 fragments, gap ratio 0); keep for topology but block exact placement until reviewed"
+            });
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var promoted = Assert.Single(context.WallEvidenceMap.WallAssessments);
+        Assert.True(promoted.PlacementReady);
+        Assert.False(promoted.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Accept, promoted.Decision);
+        Assert.Contains(
+            promoted.Evidence,
+            item => item.Contains("clean fragment-merged interior room boundary promoted", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task WallTypeRefinement_DoesNotPromoteNoisyShortStructuralReturnWithLargeHealedGap()
     {
         var wall = new WallSegment(

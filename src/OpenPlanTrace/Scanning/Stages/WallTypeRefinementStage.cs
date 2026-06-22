@@ -607,7 +607,15 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             return false;
         }
 
-        if (hasOutdoorRoomReference || sideEvidence.HasOutdoorRoomSide)
+        var hasRoomBoundaryFragmentConfirmation = IsTrustedFragmentMergedInteriorRoomBoundary(
+            wall,
+            assessment,
+            roomReferenceCount,
+            supportedTopologyEndpointCount,
+            sideEvidence,
+            options);
+        if (hasOutdoorRoomReference
+            || (sideEvidence.HasOutdoorRoomSide && !hasRoomBoundaryFragmentConfirmation))
         {
             return false;
         }
@@ -625,12 +633,15 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             roomReferenceCount >= 1
             && supportedTopologyEndpointCount >= 2
             && IsTrustedShortStructuralReturnWall(wall, assessment, options);
-        if (!hasStrongRoomConfirmation && !hasShortStructuralReturnConfirmation)
+        if (!hasStrongRoomConfirmation
+            && !hasShortStructuralReturnConfirmation
+            && !hasRoomBoundaryFragmentConfirmation)
         {
             return false;
         }
 
-        if (!HasWallBodyEvidence(wall, assessment))
+        if (!HasWallBodyEvidence(wall, assessment)
+            && !hasRoomBoundaryFragmentConfirmation)
         {
             return false;
         }
@@ -643,6 +654,9 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         .Concat(hasShortStructuralReturnConfirmation
             ? new[] { "wall evidence: short structural return promoted by room boundary and two supported topology endpoints" }
             : Array.Empty<string>())
+        .Concat(hasRoomBoundaryFragmentConfirmation
+            ? new[] { "wall evidence: clean fragment-merged interior room boundary promoted after room refinement confirmed it belongs to a detected room boundary" }
+            : Array.Empty<string>())
         .ToArray();
         promotedAssessment = assessment with
         {
@@ -652,6 +666,58 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             Evidence = AppendEvidence(assessment.Evidence, promotionEvidence)
         };
         return true;
+    }
+
+    private static bool IsTrustedFragmentMergedInteriorRoomBoundary(
+        WallSegment wall,
+        WallEvidenceWallAssessment assessment,
+        int roomReferenceCount,
+        int supportedTopologyEndpointCount,
+        RoomSideEvidence sideEvidence,
+        ScannerOptions options)
+    {
+        if (roomReferenceCount < 1
+            || wall.DetectionKind != WallDetectionKind.FragmentMerged
+            || wall.WallType != WallType.Interior
+            || wall.PairEvidence is not null
+            || wall.FragmentEvidence is not { RequiresGeometryReview: false } fragmentEvidence
+            || assessment.Category != WallEvidenceCategory.MediumWallBody)
+        {
+            return false;
+        }
+
+        var minimumLength = Math.Max(
+            72.0,
+            Math.Max(options.MinWallLength * 3.5, wall.Thickness * 10.0));
+        if (wall.DrawingLength < minimumLength)
+        {
+            return false;
+        }
+
+        var fragmentCount = Math.Max(fragmentEvidence.FragmentCount, wall.SourcePrimitiveIds.Count);
+        if (fragmentCount is < 2 or > 8
+            || fragmentEvidence.DuplicatePrimitiveCount > 3
+            || fragmentEvidence.GapRatio > 0.01
+            || fragmentEvidence.TotalHealedGap > Math.Max(2.0, wall.Thickness * 0.35))
+        {
+            return false;
+        }
+
+        var evidence = assessment.Evidence
+            .Concat(wall.Evidence)
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(assessment.ScoreBreakdown.NegativeEvidence)
+            .ToArray();
+        if (!evidence.Any(item => item.Contains("only one trusted structural endpoint", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        return supportedTopologyEndpointCount > 0
+            || sideEvidence.PositiveRoomHits + sideEvidence.NegativeRoomHits > 0
+            || evidence.Any(item =>
+                item.Contains("supported wall evidence inside exterior envelope", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("structural context", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool TryDemoteFragmentedPlacementReadyWallEvidence(

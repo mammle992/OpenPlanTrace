@@ -6,6 +6,31 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.183] - 2026-06-22
+
+### Improved
+- Clean fragment-merged interior walls that are part of detected room boundaries
+  can now be promoted from review-only to placement-ready after room refinement.
+- The promotion stays guarded by fragment count, healed-gap, duplicate, wall type,
+  room-boundary, structural-context, and door/object/pattern blocker checks so
+  isolated noisy fragments remain review-only.
+- This targets the medium PDF failure mode where real bathroom/entry/storage
+  partition walls were omitted because they had only one trusted topology
+  endpoint even though room detection used them as boundaries.
+
+### Verified
+- Added a regression test for clean fragment-merged interior room-boundary
+  promotion.
+- Rescanned the supplied medium PDF (`A20-102 PLAN 1. ETASJE.pdf`) with
+  `--svg-profile wall-qa`; wall-QA output improved from `16` to `18`
+  placement-ready wall bodies and from `99` to `97` omitted/review walls.
+- Confirmed the known central fragments `page:1:wall:144` and
+  `page:1:wall:150` are placement-ready, while nearby isolated/noisy fragments
+  stay review-only.
+- Rendered and inspected the wall-only screenshot at
+  `real-pdf-output/medium-a20-102-20260622-room-fragment-promotion-v3/wall-qa-page-1.png`.
+- Ran the full test suite: `667` tests passed.
+
 ## [0.02.182] - 2026-06-22
 
 ### Improved
