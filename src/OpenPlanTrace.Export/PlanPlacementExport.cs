@@ -2643,6 +2643,7 @@ public sealed record PlacementRoomBoundaryReliabilityExport(
     IReadOnlyList<string> NonBlockingDuplicateWallIds,
     IReadOnlyList<string> OpeningOnlyWallIds,
     IReadOnlyList<string> RoomSupportedFragmentWallIds,
+    IReadOnlyList<string> PlacementOmittedWallIds,
     IReadOnlyList<string> UnassessedWallIds,
     IReadOnlyList<string> CoordinateBlockingWallIds,
     IReadOnlyList<string> Evidence);
@@ -4184,6 +4185,7 @@ internal static class PlacementReliability
         var nonBlockingDuplicateWallIds = new List<string>();
         var openingOnlyWallIds = new List<string>();
         var roomSupportedFragmentWallIds = new List<string>();
+        var placementOmittedWallIds = new List<string>();
         var unassessedWallIds = new List<string>();
         var assessedWallCount = 0;
 
@@ -4213,7 +4215,7 @@ internal static class PlacementReliability
             {
                 rejectedWallIds.Add(wallId);
             }
-            else if (IsNonBlockingDuplicateBoundaryWallEvidence(assessment))
+            else if (IsNonBlockingDuplicateBoundaryWall(assessment, placementWall))
             {
                 nonBlockingDuplicateWallIds.Add(wallId);
             }
@@ -4231,6 +4233,10 @@ internal static class PlacementReliability
             {
                 reviewWallIds.Add(wallId);
             }
+            else if (IsPlacementOmittedBoundaryWall(placementWall))
+            {
+                placementOmittedWallIds.Add(wallId);
+            }
             else
             {
                 readyWallIds.Add(wallId);
@@ -4239,6 +4245,7 @@ internal static class PlacementReliability
 
         var coordinateBlockingWallIds = reviewWallIds
             .Concat(rejectedWallIds)
+            .Concat(placementOmittedWallIds)
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
             .ToArray();
@@ -4266,6 +4273,11 @@ internal static class PlacementReliability
             evidence.Add($"non-blocking room-supported fragment boundary wall evidence: {string.Join(",", roomSupportedFragmentWallIds.Order(StringComparer.Ordinal))}");
         }
 
+        if (placementOmittedWallIds.Count > 0)
+        {
+            evidence.Add($"coordinate-blocking placement-omitted room boundary wall evidence: {string.Join(",", placementOmittedWallIds.Order(StringComparer.Ordinal))}");
+        }
+
         if (unassessedWallIds.Count > 0)
         {
             evidence.Add($"room boundary wall evidence not assessed: {string.Join(",", unassessedWallIds.Order(StringComparer.Ordinal))}");
@@ -4280,6 +4292,7 @@ internal static class PlacementReliability
             nonBlockingDuplicateWallIds.Order(StringComparer.Ordinal).ToArray(),
             openingOnlyWallIds.Order(StringComparer.Ordinal).ToArray(),
             roomSupportedFragmentWallIds.Order(StringComparer.Ordinal).ToArray(),
+            placementOmittedWallIds.Order(StringComparer.Ordinal).ToArray(),
             unassessedWallIds.Order(StringComparer.Ordinal).ToArray(),
             coordinateBlockingWallIds,
             evidence);
@@ -4298,6 +4311,11 @@ internal static class PlacementReliability
 
         return OpeningCutoutCoverageRatio(wall.OpeningCutouts) >= 0.98;
     }
+
+    private static bool IsPlacementOmittedBoundaryWall(PlacementWallExport? wall) =>
+        wall is not null
+        && (wall.PlacementOmission is not null
+            || !wall.Reliability.ReadyForCoordinatePlacement);
 
     private static double OpeningCutoutCoverageRatio(IReadOnlyList<PlacementWallOpeningCutoutExport> cutouts)
     {
@@ -4418,6 +4436,11 @@ internal static class PlacementReliability
             reasons.Add($"room boundary uses rejected wall evidence: {string.Join(",", boundaryReliability.RejectedWallIds.Take(12))}");
         }
 
+        if (boundaryReliability.PlacementOmittedWallIds.Count > 0)
+        {
+            reasons.Add($"room boundary uses placement-omitted wall geometry: {string.Join(",", boundaryReliability.PlacementOmittedWallIds.Take(12))}");
+        }
+
         var boundaryWallsAreCoordinateReady = !isSemanticRoomSeed
             && room.WallIds.Count > 0
             && boundaryReliability.CoordinateBlockingWallIds.Count == 0;
@@ -4429,6 +4452,12 @@ internal static class PlacementReliability
             reasons.Count > 0 || !boundaryWallsAreCoordinateReady,
             reasons);
     }
+
+    private static bool IsNonBlockingDuplicateBoundaryWall(
+        WallEvidenceWallAssessment assessment,
+        PlacementWallExport? wall) =>
+        IsNonBlockingDuplicateBoundaryWallEvidence(assessment)
+        || wall?.PlacementOmission?.Code is "duplicate_clean_topology_span" or "duplicate_wall_face";
 
     private static bool IsNonBlockingDuplicateBoundaryWallEvidence(WallEvidenceWallAssessment assessment)
     {

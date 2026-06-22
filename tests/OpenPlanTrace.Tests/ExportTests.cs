@@ -3171,6 +3171,56 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementExporter_DoesNotBlockRoomForDuplicateCleanTopologyBoundaryWall()
+    {
+        var result = CreateContainedDuplicatePlacementRunResult();
+        var duplicateWall = result.Walls.Single(wall => wall.Id == "duplicate-contained-wall");
+        var roomRegion = new RoomRegion(
+            "duplicate-clean-boundary-room",
+            1,
+            new PlanRect(145, 70, 90, 60),
+            [
+                new PlanPoint(145, 70),
+                new PlanPoint(235, 70),
+                new PlanPoint(235, 130),
+                new PlanPoint(145, 130)
+            ],
+            [duplicateWall.Id],
+            Confidence.High)
+        {
+            Label = "DUP",
+            Evidence = ["synthetic room uses duplicate clean topology boundary wall"]
+        };
+        result = result with { Rooms = [roomRegion] };
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var room = document.RootElement
+            .GetProperty("rooms")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == roomRegion.Id);
+
+        var reliability = room.GetProperty("reliability");
+        Assert.True(reliability.GetProperty("readyForCoordinatePlacement").GetBoolean());
+
+        var boundaryReliability = room.GetProperty("boundaryReliability");
+        Assert.Contains(
+            boundaryReliability.GetProperty("nonBlockingDuplicateWallIds").EnumerateArray(),
+            wallId => wallId.GetString() == duplicateWall.Id);
+        Assert.DoesNotContain(
+            boundaryReliability.GetProperty("placementOmittedWallIds").EnumerateArray(),
+            wallId => wallId.GetString() == duplicateWall.Id);
+        Assert.DoesNotContain(
+            boundaryReliability.GetProperty("coordinateBlockingWallIds").EnumerateArray(),
+            wallId => wallId.GetString() == duplicateWall.Id);
+        Assert.Contains(
+            boundaryReliability.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("non-blocking duplicate", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
     public void PlacementExporter_DoesNotBlockRoomForOpeningOnlyBoundaryWall()
     {
         var result = CreateOpeningCutoutPlacementReviewResult(startParameter: 0.0, endParameter: 1.0);
@@ -3285,6 +3335,63 @@ public sealed class ExportTests
             .Single(item => item.GetProperty("id").GetString() == boundaryWall.Id);
         Assert.False(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
         Assert.True(wall.GetProperty("reliability").GetProperty("requiresReview").GetBoolean());
+    }
+
+    [Fact]
+    public async Task PlacementExporter_BlocksRoomForPlacementOmittedBoundaryWallEvenWhenEvidenceIsReady()
+    {
+        var result = WithPlacementReadyIsolatedFragment(await CreateScanResultAsync());
+        var boundaryWall = result.Walls.Single(wall => wall.Id == "isolated-clean-fragment");
+        var roomRegion = new RoomRegion(
+            "placement-omitted-boundary-room",
+            1,
+            new PlanRect(340, 180, 70, 80),
+            [
+                new PlanPoint(340, 180),
+                new PlanPoint(410, 180),
+                new PlanPoint(410, 260),
+                new PlanPoint(340, 260)
+            ],
+            [boundaryWall.Id],
+            Confidence.High)
+        {
+            Label = "CHECK",
+            UseKind = RoomUseKind.Unknown,
+            Evidence = ["synthetic room uses accepted but placement-omitted boundary wall"]
+        };
+        result = result with { Rooms = [roomRegion] };
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var room = document.RootElement
+            .GetProperty("rooms")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == roomRegion.Id);
+
+        var reliability = room.GetProperty("reliability");
+        Assert.False(reliability.GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.Contains(
+            reliability.GetProperty("reasons").EnumerateArray(),
+            reason => reason.GetString()?.Contains("placement-omitted wall geometry", StringComparison.OrdinalIgnoreCase) == true);
+
+        var boundaryReliability = room.GetProperty("boundaryReliability");
+        Assert.Contains(
+            boundaryReliability.GetProperty("placementOmittedWallIds").EnumerateArray(),
+            wallId => wallId.GetString() == boundaryWall.Id);
+        Assert.Contains(
+            boundaryReliability.GetProperty("coordinateBlockingWallIds").EnumerateArray(),
+            wallId => wallId.GetString() == boundaryWall.Id);
+        Assert.DoesNotContain(
+            boundaryReliability.GetProperty("readyWallIds").EnumerateArray(),
+            wallId => wallId.GetString() == boundaryWall.Id);
+        Assert.DoesNotContain(
+            boundaryReliability.GetProperty("reviewWallIds").EnumerateArray(),
+            wallId => wallId.GetString() == boundaryWall.Id);
+        Assert.Contains(
+            boundaryReliability.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("placement-omitted", StringComparison.OrdinalIgnoreCase) == true);
     }
 
     [Fact]

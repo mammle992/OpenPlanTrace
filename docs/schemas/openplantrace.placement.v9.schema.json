@@ -1774,6 +1774,7 @@
         "nonBlockingDuplicateWallIds",
         "openingOnlyWallIds",
         "roomSupportedFragmentWallIds",
+        "placementOmittedWallIds",
         "unassessedWallIds",
         "coordinateBlockingWallIds",
         "evidence"
@@ -1801,6 +1802,9 @@
           "$ref": "#/$defs/stringArray"
         },
         "roomSupportedFragmentWallIds": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "placementOmittedWallIds": {
           "$ref": "#/$defs/stringArray"
         },
         "unassessedWallIds": {

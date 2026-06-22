@@ -6,6 +6,33 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.200] - 2026-06-22
+
+### Improved
+- Room boundary reliability now tracks `placementOmittedWallIds` for boundary
+  walls whose wall evidence exists but whose clean placement geometry is still
+  omitted or not coordinate-ready.
+- Room `readyWallIds` no longer includes walls that are accepted by wall
+  evidence but omitted from clean placement topology, preventing downstream
+  consumers from treating hidden/review-only wall geometry as safe coordinates.
+- Duplicate walls that are omitted only because another clean topology span
+  already represents the same run remain non-blocking duplicate evidence instead
+  of becoming placement-omitted blockers.
+- README placement-contract notes now document the room boundary reliability
+  buckets for downstream importers.
+
+### Verified
+- Added placement export and schema regression coverage for placement-omitted
+  room boundary walls and duplicate clean-topology boundary walls.
+- Rescanned the supplied medium PDF `A20-102 PLAN 1. ETASJE.pdf`: rooms `1` and
+  `2` still remain coordinate-ready, room `5` keeps duplicate clean topology
+  walls as non-blocking duplicates, and room `3`, `6`, and `7` now expose exact
+  `placementOmittedWallIds` blockers for review-only wall geometry.
+- Rendered and inspected the wall-only QA screenshot at
+  `%TEMP%/openplantrace-medium-a20-102-placement-omitted-boundary-v2-bath-entry.png`.
+- Ran targeted placement/schema tests: `146` tests passed.
+- Ran the full test suite: `699` tests passed.
+
 ## [0.02.199] - 2026-06-22
 
 ### Improved
