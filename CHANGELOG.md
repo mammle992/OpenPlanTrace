@@ -6,6 +6,18 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.203] - 2026-06-22
+
+### Improved
+- Public changelog references to supplied local PDF benchmarks now use neutral
+  difficulty names instead of private file names or project-specific artifact
+  folder names.
+
+### Verified
+- Searched public repo text for private benchmark filename/project references
+  and confirmed the changelog now uses neutral `private medium benchmark PDF`
+  and `private-medium-fixture` naming.
+
 ## [0.02.202] - 2026-06-22
 
 ### Improved
@@ -22,11 +34,11 @@ fix counter. Individual JSON contracts keep their own schema versions.
 ### Verified
 - Added export regression coverage proving thin exterior face pairs are omitted
   for review while thicker exterior face pairs remain placement-ready.
-- Rescanned the supplied medium PDF difficulty case `A20-102 PLAN 1. ETASJE.pdf`:
+- Rescanned the private medium benchmark PDF:
   clean exterior spans dropped from `7` to `4`, and the three lower-band thin
   exterior runs now report `thin_exterior_face_pair_review_required`.
 - Rendered and inspected the wall-only before/after QA image at
-  `%TEMP%/openplantrace-medium-a20-102-thin-exterior-face-guard-v1-before-after-walls.png`.
+  `%TEMP%/openplantrace-private-medium-thin-exterior-face-guard-v1-before-after-walls.png`.
 - Ran targeted placement/schema tests: `148` tests passed.
 
 ## [0.02.201] - 2026-06-22
@@ -49,11 +61,11 @@ fix counter. Individual JSON contracts keep their own schema versions.
 ### Verified
 - Added placement export regression coverage for emitted room-boundary blocker
   issues and import-readiness review codes.
-- Rescanned the supplied medium PDF difficulty case `A20-102 PLAN 1. ETASJE.pdf`:
+- Rescanned the private medium benchmark PDF:
   the placement export now reports `3` room-boundary blocker issues for the
   remaining unsafe room polygons while leaving scan counts stable.
 - Rendered and inspected the wall-only QA screenshot at
-  `%TEMP%/openplantrace-medium-a20-102-room-boundary-blocker-issues-v1-bath-entry.png`.
+  `%TEMP%/openplantrace-private-medium-room-boundary-blocker-issues-v1-bath-entry.png`.
 - Ran targeted placement/schema tests: `146` tests passed.
 - Ran the full test suite: `699` tests passed.
 
@@ -75,12 +87,12 @@ fix counter. Individual JSON contracts keep their own schema versions.
 ### Verified
 - Added placement export and schema regression coverage for placement-omitted
   room boundary walls and duplicate clean-topology boundary walls.
-- Rescanned the supplied medium PDF `A20-102 PLAN 1. ETASJE.pdf`: rooms `1` and
+- Rescanned the private medium benchmark PDF: rooms `1` and
   `2` still remain coordinate-ready, room `5` keeps duplicate clean topology
   walls as non-blocking duplicates, and room `3`, `6`, and `7` now expose exact
   `placementOmittedWallIds` blockers for review-only wall geometry.
 - Rendered and inspected the wall-only QA screenshot at
-  `%TEMP%/openplantrace-medium-a20-102-placement-omitted-boundary-v2-bath-entry.png`.
+  `%TEMP%/openplantrace-private-medium-placement-omitted-boundary-v2-bath-entry.png`.
 - Ran targeted placement/schema tests: `146` tests passed.
 - Ran the full test suite: `699` tests passed.
 
@@ -100,13 +112,13 @@ fix counter. Individual JSON contracts keep their own schema versions.
 ### Verified
 - Added placement export and schema regression coverage for shared
   room-supported fragment boundary walls.
-- Rescanned the supplied medium PDF `A20-102 PLAN 1. ETASJE.pdf`: `page:1:wall:126`
+- Rescanned the private medium benchmark PDF: `page:1:wall:126`
   moved from `coordinateBlockingWallIds` to `roomSupportedFragmentWallIds` for
   rooms `page:1:room:1` and `page:1:room:2`, while the more suspicious
   `page:1:wall:51` stayed coordinate-blocking for the semantic `Gang` room.
 - Rendered and inspected wall-only QA screenshots at
-  `%TEMP%/openplantrace-medium-a20-102-wallqa-room-supported-v1-full.png` and
-  `%TEMP%/openplantrace-medium-a20-102-wallqa-room-supported-v1-bath-entry.png`.
+  `%TEMP%/openplantrace-private-medium-wallqa-room-supported-v1-full.png` and
+  `%TEMP%/openplantrace-private-medium-wallqa-room-supported-v1-bath-entry.png`.
 - Ran targeted placement/schema tests: `144` tests passed.
 - Ran the full test suite: `697` tests passed.
 
@@ -124,12 +136,12 @@ fix counter. Individual JSON contracts keep their own schema versions.
 ### Verified
 - Added placement export and schema regression coverage for opening-only room
   boundary walls.
-- Rescanned the supplied medium PDF `A20-102 PLAN 1. ETASJE.pdf` with
+- Rescanned the private medium benchmark PDF with
   `wall-qa-focus`: `page:1:wall:23` moved from `coordinateBlockingWallIds` to
   `openingOnlyWallIds` for `page:1:room:6`, while scan counts stayed stable at
   `115` wall candidates and `19` placement-ready walls.
 - Rendered and inspected the wall-QA screenshot at
-  `%TEMP%/openplantrace-medium-a20-102-opening-only-boundary-v1.png`.
+  `%TEMP%/openplantrace-private-medium-opening-only-boundary-v1.png`.
 - Ran targeted placement/schema tests: `6` tests passed.
 - Ran the full test suite: `696` tests passed.
 
@@ -148,11 +160,11 @@ fix counter. Individual JSON contracts keep their own schema versions.
 ### Verified
 - Added export and schema regression coverage for room boundary reliability,
   coordinate-blocking wall IDs, and non-blocking duplicate boundary wall IDs.
-- Rescanned the supplied medium PDF `A20-102 PLAN 1. ETASJE.pdf` with
+- Rescanned the private medium benchmark PDF with
   `wall-qa-focus`: `19` placement-ready walls, `96` omitted/review walls,
   `7` rooms, and structured room blocker/duplicate IDs in `placement.json`.
 - Rendered and inspected the wall-QA screenshot at
-  `%TEMP%/openplantrace-medium-a20-102-boundary-reliability-v1.png`.
+  `%TEMP%/openplantrace-private-medium-boundary-reliability-v1.png`.
 - Ran targeted placement/schema tests: `5` tests passed.
 - Ran the full test suite: `695` tests passed.
 
@@ -170,12 +182,12 @@ fix counter. Individual JSON contracts keep their own schema versions.
 ### Verified
 - Added export regression coverage for normal review wall blockers, duplicate
   wall-face blockers, and recovered duplicate wall-body blockers.
-- Rescanned the supplied medium PDF `A20-102 PLAN 1. ETASJE.pdf`: duplicate
+- Rescanned the private medium benchmark PDF: duplicate
   boundary wall `page:1:wall:56` and recovered duplicate
   `page:1:wall-evidence-recovered:002` are no longer listed as room blockers,
   while real review blockers such as `page:1:wall:126` remain.
 - Rendered and inspected the wall-QA screenshot at
-  `%TEMP%/openplantrace-medium-a20-102-room-duplicate-boundary-v2.png`.
+  `%TEMP%/openplantrace-private-medium-room-duplicate-boundary-v2.png`.
 - Ran targeted room export tests: `4` tests passed.
 - Ran export tests: `96` tests passed.
 - Ran the full test suite: `695` tests passed.
@@ -195,14 +207,14 @@ fix counter. Individual JSON contracts keep their own schema versions.
 ### Verified
 - Added regression coverage for promoted topology-supported fragmented pairs,
   blocked weak one-ended pairs, short-dense readiness, and clean topology export.
-- Rescanned the supplied medium PDF `A20-102 PLAN 1. ETASJE.pdf` with
+- Rescanned the private medium benchmark PDF with
   `wall-qa` and `wall-qa-review`: placement-ready walls increased from `18` to
   `19`, omitted/review walls dropped from `97` to `96`, and
   `page:1:wall:11` now exports one clean topology span while nearby weak
   fragments remain omitted.
 - Rendered and inspected clean/review wall screenshots at
-  `%TEMP%/openplantrace-medium-a20-102-topology-frag-pair-v3-clean.png` and
-  `%TEMP%/openplantrace-medium-a20-102-topology-frag-pair-v3-review.png`.
+  `%TEMP%/openplantrace-private-medium-topology-frag-pair-v3-clean.png` and
+  `%TEMP%/openplantrace-private-medium-topology-frag-pair-v3-review.png`.
 - Ran targeted wall readiness/refinement/export tests: `136` tests passed.
 - Ran the full test suite: `693` tests passed.
 
@@ -221,12 +233,12 @@ fix counter. Individual JSON contracts keep their own schema versions.
 ### Verified
 - Added export/schema regression coverage for ready and review-only solid wall
   spans, plus viewer contract coverage for the clean-wall filter.
-- Rescanned the supplied medium PDF `A20-102 PLAN 1. ETASJE.pdf` with
+- Rescanned the private medium benchmark PDF with
   `wall-qa-focus`: `18` placement-ready walls, `97` omitted/review walls, and
   `99` unsafe/review-only solid spans explicitly marked unsafe in
   `placement.json`.
 - Rendered and inspected the wall-QA screenshot at
-  `%TEMP%/openplantrace-medium-a20-102-solid-span-readiness-v1.png`.
+  `%TEMP%/openplantrace-private-medium-solid-span-readiness-v1.png`.
 - Verified the viewer upload API on `127.0.0.1:5083` returns `115` walls with
   full topology/readiness data: `18` clean topology walls and `97`
   review/blocked walls.
@@ -249,13 +261,13 @@ fix counter. Individual JSON contracts keep their own schema versions.
 ### Verified
 - Added regression coverage for blocking weak promoted fragment boundaries and
   allowing the same pattern when reliable geometric room-boundary support exists.
-- Rescanned the supplied medium PDF `A20-102 PLAN 1. ETASJE.pdf` with a rendered
+- Rescanned the private medium benchmark PDF with a rendered
   page background and the `wall-qa-focus` overlay. Placement-ready walls dropped
   from `20` to `18`, omitted/review walls increased from `95` to `97`, and
   `page:1:wall:144` plus `page:1:wall:150` are now omitted with
   `weak_promoted_fragment_room_boundary_review_required`.
 - Rendered and inspected the wall-QA screenshot at
-  `%TEMP%/openplantrace-medium-a20-102-wall-qa-weak-fragment-v4.png`.
+  `%TEMP%/openplantrace-private-medium-wall-qa-weak-fragment-v4.png`.
 - Ran targeted wall readiness/export tests: `106` tests passed.
 - Ran the full test suite: `685` tests passed.
 
@@ -371,7 +383,7 @@ fix counter. Individual JSON contracts keep their own schema versions.
   clean topology spans while the skewed recovered-wall body footprint became a
   clean rectangle.
 - Rendered and inspected the wall-QA screenshot at
-  `%TEMP%/openplantrace-a20-102-pair-cap-skew-guard-v1-wallqa.png`.
+  `%TEMP%/openplantrace-private-medium-pair-cap-skew-guard-v1-wallqa.png`.
 - Ran targeted wall/export tests: `110` tests passed.
 - Ran the full test suite: `678` tests passed.
 
@@ -394,7 +406,7 @@ fix counter. Individual JSON contracts keep their own schema versions.
   walls stayed stable at `20`, clean topology spans stayed stable at `23`, and
   no ready-wall IDs changed versus `0.02.186`.
 - Rendered and inspected the wall-QA screenshot at
-  `%TEMP%/openplantrace-a20-102-outdoor-guard-v1-wallqa.png`.
+  `%TEMP%/openplantrace-private-medium-outdoor-guard-v1-wallqa.png`.
 - Ran targeted wall/export tests: `141` tests passed.
 - Ran the full test suite: `676` tests passed.
 
@@ -419,7 +431,7 @@ fix counter. Individual JSON contracts keep their own schema versions.
 - Confirmed `page:1:wall:22` is now placement-ready with one clean topology
   span while nearby `short_dense_detail_review_required` walls remain omitted.
 - Rendered and inspected the wall-QA screenshot at
-  `%TEMP%/openplantrace-a20-102-geometric-boundary-support-v1-wallqa.png`.
+  `%TEMP%/openplantrace-private-medium-geometric-boundary-support-v1-wallqa.png`.
 - Ran targeted wall/export tests: `150` tests passed.
 - Ran the full test suite: `673` tests passed.
 
@@ -440,14 +452,14 @@ fix counter. Individual JSON contracts keep their own schema versions.
 - Added regression coverage for geometric room-boundary wall support, outdoor
   boundary rejection, duplicated clean fragment promotion, and placement export
   unblock behavior.
-- Rescanned the supplied medium PDF (`A20-102 PLAN 1. ETASJE.pdf`) with
+- Rescanned the private medium benchmark PDF with
   `--svg-profile wall-qa`; placement-ready walls improved from `18` to `19`,
   visible clean topology spans improved from `21` to `22`, and blocked walls
   dropped from `97` to `96`.
 - Confirmed `page:1:wall:152` is now placement-ready with one clean topology
   span after room-boundary refinement.
 - Rendered and inspected the wall-QA screenshot at
-  `%TEMP%/openplantrace-a20-102-room-boundary-placement-v1-wallqa.png`.
+  `%TEMP%/openplantrace-private-medium-room-boundary-placement-v1-wallqa.png`.
 - Ran targeted wall/export tests: `149` tests passed.
 - Ran the full test suite: `672` tests passed.
 
@@ -468,7 +480,7 @@ fix counter. Individual JSON contracts keep their own schema versions.
 ### Verified
 - Added regression coverage for dominant dimension-cluster calibration with
   outliers and for viewer placement-wall reliability gating.
-- Rescanned the supplied medium PDF (`A20-102 PLAN 1. ETASJE.pdf`) with
+- Rescanned the private medium benchmark PDF with
   `--svg-profile wall-qa`; calibration is now selected at `17.638862`
   mm/drawing-unit with `11` consistent and `4` outlier dimensions.
 - Confirmed the fresh scan has `0` pipeline plan warnings and includes the new
@@ -493,14 +505,14 @@ fix counter. Individual JSON contracts keep their own schema versions.
 ### Verified
 - Added a regression test for clean fragment-merged interior room-boundary
   promotion.
-- Rescanned the supplied medium PDF (`A20-102 PLAN 1. ETASJE.pdf`) with
+- Rescanned the private medium benchmark PDF with
   `--svg-profile wall-qa`; wall-QA output improved from `16` to `18`
   placement-ready wall bodies and from `99` to `97` omitted/review walls.
 - Confirmed the known central fragments `page:1:wall:144` and
   `page:1:wall:150` are placement-ready, while nearby isolated/noisy fragments
   stay review-only.
 - Rendered and inspected the wall-only screenshot at
-  `real-pdf-output/medium-a20-102-20260622-room-fragment-promotion-v3/wall-qa-page-1.png`.
+  `real-pdf-output/private-medium-fixture-20260622-room-fragment-promotion-v3/wall-qa-page-1.png`.
 - Ran the full test suite: `667` tests passed.
 
 ## [0.02.182] - 2026-06-22
@@ -516,11 +528,11 @@ fix counter. Individual JSON contracts keep their own schema versions.
 
 ### Verified
 - Ran targeted export/viewer tests: `99` tests passed.
-- Rescanned the supplied medium PDF (`A20-102 PLAN 1. ETASJE.pdf`) with
+- Rescanned the private medium benchmark PDF with
   `--svg-profile wall-qa`; scan output stayed at `16` placement-ready walls and
   `99` omitted/review walls.
 - Rendered and inspected a clean wall-QA screenshot at
-  `real-pdf-output/medium-a20-102-20260622-clean-wallqa-v1/wall-qa-page-1.png`.
+  `real-pdf-output/private-medium-fixture-20260622-clean-wallqa-v1/wall-qa-page-1.png`.
 
 ## [0.02.181] - 2026-06-22
 
@@ -542,7 +554,7 @@ fix counter. Individual JSON contracts keep their own schema versions.
   short pairs and `1` very short pair, while placement stayed at `16` ready /
   `99` omitted.
 - Rendered and inspected a fresh wall-QA review screenshot at
-  `real-pdf-output/medium-a20-102-20260622-short-pair-taxonomy-v1/wall-qa-review-page-1.png`.
+  `real-pdf-output/private-medium-fixture-20260622-short-pair-taxonomy-v1/wall-qa-review-page-1.png`.
 - Ran the full test suite: `666` tests passed.
 
 ## [0.02.180] - 2026-06-22
@@ -566,7 +578,7 @@ fix counter. Individual JSON contracts keep their own schema versions.
   improved from `15` ready / `100` omitted to `16` ready / `99` omitted, and
   `page:1:wall-evidence-recovered:001` now exports a clean topology span.
 - Rendered and inspected a fresh wall-QA review screenshot at
-  `real-pdf-output/medium-a20-102-20260622-recovered-interior-v1/wall-qa-review-page-1.png`.
+  `real-pdf-output/private-medium-fixture-20260622-recovered-interior-v1/wall-qa-review-page-1.png`.
 - Ran the full test suite: `664` tests passed.
 
 ## [0.02.179] - 2026-06-22
@@ -584,7 +596,7 @@ fix counter. Individual JSON contracts keep their own schema versions.
   `sourceContext` layer stayed visible with 6,652 items but no longer produced a
   misleading density warning.
 - Rendered and inspected a fresh wall-QA review screenshot at
-  `real-pdf-output/medium-a20-102-20260622-source-context-density-v1/wall-qa-review-page-1.png`.
+  `real-pdf-output/private-medium-fixture-20260622-source-context-density-v1/wall-qa-review-page-1.png`.
 - Ran the full test suite: `661` tests passed.
 
 ## [0.02.178] - 2026-06-22
@@ -608,7 +620,7 @@ fix counter. Individual JSON contracts keep their own schema versions.
   `wall_evidence_review_required` dropped from `5` to `0`, with `4` short paired
   review candidates and `1` repeated short detail candidate now separated.
 - Rendered and inspected a fresh wall-QA review screenshot at
-  `real-pdf-output/medium-a20-102-20260622-specific-review-v1/wall-qa-review-page-1.png`.
+  `real-pdf-output/private-medium-fixture-20260622-specific-review-v1/wall-qa-review-page-1.png`.
 - Ran the full test suite: `660` tests passed.
 
 ## [0.02.177] - 2026-06-22
@@ -632,7 +644,7 @@ fix counter. Individual JSON contracts keep their own schema versions.
   `wall_evidence_review_required` dropped from `9` to `5`, and `4` ambiguous
   fragment candidates now report as `one_endpoint_fragment_review_required`.
 - Rendered and inspected a fresh wall-QA review screenshot at
-  `real-pdf-output/medium-a20-102-20260622-one-endpoint-v2/wall-qa-review-page-1.png`.
+  `real-pdf-output/private-medium-fixture-20260622-one-endpoint-v2/wall-qa-review-page-1.png`.
 - Ran the full test suite: `658` tests passed.
 
 ## [0.02.176] - 2026-06-22
@@ -653,7 +665,7 @@ fix counter. Individual JSON contracts keep their own schema versions.
   walls dropped from `17` to `15`, and `3` short dense detail candidates are
   now omitted with exact evidence instead of appearing as random wall strokes.
 - Rendered and inspected a fresh wall-QA screenshot at
-  `real-pdf-output/medium-a20-102-20260622-short-dense-v1/wall-qa-page-1.png`.
+  `real-pdf-output/private-medium-fixture-20260622-short-dense-v1/wall-qa-page-1.png`.
 - Ran the full test suite: `657` tests passed.
 
 ## [0.02.175] - 2026-06-22
