@@ -1305,6 +1305,23 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void SvgRenderer_WallQaReviewProfileSuppressesOpeningLinkedOneEndpointFragments()
+    {
+        var result = WithOpeningLinkedOneEndpointFragment(CreateDenseMinorRoutingDetailResult());
+
+        var svg = PlanOverlaySvgRenderer.RenderPage(
+            result,
+            1,
+            SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.WallQaReview));
+
+        Assert.Contains("data-profile=\"wall-qa-review\"", svg);
+        Assert.Contains("1 suppressed detail spans hidden", svg);
+        Assert.DoesNotContain("non-placement wall topology span edge-tooth-2", svg);
+        Assert.DoesNotContain("opening-linked-fragment", svg);
+        Assert.Contains("non-placement wall topology span edge-tooth-1", svg);
+    }
+
+    [Fact]
     public void SvgRenderer_WallQaProfileSuppressesSourceContextWhenBackgroundImageIsPresent()
     {
         var result = CreateDenseMinorRoutingDetailResult();
@@ -7267,6 +7284,66 @@ public sealed class ExportTests
                 result.WallEvidenceMap.Segments,
                 result.WallEvidenceMap.Bands,
                 result.WallEvidenceMap.WallAssessments.Append(assessment).ToArray(),
+                result.WallEvidenceMap.SourceCandidateWallCount,
+                result.WallEvidenceMap.RecoveredCandidateWallCount)
+        };
+    }
+
+    private static PlanScanResult WithOpeningLinkedOneEndpointFragment(PlanScanResult result)
+    {
+        var wall = result.Walls.Single(item => item.Id == "detail-tooth-2");
+        var fragmentWall = wall with
+        {
+            DetectionKind = WallDetectionKind.FragmentMerged,
+            WallType = WallType.Interior,
+            FragmentEvidence = new WallFragmentEvidence(
+                FragmentCount: 4,
+                TotalHealedGap: 0,
+                MaxHealedGap: 0,
+                DuplicatePrimitiveCount: 0,
+                GapRatio: 0,
+                RequiresGeometryReview: false,
+                Evidence: Array.Empty<string>()),
+            Evidence =
+            [
+                "wall evidence: unlayered fragment-merged wall candidate has only one trusted structural endpoint (4 fragments, gap ratio 0); keep for topology but block exact placement until reviewed"
+            ]
+        };
+        var assessment = new WallEvidenceWallAssessment(
+            fragmentWall.Id,
+            fragmentWall.PageNumber,
+            fragmentWall.Bounds,
+            WallEvidenceCategory.MediumWallBody,
+            Confidence.Medium,
+            PlacementReady: false,
+            RequiresReview: true,
+            RejectedAsNoise: false,
+            fragmentWall.SourcePrimitiveIds,
+            fragmentWall.Evidence)
+        {
+            Decision = WallEvidenceDecision.Review
+        };
+        var opening = AnchoredOpening(
+            "opening-linked-fragment",
+            fragmentWall,
+            OpeningType.Window,
+            OpeningOperation.Fixed,
+            0.25,
+            0.75);
+
+        return result with
+        {
+            Walls = result.Walls
+                .Select(item => item.Id == fragmentWall.Id ? fragmentWall : item)
+                .ToArray(),
+            Openings = result.Openings.Append(opening).ToArray(),
+            WallEvidenceMap = new WallEvidenceMap(
+                result.WallEvidenceMap.Segments,
+                result.WallEvidenceMap.Bands,
+                result.WallEvidenceMap.WallAssessments
+                    .Where(item => item.WallId != fragmentWall.Id)
+                    .Append(assessment)
+                    .ToArray(),
                 result.WallEvidenceMap.SourceCandidateWallCount,
                 result.WallEvidenceMap.RecoveredCandidateWallCount)
         };

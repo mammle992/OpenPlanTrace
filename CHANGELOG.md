@@ -6,6 +6,33 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.02.223] - 2026-06-23
+
+### Improved
+- Wall-QA review SVGs now suppress opening-linked one-endpoint wall/detail
+  fragments from the dashed amber review layer when the fragment is already
+  linked to a detected opening candidate.
+- The suppressed fragments remain available in placement JSON as issues and
+  import-readiness review codes, but screenshots are less likely to make known
+  door/window/detail linework look like possible wall geometry.
+- README visual-QA notes now document that opening-linked fragments are hidden
+  from the amber wall-review layer while remaining available as data.
+
+### Verified
+- Added renderer regression coverage proving an opening-linked one-endpoint
+  fragment is counted as suppressed detail and not drawn as an amber
+  non-placement wall span.
+- Rescanned the supplied medium PDF with `wall-qa-review`: raw wall detections
+  stayed at `115`, placement-ready walls stayed at `21`, clean topology spans
+  stayed at `24`, suppressed hidden detail spans increased from `80` to `81`,
+  and visible hidden non-placement topology spans dropped from `12` to `11`.
+- Validated the generated scan and placement artifacts, including deep placement
+  validation.
+- Rendered and inspected the wall-QA screenshot at
+  `real-pdf-output/medium-a20-102-20260623-opening-detail-suppressed-v1/wall-qa-review-plan-crop.png`.
+- Ran focused export tests: `119` tests passed.
+- Ran the full test suite: `731` tests passed.
+
 ## [0.02.222] - 2026-06-23
 
 ### Improved

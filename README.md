@@ -175,6 +175,10 @@ The viewer also includes an off-by-default `Raw detected walls` layer for audit-
 
 The `wall-qa`, `wall-qa-review`, and `wall-qa-focus` SVG profiles add a faint `sourceContext` linework layer when no PDF background image is embedded, so clean-wall screenshots remain visually comparable to the source plan without treating that context as detected output. Use `wall-qa` or `wall-qa-focus` for wall correctness screenshots; use `wall-qa-review` when diagnosing missing walls because it separates clean placement spans from faint dashed amber review-only spans. Amber review spans are diagnostic omissions, not coordinates a downstream placement engine should import.
 
+Opening-linked one-endpoint wall/detail fragments are suppressed from the
+`wall-qa-review` amber span layer and counted as hidden suppressed detail, while
+remaining available as placement issues and import-readiness review codes.
+
 Compact orthogonal paired-wall returns can be retained as secondary structural placement context when strong wall-body evidence, pair-score evidence, and endpoint support distinguish them from disconnected object/detail linework. This helps recover small L-shaped wall returns while keeping low-score paired details, dense stair/detail clusters, and object-like components out of clean placement topology.
 
 Endpoint-to-wall repair candidates are exported for QA without automatically punishing the host wall. A high-severity endpoint snap can still block the source/endpoint-side wall from coordinate placement, but the host wall remains eligible for clean topology when its own wall evidence, component classification, and placement spans are trustworthy.

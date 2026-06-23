@@ -128,7 +128,7 @@ internal static class WallTopologySpanVisibility
             .Where(span => span.PageNumber == pageNumber)
             .Where(span => !IsVisibleTopologySpan(span, context, options))
             .Where(span => options.IncludeSuppressedDetailWallTopologySpans
-                || !IsSuppressedDetailTopologySpan(span, context))
+                || !IsSuppressedDetailTopologySpan(span, context, result.Openings))
             .ToArray();
     }
 
@@ -141,7 +141,7 @@ internal static class WallTopologySpanVisibility
         return context.Spans
             .Where(span => span.PageNumber == pageNumber)
             .Where(span => !IsVisibleTopologySpan(span, context, options))
-            .Where(span => IsSuppressedDetailTopologySpan(span, context))
+            .Where(span => IsSuppressedDetailTopologySpan(span, context, result.Openings))
             .ToArray();
     }
 
@@ -214,7 +214,8 @@ internal static class WallTopologySpanVisibility
 
     private static bool IsSuppressedDetailTopologySpan(
         WallGraphTopologySpan span,
-        WallTopologySpanVisibilityContext context)
+        WallTopologySpanVisibilityContext context,
+        IReadOnlyList<OpeningCandidate> openings)
     {
         context.ComponentByWallId.TryGetValue(span.WallId, out var component);
         context.WallEvidenceAssessments.TryGetValue(span.WallId, out var assessment);
@@ -235,11 +236,51 @@ internal static class WallTopologySpanVisibility
             return true;
         }
 
+        if (IsOpeningLinkedOneEndpointFragmentSpan(span, assessment, openings))
+        {
+            return true;
+        }
+
         return assessment.Category is WallEvidenceCategory.DoorOrOpeningSymbol
             or WallEvidenceCategory.SurfacePatternDetail
             or WallEvidenceCategory.DimensionOrAnnotation
             or WallEvidenceCategory.ObjectOrFixtureDetail;
     }
+
+    private static bool IsOpeningLinkedOneEndpointFragmentSpan(
+        WallGraphTopologySpan span,
+        WallEvidenceWallAssessment assessment,
+        IReadOnlyList<OpeningCandidate> openings)
+    {
+        if (assessment.Category != WallEvidenceCategory.MediumWallBody
+            || assessment.Decision != WallEvidenceDecision.Review
+            || !assessment.RequiresReview
+            || span.SourceWall?.DetectionKind != WallDetectionKind.FragmentMerged)
+        {
+            return false;
+        }
+
+        var evidence = span.Evidence
+            .Concat(span.SourceWall.Evidence)
+            .Concat(assessment.Evidence)
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(assessment.ScoreBreakdown.NegativeEvidence)
+            .ToArray();
+        if (!ContainsEvidence(evidence, "unlayered fragment-merged wall candidate")
+            || !ContainsEvidence(evidence, "only one trusted structural endpoint"))
+        {
+            return false;
+        }
+
+        return openings.Any(opening => OpeningReferencesWall(opening, span.WallId));
+    }
+
+    private static bool OpeningReferencesWall(OpeningCandidate opening, string wallId) =>
+        string.Equals(opening.WallId, wallId, StringComparison.Ordinal)
+        || opening.HostWallIds.Contains(wallId, StringComparer.Ordinal)
+        || opening.AdjacentWallIds.Contains(wallId, StringComparer.Ordinal)
+        || opening.Placement?.AnchorWallIds.Contains(wallId, StringComparer.Ordinal) == true
+        || string.Equals(opening.Placement?.HostWallId, wallId, StringComparison.Ordinal);
 
     private static WallTopologySpanVisibilityContext BuildContext(PlanScanResult result) =>
         new(
