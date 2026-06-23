@@ -6,6 +6,37 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.03.004] - 2026-06-23
+
+### Improved
+- Non-orthogonal, dimension-like single-line wall candidates are now demoted
+  from placement-ready output when they lack explicit room-boundary,
+  room-adjacency, or exterior-shell support.
+- Short or fragmented dimension-like single-line candidates are also demoted
+  when they have no explicit room-boundary support, reducing cabinet, door,
+  stair, and dimension/detail linework being exported as clean wall geometry.
+- Wall type refinement diagnostics now count both non-orthogonal
+  dimension-like demotions and short/fragmented dimension-like demotions.
+
+### Verified
+- Added wall-type refinement tests proving the new dimension-like demotion rules
+  demote weak unsupported candidates while preserving explicitly
+  room-boundary-supported walls.
+- Ran focused wall refinement tests: `6` tests passed.
+- Ran the full test suite: `742` tests passed.
+- Ran the supplied hard, medium, and light PDF corpus in that order with
+  `wall-qa-review`, GeoJSON, placement JSON, visual snapshots, SVG overlays,
+  and Markdown report output.
+- The medium PDF clean wall output dropped from `45` placement-ready walls and
+  `49` clean topology spans to `40` placement-ready walls and `44` clean
+  topology spans, with oblique clean spans reduced from `3` to `0`.
+- The hard PDF demoted `1` additional short dimension-like wall candidate; the
+  light PDF was unchanged by the new rules.
+- Rendered and inspected wall-QA screenshots for the hard, medium, and light
+  corpus outputs. The medium screenshot is cleaner around diagonal detail
+  linework, but remaining false single-line furniture/detail spans and missed
+  true walls still need a larger graph-level wall recovery and support pass.
+
 ## [0.03.003] - 2026-06-23
 
 ### Improved

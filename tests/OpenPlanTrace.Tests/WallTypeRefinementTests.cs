@@ -1367,6 +1367,128 @@ public sealed class WallTypeRefinementTests
     }
 
     [Fact]
+    public async Task WallTypeRefinement_DemotesNonOrthogonalDimensionLikeSingleLinePlacementWall()
+    {
+        var wall = NonOrthogonalDimensionLikeInteriorWall("wall-diagonal-dimension-like", 100, 100, 160, 140);
+        var context = CreateContext("non-orthogonal-dimension-like-placement-demotion");
+        context.Walls.Add(wall);
+        context.WallGraph = GraphFor(wall);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.MediumWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var demoted = Assert.Single(context.WallEvidenceMap.WallAssessments);
+        Assert.False(demoted.PlacementReady);
+        Assert.True(demoted.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Review, demoted.Decision);
+        Assert.Contains(
+            demoted.Evidence,
+            item => item.Contains("non-orthogonal single-line candidate has dimension-like weak layer evidence", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "walls.architectural_type_refined"
+                && diagnostic.Properties["nonOrthogonalDimensionLikePlacementDemotedWallCount"] == "1");
+    }
+
+    [Fact]
+    public async Task WallTypeRefinement_KeepsNonOrthogonalDimensionLikeWallWithExplicitRoomBoundarySupport()
+    {
+        var wall = NonOrthogonalDimensionLikeInteriorWall("wall-diagonal-room-boundary", 100, 100, 160, 140);
+        var context = CreateContext("non-orthogonal-dimension-like-room-boundary-protection");
+        context.Walls.Add(wall);
+        context.Rooms.Add(Room("room-supported", RoomUseKind.Office, wall.Id));
+        context.WallGraph = GraphFor(wall);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.MediumWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var retained = Assert.Single(context.WallEvidenceMap.WallAssessments);
+        Assert.True(retained.PlacementReady);
+        Assert.False(retained.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Accept, retained.Decision);
+        Assert.DoesNotContain(
+            retained.Evidence,
+            item => item.Contains("non-orthogonal single-line candidate has dimension-like weak layer evidence", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "walls.architectural_type_refined"
+                && diagnostic.Properties["nonOrthogonalDimensionLikePlacementDemotedWallCount"] == "0");
+    }
+
+    [Fact]
+    public async Task WallTypeRefinement_DemotesShortDimensionLikeSingleLinePlacementWall()
+    {
+        var wall = ShortDimensionLikeInteriorWall("wall-short-dimension-like", 100, 100, 132, 100);
+        var context = CreateContext("short-dimension-like-placement-demotion");
+        context.Walls.Add(wall);
+        context.WallGraph = GraphFor(wall);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.MediumWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var demoted = Assert.Single(context.WallEvidenceMap.WallAssessments);
+        Assert.False(demoted.PlacementReady);
+        Assert.True(demoted.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Review, demoted.Decision);
+        Assert.Contains(
+            demoted.Evidence,
+            item => item.Contains("short or fragmented dimension-like single-line candidate", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "walls.architectural_type_refined"
+                && diagnostic.Properties["shortDimensionLikePlacementDemotedWallCount"] == "1");
+    }
+
+    [Fact]
+    public async Task WallTypeRefinement_KeepsShortDimensionLikeWallWithExplicitRoomBoundarySupport()
+    {
+        var wall = ShortDimensionLikeInteriorWall("wall-short-dimension-like-room", 100, 100, 132, 100);
+        var context = CreateContext("short-dimension-like-room-boundary-protection");
+        context.Walls.Add(wall);
+        context.Rooms.Add(Room("room-supported", RoomUseKind.Office, wall.Id));
+        context.WallGraph = GraphFor(wall);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.MediumWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var retained = Assert.Single(context.WallEvidenceMap.WallAssessments);
+        Assert.True(retained.PlacementReady);
+        Assert.False(retained.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Accept, retained.Decision);
+        Assert.DoesNotContain(
+            retained.Evidence,
+            item => item.Contains("short or fragmented dimension-like single-line candidate", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "walls.architectural_type_refined"
+                && diagnostic.Properties["shortDimensionLikePlacementDemotedWallCount"] == "0");
+    }
+
+    [Fact]
     public async Task WallTypeRefinement_DemotesUnsupportedHighScoreFragmentedUnlayeredPair()
     {
         var wall = new WallSegment(
@@ -1564,6 +1686,52 @@ public sealed class WallTypeRefinementTests
                 "layer (unlayered) classified Unknown (0,35)",
                 "layer evidence: no strong layer name or geometry evidence",
                 "wall evidence: strong double-edge wall body"
+            ]
+        };
+
+    private static WallSegment NonOrthogonalDimensionLikeInteriorWall(string id, double x1, double y1, double x2, double y2) =>
+        new(
+            id,
+            1,
+            new PlanLineSegment(new PlanPoint(x1, y1), new PlanPoint(x2, y2)),
+            4,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.SingleLine,
+            WallType = WallType.Interior,
+            SourcePrimitiveIds = new[] { $"{id}:source" },
+            Evidence =
+            [
+                "non-orthogonal wall-length vector",
+                "angle 34,18 degrees",
+                "layer (unlayered) classified Dimension (0,36)",
+                "layer evidence: contains dimension-like text",
+                "wall type interior: supported wall evidence inside exterior envelope",
+                "wall evidence: medium wall body from wall-like layer, length, or structural context"
+            ]
+        };
+
+    private static WallSegment ShortDimensionLikeInteriorWall(string id, double x1, double y1, double x2, double y2) =>
+        new(
+            id,
+            1,
+            new PlanLineSegment(new PlanPoint(x1, y1), new PlanPoint(x2, y2)),
+            4,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.SingleLine,
+            WallType = WallType.Interior,
+            SourcePrimitiveIds = new[] { $"{id}:source" },
+            Evidence =
+            [
+                "single wall-length vector run",
+                "run collapsed 1 duplicate or near-duplicate wall line primitive(s)",
+                "layer (unlayered) classified Dimension (0,36)",
+                "layer evidence: contains dimension-like text",
+                "fragment geometry: 1 fragment(s)",
+                "fragment geometry healed gap ratio 0",
+                "wall type interior: supported wall evidence inside exterior envelope",
+                "wall evidence: medium wall body from wall-like layer, length, or structural context"
             ]
         };
 

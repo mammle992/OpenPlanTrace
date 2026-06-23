@@ -185,6 +185,13 @@ exterior-shell evidence supports them. This reduces random clean wall spans in
 dense middle-plan details, but graph-level wall splitting and wall recovery are
 still the next major accuracy target for professional import quality.
 
+Dimension-like single-line cleanup also demotes non-orthogonal, short, or
+fragmented weak-layer wall candidates when no room-boundary, room-adjacency, or
+exterior-shell evidence supports them. This keeps door swings, cabinets,
+dimension fragments, stair details, and furniture strokes out of clean
+placement spans while preserving explicitly supported wall boundaries for
+review and import.
+
 The viewer also includes an off-by-default `Raw detected walls` layer for audit-only comparison against the clean placement spans. Keep this layer off for wall-QA screenshots unless the goal is to inspect detector mistakes directly.
 
 The `wall-qa`, `wall-qa-review`, and `wall-qa-focus` SVG profiles add a faint `sourceContext` linework layer when no PDF background image is embedded, so clean-wall screenshots remain visually comparable to the source plan without treating that context as detected output. For very large PDF primitive streams, source context is spatially prioritized around the visible wall/topology review area before the cap is applied, so the reference linework comes from the same plan neighborhood as the wall overlay instead of from unrelated first-in-file-order primitives. Use `wall-qa` or `wall-qa-focus` for wall correctness screenshots; use `wall-qa-review` when diagnosing missing walls because it separates clean placement spans from faint dashed amber review-only spans. Amber review spans are diagnostic omissions, not coordinates a downstream placement engine should import.
