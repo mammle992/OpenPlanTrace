@@ -2382,7 +2382,7 @@ public sealed class ScanQualityTests
     }
 
     [Fact]
-    public void PlacementExporter_AllowsTrustedTwoSidedFragmentMergedSecondaryRoomBoundaryWithoutExplicitRoomLink()
+    public void PlacementExporter_BlocksReviewOnlyTwoSidedFragmentMergedSecondaryRoomBoundaryWithoutExplicitRoomLink()
     {
         var regions = new[]
         {
@@ -2482,13 +2482,17 @@ public sealed class ScanQualityTests
         var exportedWall = document.RootElement.GetProperty("walls").EnumerateArray().Single(item =>
             item.GetProperty("id").GetString() == wall.Id);
 
-        Assert.DoesNotContain(wall.Id, reasons.Keys);
-        Assert.True(exportedWall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
-        Assert.NotEmpty(exportedWall.GetProperty("topologySpans").EnumerateArray());
-        Assert.Equal(JsonValueKind.Null, exportedWall.GetProperty("placementOmission").ValueKind);
-        Assert.False(
+        Assert.True(reasons.ContainsKey(wall.Id));
+        Assert.False(exportedWall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.Empty(exportedWall.GetProperty("topologySpans").EnumerateArray());
+        Assert.Equal(
+            "secondary_without_room_boundary_support",
+            exportedWall.GetProperty("placementOmission").GetProperty("code").GetString());
+        Assert.Equal(
+            1,
             document.RootElement.GetProperty("summary").GetProperty("wallPlacementOmissionCounts")
-                .TryGetProperty("secondary_without_room_boundary_support", out _));
+                .GetProperty("secondary_without_room_boundary_support")
+                .GetInt32());
     }
 
     [Fact]

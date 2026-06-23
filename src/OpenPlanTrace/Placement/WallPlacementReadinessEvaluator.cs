@@ -415,6 +415,8 @@ public static class WallPlacementReadinessEvaluator
             || wall.DrawingLength < MinTrustedTwoSidedFragmentMergedRoomBoundaryLengthDrawingUnits
             || wall.Confidence.Value < 0.78
             || evidenceAssessment.Confidence.Value < 0.78
+            || !evidenceAssessment.PlacementReady
+            || evidenceAssessment.RequiresReview
             || evidenceAssessment.RejectedAsNoise
             || evidenceAssessment.Decision == WallEvidenceDecision.Reject
             || evidenceAssessment.Category != WallEvidenceCategory.MediumWallBody
