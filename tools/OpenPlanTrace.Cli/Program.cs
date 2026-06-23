@@ -485,6 +485,15 @@ internal static class OpenPlanTraceCli
                     .ConfigureAwait(false);
             }
 
+            if (parsed.MarkdownPath is not null)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(parsed.MarkdownPath))!);
+                await File.WriteAllTextAsync(
+                        parsed.MarkdownPath,
+                        BatchScanMarkdownReport.Create(batch))
+                    .ConfigureAwait(false);
+            }
+
             WriteBatchSummary(batch, parsed);
             return batch.Passed ? 0 : 1;
         }
@@ -10007,6 +10016,11 @@ internal static class OpenPlanTraceCli
         {
             Console.WriteLine($"JSON: {Path.GetFullPath(parsed.JsonPath)}");
         }
+
+        if (parsed.MarkdownPath is not null)
+        {
+            Console.WriteLine($"Markdown: {Path.GetFullPath(parsed.MarkdownPath)}");
+        }
     }
 
     private static void WriteBatchCompareSummary(
@@ -10233,13 +10247,14 @@ internal static class OpenPlanTraceCli
     private static void WriteBatchUsage()
     {
         Console.WriteLine("Usage:");
-        Console.WriteLine("  openplantrace batch <file-or-directory>... --out-dir batch-output [--recursive] [--json batch.json] [--geojson] [--no-svg]");
-        Console.WriteLine("  openplantrace batch --manifest batch-manifest.json [--out-dir override-output] [--json override-batch.json]");
+        Console.WriteLine("  openplantrace batch <file-or-directory>... --out-dir batch-output [--recursive] [--json batch.json] [--markdown batch-report.md] [--geojson] [--no-svg]");
+        Console.WriteLine("  openplantrace batch --manifest batch-manifest.json [--out-dir override-output] [--json override-batch.json] [--markdown batch-report.md]");
         Console.WriteLine();
         Console.WriteLine("Options:");
         Console.WriteLine("  --manifest <path>         Load inputs, output behavior, profiles, and scanner options from a batch manifest");
         Console.WriteLine("  --out-dir <directory>     Required output directory for per-file scan folders");
         Console.WriteLine("  --json <path>             Write batch summary JSON, default <out-dir>/batch.json");
+        Console.WriteLine("  --markdown <path>         Write a human-readable corpus QA report with per-file artifact links and review priorities");
         Console.WriteLine("  --geojson                 Write scan.geojson beside each per-file scan.json");
         Console.WriteLine("  --recursive               Recurse into input directories");
         Console.WriteLine("  --no-svg                  Do not write per-page SVG overlays; visual-snapshot.json is still written without SVG links");
@@ -12082,6 +12097,8 @@ internal sealed class BatchArguments : IVisualAiCliArguments
 
     public string? JsonPath { get; set; }
 
+    public string? MarkdownPath { get; set; }
+
     public bool Recursive { get; set; }
 
     public bool NoSvg { get; set; }
@@ -12208,6 +12225,9 @@ internal sealed class BatchArguments : IVisualAiCliArguments
                     break;
                 case "--json":
                     parsed.JsonPath = ReadValue(args, ref index, arg);
+                    break;
+                case "--markdown":
+                    parsed.MarkdownPath = ReadValue(args, ref index, arg);
                     break;
                 case "--recursive":
                     parsed.Recursive = true;

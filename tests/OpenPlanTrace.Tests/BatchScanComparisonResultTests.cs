@@ -109,6 +109,43 @@ public sealed class BatchScanComparisonResultTests
         Assert.Contains("scan+visual+geojson+placement+svg -> scan+visual+geojson+placement+svg", markdown);
     }
 
+    [Fact]
+    public void BatchScanMarkdownReport_IncludesCorpusQaTableReviewPrioritiesAndArtifactIndex()
+    {
+        var run = CreateRun(
+            "candidate",
+            CreateItem(
+                walls: 39,
+                rooms: 0,
+                openings: 4,
+                objects: 12,
+                objectAggregates: 3,
+                visualDrawableItems: 640,
+                durationMilliseconds: 1350,
+                scanJsonPath: @"C:\runs\candidate\scan.json",
+                visualSnapshotPath: @"C:\runs\candidate\visual-snapshot.json",
+                geoJsonPath: @"C:\runs\candidate\scan.geojson",
+                placementJsonPath: @"C:\runs\candidate\placement.json",
+                overlayDirectory: @"C:\runs\candidate\overlays"));
+
+        var markdown = BatchScanMarkdownReport.Create(run);
+
+        Assert.Contains("# OpenPlanTrace Batch Scan Report", markdown);
+        Assert.Contains("Status: REVIEW", markdown);
+        Assert.Contains("| Item | Status | Source | Quality | Geometry | Visual QA | Diagnostics | Artifacts |", markdown);
+        Assert.Contains("walls 39, nodes 24, rooms 0", markdown);
+        Assert.Contains("scan+visual+geojson+placement+svg", markdown);
+        Assert.Contains("## Corpus Signals", markdown);
+        Assert.Contains("Geometry totals: walls 39, rooms 0, openings 4", markdown);
+        Assert.Contains("Visual issue codes: visual.overlay_coverage_high:1", markdown);
+        Assert.Contains("## Review Priorities", markdown);
+        Assert.Contains("quality review required", markdown);
+        Assert.Contains("walls detected but no rooms solved", markdown);
+        Assert.Contains("## Artifact Index", markdown);
+        Assert.Contains(@"C:\runs\candidate\placement.json", markdown);
+        Assert.Contains("## Next Actions", markdown);
+    }
+
     private static BatchScanRunResult CreateRun(
         string outputDirectoryName,
         params BatchScanItemResult[] items) =>

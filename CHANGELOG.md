@@ -6,6 +6,37 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.03.000] - 2026-06-23
+
+### Added
+- Batch scans can now write a human-readable corpus QA report with
+  `--markdown <path>`.
+- The report separates machine success from human QA status with `PASS`,
+  `REVIEW`, and `BLOCKED` states.
+- The report includes a per-file corpus table, geometry totals, repeated visual
+  issue-code rollups, review burden, quality/source summaries, slowest scans,
+  review priorities, artifact indexes, and next actions.
+- Batch CLI help, README batch workflow docs, and the roadmap now document the
+  corpus QA report as the human review layer beside schema-versioned
+  `batch.json`.
+
+### Verified
+- Added regression coverage for the batch corpus Markdown report.
+- Ran focused batch report tests: `4` tests passed.
+- Ran a three-PDF local corpus using the supplied light/medium/hard plan set
+  with `wall-qa-review`, GeoJSON, placement JSON, visual snapshots, SVG overlays,
+  and the new Markdown report.
+- The corpus run completed with `3` succeeded files, `0` scan failures, report
+  status `REVIEW`, `345` walls, `31` rooms, `94` openings, `1048` objects,
+  `16` object aggregates, `514` routing items, `4` surface/detail patterns,
+  `9` visual issues, `25` diagnostic warnings, and `0` diagnostic errors.
+- Deep validation passed for the generated batch result.
+- Rendered and inspected wall-QA screenshots at
+  `real-pdf-output/corpus-qa-20260623-v1/wall-qa-light.png`,
+  `real-pdf-output/corpus-qa-20260623-v1/wall-qa-medium.png`, and
+  `real-pdf-output/corpus-qa-20260623-v1/wall-qa-hard.png`.
+- Ran the full test suite: `732` tests passed.
+
 ## [0.02.223] - 2026-06-23
 
 ### Improved
