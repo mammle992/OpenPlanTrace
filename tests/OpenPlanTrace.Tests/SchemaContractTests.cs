@@ -429,7 +429,7 @@ public sealed class SchemaContractTests
         using var document = JsonDocument.Parse(schema);
 
         Assert.Equal("https://json-schema.org/draft/2020-12/schema", document.RootElement.GetProperty("$schema").GetString());
-        Assert.Equal("urn:openplantrace:schema:placement:v10", document.RootElement.GetProperty("$id").GetString());
+        Assert.Equal("urn:openplantrace:schema:placement:v11", document.RootElement.GetProperty("$id").GetString());
         Assert.Equal(
             PlanPlacementExport.CurrentSchemaVersion,
             document.RootElement.GetProperty("x-openplantrace-schemaVersion").GetString());
@@ -490,6 +490,23 @@ public sealed class SchemaContractTests
         Assert.Equal("OpenPlanTracePageCoordinates", coordinateSystem.GetProperty("coordinateSpace").GetString());
         Assert.Equal("x,y", coordinateSystem.GetProperty("coordinateOrder").GetString());
         Assert.True(exportedDocument.RootElement.GetProperty("walls").GetArrayLength() > 0);
+        var summary = exportedDocument.RootElement.GetProperty("summary");
+        var wallSets = exportedDocument.RootElement.GetProperty("wallSets");
+        Assert.Equal(
+            summary.GetProperty("placementReadyWallCount").GetInt32(),
+            wallSets.GetProperty("placementReadyWallIds").GetArrayLength());
+        Assert.Equal(
+            summary.GetProperty("placementReviewWallCount").GetInt32(),
+            wallSets.GetProperty("placementReviewWallIds").GetArrayLength());
+        Assert.Equal(
+            summary.GetProperty("representedWallCount").GetInt32(),
+            wallSets.GetProperty("representedWallIds").GetArrayLength());
+        Assert.Equal(
+            summary.GetProperty("placementSuppressedWallCount").GetInt32(),
+            wallSets.GetProperty("placementSuppressedWallIds").GetArrayLength());
+        Assert.Equal(
+            summary.GetProperty("placementOmittedWallCount").GetInt32(),
+            wallSets.GetProperty("placementOmittedWallIds").GetArrayLength());
     }
 
     [Fact]
@@ -541,6 +558,7 @@ public sealed class SchemaContractTests
         using var schemaDocument = JsonDocument.Parse(PlanPlacementJsonSchema.ReadCurrent());
 
         AssertDefinitionRequires(schemaDocument, "document", "id", "sourceName", "sourcePath", "sourceFormat", "loader", "sourceKind", "effectiveSourceKind", "clipboardContentKind", "fileExtension", "contentType", "isDwgDerived", "dwgConversion", "dwgConverter", "dwgIntermediateFormat", "dwgIntermediateLoader", "rasterAdapter", "rasterExtractor", "rasterExtractorVersion", "rasterModelName", "rasterModelVersion", "properties");
+        AssertDefinitionRequires(schemaDocument, "wallSets", "placementReadyWallIds", "placementReviewWallIds", "representedWallIds", "placementSuppressedWallIds", "placementOmittedWallIds", "placementOmittedWallIdsByCode", "reliabilityTrackedWallIds", "evidence");
         AssertDefinitionRequires(schemaDocument, "summary", "pageCount", "mainFloorplanRegionCount", "surfacePatternCount", "wallCount", "structuralWallCount", "excludedWallCount", "placementReadyWallCount", "placementOmittedWallCount", "representedWallCount", "placementSuppressedWallCount", "placementReviewWallCount", "wallTopologySpanCount", "sourceBackedFallbackWallCount", "sourceBackedFallbackTopologySpanCount", "wallSolidSpanCount", "wallPlacementOmissionCounts", "roomCount", "openingCount", "anchoredOpeningCount", "unanchoredOpeningCount", "objectAggregateCount", "wallGraphRepairCandidateCount", "suppressedChildObjectCount", "routingBarrierCount", "routingPassageCount", "routingObstacleCount", "routingRoomUseHintCount", "routingSuppressedObjectCount", "routingItemCount", "totalPlacementEntityCount", "reliabilityTrackedEntityCount", "coordinateReadyEntityCount", "metricReadyEntityCount", "reviewRequiredEntityCount", "coordinateReadyRatio", "metricReadyRatio", "issueCount", "infoIssueCount", "warningIssueCount", "errorIssueCount", "sourcePrimitiveReferenceCount", "uniqueSourcePrimitiveReferenceCount", "importReadiness", "pageSummaries", "evidence");
         AssertDefinitionRequires(schemaDocument, "importReadiness", "grade", "score", "readyForGeometryImport", "readyForMetricImport", "readyForRoutingImport", "requiresReview", "blockingIssueCodes", "reviewIssueCodes", "recommendedActions", "evidence");
         AssertDefinitionRequires(schemaDocument, "pageSummary", "pageNumber", "pageBounds", "mainFloorplanBounds", "detectionBounds", "detectionBoundsMillimeters", "surfacePatternCount", "wallCount", "structuralWallCount", "excludedWallCount", "placementReadyWallCount", "placementOmittedWallCount", "representedWallCount", "placementSuppressedWallCount", "placementReviewWallCount", "wallTopologySpanCount", "sourceBackedFallbackWallCount", "sourceBackedFallbackTopologySpanCount", "wallSolidSpanCount", "wallPlacementOmissionCounts", "roomCount", "openingCount", "anchoredOpeningCount", "unanchoredOpeningCount", "objectAggregateCount", "wallGraphRepairCandidateCount", "routingItemCount", "reliabilityTrackedEntityCount", "coordinateReadyEntityCount", "metricReadyEntityCount", "reviewRequiredEntityCount", "issueCount");

@@ -1895,6 +1895,11 @@ internal static class OpenPlanTraceCli
         }
 
         var walls = ValidatePlacementArray(root, "walls", "wall", ValidatePlacementWall, messages);
+        if (TryReadObjectProperty(root, "wallSets", "Placement export", messages, out var wallSets))
+        {
+            ValidatePlacementWallSets(wallSets, walls, messages);
+        }
+
         var rooms = ValidatePlacementArray(root, "rooms", "room", ValidatePlacementRoom, messages);
         var openings = ValidatePlacementArray(root, "openings", "opening", ValidatePlacementOpening, messages);
         var objectAggregates = ValidatePlacementArray(root, "objectAggregates", "object aggregate", ValidatePlacementObjectAggregate, messages);
@@ -1929,6 +1934,107 @@ internal static class OpenPlanTraceCli
                 hasRoutingLayer,
                 issues,
                 messages);
+        }
+    }
+
+    private static void ValidatePlacementWallSets(
+        JsonElement wallSets,
+        JsonElement[] walls,
+        ICollection<ArtifactValidationMessage> messages)
+    {
+        const string Prefix = "Placement wallSets";
+
+        ValidateRequiredStringArrayProperty(wallSets, Prefix, "placementReadyWallIds", messages);
+        ValidateRequiredStringArrayProperty(wallSets, Prefix, "placementReviewWallIds", messages);
+        ValidateRequiredStringArrayProperty(wallSets, Prefix, "representedWallIds", messages);
+        ValidateRequiredStringArrayProperty(wallSets, Prefix, "placementSuppressedWallIds", messages);
+        ValidateRequiredStringArrayProperty(wallSets, Prefix, "placementOmittedWallIds", messages);
+        ValidateRequiredStringArrayProperty(wallSets, Prefix, "reliabilityTrackedWallIds", messages);
+        ValidateRequiredStringArrayProperty(wallSets, Prefix, "evidence", messages);
+
+        ValidateExpectedStringSet(
+            wallSets,
+            Prefix,
+            "placementReadyWallIds",
+            PlacementReadyWalls(walls),
+            messages);
+        ValidateExpectedStringSet(
+            wallSets,
+            Prefix,
+            "placementReviewWallIds",
+            PlacementReviewWalls(walls),
+            messages);
+        ValidateExpectedStringSet(
+            wallSets,
+            Prefix,
+            "representedWallIds",
+            walls.Where(wall => IsRepresentedWallCode(PlacementOmissionCode(wall))).Select(PlacementWallId),
+            messages);
+        ValidateExpectedStringSet(
+            wallSets,
+            Prefix,
+            "placementSuppressedWallIds",
+            walls.Where(wall => IsPlacementSuppressedWallCode(PlacementOmissionCode(wall))).Select(PlacementWallId),
+            messages);
+        ValidateExpectedStringSet(
+            wallSets,
+            Prefix,
+            "placementOmittedWallIds",
+            walls.Where(HasPlacementOmission).Select(PlacementWallId),
+            messages);
+        ValidateExpectedStringSet(
+            wallSets,
+            Prefix,
+            "reliabilityTrackedWallIds",
+            walls.Where(IsPlacementReliabilityTrackedWall).Select(PlacementWallId),
+            messages);
+
+        if (!TryReadObjectProperty(wallSets, "placementOmittedWallIdsByCode", Prefix, messages, out var omittedByCode))
+        {
+            return;
+        }
+
+        var expectedByCode = walls
+            .Where(HasPlacementOmission)
+            .GroupBy(wall => PlacementOmissionCode(wall)!, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => NormalizeStringSet(group.Select(PlacementWallId)),
+                StringComparer.Ordinal);
+        var actualCodes = omittedByCode.EnumerateObject()
+            .Select(property => property.Name)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var expectedCodes = expectedByCode.Keys.Order(StringComparer.Ordinal).ToArray();
+        if (!actualCodes.SequenceEqual(expectedCodes, StringComparer.Ordinal))
+        {
+            messages.Add(new ArtifactValidationMessage(
+                "error",
+                $"{Prefix} placementOmittedWallIdsByCode keys must match wall placement omission codes."));
+        }
+
+        foreach (var property in omittedByCode.EnumerateObject())
+        {
+            if (property.Value.ValueKind != JsonValueKind.Array)
+            {
+                messages.Add(new ArtifactValidationMessage(
+                    "error",
+                    $"{Prefix} placementOmittedWallIdsByCode.{property.Name} must be an array."));
+                continue;
+            }
+
+            if (!expectedByCode.TryGetValue(property.Name, out var expectedIds))
+            {
+                continue;
+            }
+
+            var actualIds = NormalizeStringSet(ReadStringArrayForDeep(omittedByCode, property.Name));
+            if (!actualIds.SequenceEqual(expectedIds, StringComparer.Ordinal))
+            {
+                messages.Add(new ArtifactValidationMessage(
+                    "error",
+                    $"{Prefix} placementOmittedWallIdsByCode.{property.Name} must match wall records with that omission code."));
+            }
         }
     }
 
@@ -2283,11 +2389,63 @@ internal static class OpenPlanTraceCli
             or "structural_topology_excluded");
     }
 
+    private static IEnumerable<string> PlacementReadyWalls(JsonElement[] walls) =>
+        walls.Where(wall => !HasPlacementOmission(wall)
+                && wall.TryGetProperty("reliability", out var reliability)
+                && reliability.ValueKind == JsonValueKind.Object
+                && ReadBooleanProperty(reliability, "readyForCoordinatePlacement") == true)
+            .Select(PlacementWallId);
+
+    private static IEnumerable<string> PlacementReviewWalls(JsonElement[] walls) =>
+        walls.Where(wall =>
+            {
+                var code = PlacementOmissionCode(wall);
+                return code is not null
+                    && !IsRepresentedWallCode(code)
+                    && !IsPlacementSuppressedWallCode(code);
+            })
+            .Select(PlacementWallId);
+
+    private static string PlacementWallId(JsonElement wall) =>
+        ReadStringProperty(wall, "id") ?? string.Empty;
+
+    private static void ValidateExpectedStringSet(
+        JsonElement root,
+        string displayName,
+        string propertyName,
+        IEnumerable<string> expected,
+        ICollection<ArtifactValidationMessage> messages)
+    {
+        var actualValues = NormalizeStringSet(ReadStringArrayForDeep(root, propertyName));
+        var expectedValues = NormalizeStringSet(expected);
+        if (actualValues.SequenceEqual(expectedValues, StringComparer.Ordinal))
+        {
+            return;
+        }
+
+        var missing = expectedValues.Except(actualValues, StringComparer.Ordinal).Take(4).ToArray();
+        var extra = actualValues.Except(expectedValues, StringComparer.Ordinal).Take(4).ToArray();
+        var details = string.Join(
+            "; ",
+            new[]
+            {
+                missing.Length > 0 ? $"missing {string.Join(", ", missing)}" : null,
+                extra.Length > 0 ? $"extra {string.Join(", ", extra)}" : null
+            }.Where(item => item is not null));
+        messages.Add(new ArtifactValidationMessage(
+            "error",
+            $"{displayName} {propertyName} must match wall records.{(details.Length > 0 ? " " + details : string.Empty)}"));
+    }
+
+    private static string[] NormalizeStringSet(IEnumerable<string> values) =>
+        values
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
     private static int PlacementReadyWallCount(JsonElement[] walls) =>
-        walls.Count(wall => !HasPlacementOmission(wall)
-            && wall.TryGetProperty("reliability", out var reliability)
-            && reliability.ValueKind == JsonValueKind.Object
-            && ReadBooleanProperty(reliability, "readyForCoordinatePlacement") == true);
+        PlacementReadyWalls(walls).Count();
 
     private static int PlacementOmittedWallCount(JsonElement[] walls) =>
         walls.Count(HasPlacementOmission);
@@ -2299,13 +2457,7 @@ internal static class OpenPlanTraceCli
         walls.Count(wall => IsPlacementSuppressedWallCode(PlacementOmissionCode(wall)));
 
     private static int PlacementReviewWallCount(JsonElement[] walls) =>
-        walls.Count(wall =>
-        {
-            var code = PlacementOmissionCode(wall);
-            return code is not null
-                && !IsRepresentedWallCode(code)
-                && !IsPlacementSuppressedWallCode(code);
-        });
+        PlacementReviewWalls(walls).Count();
 
     private static bool IsRepresentedWallCode(string? code) =>
         code is "duplicate_clean_topology_span" or "duplicate_wall_face";

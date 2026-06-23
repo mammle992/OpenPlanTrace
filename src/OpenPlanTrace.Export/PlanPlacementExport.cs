@@ -58,6 +58,7 @@ public sealed record PlanPlacementExport(
     IReadOnlyList<PlacementPageExport> Pages,
     IReadOnlyList<PlacementSurfacePatternExport> SurfacePatterns,
     IReadOnlyList<PlacementWallExport> Walls,
+    PlacementWallSetsExport WallSets,
     IReadOnlyList<PlacementRoomExport> Rooms,
     IReadOnlyList<PlacementOpeningExport> Openings,
     IReadOnlyList<PlacementObjectAggregateExport> ObjectAggregates,
@@ -66,7 +67,7 @@ public sealed record PlanPlacementExport(
     PlacementRoutingLayerExport RoutingLayer,
     IReadOnlyList<PlacementIssueExport> Issues)
 {
-    public const string CurrentSchemaVersion = "openplantrace.placement.v10";
+    public const string CurrentSchemaVersion = "openplantrace.placement.v11";
 
     public static PlanPlacementExport From(PlanScanResult result)
     {
@@ -143,6 +144,7 @@ public sealed record PlanPlacementExport(
             wallEvidenceAssessments);
         var placementRoutingLayer = PlacementRoutingLayerExport.From(routingLayer, result.Calibration, sourceLookup);
         var issues = PlacementIssueExport.From(result, sourceLookup, rooms, placementWallsById).ToArray();
+        var wallSets = PlacementWallSetsExport.From(walls);
 
         var summary = PlacementSummaryExport.From(
             result,
@@ -168,6 +170,7 @@ public sealed record PlanPlacementExport(
             pages,
             surfacePatterns,
             walls,
+            wallSets,
             rooms,
             openings,
             objectAggregates,
@@ -517,7 +520,10 @@ public sealed record PlacementSummaryExport(
         total == 0 ? 1.0 : Math.Round(value / (double)total, 6);
 
     internal static int CountPlacementReadyWalls(IEnumerable<PlacementWallExport> walls) =>
-        walls.Count(wall => wall.PlacementOmission is null && wall.Reliability.ReadyForCoordinatePlacement);
+        walls.Count(IsPlacementReadyWall);
+
+    internal static bool IsPlacementReadyWall(PlacementWallExport wall) =>
+        wall.PlacementOmission is null && wall.Reliability.ReadyForCoordinatePlacement;
 
     internal static int CountRepresentedWalls(IEnumerable<PlacementWallExport> walls) =>
         walls.Count(IsRepresentedWall);
@@ -529,10 +535,12 @@ public sealed record PlacementSummaryExport(
         walls.Count(IsPlacementSuppressedWall);
 
     internal static int CountPlacementReviewWalls(IEnumerable<PlacementWallExport> walls) =>
-        walls.Count(wall =>
-            wall.PlacementOmission is not null
-            && !IsRepresentedWall(wall)
-            && !IsPlacementSuppressedWall(wall));
+        walls.Count(IsPlacementReviewWall);
+
+    internal static bool IsPlacementReviewWall(PlacementWallExport wall) =>
+        wall.PlacementOmission is not null
+        && !IsRepresentedWall(wall)
+        && !IsPlacementSuppressedWall(wall);
 
     internal static bool IsPlacementSuppressedWall(PlacementWallExport wall) =>
         wall.PlacementOmission?.Code is
@@ -672,6 +680,62 @@ public sealed record PlacementSummaryExport(
 
         return evidence;
     }
+}
+
+public sealed record PlacementWallSetsExport(
+    IReadOnlyList<string> PlacementReadyWallIds,
+    IReadOnlyList<string> PlacementReviewWallIds,
+    IReadOnlyList<string> RepresentedWallIds,
+    IReadOnlyList<string> PlacementSuppressedWallIds,
+    IReadOnlyList<string> PlacementOmittedWallIds,
+    IReadOnlyDictionary<string, IReadOnlyList<string>> PlacementOmittedWallIdsByCode,
+    IReadOnlyList<string> ReliabilityTrackedWallIds,
+    IReadOnlyList<string> Evidence)
+{
+    public static PlacementWallSetsExport From(IReadOnlyList<PlacementWallExport> walls)
+    {
+        ArgumentNullException.ThrowIfNull(walls);
+
+        var placementReadyWallIds = Ids(walls.Where(PlacementSummaryExport.IsPlacementReadyWall));
+        var placementReviewWallIds = Ids(walls.Where(PlacementSummaryExport.IsPlacementReviewWall));
+        var representedWallIds = Ids(walls.Where(PlacementSummaryExport.IsRepresentedWall));
+        var placementSuppressedWallIds = Ids(walls.Where(PlacementSummaryExport.IsPlacementSuppressedWall));
+        var placementOmittedWallIds = Ids(walls.Where(wall => wall.PlacementOmission is not null));
+        var reliabilityTrackedWallIds = Ids(walls.Where(PlacementSummaryExport.IsReliabilityTrackedWall));
+        var omittedByCode = walls
+            .Where(wall => wall.PlacementOmission is not null)
+            .GroupBy(wall => wall.PlacementOmission!.Code, StringComparer.Ordinal)
+            .OrderBy(group => group.Key, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<string>)Ids(group),
+                StringComparer.Ordinal);
+
+        return new PlacementWallSetsExport(
+            placementReadyWallIds,
+            placementReviewWallIds,
+            representedWallIds,
+            placementSuppressedWallIds,
+            placementOmittedWallIds,
+            omittedByCode,
+            reliabilityTrackedWallIds,
+            new[]
+            {
+                $"placement-ready wall ids {placementReadyWallIds.Length}",
+                $"placement-review wall ids {placementReviewWallIds.Length}",
+                $"represented duplicate/context wall ids {representedWallIds.Length}",
+                $"suppressed noise/detail/opening wall ids {placementSuppressedWallIds.Length}",
+                "Use placementReadyWallIds for exact wall import; use placementReviewWallIds only after review."
+            });
+    }
+
+    private static string[] Ids(IEnumerable<PlacementWallExport> walls) =>
+        walls
+            .Select(wall => wall.Id)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
 }
 
 public sealed record PlacementImportReadinessExport(

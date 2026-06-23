@@ -743,6 +743,16 @@ public sealed class CliPlacementValidationTests
               "evidence": ["test wall"]
             }
           ],
+          "wallSets": {
+            "placementReadyWallIds": ["wall-1"],
+            "placementReviewWallIds": [],
+            "representedWallIds": [],
+            "placementSuppressedWallIds": [],
+            "placementOmittedWallIds": [],
+            "placementOmittedWallIdsByCode": {},
+            "reliabilityTrackedWallIds": ["wall-1"],
+            "evidence": ["test wall set"]
+          },
           "rooms": [
             {
               "id": "room-1",
