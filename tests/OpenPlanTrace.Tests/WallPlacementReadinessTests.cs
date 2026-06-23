@@ -1138,6 +1138,43 @@ public sealed class WallPlacementReadinessTests
             readiness.Reasons);
     }
 
+    [Fact]
+    public void Evaluate_BlocksCoveredEntryBoundaryWithoutShellSupport()
+    {
+        var wall = Wall("wall:covered-entry-boundary", Confidence.High) with
+        {
+            WallType = WallType.Unknown,
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            Evidence =
+            [
+                "wall type refined unknown: shared outdoor/terrace room evidence is not trusted as exterior without shell support; outdoor covered-area boundary",
+                "layer evidence: no strong layer name or geometry evidence"
+            ]
+        };
+        var component = Component(
+            WallGraphComponentKind.MainStructural,
+            excludedFromStructuralTopology: false,
+            wall.Id);
+        var evidence = Evidence(wall, WallEvidenceCategory.MediumWallBody, placementReady: true) with
+        {
+            Evidence = wall.Evidence
+        };
+
+        var readiness = WallPlacementReadinessEvaluator.Evaluate(
+            wall,
+            ReliableCalibration(),
+            component,
+            evidence);
+
+        Assert.False(readiness.ReadyForCoordinatePlacement);
+        Assert.False(readiness.ReadyForMetricPlacement);
+        Assert.True(readiness.RequiresReview);
+        Assert.True(readiness.CoordinatePlacementBlocked);
+        Assert.Contains(
+            "outdoor/terrace room evidence alone is not trusted as exterior wall placement support",
+            readiness.Reasons);
+    }
+
     private static WallSegment Wall(string id, Confidence confidence) =>
         new(
             id,

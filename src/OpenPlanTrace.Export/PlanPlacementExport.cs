@@ -1784,7 +1784,10 @@ public sealed record PlacementWallOmissionExport(
         || evidence.Contains("repeated short unlayered", StringComparison.OrdinalIgnoreCase)
         || evidence.Contains("short high-density unknown-layer wall/detail candidate", StringComparison.OrdinalIgnoreCase)
         || evidence.Contains("opening-linked wall fragment", StringComparison.OrdinalIgnoreCase)
-        || evidence.Contains("tiny door-adjacent placement topology piece", StringComparison.OrdinalIgnoreCase);
+        || evidence.Contains("tiny door-adjacent placement topology piece", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("outdoor covered-area boundary", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("unpaired outdoor covered-area boundary", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("covered-area boundary", StringComparison.OrdinalIgnoreCase);
 
     private static IReadOnlyList<string> BuildSuppressedOpeningTopologyEvidence(
         WallSegment wall,

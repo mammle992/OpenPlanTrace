@@ -651,6 +651,18 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         {
             if (hasOutdoorRoomReference)
             {
+                if (IsUntrustedOutdoorExteriorPromotionCandidate(wall, assessment))
+                {
+                    var refinedType = IsRecoveredMissingWallCandidate(wall)
+                        ? WallType.Interior
+                        : WallType.Unknown;
+                    return new WallTypeRefinement(
+                        refinedType,
+                        refinedType == WallType.Interior
+                            ? "wall type refined interior: shared outdoor/terrace room evidence is not trusted as exterior without shell support; outdoor covered-area boundary"
+                            : "wall type refined unknown: shared outdoor/terrace room evidence is not trusted as exterior without shell support; outdoor covered-area boundary");
+                }
+
                 return new WallTypeRefinement(
                     WallType.Exterior,
                     "wall type refined exterior: shared by room adjacency that includes outdoor/terrace room evidence");
@@ -672,6 +684,18 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         {
             if (sideEvidence.HasOutdoorRoomSide)
             {
+                if (IsUntrustedOutdoorExteriorPromotionCandidate(wall, assessment))
+                {
+                    var refinedType = IsRecoveredMissingWallCandidate(wall)
+                        ? WallType.Interior
+                        : WallType.Unknown;
+                    return new WallTypeRefinement(
+                        refinedType,
+                        refinedType == WallType.Interior
+                            ? "wall type refined interior: two-sided outdoor/terrace room evidence is not trusted as exterior without shell support; outdoor covered-area boundary"
+                            : "wall type refined unknown: two-sided outdoor/terrace room evidence is not trusted as exterior without shell support; outdoor covered-area boundary");
+                }
+
                 return new WallTypeRefinement(
                     WallType.Exterior,
                     "wall type refined exterior: room evidence on both sides includes outdoor/terrace space");

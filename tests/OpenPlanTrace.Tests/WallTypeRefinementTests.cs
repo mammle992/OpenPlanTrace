@@ -327,10 +327,12 @@ public sealed class WallTypeRefinementTests
             6,
             Confidence.High)
         {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
             WallType = WallType.Exterior,
             Evidence = new[]
             {
-                "wall type exterior: near detected floorplan/wall envelope or local outer boundary"
+                "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+                "wall-like layer exterior shell support"
             }
         };
         var context = CreateContext("shared-room-boundary-exterior-override");
@@ -378,10 +380,12 @@ public sealed class WallTypeRefinementTests
             6,
             Confidence.High)
         {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
             WallType = WallType.Exterior,
             Evidence = new[]
             {
-                "wall type exterior: near detected floorplan/wall envelope or local outer boundary"
+                "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+                "wall-like layer exterior shell support"
             }
         };
         var context = CreateContext("two-sided-room-boundary-exterior-override");
@@ -434,10 +438,12 @@ public sealed class WallTypeRefinementTests
             6,
             Confidence.High)
         {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
             WallType = WallType.Exterior,
             Evidence = new[]
             {
-                "wall type exterior: near detected floorplan/wall envelope or local outer boundary"
+                "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+                "wall-like layer exterior shell support"
             }
         };
         var context = CreateContext("shared-outdoor-boundary-preserves-exterior");
@@ -477,6 +483,69 @@ public sealed class WallTypeRefinementTests
     }
 
     [Fact]
+    public async Task WallTypeRefinement_DoesNotPromoteSharedCoveredEntryBoundaryWithoutShellSupport()
+    {
+        var wall = new WallSegment(
+            "wall-covered-entry-boundary",
+            1,
+            new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(100, 300)),
+            6,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Exterior,
+            Evidence = new[]
+            {
+                "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+                "layer evidence: no strong layer name or geometry evidence",
+                "layer (unlayered) classified Unknown (0,35)"
+            }
+        };
+        var context = CreateContext("shared-covered-entry-boundary-review");
+        context.Walls.Add(wall);
+        context.Rooms.Add(Room("room-indoor", RoomUseKind.Office, wall.Id));
+        context.Rooms.Add(Room("covered-entry", RoomUseKind.Outdoor, wall.Id));
+        context.WallGraph = GraphFor(wall);
+        context.RoomAdjacencyGraph = new RoomAdjacencyGraph(
+            new[]
+            {
+                new RoomAdjacencyEdge(
+                    "adjacency:room-indoor:covered-entry",
+                    1,
+                    "room-indoor",
+                    "Office",
+                    "covered-entry",
+                    "Overbygd inngang",
+                    RoomAdjacencyKind.BoundaryAdjacent,
+                    RoomAdjacencyDirection.East,
+                    RoomAdjacencyDirection.West,
+                    200,
+                    wall.CenterLine,
+                    Confidence.High,
+                    new[] { wall.Id },
+                    Array.Empty<string>(),
+                    new[] { "test adjacency includes covered outdoor room" })
+            },
+            Array.Empty<RoomCluster>());
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.MediumWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var refined = Assert.Single(context.Walls);
+        Assert.Equal(WallType.Unknown, refined.WallType);
+        Assert.Contains(
+            refined.Evidence,
+            item => item.Contains("shared outdoor/terrace room evidence", StringComparison.OrdinalIgnoreCase)
+                && item.Contains("outdoor covered-area boundary", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task WallTypeRefinement_KeepsTwoSidedOutdoorRoomBoundaryExterior()
     {
         var wall = new WallSegment(
@@ -486,10 +555,12 @@ public sealed class WallTypeRefinementTests
             6,
             Confidence.High)
         {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
             WallType = WallType.Exterior,
             Evidence = new[]
             {
-                "wall type exterior: near detected floorplan/wall envelope or local outer boundary"
+                "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+                "wall-like layer exterior shell support"
             }
         };
         var context = CreateContext("two-sided-outdoor-boundary-preserves-exterior");

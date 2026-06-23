@@ -568,10 +568,18 @@ public static class WallPlacementReadinessEvaluator
             .Concat(evidenceAssessment.ScoreBreakdown.PositiveEvidence)
             .Concat(evidenceAssessment.ScoreBreakdown.NegativeEvidence)
             .ToArray();
-        if (!EvidenceContainsAny(
+        var hasUntrustedOutdoorEvidence = EvidenceContainsAny(
                 evidence,
+                "outdoor covered-area boundary",
+                "unpaired outdoor covered-area boundary",
+                "covered-area boundary",
                 "outdoor/terrace room evidence alone is not trusted as exterior",
-                "outdoor/terrace room evidence is not trusted as exterior without shell support"))
+                "outdoor/terrace room evidence is not trusted as exterior without shell support")
+            || evidence.Any(item =>
+                item.Contains("outdoor/terrace", StringComparison.OrdinalIgnoreCase)
+                && item.Contains("not trusted as exterior", StringComparison.OrdinalIgnoreCase)
+                && item.Contains("without shell support", StringComparison.OrdinalIgnoreCase));
+        if (!hasUntrustedOutdoorEvidence)
         {
             return false;
         }
