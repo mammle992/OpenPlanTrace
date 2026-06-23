@@ -1464,6 +1464,55 @@ public sealed class WallTypeRefinementTests
     }
 
     [Fact]
+    public async Task WallTypeRefinement_DemotesDimensionLikeDenseLocalWallDespiteRoomBoundarySupport()
+    {
+        var wall = ShortUnlayeredInteriorWall("wall-dimension-like-dense-room-boundary", 100, 100, 146, 100) with
+        {
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "pair score 0,85",
+                "layer (unlayered) classified Dimension (0,24)",
+                "layer evidence: contains dimension-like text",
+                "wall type interior: supported wall evidence inside exterior envelope",
+                "wall evidence: strong double-edge wall body"
+            ]
+        };
+        var context = CreateContext("dimension-like-dense-local-detail-room-boundary-demotion");
+        var neighbors = DenseDetailNeighborWalls().ToArray();
+        context.Walls.Add(wall);
+        context.Walls.AddRange(neighbors);
+        context.Rooms.Add(Room("room-supported", RoomUseKind.Office, wall.Id));
+        context.WallGraph = GraphFor(new[] { wall }.Concat(neighbors).ToArray());
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.StrongWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var demoted = Assert.Single(context.WallEvidenceMap.WallAssessments);
+        Assert.Equal(WallEvidenceCategory.MediumWallBody, demoted.Category);
+        Assert.False(demoted.PlacementReady);
+        Assert.True(demoted.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Review, demoted.Decision);
+        Assert.Contains(
+            demoted.Evidence,
+            item => item.Contains("dense local detail/stair-like linework", StringComparison.OrdinalIgnoreCase)
+                && item.Contains("dimension-like weak layer True", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(
+            demoted.Evidence,
+            item => item.Contains("room-confirmed wall body promoted", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "walls.architectural_type_refined"
+                && diagnostic.Properties["denseLocalDetailPlacementDemotedWallCount"] == "1");
+    }
+
+    [Fact]
     public async Task WallTypeRefinement_DemotesNonOrthogonalDimensionLikeSingleLinePlacementWall()
     {
         var wall = NonOrthogonalDimensionLikeInteriorWall("wall-diagonal-dimension-like", 100, 100, 160, 140);

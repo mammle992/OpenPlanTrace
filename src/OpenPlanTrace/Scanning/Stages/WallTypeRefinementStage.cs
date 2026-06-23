@@ -1168,11 +1168,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             || assessment.Decision == WallEvidenceDecision.Reject
             || wall.WallType == WallType.Exterior
             || wall.DrawingLength > DenseLocalDetailDemotionMaxWallLength(options)
-            || hasGeometricRoomBoundarySupport
-            || hasExteriorShellContinuitySupport
-            || roomReferenceCount > 0
-            || isSharedByRoomAdjacency
-            || sideEvidence.HasRoomsOnBothSides)
+            || hasExteriorShellContinuitySupport)
         {
             return false;
         }
@@ -1180,15 +1176,21 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         var evidence = wall.Evidence
             .Concat(assessment.Evidence)
             .ToArray();
+        var hasDimensionLikeWeakLayer = IsDimensionLikeWeakLayerEvidence(evidence);
+        var hasPlacementContext = roomReferenceCount > 0
+            || isSharedByRoomAdjacency
+            || sideEvidence.HasRoomsOnBothSides;
         if (!HasUnknownOrWeakLayerEvidence(evidence)
-            || !IsDenseLocalDetailNeighborhood(wall, walls, options, out var nearbyCount, out var shortNearbyCount, out var offAxisNearbyCount))
+            || !IsDenseLocalDetailNeighborhood(wall, walls, options, out var nearbyCount, out var shortNearbyCount, out var offAxisNearbyCount)
+            || (hasPlacementContext && !hasDimensionLikeWeakLayer)
+            || (hasGeometricRoomBoundarySupport && !hasDimensionLikeWeakLayer))
         {
             return false;
         }
 
         demotionEvidence =
         [
-            $"wall evidence: demoted from placement-ready because short unlayered wall candidate sits inside dense local detail/stair-like linework; nearby walls {nearbyCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}, short nearby walls {shortNearbyCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}, off-axis nearby walls {offAxisNearbyCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}, room refs {roomReferenceCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}, side room hits {(sideEvidence.PositiveRoomHits + sideEvidence.NegativeRoomHits).ToString(System.Globalization.CultureInfo.InvariantCulture)}, supported endpoints {supportedTopologyEndpointCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}, component {component?.Kind.ToString() ?? "Unknown"}"
+            $"wall evidence: demoted from placement-ready because short unlayered wall candidate sits inside dense local detail/stair-like linework; nearby walls {nearbyCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}, short nearby walls {shortNearbyCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}, off-axis nearby walls {offAxisNearbyCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}, room refs {roomReferenceCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}, side room hits {(sideEvidence.PositiveRoomHits + sideEvidence.NegativeRoomHits).ToString(System.Globalization.CultureInfo.InvariantCulture)}, supported endpoints {supportedTopologyEndpointCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}, dimension-like weak layer {hasDimensionLikeWeakLayer.ToString(System.Globalization.CultureInfo.InvariantCulture)}, component {component?.Kind.ToString() ?? "Unknown"}"
         ];
         demotedAssessment = assessment with
         {
@@ -1801,6 +1803,8 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         return evidence.Contains("recovered duplicate wall body", StringComparison.OrdinalIgnoreCase)
             || evidence.Contains("already represented", StringComparison.OrdinalIgnoreCase)
             || evidence.Contains("rejected as non-wall", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("dense local detail", StringComparison.OrdinalIgnoreCase)
+            || evidence.Contains("dimension-like weak layer True", StringComparison.OrdinalIgnoreCase)
             || evidence.Contains("object/fixture detail", StringComparison.OrdinalIgnoreCase)
             || evidence.Contains("surface pattern", StringComparison.OrdinalIgnoreCase)
             || evidence.Contains("door/opening", StringComparison.OrdinalIgnoreCase);

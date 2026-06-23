@@ -122,6 +122,41 @@ public sealed class RoomSemanticsTests
     }
 
     [Fact]
+    public async Task ScanAsync_InfersSemanticRoomBoundaryAcrossFragmentedWallSides()
+    {
+        var document = new PlanDocument(
+            "semantic-room-fragmented-wall-side",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(760, 560),
+                    new PlanPrimitive[]
+                    {
+                        Wall("wall-top-left", new PlanPoint(100, 120), new PlanPoint(245, 120)),
+                        Wall("wall-top-right", new PlanPoint(355, 120), new PlanPoint(520, 120)),
+                        Wall("wall-right", new PlanPoint(520, 120), new PlanPoint(520, 380)),
+                        Wall("wall-bottom", new PlanPoint(520, 380), new PlanPoint(100, 380)),
+                        Wall("wall-left", new PlanPoint(100, 380), new PlanPoint(100, 120)),
+                        RoomText("office-label", "OFFICE", new PlanRect(282, 232, 70, 16)),
+                        RoomText("office-area", "31.2 m2", new PlanRect(288, 256, 70, 16))
+                    })
+            });
+
+        var result = await new OpenPlanTraceScanner().ScanAsync(document);
+        var room = Assert.Single(result.Rooms);
+
+        Assert.Equal("OFFICE", room.Label);
+        Assert.Equal(RoomUseKind.Office, room.UseKind);
+        Assert.Equal(4, room.Boundary.Count);
+        Assert.True(room.Bounds.Width > 390, $"Expected wide room bounds, got {room.Bounds}.");
+        Assert.True(room.Bounds.Height > 240, $"Expected tall room bounds, got {room.Bounds} with evidence {string.Join(" | ", room.Evidence)}.");
+        Assert.True(room.WallIds.Count >= 4);
+        Assert.DoesNotContain(room.Evidence, item => item.Contains("requires wall-boundary review", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(room.Evidence, item => item.Contains("nearby wall candidates", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task ScanAsync_DoesNotCreateSemanticRoomSeedFromPureNumericLabelWithoutLayerHint()
     {
         var document = new PlanDocument(

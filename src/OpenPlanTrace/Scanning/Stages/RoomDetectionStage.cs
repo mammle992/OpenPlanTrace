@@ -44,12 +44,20 @@ internal sealed class RoomDetectionStage : IPipelineStage
     {
         "frostet",
         "sidelfelt",
+        "fast",
         "glass",
+        "glassfelt",
         "glazing",
+        "platform",
+        "plattform",
         "window",
         "vindu",
+        "ved siden",
         "door",
         "d\u00f8r",
+        "siden",
+        "sidefelt",
+        "sidelfelt",
         "opening",
         "\u00e5pning",
         "bta",
@@ -205,7 +213,8 @@ internal sealed class RoomDetectionStage : IPipelineStage
         HashSet<string> seen,
         CancellationToken cancellationToken)
     {
-        var axisWalls = structuralWalls
+        var semanticBoundaryWalls = SemanticBoundaryWallCandidates(pageNumber, structuralWalls, context);
+        var axisWalls = semanticBoundaryWalls
             .Select(wall => AxisWall.TryCreate(wall, context.Options.GeometryTolerance.Distance))
             .Where(axis => axis is not null)
             .Select(axis => axis!)
@@ -348,6 +357,9 @@ internal sealed class RoomDetectionStage : IPipelineStage
                 axisWalls,
                 mainRegion.Bounds,
                 context.Options,
+                context.Calibration,
+                pageNumber,
+                mainRegion.Id,
                 out var wallIds,
                 out var boundaryEvidence);
             var isWallBounded = boundary.Count >= 4 && wallIds.Length >= 2;
@@ -434,6 +446,96 @@ internal sealed class RoomDetectionStage : IPipelineStage
 
         return added;
     }
+
+    private static IReadOnlyList<WallSegment> SemanticBoundaryWallCandidates(
+        int pageNumber,
+        IReadOnlyList<WallSegment> structuralWalls,
+        ScanContext context)
+    {
+        var structuralWallIds = structuralWalls
+            .Select(wall => wall.Id)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.Ordinal);
+        var componentByWallId = context.WallGraph.Components
+            .SelectMany(component => component.WallIds.Select(wallId => new { wallId, component }))
+            .Where(item => !string.IsNullOrWhiteSpace(item.wallId))
+            .GroupBy(item => item.wallId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First().component, StringComparer.Ordinal);
+        var assessmentByWallId = context.WallEvidenceMap.WallAssessments
+            .Where(assessment => !string.IsNullOrWhiteSpace(assessment.WallId))
+            .GroupBy(assessment => assessment.WallId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+
+        return context.Walls
+            .Where(wall => wall.PageNumber == pageNumber
+                && !string.IsNullOrWhiteSpace(wall.Id)
+                && wall.DrawingLength >= Math.Max(context.Options.MinWallLength, context.Options.DefaultWallThickness * 8.0)
+                && (wall.CenterLine.IsHorizontal(context.Options.GeometryTolerance.Distance)
+                    || wall.CenterLine.IsVertical(context.Options.GeometryTolerance.Distance))
+                && (structuralWallIds.Contains(wall.Id)
+                    || IsSemanticBoundarySupportWall(
+                        wall,
+                        assessmentByWallId.TryGetValue(wall.Id, out var assessment) ? assessment : null,
+                        componentByWallId.TryGetValue(wall.Id, out var component) ? component : null)))
+            .GroupBy(wall => wall.Id, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .ToArray();
+    }
+
+    private static bool IsSemanticBoundarySupportWall(
+        WallSegment wall,
+        WallEvidenceWallAssessment? assessment,
+        WallGraphComponent? component)
+    {
+        if (component is { ExcludedFromStructuralTopology: true }
+            || component?.Kind is WallGraphComponentKind.ObjectLikeIsland or WallGraphComponentKind.IsolatedFragment)
+        {
+            return false;
+        }
+
+        var evidence = assessment is null
+            ? wall.Evidence
+            : wall.Evidence.Concat(assessment.Evidence).ToArray();
+        if (evidence.Any(IsSemanticBoundaryBlockingWallEvidence))
+        {
+            return false;
+        }
+
+        if (wall.WallType == WallType.Exterior
+            && wall.Confidence.Value >= 0.75
+            && (assessment is null || (!assessment.RejectedAsNoise && !assessment.RequiresReview))
+            && wall.DetectionKind is WallDetectionKind.SingleLine
+                or WallDetectionKind.ParallelLinePair
+                or WallDetectionKind.FragmentMerged)
+        {
+            return true;
+        }
+
+        if (assessment is null)
+        {
+            return wall.Confidence.Value >= 0.55;
+        }
+
+        if (assessment.RejectedAsNoise
+            || assessment.RequiresReview
+            || !assessment.PlacementReady
+            || assessment.Category is not (WallEvidenceCategory.StrongWallBody
+                or WallEvidenceCategory.MediumWallBody
+                or WallEvidenceCategory.RecoveredWallBody))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsSemanticBoundaryBlockingWallEvidence(string evidence) =>
+        evidence.Contains("dimension-like", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("dense local detail", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("surface pattern", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("opening detail", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("stair/object", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("object linework", StringComparison.OrdinalIgnoreCase);
 
     private bool AddRoom(
         PlanPage page,
@@ -623,8 +725,7 @@ internal sealed class RoomDetectionStage : IPipelineStage
                     && candidate.Bounds.Bottom <= area.Bounds.Bottom + Math.Max(4, options.WallSnapTolerance)
                     && area.Bounds.Top - candidate.Bounds.Bottom <= maxVerticalGap
                     && Math.Abs(candidate.Bounds.Center.X - area.Bounds.Center.X) <= maxHorizontalDrift
-                    && (LabelHasLetters(candidate.Text) || candidate.HasLayerHint || area.HasLayerHint)
-                    && (LooksLikeRoomLabel(candidate.Text) || LooksLikeRoomSemanticLabel(candidate.Text)))
+                    && IsTrustedSemanticRoomSeedLabel(candidate.Text, candidate.HasLayerHint || area.HasLayerHint))
                 .Where(candidate => !LooksLikeRoomAreaText(candidate.Text))
                 .Select(candidate => new
                 {
@@ -632,7 +733,7 @@ internal sealed class RoomDetectionStage : IPipelineStage
                     VerticalGap = Math.Max(0, area.Bounds.Top - candidate.Bounds.Bottom),
                     HorizontalDrift = Math.Abs(candidate.Bounds.Center.X - area.Bounds.Center.X),
                     Overlap = HorizontalOverlapRatio(candidate.Bounds, area.Bounds),
-                    KnownUse = ClassifyRoomUse(candidate.Text, candidate.Bounds).Kind != RoomUseKind.Unknown
+                    KnownUse = HasKnownRoomUseTerm(candidate.Text)
                 })
                 .Where(candidate => candidate.Overlap > 0.08 || candidate.HorizontalDrift <= maxHorizontalDrift * 0.55)
                 .OrderByDescending(candidate => candidate.Line.HasLayerHint)
@@ -670,48 +771,92 @@ internal sealed class RoomDetectionStage : IPipelineStage
         IReadOnlyList<AxisWall> axisWalls,
         PlanRect mainBounds,
         ScannerOptions options,
+        PlanCalibration calibration,
+        int pageNumber,
+        string sourceRegionId,
         out string[] wallIds,
         out IReadOnlyList<string> evidence)
     {
-        var searchRadius = Math.Max(80, Math.Min(mainBounds.Width, mainBounds.Height) * 0.22);
+        var scaleGroup = calibration.SelectMeasurementScaleGroup(
+            pageNumber,
+            candidate.EvidenceBounds,
+            sourceRegionId);
+        var expectedDrawingArea = ExpectedDrawingArea(candidate.AreaSquareMeters, calibration, scaleGroup);
+        var expectedSpan = expectedDrawingArea is > 0 ? Math.Sqrt(expectedDrawingArea.Value) : 0;
+        var searchRadius = Math.Max(
+            Math.Max(
+                140,
+                Math.Max(
+                    Math.Min(mainBounds.Width, mainBounds.Height) * 0.45,
+                    Math.Max(mainBounds.Width, mainBounds.Height) * 0.55)),
+            expectedSpan * 1.35);
         var spanTolerance = Math.Max(options.WallSnapTolerance * 4.0, options.DefaultWallThickness * 8.0);
-        var vertical = axisWalls.Where(axis => axis.Orientation == WallOrientation.Vertical).ToArray();
-        var horizontal = axisWalls.Where(axis => axis.Orientation == WallOrientation.Horizontal).ToArray();
-        var left = vertical
-            .Where(axis => axis.Coordinate < candidate.AnchorPoint.X
-                && candidate.AnchorPoint.X - axis.Coordinate <= searchRadius
-                && AxisCoversPoint(axis, candidate.AnchorPoint.Y, spanTolerance))
-            .OrderBy(axis => candidate.AnchorPoint.X - axis.Coordinate)
-            .FirstOrDefault();
-        var right = vertical
-            .Where(axis => axis.Coordinate > candidate.AnchorPoint.X
-                && axis.Coordinate - candidate.AnchorPoint.X <= searchRadius
-                && AxisCoversPoint(axis, candidate.AnchorPoint.Y, spanTolerance))
-            .OrderBy(axis => axis.Coordinate - candidate.AnchorPoint.X)
-            .FirstOrDefault();
-        var top = horizontal
-            .Where(axis => axis.Coordinate < candidate.AnchorPoint.Y
-                && candidate.AnchorPoint.Y - axis.Coordinate <= searchRadius
-                && AxisCoversPoint(axis, candidate.AnchorPoint.X, spanTolerance))
-            .OrderBy(axis => candidate.AnchorPoint.Y - axis.Coordinate)
-            .FirstOrDefault();
-        var bottom = horizontal
-            .Where(axis => axis.Coordinate > candidate.AnchorPoint.Y
-                && axis.Coordinate - candidate.AnchorPoint.Y <= searchRadius
-                && AxisCoversPoint(axis, candidate.AnchorPoint.X, spanTolerance))
-            .OrderBy(axis => axis.Coordinate - candidate.AnchorPoint.Y)
-            .FirstOrDefault();
+        var boundaryCandidates = BuildAxisBoundaryCandidates(axisWalls, options).ToArray();
+        var vertical = boundaryCandidates.Where(axis => axis.Orientation == WallOrientation.Vertical).ToArray();
+        var horizontal = boundaryCandidates.Where(axis => axis.Orientation == WallOrientation.Horizontal).ToArray();
+        var leftCandidates = SemanticBoundarySideCandidates(
+            vertical,
+            axis => axis.Coordinate < candidate.AnchorPoint.X,
+            axis => candidate.AnchorPoint.X - axis.Coordinate,
+            searchRadius);
+        var rightCandidates = SemanticBoundarySideCandidates(
+            vertical,
+            axis => axis.Coordinate > candidate.AnchorPoint.X,
+            axis => axis.Coordinate - candidate.AnchorPoint.X,
+            searchRadius);
+        var topCandidates = SemanticBoundarySideCandidates(
+            horizontal,
+            axis => axis.Coordinate < candidate.AnchorPoint.Y,
+            axis => candidate.AnchorPoint.Y - axis.Coordinate,
+            searchRadius);
+        var bottomCandidates = SemanticBoundarySideCandidates(
+            horizontal,
+            axis => axis.Coordinate > candidate.AnchorPoint.Y,
+            axis => axis.Coordinate - candidate.AnchorPoint.Y,
+            searchRadius);
 
-        if (left is null || right is null || top is null || bottom is null)
+        var best = default(SemanticRoomBoundaryMatch?);
+        foreach (var left in leftCandidates)
+        {
+            foreach (var right in rightCandidates)
+            {
+                foreach (var top in topCandidates)
+                {
+                    foreach (var bottom in bottomCandidates)
+                    {
+                        var match = ScoreSemanticRoomBoundaryCandidate(
+                            candidate,
+                            mainBounds,
+                            left,
+                            right,
+                            top,
+                            bottom,
+                            expectedDrawingArea,
+                            spanTolerance,
+                            options);
+                        if (match is not null
+                            && (best is null || match.Score > best.Score))
+                        {
+                            best = match;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (best is null)
         {
             wallIds = Array.Empty<string>();
-            evidence = new[] { "semantic room boundary could not be closed from four nearby orthogonal walls" };
+            evidence = new[]
+            {
+                "semantic room boundary could not be closed from four nearby orthogonal walls",
+                $"semantic room boundary candidate counts left={leftCandidates.Length}, right={rightCandidates.Length}, top={topCandidates.Length}, bottom={bottomCandidates.Length}"
+            };
             return Array.Empty<PlanPoint>();
         }
 
-        var bounds = PlanRect
-            .FromEdges(left.Coordinate, top.Coordinate, right.Coordinate, bottom.Coordinate)
-            .ClampTo(mainBounds);
+        var matched = best;
+        var bounds = matched.Bounds.ClampTo(mainBounds);
         if (bounds.IsEmpty || bounds.Area < Math.Max(80, options.MinRoomArea * 0.15))
         {
             wallIds = Array.Empty<string>();
@@ -726,18 +871,246 @@ internal sealed class RoomDetectionStage : IPipelineStage
             return Array.Empty<PlanPoint>();
         }
 
-        wallIds = new[] { top.Wall.Id, bottom.Wall.Id, left.Wall.Id, right.Wall.Id }
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        evidence = new[]
+        wallIds = matched.WallIds;
+        var evidenceItems = new List<string>
         {
-            $"semantic room boundary inferred from nearby walls {string.Join(",", wallIds)}"
+            $"semantic room boundary inferred from nearby wall candidates {string.Join(",", wallIds)}",
+            $"semantic room boundary wall coverage {matched.AverageCoverage.ToString("0.###", CultureInfo.InvariantCulture)} across {matched.StrongSideCount} strong side(s)",
+            $"semantic room boundary trusted wall support {matched.TrustedWallRatio.ToString("0.###", CultureInfo.InvariantCulture)} across {matched.TrustedSideCount} side(s)"
         };
+        if (expectedDrawingArea is > 0)
+        {
+            evidenceItems.Add(
+                $"semantic room boundary area match ratio {matched.AreaRatio.ToString("0.###", CultureInfo.InvariantCulture)} from printed room area");
+        }
+
+        evidence = evidenceItems;
         return RectangleBoundary(bounds.Left, bounds.Top, bounds.Right, bounds.Bottom);
     }
 
-    private static bool AxisCoversPoint(AxisWall axis, double coordinate, double tolerance) =>
-        axis.Start <= coordinate + tolerance && axis.End >= coordinate - tolerance;
+    private static SemanticRoomBoundaryMatch? ScoreSemanticRoomBoundaryCandidate(
+        SemanticRoomCandidate candidate,
+        PlanRect mainBounds,
+        AxisBoundaryCandidate left,
+        AxisBoundaryCandidate right,
+        AxisBoundaryCandidate top,
+        AxisBoundaryCandidate bottom,
+        double? expectedDrawingArea,
+        double tolerance,
+        ScannerOptions options)
+    {
+        var bounds = PlanRect
+            .FromEdges(left.Coordinate, top.Coordinate, right.Coordinate, bottom.Coordinate)
+            .ClampTo(mainBounds);
+        if (bounds.IsEmpty
+            || bounds.Width < Math.Max(options.MinOpeningGap, options.DefaultWallThickness * 8.0)
+            || bounds.Height < Math.Max(options.MinOpeningGap, options.DefaultWallThickness * 8.0)
+            || bounds.Area < Math.Max(80, options.MinRoomArea * 0.15)
+            || !bounds.Contains(candidate.EvidenceBounds.Center, tolerance)
+            || !bounds.Intersects(candidate.EvidenceBounds, tolerance))
+        {
+            return null;
+        }
+
+        var topCoverage = top.Coverage(bounds.Left, bounds.Right, tolerance);
+        var bottomCoverage = bottom.Coverage(bounds.Left, bounds.Right, tolerance);
+        var leftCoverage = left.Coverage(bounds.Top, bounds.Bottom, tolerance);
+        var rightCoverage = right.Coverage(bounds.Top, bounds.Bottom, tolerance);
+        var coverages = new[] { topCoverage, bottomCoverage, leftCoverage, rightCoverage };
+        var strongSideCount = coverages.Count(value => value >= 0.35);
+        var averageCoverage = coverages.Average();
+        if (strongSideCount < 3 || averageCoverage < 0.42)
+        {
+            return null;
+        }
+
+        var areaScore = 0.55;
+        var areaRatio = 1.0;
+        if (expectedDrawingArea is > 0)
+        {
+            areaRatio = bounds.Area / expectedDrawingArea.Value;
+            if (areaRatio < 0.2 || areaRatio > 5.0)
+            {
+                return null;
+            }
+
+            areaScore = 1.0 / (1.0 + Math.Abs(Math.Log(areaRatio)));
+        }
+
+        var distancePenalty =
+            (Math.Abs(candidate.AnchorPoint.X - left.Coordinate)
+                + Math.Abs(right.Coordinate - candidate.AnchorPoint.X)
+                + Math.Abs(candidate.AnchorPoint.Y - top.Coordinate)
+                + Math.Abs(bottom.Coordinate - candidate.AnchorPoint.Y))
+            / Math.Max(1, Math.Min(mainBounds.Width, mainBounds.Height) * 4.0);
+        var labelCentering =
+            1.0
+            - Math.Min(
+                1.0,
+                candidate.AnchorPoint.DistanceTo(bounds.Center)
+                / Math.Max(1, Math.Sqrt(bounds.Area)));
+
+        var topWalls = top.Walls(bounds.Left, bounds.Right, tolerance).ToArray();
+        var bottomWalls = bottom.Walls(bounds.Left, bounds.Right, tolerance).ToArray();
+        var leftWalls = left.Walls(bounds.Top, bounds.Bottom, tolerance).ToArray();
+        var rightWalls = right.Walls(bounds.Top, bounds.Bottom, tolerance).ToArray();
+        var allWalls = topWalls
+            .Concat(bottomWalls)
+            .Concat(leftWalls)
+            .Concat(rightWalls)
+            .Where(wall => !string.IsNullOrWhiteSpace(wall.Id))
+            .GroupBy(wall => wall.Id, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .ToArray();
+        if (allWalls.Length < 3)
+        {
+            return null;
+        }
+
+        var trustedWallIds = allWalls
+            .Where(IsTrustedSemanticRoomReferenceWall)
+            .Select(wall => wall.Id)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var trustedSideCount = new[]
+        {
+            topWalls.Any(IsTrustedSemanticRoomReferenceWall),
+            bottomWalls.Any(IsTrustedSemanticRoomReferenceWall),
+            leftWalls.Any(IsTrustedSemanticRoomReferenceWall),
+            rightWalls.Any(IsTrustedSemanticRoomReferenceWall)
+        }.Count(value => value);
+        var hasTrustedBoundaryReference = trustedWallIds.Length >= 3 && trustedSideCount >= 3;
+        var canUseReviewBoundaryFallback = !hasTrustedBoundaryReference
+            && CanUseReviewSupportedSemanticBoundary(candidate.Label.Text)
+            && strongSideCount >= 3
+            && averageCoverage >= 0.68
+            && areaRatio is >= 0.35 and <= 2.75;
+        if (!hasTrustedBoundaryReference && !canUseReviewBoundaryFallback)
+        {
+            return null;
+        }
+
+        var outputWallIds = hasTrustedBoundaryReference
+            ? trustedWallIds
+            : allWalls.Select(wall => wall.Id).Distinct(StringComparer.Ordinal).ToArray();
+        var trustedWallRatio = trustedWallIds.Length / (double)allWalls.Length;
+        var noisyWallPenalty = (allWalls.Length - trustedWallIds.Length) * 0.16;
+        var reviewFallbackPenalty = hasTrustedBoundaryReference ? 0 : 0.75;
+        var score = (averageCoverage * 1.65)
+            + (areaScore * 1.25)
+            + (strongSideCount * 0.12)
+            + (labelCentering * 0.3)
+            + (trustedSideCount * 0.08)
+            + (trustedWallRatio * 0.45)
+            - noisyWallPenalty
+            - reviewFallbackPenalty
+            - distancePenalty;
+        return new SemanticRoomBoundaryMatch(
+            bounds,
+            outputWallIds,
+            score,
+            averageCoverage,
+            strongSideCount,
+            areaRatio,
+            trustedWallRatio,
+            trustedSideCount);
+    }
+
+    private static bool CanUseReviewSupportedSemanticBoundary(string label)
+    {
+        var kind = ClassifyRoomUse(label, new PlanRect(0, 0, 20, 20)).Kind;
+        return kind is not RoomUseKind.Unknown
+            and not RoomUseKind.Corridor
+            and not RoomUseKind.Outdoor
+            and not RoomUseKind.Stair
+            and not RoomUseKind.Elevator
+            and not RoomUseKind.Shaft;
+    }
+
+    private static bool IsTrustedSemanticRoomReferenceWall(WallSegment wall)
+    {
+        if (wall.Id.Contains("recovered-short", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (wall.Evidence.Any(IsSemanticBoundaryBlockingWallEvidence)
+            || wall.Evidence.Any(evidence =>
+                evidence.Contains("requires review", StringComparison.OrdinalIgnoreCase)
+                || evidence.Contains("/ review", StringComparison.OrdinalIgnoreCase)
+                || evidence.Contains("review required", StringComparison.OrdinalIgnoreCase)
+                || evidence.Contains("rejected", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        if (wall.Evidence.Any(evidence => evidence.Contains("/ placement-ready", StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        return wall.Confidence.Value >= 0.72
+            && wall.DetectionKind is WallDetectionKind.ParallelLinePair
+                or WallDetectionKind.SingleLine
+                or WallDetectionKind.FragmentMerged;
+    }
+
+    private static double? ExpectedDrawingArea(
+        double areaSquareMeters,
+        PlanCalibration calibration,
+        CalibrationScaleGroup? scaleGroup)
+    {
+        var millimetersPerDrawingUnit = scaleGroup?.MillimetersPerDrawingUnit;
+        if (millimetersPerDrawingUnit is not > 0
+            && calibration.MillimetersPerDrawingUnit is > 0
+            && calibration.Confidence.Value >= 0.5)
+        {
+            millimetersPerDrawingUnit = calibration.MillimetersPerDrawingUnit.Value;
+        }
+
+        return areaSquareMeters > 0 && millimetersPerDrawingUnit is > 0
+            ? areaSquareMeters * 1_000_000.0 / (millimetersPerDrawingUnit.Value * millimetersPerDrawingUnit.Value)
+            : null;
+    }
+
+    private static AxisBoundaryCandidate[] SemanticBoundarySideCandidates(
+        IReadOnlyList<AxisBoundaryCandidate> candidates,
+        Func<AxisBoundaryCandidate, bool> predicate,
+        Func<AxisBoundaryCandidate, double> distance,
+        double searchRadius) =>
+        candidates
+            .Where(candidate => predicate(candidate) && distance(candidate) <= searchRadius)
+            .OrderBy(distance)
+            .Take(12)
+            .ToArray();
+
+    private static IEnumerable<AxisBoundaryCandidate> BuildAxisBoundaryCandidates(
+        IReadOnlyList<AxisWall> axisWalls,
+        ScannerOptions options)
+    {
+        var coordinateTolerance = Math.Max(options.WallSnapTolerance * 2.0, options.DefaultWallThickness * 1.25);
+        foreach (var group in axisWalls.GroupBy(axis => axis.Orientation))
+        {
+            var ordered = group.OrderBy(axis => axis.Coordinate).ToArray();
+            var cluster = new List<AxisWall>();
+            foreach (var axis in ordered)
+            {
+                if (cluster.Count > 0
+                    && Math.Abs(axis.Coordinate - cluster.Average(item => item.Coordinate)) > coordinateTolerance)
+                {
+                    yield return AxisBoundaryCandidate.From(cluster);
+                    cluster.Clear();
+                }
+
+                cluster.Add(axis);
+            }
+
+            if (cluster.Count > 0)
+            {
+                yield return AxisBoundaryCandidate.From(cluster);
+            }
+        }
+    }
 
     private static bool LooksLikeAnnotationOnlyRoomText(string text)
     {
@@ -771,10 +1144,57 @@ internal sealed class RoomDetectionStage : IPipelineStage
     private static bool LooksLikeRoomSemanticLabel(string text)
     {
         var trimmed = text.Trim();
-        return LabelHasLetters(trimmed)
-            && trimmed.Length <= 48
-            && !LooksLikeAnnotationOnlyRoomText(trimmed)
-            && ClassifyRoomUse(trimmed, new PlanRect(0, 0, 20, 20)).Kind != RoomUseKind.Unknown;
+        if (!LabelHasLetters(trimmed) || trimmed.Length > 48)
+        {
+            return false;
+        }
+
+        var hasKnownRoomUse = HasKnownRoomUseTerm(trimmed);
+        if (!hasKnownRoomUse)
+        {
+            return false;
+        }
+
+        return !LooksLikeNonRoomDescriptor(trimmed)
+            && !LooksLikeFloorLevelText(trimmed)
+            && !LooksLikeEquipmentTagText(trimmed)
+            && (!LooksLikeDimensionText(trimmed) || hasKnownRoomUse);
+    }
+
+    private static bool IsTrustedSemanticRoomSeedLabel(string text, bool hasLayerHint)
+    {
+        var trimmed = text.Trim();
+        if (!LabelHasLetters(trimmed) && !hasLayerHint)
+        {
+            return false;
+        }
+
+        if (LooksLikeRoomAreaText(trimmed)
+            || LooksLikeSingleLetterClusterText(trimmed)
+            || LooksLikeMultiCodeTagText(trimmed)
+            || LooksLikeNonRoomDescriptor(trimmed)
+            || LooksLikeFloorLevelText(trimmed)
+            || LooksLikeEquipmentTagText(trimmed))
+        {
+            return false;
+        }
+
+        if (LooksLikeDimensionText(trimmed) && !HasKnownRoomUseTerm(trimmed))
+        {
+            return false;
+        }
+
+        return hasLayerHint
+            ? LooksLikeRoomLabel(trimmed) || HasKnownRoomUseTerm(trimmed)
+            : LooksLikeRoomSemanticLabel(trimmed);
+    }
+
+    private static bool HasKnownRoomUseTerm(string text)
+    {
+        var normalized = NormalizeLabel(text);
+        return RoomUseRules
+            .SelectMany(rule => rule.Terms)
+            .Any(term => ContainsTerm(normalized, NormalizeLabel(term)));
     }
 
     private static double HorizontalOverlapRatio(PlanRect first, PlanRect second)
@@ -1247,6 +1667,16 @@ internal sealed class RoomDetectionStage : IPipelineStage
             return false;
         }
 
+        if (LooksLikeSingleLetterClusterText(trimmed))
+        {
+            return false;
+        }
+
+        if (LooksLikeMultiCodeTagText(trimmed))
+        {
+            return false;
+        }
+
         if (LooksLikeDimensionText(trimmed))
         {
             return false;
@@ -1287,6 +1717,30 @@ internal sealed class RoomDetectionStage : IPipelineStage
         return trimmed.Any(char.IsDigit)
             && trimmed.Any(character => character is ',' or '.')
             && trimmed.All(character => char.IsDigit(character) || character is ',' or '.' || char.IsWhiteSpace(character));
+    }
+
+    private static bool LooksLikeSingleLetterClusterText(string text)
+    {
+        var tokens = NormalizeLabel(text).Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return tokens.Length >= 2 && tokens.All(token => token.Length == 1 && token.All(char.IsLetter));
+    }
+
+    private static bool LooksLikeMultiCodeTagText(string text)
+    {
+        var tokens = NormalizeLabel(text).Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (tokens.Length is < 2 or > 4)
+        {
+            return false;
+        }
+
+        var compactCodeCount = tokens.Count(token =>
+            token.Length is >= 2 and <= 4
+            && token.Any(char.IsLetter)
+            && token.Any(char.IsDigit)
+            && token.All(char.IsLetterOrDigit));
+
+        return compactCodeCount >= 2
+            && tokens.All(token => token.Length <= 4 && token.All(char.IsLetterOrDigit));
     }
 
     private static bool LooksLikeNonRoomDescriptor(string text)
@@ -1452,6 +1906,79 @@ internal sealed class RoomDetectionStage : IPipelineStage
             return null;
         }
     }
+
+    private sealed record AxisBoundaryCandidate(
+        WallOrientation Orientation,
+        double Coordinate,
+        IReadOnlyList<AxisWall> Axes)
+    {
+        public static AxisBoundaryCandidate From(IReadOnlyList<AxisWall> axes) =>
+            new(
+                axes[0].Orientation,
+                MedianValue(axes.Select(axis => axis.Coordinate)),
+                axes.ToArray());
+
+        public double Coverage(double start, double end, double tolerance)
+        {
+            var span = Math.Max(0, end - start);
+            if (span <= 0)
+            {
+                return 0;
+            }
+
+            var intervals = Axes
+                .Select(axis => (
+                    Start: Math.Max(start, axis.Start - tolerance),
+                    End: Math.Min(end, axis.End + tolerance)))
+                .Where(item => item.End > item.Start)
+                .OrderBy(item => item.Start)
+                .ToArray();
+            if (intervals.Length == 0)
+            {
+                return 0;
+            }
+
+            var covered = 0.0;
+            var currentStart = intervals[0].Start;
+            var currentEnd = intervals[0].End;
+            foreach (var interval in intervals.Skip(1))
+            {
+                if (interval.Start <= currentEnd)
+                {
+                    currentEnd = Math.Max(currentEnd, interval.End);
+                    continue;
+                }
+
+                covered += currentEnd - currentStart;
+                currentStart = interval.Start;
+                currentEnd = interval.End;
+            }
+
+            covered += currentEnd - currentStart;
+            return Math.Min(1.0, covered / span);
+        }
+
+        public IEnumerable<string> WallIds(double start, double end, double tolerance) =>
+            Walls(start, end, tolerance)
+                .Select(wall => wall.Id)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal);
+
+        public IEnumerable<WallSegment> Walls(double start, double end, double tolerance) =>
+            Axes
+                .Where(axis => Math.Min(axis.End + tolerance, end) - Math.Max(axis.Start - tolerance, start) > 0)
+                .Select(axis => axis.Wall);
+    }
+
+    private sealed record SemanticRoomBoundaryMatch(
+        PlanRect Bounds,
+        string[] WallIds,
+        double Score,
+        double AverageCoverage,
+        int StrongSideCount,
+        double AreaRatio,
+        double TrustedWallRatio,
+        int TrustedSideCount);
 
     private sealed class OrthogonalRoomGrid
     {
@@ -2114,7 +2641,7 @@ internal sealed class RoomDetectionStage : IPipelineStage
         new(RoomUseKind.Utility, new[] { "utility", "service", "renhold", "janitor", "cleaner" }),
         new(RoomUseKind.Kitchen, new[] { "kitchen", "kitchenette", "kjokken", "kjøkken", "pantry" }),
         new(RoomUseKind.Living, new[] { "living", "stue", "lounge", "family room" }),
-        new(RoomUseKind.Bedroom, new[] { "bedroom", "soverom", "sleeping" }),
+        new(RoomUseKind.Bedroom, new[] { "bedroom", "soverom", "sov", "sleeping" }),
         new(RoomUseKind.Stair, new[] { "stair", "stairs", "staircase", "trapp", "trapperom" }),
         new(RoomUseKind.Elevator, new[] { "elevator", "lift", "heis" }),
         new(RoomUseKind.Shaft, new[] { "shaft", "sjakt", "riser" }),

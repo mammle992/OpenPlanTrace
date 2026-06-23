@@ -6,6 +6,39 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.03.006] - 2026-06-23
+
+### Improved
+- Room detection can now infer semantic room boundaries from grouped,
+  fragmented orthogonal wall candidates instead of requiring one clean wall on
+  every side of a label.
+- Semantic room recovery now separates trusted wall references from
+  review-supported boundary evidence, helping recover real rooms without letting
+  outdoor notes, platform labels, code tags, or side-glass text become fake
+  rooms.
+- Dense dimension-like detail clusters are now demoted even when nearby room or
+  geometric support exists, preventing tight grids, surface patterns, stair
+  details, and opening details from becoming placement-ready walls.
+- Wall and room evidence now records more detail about candidate boundary counts
+  and rejected semantic labels for follow-up accuracy tuning.
+
+### Verified
+- Added regression tests for fragmented semantic room-boundary inference and
+  for dense dimension-like detail demotion that must override weak room support.
+- Ran focused room-semantics and wall-refinement tests, then the full test
+  suite: `747` tests passed.
+- Ran the supplied hard, medium, and light PDF corpus in that order with compact
+  JSON, placement exports, wall-QA SVG overlays, and headless wall-QA PNG
+  screenshots.
+- Rendered and inspected all three wall-QA screenshots using headless Edge,
+  without opening Firefox.
+- The light PDF now keeps the dense square/detail grid as review-only instead of
+  placement-ready wall output. This lowers readiness numbers but improves
+  correctness because false walls are no longer exported as clean geometry.
+- The medium and hard PDFs remain blocked for production import. The next large
+  accuracy step should focus on region-aware structural wall truth, over-long
+  span splitting, and benchmark-backed wall placement scoring.
+
 ## [0.03.005] - 2026-06-23
 
 ### Improved
