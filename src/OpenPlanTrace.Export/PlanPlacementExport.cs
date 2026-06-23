@@ -714,6 +714,8 @@ public sealed record PlacementImportReadinessExport(
                 ? "placement.wall_pairs.fragmented_short_pairs_require_review"
             : string.Equals(code, "placement.review.covered_area_boundary", StringComparison.Ordinal)
                 ? "placement.wall_exterior.covered_area_boundaries_require_review"
+            : string.Equals(code, "placement.review.opening_detail_fragment", StringComparison.Ordinal)
+                ? "placement.wall_opening.opening_detail_fragments_require_review"
             : code;
 
     private static bool ShouldKeepPlacementIssueInformationalForReadiness(string code) =>
@@ -4107,6 +4109,48 @@ public sealed record PlacementIssueExport(
                     (wall.PlacementOmission?.Evidence ?? Array.Empty<string>())
                         .Concat(wall.Reliability.Reasons)
                         .DefaultIfEmpty("Covered/outdoor boundary candidate is not coordinate-ready.")),
+                properties);
+        }
+
+        foreach (var wall in (placementWallsById?.Values ?? Array.Empty<PlacementWallExport>())
+                     .Where(wall => string.Equals(
+                         wall.PlacementOmission?.Code,
+                         "opening_detail_fragment_review_required",
+                         StringComparison.Ordinal))
+                     .OrderBy(wall => wall.PageNumber)
+                     .ThenBy(wall => wall.Id, StringComparer.Ordinal))
+        {
+            var properties = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["detector"] = "placementWallReliability",
+                ["wallId"] = wall.Id,
+                ["wallType"] = wall.WallType,
+                ["placementOmissionCode"] = wall.PlacementOmission?.Code ?? string.Empty,
+                ["placementOmissionCategory"] = wall.PlacementOmission?.Category ?? string.Empty,
+                ["drawingLength"] = wall.DrawingLength.ToString("0.###", CultureInfo.InvariantCulture),
+                ["lengthMeters"] = wall.LengthMeters?.ToString("0.###", CultureInfo.InvariantCulture) ?? string.Empty,
+                ["readyForCoordinatePlacement"] = wall.Reliability.ReadyForCoordinatePlacement.ToString(CultureInfo.InvariantCulture),
+                ["requiresReview"] = wall.Reliability.RequiresReview.ToString(CultureInfo.InvariantCulture)
+            };
+
+            yield return new PlacementIssueExport(
+                "placement.review.opening_detail_fragment",
+                DiagnosticSeverity.Warning.ToString(),
+                "Opening-linked wall/detail fragment requires review before wall placement.",
+                wall.PageNumber,
+                new[] { wall.PageNumber },
+                wall.Id,
+                wall.Bounds,
+                wall.BoundsMillimeters,
+                ClampRatio(wall.Confidence),
+                wall.PlacementOmission?.RecommendedAction
+                    ?? "Review the source PDF before importing this candidate as wall geometry; it may be door, window, or opening detail linework.",
+                wall.SourcePrimitiveIds,
+                wall.SourceLayers,
+                BuildIssueEvidence(
+                    (wall.PlacementOmission?.Evidence ?? Array.Empty<string>())
+                        .Concat(wall.Reliability.Reasons)
+                        .DefaultIfEmpty("Opening-linked fragment is not coordinate-ready wall geometry.")),
                 properties);
         }
 

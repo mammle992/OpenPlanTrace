@@ -2708,6 +2708,26 @@ public sealed class ExportTests
                 .GetProperty("wallPlacementOmissionCounts")
                 .GetProperty("opening_detail_fragment_review_required")
                 .GetInt32());
+
+        var issue = Assert.Single(
+            document.RootElement.GetProperty("issues").EnumerateArray(),
+            item => item.GetProperty("code").GetString() == "placement.review.opening_detail_fragment"
+                && item.GetProperty("itemId").GetString() == firstWall.Id);
+        Assert.Equal(
+            "opening_detail_fragment_review_required",
+            issue.GetProperty("properties").GetProperty("placementOmissionCode").GetString());
+        Assert.Contains("Opening-linked", issue.GetProperty("message").GetString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            issue.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("opening-linked-one-endpoint-fragment", StringComparison.Ordinal) == true);
+
+        var importReadiness = summary.GetProperty("importReadiness");
+        Assert.Contains(
+            "placement.wall_opening.opening_detail_fragments_require_review",
+            JsonStrings(importReadiness.GetProperty("reviewIssueCodes")));
+        Assert.DoesNotContain(
+            "placement.review.opening_detail_fragment",
+            JsonStrings(importReadiness.GetProperty("reviewIssueCodes")));
     }
 
     [Fact]

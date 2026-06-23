@@ -187,6 +187,11 @@ Opening-linked one-ended wall fragments use `opening_detail_fragment_review_requ
 when a wall-looking candidate has weak endpoint support and is also referenced by
 a detected door/window/opening candidate, so importers can separate likely
 opening detail linework from possible true wall returns.
+Those omissions also emit `placement.review.opening_detail_fragment` placement
+issues and the import-readiness code
+`placement.wall_opening.opening_detail_fragments_require_review`, giving
+downstream importers exact wall bounds, source IDs/layers, confidence, evidence,
+and a review action before treating the fragment as usable wall geometry.
 
 Room placement exports include `boundaryReliability` buckets so consumers can distinguish clean ready boundary walls from review/rejected blockers, non-blocking duplicate or opening-only evidence, room-supported fragment evidence, and `placementOmittedWallIds` where wall evidence exists but exact clean placement geometry is not safe to import. Rooms with coordinate-blocking boundary walls also emit `placement.review.room_boundary_blocker` placement issues and the import-readiness code `placement.room_boundary.blockers_require_review`, giving downstream importers exact room bounds, wall IDs, source IDs, evidence, and recommended actions for room polygon review.
 
