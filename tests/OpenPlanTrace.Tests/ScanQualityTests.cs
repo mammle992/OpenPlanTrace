@@ -2411,6 +2411,7 @@ public sealed class ScanQualityTests
                 "fragment geometry: 4 fragment(s)",
                 "fragment geometry healed gap ratio 0",
                 "wall type interior: supported wall evidence inside exterior envelope",
+                "wall evidence: unlayered fragment-merged wall candidate has only one trusted structural endpoint (4 fragments, gap ratio 0); keep for topology but block exact placement until reviewed",
                 "wall type refined interior: detected room evidence on both sides"
             ]
         };
@@ -2486,12 +2487,12 @@ public sealed class ScanQualityTests
         Assert.False(exportedWall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
         Assert.Empty(exportedWall.GetProperty("topologySpans").EnumerateArray());
         Assert.Equal(
-            "secondary_without_room_boundary_support",
+            "one_endpoint_fragment_review_required",
             exportedWall.GetProperty("placementOmission").GetProperty("code").GetString());
         Assert.Equal(
             1,
             document.RootElement.GetProperty("summary").GetProperty("wallPlacementOmissionCounts")
-                .GetProperty("secondary_without_room_boundary_support")
+                .GetProperty("one_endpoint_fragment_review_required")
                 .GetInt32());
     }
 

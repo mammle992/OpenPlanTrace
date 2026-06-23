@@ -1526,6 +1526,25 @@ public sealed record PlacementWallOmissionExport(
                 "Review the wall against the source PDF before importing exact coordinates; promote it only when room, layer, or benchmark evidence confirms it is a real partition.");
         }
 
+        if (ContainsEvidence(evidence, "unlayered fragment-merged wall candidate")
+            && ContainsEvidence(evidence, "only one trusted structural endpoint"))
+        {
+            if (ContainsEvidence(evidence, "opening-linked wall fragment"))
+            {
+                return new PlacementWallOmissionClassification(
+                    "opening_detail_fragment_review_required",
+                    "OpeningDetailReview",
+                    "Wall-like fragment is omitted from clean placement topology because it has only one trusted structural endpoint and is linked to a detected opening candidate.",
+                    "Treat this as opening/window/door detail evidence unless review confirms it is a true wall return.");
+            }
+
+            return new PlacementWallOmissionClassification(
+                "one_endpoint_fragment_review_required",
+                "FragmentEndpointReview",
+                "Wall is omitted from clean placement topology because an unlayered fragment-merged candidate has only one trusted structural endpoint.",
+                "Review the opposite endpoint against the source PDF before importing this wall; it may be a true wall return, furniture/detail linework, or a stitched partial wall.");
+        }
+
         if (ContainsEvidence(
             evidence,
             WallPlacementContextGuards.SecondaryStructuralWithoutRoomBoundarySupportReason))
@@ -1573,25 +1592,6 @@ public sealed record PlacementWallOmissionExport(
                 "ThinExteriorFacePairReview",
                 "Wall is omitted from clean placement topology because a thin exterior parallel-face candidate lacks trusted exterior shell or layer support.",
                 "Review the source PDF before importing this as an exterior wall; it may be covered-entry, railing, trim, glazing, or detail linework.");
-        }
-
-        if (ContainsEvidence(evidence, "unlayered fragment-merged wall candidate")
-            && ContainsEvidence(evidence, "only one trusted structural endpoint"))
-        {
-            if (ContainsEvidence(evidence, "opening-linked wall fragment"))
-            {
-                return new PlacementWallOmissionClassification(
-                    "opening_detail_fragment_review_required",
-                    "OpeningDetailReview",
-                    "Wall-like fragment is omitted from clean placement topology because it has only one trusted structural endpoint and is linked to a detected opening candidate.",
-                    "Treat this as opening/window/door detail evidence unless review confirms it is a true wall return.");
-            }
-
-            return new PlacementWallOmissionClassification(
-                "one_endpoint_fragment_review_required",
-                "FragmentEndpointReview",
-                "Wall is omitted from clean placement topology because an unlayered fragment-merged candidate has only one trusted structural endpoint.",
-                "Review the opposite endpoint against the source PDF before importing this wall; it may be a true wall return, furniture/detail linework, or a stitched partial wall.");
         }
 
         if (ContainsEvidence(evidence, "very short unlayered parallel-face candidate"))
