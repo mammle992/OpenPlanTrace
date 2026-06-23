@@ -871,6 +871,7 @@ internal static class WallTopologySpanVisibility
         var replacements = new Dictionary<string, WallGraphTopologySpan>(StringComparer.Ordinal);
         foreach (var group in spans
             .Where(IsAxisAlignedPlacementSpan)
+            .Where(span => !UsesPairedPlacementAxis(span))
             .GroupBy(span => new PlacementRegularizationKey(
                 span.PageNumber,
                 span.SourceWall?.WallType ?? WallType.Unknown,
@@ -1890,6 +1891,25 @@ internal static class WallTopologySpanVisibility
 
     private static bool IsAxisAlignedPlacementSpan(WallGraphTopologySpan span) =>
         ResolveAxisOrientation(span.CenterLine) is not PlacementRunOrientation.Unknown;
+
+    private static bool UsesPairedPlacementAxis(WallGraphTopologySpan span)
+    {
+        var sourceWall = span.SourceWall;
+        if (sourceWall?.PairEvidence is null || sourceWall.CenterLine.Length <= 0.001)
+        {
+            return false;
+        }
+
+        var startParameter = span.SourceWallStartParameter
+            ?? sourceWall.CenterLine.ProjectParameter(span.CenterLine.Start);
+        var endParameter = span.SourceWallEndParameter
+            ?? sourceWall.CenterLine.ProjectParameter(span.CenterLine.End);
+        return WallBodyFootprintBuilder.BuildPlacementAxis(
+                sourceWall,
+                startParameter,
+                endParameter)
+            .UsesPairedFaceEvidence;
+    }
 
     private static PlacementRunOrientation ResolveAxisOrientation(PlanLineSegment line)
     {

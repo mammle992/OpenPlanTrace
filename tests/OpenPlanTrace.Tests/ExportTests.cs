@@ -717,6 +717,38 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementExporter_PreservesPairedFacePlacementAxesDuringRegularization()
+    {
+        var result = CreateClosePairedFacePlacementRunResult();
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+
+        var spanByWallId = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Where(wall => wall.GetProperty("topologySpans").GetArrayLength() == 1)
+            .ToDictionary(
+                wall => wall.GetProperty("id").GetString()!,
+                wall => wall.GetProperty("topologySpans").EnumerateArray().Single());
+
+        Assert.Equal(100, spanByWallId["paired-axis-a"]
+            .GetProperty("centerLine")
+            .GetProperty("start")
+            .GetProperty("y")
+            .GetDouble(), precision: 3);
+        Assert.Equal(104, spanByWallId["paired-axis-b"]
+            .GetProperty("centerLine")
+            .GetProperty("start")
+            .GetProperty("y")
+            .GetDouble(), precision: 3);
+        Assert.DoesNotContain(
+            spanByWallId.Values.SelectMany(span => span.GetProperty("evidence").EnumerateArray()),
+            evidence => evidence.GetString()?.Contains("clean placement regularization", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
     public void PlacementExporter_MergesOverlappingCollinearCleanPlacementRuns()
     {
         var result = CreateOverlappingCollinearPlacementRunResult();
@@ -5920,6 +5952,132 @@ public sealed class ExportTests
                 assessments,
                 walls.Length,
             0)
+        };
+    }
+
+    private static PlanScanResult CreateClosePairedFacePlacementRunResult()
+    {
+        var firstLine = new PlanLineSegment(new PlanPoint(20, 100), new PlanPoint(120, 100));
+        var secondLine = new PlanLineSegment(new PlanPoint(20, 104), new PlanPoint(120, 104));
+        var walls = new[]
+        {
+            SyntheticWall("paired-axis-a", firstLine.Start.X, firstLine.Start.Y, firstLine.End.X, firstLine.End.Y) with
+            {
+                WallType = WallType.Interior,
+                DetectionKind = WallDetectionKind.ParallelLinePair,
+                Thickness = 8,
+                PairEvidence = HorizontalPairEvidenceAround(firstLine, 8, 0.94),
+                Evidence = ["synthetic paired wall", "wall evidence: strong double-edge wall body"]
+            },
+            SyntheticWall("paired-axis-b", secondLine.Start.X, secondLine.Start.Y, secondLine.End.X, secondLine.End.Y) with
+            {
+                WallType = WallType.Interior,
+                DetectionKind = WallDetectionKind.ParallelLinePair,
+                Thickness = 8,
+                PairEvidence = HorizontalPairEvidenceAround(secondLine, 8, 0.94),
+                Evidence = ["synthetic paired wall", "wall evidence: strong double-edge wall body"]
+            }
+        };
+        var nodes = new[]
+        {
+            SyntheticNode("paired-node-a1", 20, 100, WallNodeKind.Endpoint),
+            SyntheticNode("paired-node-a2", 120, 100, WallNodeKind.Endpoint),
+            SyntheticNode("paired-node-b1", 20, 104, WallNodeKind.Endpoint),
+            SyntheticNode("paired-node-b2", 120, 104, WallNodeKind.Endpoint)
+        };
+        var edges = new[]
+        {
+            new WallEdge("paired-edge-a", 1, "paired-node-a1", "paired-node-a2", walls[0].Id, Confidence.High),
+            new WallEdge("paired-edge-b", 1, "paired-node-b1", "paired-node-b2", walls[1].Id, Confidence.High)
+        };
+        var component = new WallGraphComponent(
+            "paired-axis-component",
+            1,
+            WallGraphComponentKind.MainStructural,
+            new PlanRect(16, 92, 108, 20),
+            walls.Select(wall => wall.Id).ToArray(),
+            nodes.Select(node => node.Id).ToArray(),
+            edges.Select(edge => edge.Id).ToArray(),
+            walls.SelectMany(wall => wall.SourcePrimitiveIds).ToArray(),
+            walls.Sum(wall => wall.DrawingLength),
+            Confidence.High,
+            ["synthetic close paired wall-face axes"]);
+        var assessments = walls
+            .Select(wall => new WallEvidenceWallAssessment(
+                wall.Id,
+                wall.PageNumber,
+                wall.Bounds,
+                WallEvidenceCategory.StrongWallBody,
+                Confidence.High,
+                PlacementReady: true,
+                RequiresReview: false,
+                RejectedAsNoise: false,
+                wall.SourcePrimitiveIds,
+                ["synthetic accepted paired wall body evidence"])
+            {
+                Decision = WallEvidenceDecision.Accept
+            })
+            .ToArray();
+        var now = DateTimeOffset.UtcNow;
+
+        return new PlanScanResult(
+            new PlanDocument(
+                "close-paired-face-placement-run",
+                [
+                    new PlanPage(
+                        1,
+                        new PlanSize(160, 180),
+                        walls.Select(wall => WallLine(
+                                wall.Id,
+                                wall.CenterLine.Start,
+                                wall.CenterLine.End))
+                            .Cast<PlanPrimitive>()
+                            .ToArray())
+                ])
+            {
+                Metadata = new PlanMetadata
+                {
+                    SourceName = "close-paired-face-placement-run.pdf",
+                    SourcePath = @"C:\plans\close-paired-face-placement-run.pdf",
+                    Properties = new Dictionary<string, string>
+                    {
+                        ["format"] = "pdf",
+                        ["loader"] = "synthetic",
+                        ["sourceKind"] = PlanSourceKind.Pdf.ToString(),
+                        ["effectiveSourceKind"] = PlanSourceKind.Pdf.ToString()
+                    }
+                }
+            },
+            PlanLayerAnalysis.Empty,
+            PlanCalibration.Empty,
+            MeasurementConsistencyReport.Empty,
+            Array.Empty<TitleBlockAnalysis>(),
+            Array.Empty<DimensionAnnotation>(),
+            Array.Empty<PlanAnnotationBlock>(),
+            Array.Empty<GridAxis>(),
+            Array.Empty<GridBaySpacing>(),
+            Array.Empty<SheetRegion>(),
+            Array.Empty<SurfacePatternCandidate>(),
+            walls,
+            new WallGraph(nodes, edges, [component]),
+            Array.Empty<RoomRegion>(),
+            RoomAdjacencyGraph.Empty,
+            Array.Empty<OpeningCandidate>(),
+            Array.Empty<ObjectCandidate>(),
+            Array.Empty<ObjectCandidateGroup>(),
+            Array.Empty<ObjectAggregate>(),
+            new PipelineDiagnostics(
+                now,
+                now,
+                Array.Empty<PipelineStageReport>(),
+                Array.Empty<PlanDiagnostic>()))
+        {
+            WallEvidenceMap = new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                assessments,
+                walls.Length,
+                0)
         };
     }
 
