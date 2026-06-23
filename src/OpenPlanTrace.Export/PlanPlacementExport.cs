@@ -1443,6 +1443,15 @@ public sealed record PlacementWallOmissionExport(
                 "Keep the candidate for review evidence, but do not import it as a structural wall unless a reviewer promotes it.");
         }
 
+        if (excludedFromStructuralTopology)
+        {
+            return new PlacementWallOmissionClassification(
+                "structural_topology_excluded",
+                "NonStructuralComponent",
+                "Wall is omitted from clean placement topology because the structural topology filter excluded it.",
+                "Review the component evidence before using this wall for exact placement.");
+        }
+
         if (component?.Kind == WallGraphComponentKind.IsolatedFragment)
         {
             return new PlacementWallOmissionClassification(
@@ -1505,15 +1514,6 @@ public sealed record PlacementWallOmissionExport(
                 "SecondaryStructuralReview",
                 "Wall is omitted from clean placement topology because its secondary structural component is not used by any detected room boundary.",
                 "Review the wall against the source PDF and promote it only if it is a real room or exterior boundary.");
-        }
-
-        if (excludedFromStructuralTopology)
-        {
-            return new PlacementWallOmissionClassification(
-                "structural_topology_excluded",
-                "NonStructuralComponent",
-                "Wall is omitted from clean placement topology because the structural topology filter excluded it.",
-                "Review the component evidence before using this wall for exact placement.");
         }
 
         if (wall.FragmentEvidence?.RequiresGeometryReview == true

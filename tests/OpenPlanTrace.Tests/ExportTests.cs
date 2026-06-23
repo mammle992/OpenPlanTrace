@@ -959,6 +959,39 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementExporter_ClassifiesExcludedIsolatedFragmentAsSuppressedTopologyNoise()
+    {
+        var fragmentLine = new PlanLineSegment(
+            new PlanPoint(90, 108),
+            new PlanPoint(190, 108));
+        var result = WithContainedWallAsIsolatedReviewFragment(
+            CreateContainedDuplicatePlacementRunResult(fragmentLine),
+            excludedFromStructuralTopology: true);
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var duplicateWall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(wall => wall.GetProperty("id").GetString() == "duplicate-contained-wall");
+        var omission = duplicateWall.GetProperty("placementOmission");
+
+        Assert.Equal("structural_topology_excluded", omission.GetProperty("code").GetString());
+        Assert.Equal("NonStructuralComponent", omission.GetProperty("category").GetString());
+
+        var summary = document.RootElement.GetProperty("summary");
+        Assert.Equal(1, summary.GetProperty("placementSuppressedWallCount").GetInt32());
+        Assert.Equal(0, summary.GetProperty("placementReviewWallCount").GetInt32());
+        Assert.Equal(
+            1,
+            summary
+                .GetProperty("wallPlacementOmissionCounts")
+                .GetProperty("structural_topology_excluded")
+                .GetInt32());
+    }
+
+    [Fact]
     public void PlacementExporter_ClassifiesIsolatedRepeatedShortDetailAsSuppressedDetail()
     {
         var fragmentLine = new PlanLineSegment(
@@ -6465,7 +6498,8 @@ public sealed class ExportTests
 
     private static PlanScanResult WithContainedWallAsIsolatedReviewFragment(
         PlanScanResult result,
-        IReadOnlyList<string>? assessmentEvidence = null)
+        IReadOnlyList<string>? assessmentEvidence = null,
+        bool excludedFromStructuralTopology = false)
     {
         var containedWall = result.Walls.Single(wall => wall.Id == "duplicate-contained-wall");
         var longWall = result.Walls.Single(wall => wall.Id == "duplicate-long-wall");
@@ -6493,7 +6527,7 @@ public sealed class ExportTests
             containedWall.DrawingLength,
             Confidence.Medium,
             ["synthetic isolated fragment fully covered by a clean topology span"],
-            ExcludedFromStructuralTopology: false);
+            ExcludedFromStructuralTopology: excludedFromStructuralTopology);
         var containedAssessment = new WallEvidenceWallAssessment(
             containedWall.Id,
             containedWall.PageNumber,

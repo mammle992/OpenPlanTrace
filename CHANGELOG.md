@@ -6,6 +6,11 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.03.022] - 2026-06-23
+
+- Improved structural-excluded wall suppression.
+- Improved isolated-fragment wall QA clarity.
+
 ## [0.03.021] - 2026-06-23
 
 - Improved repeated-detail wall suppression.
