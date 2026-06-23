@@ -5434,6 +5434,80 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementExporter_BlocksOverextendedPairedFaceCleanRun()
+    {
+        var result = CreateOffAxisTopologySpanResult(
+            "overextended-paired-face-clean-run",
+            new PlanPoint(160, 100),
+            sourceEndX: 160,
+            detectionKind: WallDetectionKind.ParallelLinePair,
+            category: WallEvidenceCategory.StrongWallBody);
+        var sourceWall = result.Walls.Single();
+        var overextendedPair = new WallPairEvidence(
+            new PlanLineSegment(new PlanPoint(100, 97), new PlanPoint(210, 97)),
+            new PlanLineSegment(new PlanPoint(100, 107), new PlanPoint(210, 107)),
+            10,
+            1,
+            0.95,
+            1,
+            1,
+            ["first-face"],
+            ["second-face"]);
+        result = result with
+        {
+            Walls =
+            [
+                sourceWall with
+                {
+                    Thickness = 10,
+                    PairEvidence = overextendedPair,
+                    Evidence = sourceWall.Evidence
+                        .Append("parallel wall-face pair")
+                        .Append("synthetic overextended paired face clean run")
+                        .ToArray()
+                }
+            ]
+        };
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var root = document.RootElement;
+        var wall = Assert.Single(root.GetProperty("walls").EnumerateArray());
+        var topologySpan = Assert.Single(wall.GetProperty("topologySpans").EnumerateArray());
+        var omission = wall.GetProperty("placementOmission");
+        var issue = Assert.Single(root.GetProperty("issues").EnumerateArray()
+            .Where(item => item.GetProperty("code").GetString() == "placement.review.fragment_geometry"));
+
+        Assert.Equal("fragment_geometry_review", omission.GetProperty("code").GetString());
+        Assert.False(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.True(wall.GetProperty("reliability").GetProperty("requiresReview").GetBoolean());
+        var solidSpan = Assert.Single(wall.GetProperty("solidSpans").EnumerateArray());
+        Assert.False(solidSpan.GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.Equal("fragment_geometry_review", solidSpan.GetProperty("placementOmissionCode").GetString());
+        Assert.True(topologySpan.GetProperty("sourceWallEndProjectionDistanceDrawingUnits").GetDouble() > 12);
+        Assert.Contains(
+            omission.GetProperty("evidence").EnumerateArray(),
+            item => item.GetString()?.Contains("clean placement projection drift requires review", StringComparison.Ordinal) == true);
+        Assert.Contains(
+            omission.GetProperty("evidence").EnumerateArray(),
+            item => item.GetString()?.Contains("clean placement source-length overrun requires review", StringComparison.Ordinal) == true);
+        Assert.Equal(
+            "fragment_geometry_review",
+            issue.GetProperty("properties").GetProperty("placementOmissionCode").GetString());
+        Assert.Equal(0, root.GetProperty("summary").GetProperty("placementReadyWallCount").GetInt32());
+        Assert.Equal(
+            1,
+            root.GetProperty("summary")
+                .GetProperty("wallPlacementOmissionCounts")
+                .GetProperty("fragment_geometry_review")
+                .GetInt32());
+        Assert.Contains(
+            root.GetProperty("summary").GetProperty("importReadiness").GetProperty("reviewIssueCodes").EnumerateArray(),
+            item => item.GetString() == "placement.wall_fragment.geometry_requires_review");
+    }
+
+    [Fact]
     public void PlacementExporter_KeepsPromotedMediumShortDanglingPairedWallReturn()
     {
         var result = CreateOffAxisTopologySpanResult(

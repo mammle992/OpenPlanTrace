@@ -827,6 +827,8 @@ public sealed record PlacementImportReadinessExport(
                 ? "placement.wall_opening.opening_detail_fragments_require_review"
             : string.Equals(code, "placement.review.one_endpoint_fragment", StringComparison.Ordinal)
                 ? "placement.wall_fragment.one_endpoint_fragments_require_review"
+            : string.Equals(code, "placement.review.fragment_geometry", StringComparison.Ordinal)
+                ? "placement.wall_fragment.geometry_requires_review"
             : code;
 
     private static bool ShouldKeepPlacementIssueInformationalForReadiness(string code) =>
@@ -1340,6 +1342,9 @@ public sealed record PlacementWallOmissionExport(
 {
     private const double MinDoorAdjacentCleanTopologyPieceLength = 20.0;
     private const double MaxOpeningLinkedIsolatedFragmentSuppressionLengthDrawingUnits = 140.0;
+    private const double MinUnsafeCleanTopologyProjectionDriftDrawingUnits = 12.0;
+    private const double MaxUnsafeCleanTopologyProjectionDriftThicknessRatio = 3.0;
+    private const double MinUnsafeCleanTopologyLengthOverrunRatio = 0.10;
 
     public static PlacementWallOmissionExport? From(
         WallSegment wall,
@@ -1357,9 +1362,11 @@ public sealed record PlacementWallOmissionExport(
         ArgumentNullException.ThrowIfNull(wall);
         ArgumentNullException.ThrowIfNull(reliability);
 
+        var unsafeCleanTopologyProjectionEvidence = BuildUnsafeCleanTopologyProjectionEvidence(wall, topologySpans);
         if (reliability.ReadyForCoordinatePlacement
             && topologySpans.Count > 0
-            && !excludedFromStructuralTopology)
+            && !excludedFromStructuralTopology
+            && unsafeCleanTopologyProjectionEvidence.Count == 0)
         {
             return null;
         }
@@ -1404,6 +1411,7 @@ public sealed record PlacementWallOmissionExport(
             representedEvidence
                 .Concat(suppressedOpeningTopologyEvidence)
                 .Concat(openingLinkedWallEvidence)
+                .Concat(unsafeCleanTopologyProjectionEvidence)
                 .ToArray());
         var linkedWallIds = ExtractLinkedWallIds(wall.Id, combinedEvidence, repairCandidates);
         var classification = Classify(
@@ -1620,6 +1628,16 @@ public sealed record PlacementWallOmissionExport(
                 "SecondaryStructuralReview",
                 "Wall is omitted from clean placement topology because its secondary structural component is not used by any detected room boundary.",
                 "Review the wall against the source PDF and promote it only if it is a real room or exterior boundary.");
+        }
+
+        if (ContainsEvidence(evidence, "clean placement projection drift requires review")
+            || ContainsEvidence(evidence, "clean placement source-length overrun requires review"))
+        {
+            return new PlacementWallOmissionClassification(
+                "fragment_geometry_review",
+                "FragmentGeometryReview",
+                "Wall is omitted from clean placement topology because projected clean geometry drifted too far from its source wall evidence.",
+                "Review the source PDF and wall graph before importing exact coordinates; this may be an over-extended or snapped-out wall span.");
         }
 
         if (wall.FragmentEvidence?.RequiresGeometryReview == true
@@ -2066,6 +2084,77 @@ public sealed record PlacementWallOmissionExport(
         && !ContainsEvidence(evidence, "geometric room boundary support")
         && !ContainsEvidence(evidence, "detected room evidence on both sides")
         && !ContainsEvidence(evidence, "room-confirmed");
+
+    private static IReadOnlyList<string> BuildUnsafeCleanTopologyProjectionEvidence(
+        WallSegment wall,
+        IReadOnlyList<WallGraphTopologySpan> topologySpans)
+    {
+        if (topologySpans.Count == 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        var evidence = new List<string>();
+        foreach (var span in topologySpans)
+        {
+            var limit = CleanTopologyProjectionDriftLimit(wall, span);
+            var maxProjectionDistance = MaxNullable(
+                span.SourceWallStartProjectionDistanceDrawingUnits,
+                span.SourceWallEndProjectionDistanceDrawingUnits);
+            if (maxProjectionDistance is > 0
+                && maxProjectionDistance.Value > limit)
+            {
+                evidence.Add(
+                    "clean placement projection drift requires review: "
+                    + $"span {span.Id} endpoint projection {Format(maxProjectionDistance.Value)} drawing units "
+                    + $"exceeds {Format(limit)} drawing unit limit");
+            }
+
+            if (span.SourceWallProjectedLengthDrawingUnits is not { } sourceProjectedLength
+                || sourceProjectedLength <= 0.001)
+            {
+                continue;
+            }
+
+            var overrun = Math.Max(0, span.DrawingLength - sourceProjectedLength);
+            var overrunRatio = overrun / sourceProjectedLength;
+            if (overrun > limit && overrunRatio >= MinUnsafeCleanTopologyLengthOverrunRatio)
+            {
+                evidence.Add(
+                    "clean placement source-length overrun requires review: "
+                    + $"span {span.Id} length {Format(span.DrawingLength)} drawing units exceeds source projection "
+                    + $"{Format(sourceProjectedLength)} by {Format(overrun)} drawing units");
+            }
+        }
+
+        return evidence.Distinct(StringComparer.Ordinal).ToArray();
+    }
+
+    private static double CleanTopologyProjectionDriftLimit(WallSegment wall, WallGraphTopologySpan span)
+    {
+        var thickness = Math.Max(Math.Max(wall.Thickness, span.Thickness), 1.0);
+        return Math.Max(
+            MinUnsafeCleanTopologyProjectionDriftDrawingUnits,
+            thickness * MaxUnsafeCleanTopologyProjectionDriftThicknessRatio);
+    }
+
+    private static double? MaxNullable(double? first, double? second)
+    {
+        if (first is null)
+        {
+            return second;
+        }
+
+        if (second is null)
+        {
+            return first;
+        }
+
+        return Math.Max(first.Value, second.Value);
+    }
+
+    private static string Format(double value) =>
+        value.ToString("0.###", CultureInfo.InvariantCulture);
 
     private sealed record PlacementWallOmissionClassification(
         string Code,
@@ -4216,6 +4305,48 @@ public sealed record PlacementIssueExport(
                     (wall.PlacementOmission?.Evidence ?? Array.Empty<string>())
                         .Concat(wall.Reliability.Reasons)
                         .DefaultIfEmpty("Fragmented short wall-pair candidate is not coordinate-ready.")),
+                properties);
+        }
+
+        foreach (var wall in (placementWallsById?.Values ?? Array.Empty<PlacementWallExport>())
+                     .Where(wall => string.Equals(
+                         wall.PlacementOmission?.Code,
+                         "fragment_geometry_review",
+                         StringComparison.Ordinal))
+                     .OrderBy(wall => wall.PageNumber)
+                     .ThenBy(wall => wall.Id, StringComparer.Ordinal))
+        {
+            var properties = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["detector"] = "placementWallReliability",
+                ["wallId"] = wall.Id,
+                ["wallType"] = wall.WallType,
+                ["placementOmissionCode"] = wall.PlacementOmission?.Code ?? string.Empty,
+                ["placementOmissionCategory"] = wall.PlacementOmission?.Category ?? string.Empty,
+                ["drawingLength"] = wall.DrawingLength.ToString("0.###", CultureInfo.InvariantCulture),
+                ["lengthMeters"] = wall.LengthMeters?.ToString("0.###", CultureInfo.InvariantCulture) ?? string.Empty,
+                ["readyForCoordinatePlacement"] = wall.Reliability.ReadyForCoordinatePlacement.ToString(CultureInfo.InvariantCulture),
+                ["requiresReview"] = wall.Reliability.RequiresReview.ToString(CultureInfo.InvariantCulture)
+            };
+
+            yield return new PlacementIssueExport(
+                "placement.review.fragment_geometry",
+                DiagnosticSeverity.Warning.ToString(),
+                "Wall geometry requires review before coordinate placement.",
+                wall.PageNumber,
+                new[] { wall.PageNumber },
+                wall.Id,
+                wall.Bounds,
+                wall.BoundsMillimeters,
+                ClampRatio(wall.Confidence),
+                wall.PlacementOmission?.RecommendedAction
+                    ?? "Review the source PDF and wall graph before importing exact wall coordinates.",
+                wall.SourcePrimitiveIds,
+                wall.SourceLayers,
+                BuildIssueEvidence(
+                    (wall.PlacementOmission?.Evidence ?? Array.Empty<string>())
+                        .Concat(wall.Reliability.Reasons)
+                        .DefaultIfEmpty("Wall fragment geometry is not coordinate-ready.")),
                 properties);
         }
 
