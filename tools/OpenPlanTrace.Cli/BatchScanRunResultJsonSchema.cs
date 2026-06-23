@@ -6,7 +6,7 @@ internal static class BatchScanRunResultJsonSchema
     public const string CurrentSchemaVersion = BatchScanRunResult.CurrentSchemaVersion;
 
     public const string CurrentResourceName =
-        "OpenPlanTrace.Cli.Schemas.openplantrace.batch.v5.schema.json";
+        "OpenPlanTrace.Cli.Schemas.openplantrace.batch.v6.schema.json";
 
     public static string ReadCurrent()
     {

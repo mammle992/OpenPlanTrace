@@ -4,6 +4,7 @@ using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Microsoft.ML.OnnxRuntime;
 using OpenPlanTrace;
 using OpenPlanTrace.Ai;
@@ -5812,6 +5813,13 @@ internal static class OpenPlanTraceCli
         }
     }
 
+    private static void ValidateNullableRatioProperty(
+        JsonElement root,
+        string displayName,
+        string propertyName,
+        ICollection<ArtifactValidationMessage> messages) =>
+        ValidateOptionalRatioProperty(root, displayName, propertyName, messages);
+
     private static void ValidateRequiredRatioProperty(
         JsonElement root,
         string displayName,
@@ -6007,6 +6015,16 @@ internal static class OpenPlanTraceCli
                 ValidateBatchVisualSnapshotSummary(visualSnapshot, $"{prefix}.visualSnapshot", messages);
             }
 
+            if (!item.TryGetProperty("importReadiness", out var importReadiness)
+                || importReadiness.ValueKind != JsonValueKind.Object)
+            {
+                messages.Add(new ArtifactValidationMessage("error", $"{prefix} requires object importReadiness."));
+            }
+            else
+            {
+                ValidateBatchImportReadinessSummary(importReadiness, $"{prefix}.importReadiness", messages);
+            }
+
             if (status is BatchScanItemStatus.Succeeded or BatchScanItemStatus.CompletedWithErrors)
             {
                 RequireNonEmptyStringProperty(item, prefix, "scanJsonPath", messages);
@@ -6035,6 +6053,45 @@ internal static class OpenPlanTraceCli
             {
                 RequireNonEmptyStringProperty(item, prefix, "errorMessage", messages);
             }
+        }
+    }
+
+    private static void ValidateBatchImportReadinessSummary(
+        JsonElement summary,
+        string prefix,
+        ICollection<ArtifactValidationMessage> messages)
+    {
+        RequireNonEmptyStringProperty(summary, prefix, "grade", messages);
+        ValidateRequiredRatioProperty(summary, prefix, "score", messages);
+        ValidateBooleanProperty(summary, prefix, "readyForGeometryImport", messages);
+        ValidateBooleanProperty(summary, prefix, "readyForMetricImport", messages);
+        ValidateBooleanProperty(summary, prefix, "readyForRoutingImport", messages);
+        ValidateBooleanProperty(summary, prefix, "requiresReview", messages);
+        ValidateNullableRatioProperty(summary, prefix, "coordinateReadyRatio", messages);
+        ValidateNullableIntegerProperty(summary, prefix, "coordinateReadyEntityCount", messages);
+        ValidateNullableIntegerProperty(summary, prefix, "coordinateTrackedEntityCount", messages);
+        ValidateNullableRatioProperty(summary, prefix, "metricReadyRatio", messages);
+        ValidateNullableIntegerProperty(summary, prefix, "metricReadyEntityCount", messages);
+        ValidateNullableIntegerProperty(summary, prefix, "metricTrackedEntityCount", messages);
+        ValidateRequiredStringArrayProperty(summary, prefix, "blockingIssueCodes", messages);
+        ValidateRequiredStringArrayProperty(summary, prefix, "reviewIssueCodes", messages);
+        ValidateRequiredStringArrayProperty(summary, prefix, "evidence", messages);
+
+        var readyForGeometry = ReadBooleanProperty(summary, "readyForGeometryImport");
+        var readyForMetric = ReadBooleanProperty(summary, "readyForMetricImport");
+        var readyForRouting = ReadBooleanProperty(summary, "readyForRoutingImport");
+        if (readyForMetric == true && readyForGeometry != true)
+        {
+            messages.Add(new ArtifactValidationMessage(
+                "error",
+                $"{prefix} readyForMetricImport cannot be true unless readyForGeometryImport is true."));
+        }
+
+        if (readyForRouting == true && readyForGeometry != true)
+        {
+            messages.Add(new ArtifactValidationMessage(
+                "error",
+                $"{prefix} readyForRoutingImport cannot be true unless readyForGeometryImport is true."));
         }
     }
 
@@ -9992,8 +10049,11 @@ internal static class OpenPlanTraceCli
             var visual = item.VisualSnapshot.SchemaVersion == "-"
                 ? string.Empty
                 : $" visual {item.VisualSnapshot.DrawableItemCount} items, {item.VisualSnapshot.IssueCount} issue(s)";
+            var readiness = item.ImportReadiness.Grade == "-"
+                ? string.Empty
+                : $" readiness {item.ImportReadiness.Grade} {item.ImportReadiness.Score:0.###}";
             var attempts = item.AttemptCount > 1 ? $" attempts {item.AttemptCount}" : string.Empty;
-            Console.WriteLine($"  [{item.Status}] {Path.GetFileName(item.InputPath)} - {duration} ms{quality}{visual}{attempts}");
+            Console.WriteLine($"  [{item.Status}] {Path.GetFileName(item.InputPath)} - {duration} ms{quality}{readiness}{visual}{attempts}");
             if (!string.IsNullOrWhiteSpace(item.ErrorMessage))
             {
                 Console.WriteLine($"    {item.ErrorMessage}");
@@ -12680,7 +12740,7 @@ internal sealed record BatchScanRunResult(
     int RetryCount,
     IReadOnlyList<BatchScanItemResult> Items)
 {
-    public const string CurrentSchemaVersion = "openplantrace.batch.v5";
+    public const string CurrentSchemaVersion = "openplantrace.batch.v6";
 
     public int ItemCount => Items.Count;
 
@@ -12722,6 +12782,7 @@ internal sealed record BatchScanItemResult(
     string? OverlayDirectory,
     string? VisualSnapshotPath,
     BatchVisualSnapshotSummary VisualSnapshot,
+    BatchImportReadinessSummary ImportReadiness,
     string? ErrorMessage,
     PlanSourceCapability? SourceCapability)
 {
@@ -12754,6 +12815,7 @@ internal sealed record BatchScanItemResult(
             overlayDirectory is null ? null : Path.GetFullPath(overlayDirectory),
             Path.GetFullPath(visualSnapshotPath),
             BatchVisualSnapshotSummary.From(visualSnapshot),
+            BatchImportReadinessSummary.From(PlanImportReadiness.FromScanResult(scan)),
             scan.Diagnostics.ErrorCount > 0 ? "Scan completed with diagnostic errors." : null,
             null);
 
@@ -12782,6 +12844,7 @@ internal sealed record BatchScanItemResult(
             null,
             null,
             BatchVisualSnapshotSummary.Empty,
+            BatchImportReadinessSummary.Empty,
             errorMessage,
             sourceCapability);
 }
@@ -12820,6 +12883,121 @@ internal sealed record BatchVisualSnapshotSummary(
     public static BatchVisualSnapshotSummary Empty { get; } =
         new("-", 0, 0, 0, 0, 0, 0, 0, Array.Empty<string>());
 }
+
+internal sealed record BatchImportReadinessSummary(
+    string Grade,
+    double Score,
+    bool ReadyForGeometryImport,
+    bool ReadyForMetricImport,
+    bool ReadyForRoutingImport,
+    bool RequiresReview,
+    double? CoordinateReadyRatio,
+    int? CoordinateReadyEntityCount,
+    int? CoordinateTrackedEntityCount,
+    double? MetricReadyRatio,
+    int? MetricReadyEntityCount,
+    int? MetricTrackedEntityCount,
+    IReadOnlyList<string> BlockingIssueCodes,
+    IReadOnlyList<string> ReviewIssueCodes,
+    IReadOnlyList<string> Evidence)
+{
+    private static readonly Regex CoordinateRatioPattern = new(
+        @"^structural import coordinate readiness ratio (?<ratio>[0-9]+(?:[,.][0-9]+)?)(?: \((?<ready>[0-9]+)/(?<tracked>[0-9]+) structural import entities\))?",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static readonly Regex MetricRatioPattern = new(
+        @"^structural import metric readiness ratio (?<ratio>[0-9]+(?:[,.][0-9]+)?)(?: \((?<ready>[0-9]+)/(?<tracked>[0-9]+) structural import entities\))?",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    public static BatchImportReadinessSummary From(PlanImportReadiness readiness)
+    {
+        ArgumentNullException.ThrowIfNull(readiness);
+
+        var coordinate = ReadRatio(readiness.Evidence, CoordinateRatioPattern);
+        var metric = ReadRatio(readiness.Evidence, MetricRatioPattern);
+        return new BatchImportReadinessSummary(
+            readiness.Grade,
+            readiness.Score,
+            readiness.ReadyForGeometryImport,
+            readiness.ReadyForMetricImport,
+            readiness.ReadyForRoutingImport,
+            readiness.RequiresReview,
+            coordinate.Ratio,
+            coordinate.ReadyEntityCount,
+            coordinate.TrackedEntityCount,
+            metric.Ratio,
+            metric.ReadyEntityCount,
+            metric.TrackedEntityCount,
+            readiness.BlockingIssueCodes,
+            readiness.ReviewIssueCodes,
+            readiness.Evidence);
+    }
+
+    public static BatchImportReadinessSummary Empty { get; } =
+        new(
+            "-",
+            0,
+            false,
+            false,
+            false,
+            true,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            Array.Empty<string>(),
+            Array.Empty<string>(),
+            Array.Empty<string>());
+
+    private static BatchReadinessRatio ReadRatio(
+        IReadOnlyList<string> evidence,
+        Regex pattern)
+    {
+        foreach (var item in evidence)
+        {
+            var match = pattern.Match(item);
+            if (!match.Success)
+            {
+                continue;
+            }
+
+            var ratio = ReadNullableDouble(match.Groups["ratio"].Value);
+            var ready = ReadNullableInt(match.Groups["ready"].Value);
+            var tracked = ReadNullableInt(match.Groups["tracked"].Value);
+            return new BatchReadinessRatio(ratio, ready, tracked);
+        }
+
+        return new BatchReadinessRatio(null, null, null);
+    }
+
+    private static double? ReadNullableDouble(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return double.TryParse(
+            value.Replace(',', '.'),
+            NumberStyles.Float,
+            CultureInfo.InvariantCulture,
+            out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private static int? ReadNullableInt(string value) =>
+        int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
+}
+
+internal sealed record BatchReadinessRatio(
+    double? Ratio,
+    int? ReadyEntityCount,
+    int? TrackedEntityCount);
 
 internal sealed record BatchScanCounts(
     int Pages,

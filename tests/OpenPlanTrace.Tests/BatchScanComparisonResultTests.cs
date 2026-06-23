@@ -131,15 +131,19 @@ public sealed class BatchScanComparisonResultTests
         var markdown = BatchScanMarkdownReport.Create(run);
 
         Assert.Contains("# OpenPlanTrace Batch Scan Report", markdown);
-        Assert.Contains("Status: REVIEW", markdown);
-        Assert.Contains("| Item | Status | Source | Quality | Geometry | Visual QA | Diagnostics | Artifacts |", markdown);
+        Assert.Contains("Status: BLOCKED", markdown);
+        Assert.Contains("| Item | Status | Source | Readiness | Quality | Geometry | Visual QA | Diagnostics | Artifacts |", markdown);
+        Assert.Contains("Blocked 0.7 G:N M:N R:N coord 0.559 (66/118) metric 0.559 (66/118)", markdown);
         Assert.Contains("walls 39, nodes 24, rooms 0", markdown);
         Assert.Contains("scan+visual+geojson+placement+svg", markdown);
         Assert.Contains("## Corpus Signals", markdown);
         Assert.Contains("Geometry totals: walls 39, rooms 0, openings 4", markdown);
+        Assert.Contains("Import readiness: 1 blocked item(s), 0/1 geometry-ready, 0/1 metric-ready, 0/1 routing-ready, average score 0.7", markdown);
+        Assert.Contains("Import blocking codes: placement.import.low_coordinate_ready_ratio:1", markdown);
         Assert.Contains("Visual issue codes: visual.overlay_coverage_high:1", markdown);
         Assert.Contains("## Review Priorities", markdown);
         Assert.Contains("quality review required", markdown);
+        Assert.Contains("import readiness Blocked 0.7", markdown);
         Assert.Contains("walls detected but no rooms solved", markdown);
         Assert.Contains("## Artifact Index", markdown);
         Assert.Contains(@"C:\runs\candidate\placement.json", markdown);
@@ -220,6 +224,22 @@ public sealed class BatchScanComparisonResultTests
                 ErrorIssueCount: 0,
                 MaxDetectionCoverage: 0.83,
                 IssueCodes: new[] { "visual.overlay_coverage_high" }),
+            ImportReadiness: new BatchImportReadinessSummary(
+                Grade: "Blocked",
+                Score: 0.7,
+                ReadyForGeometryImport: false,
+                ReadyForMetricImport: false,
+                ReadyForRoutingImport: false,
+                RequiresReview: true,
+                CoordinateReadyRatio: 0.559,
+                CoordinateReadyEntityCount: 66,
+                CoordinateTrackedEntityCount: 118,
+                MetricReadyRatio: 0.559,
+                MetricReadyEntityCount: 66,
+                MetricTrackedEntityCount: 118,
+                BlockingIssueCodes: new[] { "placement.import.low_coordinate_ready_ratio" },
+                ReviewIssueCodes: new[] { "placement.wall_evidence.requires_review" },
+                Evidence: new[] { "structural import coordinate readiness ratio 0.559 (66/118 structural import entities)" }),
             ErrorMessage: null,
             SourceCapability: null);
 }

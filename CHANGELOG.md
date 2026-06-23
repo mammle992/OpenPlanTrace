@@ -6,6 +6,40 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.03.001] - 2026-06-23
+
+### Added
+- Batch result JSON is now schema-versioned as `openplantrace.batch.v6`.
+- Each batch item now includes an `importReadiness` summary with grade, score,
+  geometry/metric/routing readiness booleans, blocking/review issue codes,
+  coordinate-ready ratio, metric-ready ratio, ready/tracked entity counts, and
+  evidence copied from the scan import-readiness model.
+- Batch Markdown reports now include an explicit Readiness column, corpus-level
+  import-readiness rollups, blocking/review issue-code rollups, and blocked
+  report status when any item is not geometry/metric/routing import-ready.
+- CLI batch console summaries now print import-readiness grade and score beside
+  scan quality.
+
+### Verified
+- Added regression coverage for batch Markdown import-readiness output and the
+  documented v6 batch schema contract.
+- Ran focused batch report/schema tests: `5` tests passed.
+- Ran a three-PDF local corpus in hard/medium/light order with `wall-qa-review`,
+  GeoJSON, placement JSON, visual snapshots, SVG overlays, and Markdown report
+  output.
+- The corpus run completed with `3` succeeded files, `0` scan failures, and
+  report status `BLOCKED` because all three files remain blocked for geometry,
+  metric, and routing import readiness.
+- Deep validation passed for the generated `openplantrace.batch.v6` batch
+  result, and the exported batch-result schema included the new
+  `importReadiness` contract.
+- Rendered and inspected high-resolution wall-QA screenshots for the supplied
+  hard, medium, and light PDFs. The screenshots confirmed that the next major
+  accuracy target is coordinate-frame consistency plus cleaner wall-vs-detail
+  separation around dense orthogonal details, stairs, openings, and wall
+  returns.
+- Ran the full test suite: `732` tests passed.
+
 ## [0.03.000] - 2026-06-23
 
 ### Added

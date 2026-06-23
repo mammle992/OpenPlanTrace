@@ -39,12 +39,12 @@ internal static class BatchScanMarkdownReport
     {
         builder.AppendLine("## Corpus Table");
         builder.AppendLine();
-        builder.AppendLine("| Item | Status | Source | Quality | Geometry | Visual QA | Diagnostics | Artifacts |");
-        builder.AppendLine("| --- | --- | --- | --- | --- | --- | --- | --- |");
+        builder.AppendLine("| Item | Status | Source | Readiness | Quality | Geometry | Visual QA | Diagnostics | Artifacts |");
+        builder.AppendLine("| --- | --- | --- | --- | --- | --- | --- | --- | --- |");
 
         if (run.Items.Count == 0)
         {
-            builder.AppendLine("| - | - | - | - | - | - | - | - |");
+            builder.AppendLine("| - | - | - | - | - | - | - | - | - |");
             builder.AppendLine();
             return;
         }
@@ -52,7 +52,7 @@ internal static class BatchScanMarkdownReport
         foreach (var item in run.Items.OrderBy(item => item.ItemNumber))
         {
             builder.AppendLine(
-                $"| {Cell(ItemLabel(item))} | {Cell(item.Status.ToString())} | {Cell(SourceSummary(item))} | {Cell(QualitySummary(item))} | {Cell(GeometrySummary(item))} | {Cell(VisualSummary(item))} | {Cell(DiagnosticSummary(item))} | {Cell(ArtifactSummary(item))} |");
+                $"| {Cell(ItemLabel(item))} | {Cell(item.Status.ToString())} | {Cell(SourceSummary(item))} | {Cell(ReadinessSummary(item.ImportReadiness))} | {Cell(QualitySummary(item))} | {Cell(GeometrySummary(item))} | {Cell(VisualSummary(item))} | {Cell(DiagnosticSummary(item))} | {Cell(ArtifactSummary(item))} |");
         }
 
         builder.AppendLine();
@@ -84,11 +84,22 @@ internal static class BatchScanMarkdownReport
             Errors = run.Items.Sum(item => item.Counts.DiagnosticErrors),
             VisualIssues = run.Items.Sum(item => item.VisualSnapshot.IssueCount)
         };
+        var blocked = run.Items.Count(item => string.Equals(item.ImportReadiness.Grade, "Blocked", StringComparison.Ordinal));
+        var geometryReady = run.Items.Count(item => item.ImportReadiness.ReadyForGeometryImport);
+        var metricReady = run.Items.Count(item => item.ImportReadiness.ReadyForMetricImport);
+        var routingReady = run.Items.Count(item => item.ImportReadiness.ReadyForRoutingImport);
+        var averageReadinessScore = run.Items.Count == 0
+            ? 0
+            : run.Items.Average(item => item.ImportReadiness.Score);
 
         builder.AppendLine($"- Geometry totals: walls {totals.Walls}, rooms {totals.Rooms}, openings {totals.Openings}, objects {totals.Objects}, aggregates {totals.Aggregates}, routing {totals.Routing}, surface/detail patterns {totals.SurfacePatterns}");
+        builder.AppendLine($"- Import readiness: {blocked} blocked item(s), {geometryReady}/{run.Items.Count} geometry-ready, {metricReady}/{run.Items.Count} metric-ready, {routingReady}/{run.Items.Count} routing-ready, average score {FormatConfidence(averageReadinessScore)}");
+        builder.AppendLine($"- Import blocking codes: {FormatCounts(run.Items.SelectMany(item => item.ImportReadiness.BlockingIssueCodes))}");
+        builder.AppendLine($"- Import review codes: {FormatCounts(run.Items.SelectMany(item => item.ImportReadiness.ReviewIssueCodes))}");
         builder.AppendLine($"- Review burden: {run.Items.Count(item => item.Counts.RequiresReview)} review-required item(s), {totals.VisualIssues} visual issue(s), {totals.Diagnostics} diagnostic message(s), {totals.Warnings} warning(s), {totals.Errors} error(s)");
         builder.AppendLine($"- Source kinds: {FormatCounts(run.Items.Select(item => SourceSummary(item)))}");
         builder.AppendLine($"- Quality grades: {FormatCounts(run.Items.Select(item => item.Counts.QualityGrade))}");
+        builder.AppendLine($"- Import readiness grades: {FormatCounts(run.Items.Select(item => item.ImportReadiness.Grade))}");
         builder.AppendLine($"- Visual issue codes: {FormatCounts(run.Items.SelectMany(item => item.VisualSnapshot.IssueCodes))}");
 
         var slowest = run.Items
@@ -216,6 +227,14 @@ internal static class BatchScanMarkdownReport
             return "BLOCKED";
         }
 
+        if (run.Items.Any(item =>
+            !item.ImportReadiness.ReadyForGeometryImport
+            || !item.ImportReadiness.ReadyForMetricImport
+            || !item.ImportReadiness.ReadyForRoutingImport))
+        {
+            return "BLOCKED";
+        }
+
         return run.Items.Any(item =>
             item.Counts.RequiresReview
             || item.Counts.DiagnosticWarnings > 0
@@ -253,6 +272,13 @@ internal static class BatchScanMarkdownReport
         if (item.Counts.RequiresReview)
         {
             reasons.Add($"quality review required ({item.Counts.QualityGrade} {FormatConfidence(item.Counts.QualityConfidence)})");
+        }
+
+        if (!item.ImportReadiness.ReadyForGeometryImport
+            || !item.ImportReadiness.ReadyForMetricImport
+            || !item.ImportReadiness.ReadyForRoutingImport)
+        {
+            reasons.Add($"import readiness {ReadinessSummary(item.ImportReadiness)}");
         }
 
         if (item.VisualSnapshot.ErrorIssueCount > 0)
@@ -302,6 +328,21 @@ internal static class BatchScanMarkdownReport
         }
 
         weight += item.Counts.DiagnosticErrors * 10;
+        if (!item.ImportReadiness.ReadyForGeometryImport)
+        {
+            weight += 12;
+        }
+
+        if (!item.ImportReadiness.ReadyForMetricImport)
+        {
+            weight += 6;
+        }
+
+        if (!item.ImportReadiness.ReadyForRoutingImport)
+        {
+            weight += 4;
+        }
+
         weight += item.VisualSnapshot.ErrorIssueCount * 8;
         weight += item.VisualSnapshot.WarningIssueCount * 4;
         if (item.Counts.RequiresReview)
@@ -342,6 +383,26 @@ internal static class BatchScanMarkdownReport
 
         var review = item.Counts.RequiresReview ? ", review" : string.Empty;
         return $"{item.Counts.QualityGrade} {FormatConfidence(item.Counts.QualityConfidence)}{review}";
+    }
+
+    private static string ReadinessSummary(BatchImportReadinessSummary readiness)
+    {
+        if (readiness.Grade == "-")
+        {
+            return "-";
+        }
+
+        return $"{readiness.Grade} {FormatConfidence(readiness.Score)} G:{Ready(readiness.ReadyForGeometryImport)} M:{Ready(readiness.ReadyForMetricImport)} R:{Ready(readiness.ReadyForRoutingImport)} coord {ReadinessRatio(readiness.CoordinateReadyRatio, readiness.CoordinateReadyEntityCount, readiness.CoordinateTrackedEntityCount)} metric {ReadinessRatio(readiness.MetricReadyRatio, readiness.MetricReadyEntityCount, readiness.MetricTrackedEntityCount)}";
+    }
+
+    private static string Ready(bool value) => value ? "Y" : "N";
+
+    private static string ReadinessRatio(double? ratio, int? ready, int? tracked)
+    {
+        var ratioText = ratio is null ? "-" : FormatConfidence(ratio.Value);
+        return ready is not null && tracked is not null
+            ? $"{ratioText} ({ready}/{tracked})"
+            : ratioText;
     }
 
     private static string GeometrySummary(BatchScanItemResult item) =>
