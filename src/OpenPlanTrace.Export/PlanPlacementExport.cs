@@ -540,6 +540,7 @@ public sealed record PlacementSummaryExport(
             or "object_like_linework"
             or "structural_topology_excluded"
             or "opening_consumed_wall_remainder"
+            or "opening_linked_isolated_fragment_suppressed"
             or "repeated_short_detail_review_required"
             or "tiny_door_adjacent_topology_suppressed";
 
@@ -557,6 +558,7 @@ public sealed record PlacementSummaryExport(
             or "object_like_linework"
             or "isolated_fragment"
             or "opening_consumed_wall_remainder"
+            or "opening_linked_isolated_fragment_suppressed"
             or "repeated_short_detail_review_required"
             or "structural_topology_excluded");
     }
@@ -1271,6 +1273,7 @@ public sealed record PlacementWallOmissionExport(
     IReadOnlyList<string> Evidence)
 {
     private const double MinDoorAdjacentCleanTopologyPieceLength = 20.0;
+    private const double MaxOpeningLinkedIsolatedFragmentSuppressionLengthDrawingUnits = 140.0;
 
     public static PlacementWallOmissionExport? From(
         WallSegment wall,
@@ -1459,6 +1462,15 @@ public sealed record PlacementWallOmissionExport(
                 "OpeningSplitReview",
                 "Wall is omitted from clean placement topology because only tiny door-adjacent wall leftovers remained after opening cutouts were applied.",
                 "Keep the raw wall and opening cutout for QA, but do not import the tiny door-adjacent remainder as a structural wall unless reviewed.");
+        }
+
+        if (IsSuppressedOpeningLinkedIsolatedFragment(component, wall, topologySpans, evidence))
+        {
+            return new PlacementWallOmissionClassification(
+                "opening_linked_isolated_fragment_suppressed",
+                "OpeningLinkedIsolatedFragment",
+                "Wall-like linework is omitted from clean placement topology because it is a short isolated fragment linked only to detected opening evidence.",
+                "Use the opening anchor and surrounding clean walls for placement; keep this fragment as source QA evidence unless a reviewer promotes it.");
         }
 
         if (component?.Kind == WallGraphComponentKind.IsolatedFragment)
@@ -1705,6 +1717,7 @@ public sealed record PlacementWallOmissionExport(
         || evidence.Contains("unlayered parallel-face candidate", StringComparison.OrdinalIgnoreCase)
         || evidence.Contains("repeated short unlayered", StringComparison.OrdinalIgnoreCase)
         || evidence.Contains("short high-density unknown-layer wall/detail candidate", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("opening-linked wall fragment", StringComparison.OrdinalIgnoreCase)
         || evidence.Contains("tiny door-adjacent placement topology piece", StringComparison.OrdinalIgnoreCase);
 
     private static IReadOnlyList<string> BuildSuppressedOpeningTopologyEvidence(
@@ -1970,6 +1983,20 @@ public sealed record PlacementWallOmissionExport(
 
     private static bool ContainsEvidence(IReadOnlyList<string> evidence, string text) =>
         evidence.Any(item => item.Contains(text, StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsSuppressedOpeningLinkedIsolatedFragment(
+        WallGraphComponent? component,
+        WallSegment wall,
+        IReadOnlyList<WallGraphTopologySpan> topologySpans,
+        IReadOnlyList<string> evidence) =>
+        component?.Kind == WallGraphComponentKind.IsolatedFragment
+        && topologySpans.Count == 0
+        && wall.DrawingLength <= MaxOpeningLinkedIsolatedFragmentSuppressionLengthDrawingUnits
+        && ContainsEvidence(evidence, "opening-linked wall fragment")
+        && !ContainsEvidence(evidence, "explicit room boundary support")
+        && !ContainsEvidence(evidence, "geometric room boundary support")
+        && !ContainsEvidence(evidence, "detected room evidence on both sides")
+        && !ContainsEvidence(evidence, "room-confirmed");
 
     private sealed record PlacementWallOmissionClassification(
         string Code,

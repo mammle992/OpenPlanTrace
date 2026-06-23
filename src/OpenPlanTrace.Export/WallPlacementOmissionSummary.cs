@@ -54,6 +54,7 @@ internal static class WallPlacementOmissionSummary
         "short_parallel_pair_review_required",
         "covered_area_boundary_review_required",
         "repeated_short_detail_review_required",
+        "opening_linked_isolated_fragment_suppressed",
         "tiny_door_adjacent_topology_suppressed",
         "short_dense_detail_review_required",
         "secondary_over_sourced_detail_linework",
@@ -186,6 +187,7 @@ internal static class WallPlacementOmissionSummary
         || string.Equals(code, "object_like_linework", StringComparison.Ordinal)
         || string.Equals(code, "structural_topology_excluded", StringComparison.Ordinal)
         || string.Equals(code, "opening_consumed_wall_remainder", StringComparison.Ordinal)
+        || string.Equals(code, "opening_linked_isolated_fragment_suppressed", StringComparison.Ordinal)
         || string.Equals(code, "repeated_short_detail_review_required", StringComparison.Ordinal)
         || string.Equals(code, "tiny_door_adjacent_topology_suppressed", StringComparison.Ordinal);
 
@@ -290,6 +292,7 @@ internal static class WallPlacementOmissionSummary
             "object_like_linework" => 82,
             "structural_topology_excluded" => 84,
             "opening_consumed_wall_remainder" => 86,
+            "opening_linked_isolated_fragment_suppressed" => 87,
             "repeated_short_detail_review_required" => 88,
             "tiny_door_adjacent_topology_suppressed" => 89,
             "duplicate_clean_topology_span" => 90,
@@ -466,6 +469,7 @@ internal static class WallPlacementOmissionSummary
             "object_like_linework" => "object linework",
             "weak_promoted_fragment_room_boundary_review_required" => "weak promoted fragments",
             "opening_consumed_wall_remainder" => "opening-consumed walls",
+            "opening_linked_isolated_fragment_suppressed" => "opening-linked fragments",
             "opening_detail_fragment_review_required" => "opening detail fragments",
             "one_endpoint_fragment_review_required" => "one-ended fragments",
             "main_structural_semantic_support_review_required" => "main semantic support",

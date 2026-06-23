@@ -1027,6 +1027,69 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementExporter_SuppressesShortOpeningLinkedIsolatedFragments()
+    {
+        var fragmentLine = new PlanLineSegment(
+            new PlanPoint(90, 108),
+            new PlanPoint(190, 108));
+        var result = WithContainedWallAsIsolatedReviewFragment(
+            CreateContainedDuplicatePlacementRunResult(fragmentLine),
+            [
+                "opening-linked wall fragment: wall is referenced by opening candidate(s) synthetic-opening (Window/Fixed/Horizontal)"
+            ]);
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var duplicateWall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(wall => wall.GetProperty("id").GetString() == "duplicate-contained-wall");
+        var omission = duplicateWall.GetProperty("placementOmission");
+
+        Assert.Equal("opening_linked_isolated_fragment_suppressed", omission.GetProperty("code").GetString());
+        Assert.Equal("OpeningLinkedIsolatedFragment", omission.GetProperty("category").GetString());
+
+        var summary = document.RootElement.GetProperty("summary");
+        Assert.Equal(1, summary.GetProperty("placementSuppressedWallCount").GetInt32());
+        Assert.Equal(0, summary.GetProperty("placementReviewWallCount").GetInt32());
+        Assert.Equal(
+            1,
+            summary
+                .GetProperty("wallPlacementOmissionCounts")
+                .GetProperty("opening_linked_isolated_fragment_suppressed")
+                .GetInt32());
+    }
+
+    [Fact]
+    public void PlacementExporter_KeepsLongOpeningLinkedIsolatedFragmentsReviewVisible()
+    {
+        var fragmentLine = new PlanLineSegment(
+            new PlanPoint(40, 122),
+            new PlanPoint(220, 122));
+        var result = WithContainedWallAsIsolatedReviewFragment(
+            CreateContainedDuplicatePlacementRunResult(fragmentLine),
+            [
+                "opening-linked wall fragment: wall is referenced by opening candidate(s) synthetic-opening (Window/Fixed/Horizontal)"
+            ]);
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var duplicateWall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(wall => wall.GetProperty("id").GetString() == "duplicate-contained-wall");
+        var omission = duplicateWall.GetProperty("placementOmission");
+
+        Assert.Equal("isolated_fragment", omission.GetProperty("code").GetString());
+
+        var summary = document.RootElement.GetProperty("summary");
+        Assert.Equal(0, summary.GetProperty("placementSuppressedWallCount").GetInt32());
+        Assert.Equal(1, summary.GetProperty("placementReviewWallCount").GetInt32());
+    }
+
+    [Fact]
     public void PlacementExporter_ClassifiesIsolatedRepeatedShortDetailAsSuppressedDetail()
     {
         var fragmentLine = new PlanLineSegment(
