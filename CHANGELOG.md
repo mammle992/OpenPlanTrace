@@ -6,6 +6,38 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.03.009] - 2026-06-23
+
+### Improved
+- Semantic room recovery now accepts compact room codes such as short
+  letter/number labels when they are directly backed by nearby valid square
+  meter area text.
+- Compact room codes remain ignored unless paired with area evidence, so
+  standalone equipment tags, dimension notes, and plan codes do not become room
+  seeds.
+- Review-grade semantic room seeds now use calibration and printed room area to
+  create area-sized approximate bounds instead of tiny text-box bounds.
+
+### Verified
+- Added regression tests for an area-backed compact room code becoming a room
+  seed and for a compact code without area text staying rejected.
+- Ran focused room semantics, wall refinement, and scan quality tests: `107`
+  tests passed.
+- Ran the full test suite: `755` tests passed.
+- Ran the supplied hard, medium, and light PDF corpus in that order with
+  compact JSON, placement exports, wall-QA overlays, and high-resolution
+  cropped wall-QA PNG screenshots rendered headlessly with Edge.
+- Hard PDF semantic room recovery improved from `1` room to `10` rooms and
+  produced `1` room adjacency. These rooms are intentionally review-grade
+  because they still lack trusted wall-boundary links.
+- Hard PDF placement-ready walls stayed at `6` and clean topology spans stayed
+  at `7`; the coordinate-ready ratio dropped because the newly recovered rooms
+  are now counted as review-required geometry instead of being invisible.
+- Medium and light PDFs stayed stable in room, wall, and placement counts.
+- Visual review still shows the next major blocker clearly: true wall rails are
+  visible in the source linework but are not yet consistently promoted into
+  clean, connected exterior/interior topology spans.
+
 ## [0.03.008] - 2026-06-23
 
 ### Improved

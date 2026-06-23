@@ -68,6 +68,8 @@ internal sealed class RoomDetectionStage : IPipelineStage
     };
     private static readonly Regex RoomAreaMeasurementRegex =
         new(@"^\s*\d+(?:[\.,]\d+)?\s*m(?:2|\^2|\u00B2|\u33A1)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    private static readonly Regex AreaBackedCompactRoomCodeRegex =
+        new(@"^[A-Z]{1,2}\d{1,4}[A-Z]?$", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     public string Name => StageName;
 
@@ -363,11 +365,18 @@ internal sealed class RoomDetectionStage : IPipelineStage
                 out var wallIds,
                 out var boundaryEvidence);
             var isWallBounded = boundary.Count >= 4 && wallIds.Length >= 2;
+            var seedScaleGroup = context.Calibration.SelectMeasurementScaleGroup(
+                pageNumber,
+                candidate.EvidenceBounds,
+                mainRegion.Id);
             var roomBounds = isWallBounded
                 ? PlanRect.Union(boundary.Select(point => new PlanRect(point.X, point.Y, 0, 0)))
-                : candidate.EvidenceBounds
-                    .Inflate(Math.Max(8, context.Options.DefaultWallThickness * 3.0))
-                    .ClampTo(mainRegion.Bounds);
+                : BuildApproximateSemanticRoomBounds(
+                    candidate,
+                    mainRegion.Bounds,
+                    context.Options,
+                    context.Calibration,
+                    seedScaleGroup);
 
             if (!isWallBounded)
             {
@@ -387,7 +396,8 @@ internal sealed class RoomDetectionStage : IPipelineStage
 
             var useClassification = ClassifyRoomUse(candidate.Label.Text, roomBounds);
             var confidence = isWallBounded ? 0.62 : 0.48;
-            var scaleGroup = context.Calibration.SelectMeasurementScaleGroup(pageNumber, roomBounds, mainRegion.Id);
+            var scaleGroup = context.Calibration.SelectMeasurementScaleGroup(pageNumber, roomBounds, mainRegion.Id)
+                ?? seedScaleGroup;
             var evidence = new List<string>
             {
                 $"semantic room seed from label '{candidate.Label.Text}' and area text '{candidate.Area.Text}'",
@@ -706,6 +716,8 @@ internal sealed class RoomDetectionStage : IPipelineStage
         var minPageSpan = Math.Min(page.Size.Width, page.Size.Height);
         var maxVerticalGap = Math.Max(36, minPageSpan * 0.065);
         var maxHorizontalDrift = Math.Max(90, minPageSpan * 0.18);
+        var maxCompactCodeVerticalGap = Math.Max(10, minPageSpan * 0.02);
+        var maxCompactCodeHorizontalDrift = Math.Max(18, minPageSpan * 0.035);
         var areaLines = textLines
             .Where(line => LooksLikeRoomAreaText(line.Text))
             .OrderBy(line => line.Bounds.Top)
@@ -725,7 +737,12 @@ internal sealed class RoomDetectionStage : IPipelineStage
                     && candidate.Bounds.Bottom <= area.Bounds.Bottom + Math.Max(4, options.WallSnapTolerance)
                     && area.Bounds.Top - candidate.Bounds.Bottom <= maxVerticalGap
                     && Math.Abs(candidate.Bounds.Center.X - area.Bounds.Center.X) <= maxHorizontalDrift
-                    && IsTrustedSemanticRoomSeedLabel(candidate.Text, candidate.HasLayerHint || area.HasLayerHint))
+                    && (IsTrustedSemanticRoomSeedLabel(candidate.Text, candidate.HasLayerHint || area.HasLayerHint)
+                        || IsAreaBackedCompactRoomCodeLabel(
+                            candidate,
+                            area,
+                            maxCompactCodeVerticalGap,
+                            maxCompactCodeHorizontalDrift)))
                 .Where(candidate => !LooksLikeRoomAreaText(candidate.Text))
                 .Select(candidate => new
                 {
@@ -733,11 +750,17 @@ internal sealed class RoomDetectionStage : IPipelineStage
                     VerticalGap = Math.Max(0, area.Bounds.Top - candidate.Bounds.Bottom),
                     HorizontalDrift = Math.Abs(candidate.Bounds.Center.X - area.Bounds.Center.X),
                     Overlap = HorizontalOverlapRatio(candidate.Bounds, area.Bounds),
-                    KnownUse = HasKnownRoomUseTerm(candidate.Text)
+                    KnownUse = HasKnownRoomUseTerm(candidate.Text),
+                    AreaBackedCode = IsAreaBackedCompactRoomCodeLabel(
+                        candidate,
+                        area,
+                        maxCompactCodeVerticalGap,
+                        maxCompactCodeHorizontalDrift)
                 })
                 .Where(candidate => candidate.Overlap > 0.08 || candidate.HorizontalDrift <= maxHorizontalDrift * 0.55)
                 .OrderByDescending(candidate => candidate.Line.HasLayerHint)
                 .ThenByDescending(candidate => candidate.KnownUse)
+                .ThenByDescending(candidate => candidate.AreaBackedCode)
                 .ThenByDescending(candidate => candidate.Overlap)
                 .ThenBy(candidate => candidate.VerticalGap)
                 .ThenBy(candidate => candidate.HorizontalDrift)
@@ -1073,6 +1096,76 @@ internal sealed class RoomDetectionStage : IPipelineStage
             : null;
     }
 
+    private static PlanRect BuildApproximateSemanticRoomBounds(
+        SemanticRoomCandidate candidate,
+        PlanRect mainBounds,
+        ScannerOptions options,
+        PlanCalibration calibration,
+        CalibrationScaleGroup? scaleGroup)
+    {
+        var padding = Math.Max(8, options.DefaultWallThickness * 3.0);
+        var fallback = candidate.EvidenceBounds
+            .Inflate(padding)
+            .ClampTo(mainBounds);
+        var expectedDrawingArea = ExpectedDrawingArea(candidate.AreaSquareMeters, calibration, scaleGroup);
+        if (expectedDrawingArea is not > 0)
+        {
+            return fallback;
+        }
+
+        var aspectRatio = candidate.AreaSquareMeters >= 20 ? 1.35 : 1.15;
+        var width = Math.Sqrt(expectedDrawingArea.Value * aspectRatio);
+        var height = Math.Sqrt(expectedDrawingArea.Value / aspectRatio);
+        width = Math.Max(width, Math.Max(fallback.Width, candidate.EvidenceBounds.Width + padding * 2.0));
+        height = Math.Max(height, Math.Max(fallback.Height, candidate.EvidenceBounds.Height + padding * 2.0));
+
+        if (width > mainBounds.Width)
+        {
+            width = mainBounds.Width;
+        }
+
+        if (height > mainBounds.Height)
+        {
+            height = mainBounds.Height;
+        }
+
+        return ShiftInsideMainBounds(
+            new PlanRect(
+                candidate.AnchorPoint.X - width / 2.0,
+                candidate.AnchorPoint.Y - height / 2.0,
+                width,
+                height),
+            mainBounds);
+    }
+
+    private static PlanRect ShiftInsideMainBounds(PlanRect bounds, PlanRect mainBounds)
+    {
+        var width = Math.Min(bounds.Width, mainBounds.Width);
+        var height = Math.Min(bounds.Height, mainBounds.Height);
+        var x = bounds.X;
+        var y = bounds.Y;
+
+        if (x < mainBounds.Left)
+        {
+            x = mainBounds.Left;
+        }
+        else if (x + width > mainBounds.Right)
+        {
+            x = mainBounds.Right - width;
+        }
+
+        if (y < mainBounds.Top)
+        {
+            y = mainBounds.Top;
+        }
+        else if (y + height > mainBounds.Bottom)
+        {
+            y = mainBounds.Bottom - height;
+        }
+
+        return new PlanRect(x, y, width, height);
+    }
+
     private static AxisBoundaryCandidate[] SemanticBoundarySideCandidates(
         IReadOnlyList<AxisBoundaryCandidate> candidates,
         Func<AxisBoundaryCandidate, bool> predicate,
@@ -1115,6 +1208,11 @@ internal sealed class RoomDetectionStage : IPipelineStage
     private static bool LooksLikeAnnotationOnlyRoomText(string text)
     {
         var trimmed = text.Trim();
+        if (IsPotentialAreaBackedCompactRoomCodeText(trimmed))
+        {
+            return false;
+        }
+
         return trimmed.Length == 0
             || LooksLikeDimensionText(trimmed)
             || LooksLikeFloorLevelText(trimmed)
@@ -1188,6 +1286,37 @@ internal sealed class RoomDetectionStage : IPipelineStage
             ? LooksLikeRoomLabel(trimmed) || HasKnownRoomUseTerm(trimmed)
             : LooksLikeRoomSemanticLabel(trimmed);
     }
+
+    private static bool IsAreaBackedCompactRoomCodeLabel(
+        RoomTextLine candidate,
+        RoomTextLine area,
+        double maxVerticalGap,
+        double maxHorizontalDrift)
+    {
+        var trimmed = candidate.Text.Trim();
+        var verticalGap = area.Bounds.Top - candidate.Bounds.Bottom;
+        if (verticalGap < -Math.Max(2, candidate.Bounds.Height * 0.35)
+            || verticalGap > maxVerticalGap
+            || Math.Abs(candidate.Bounds.Center.X - area.Bounds.Center.X) > maxHorizontalDrift)
+        {
+            return false;
+        }
+
+        if (!IsPotentialAreaBackedCompactRoomCodeText(trimmed)
+            || LooksLikeDimensionText(trimmed)
+            || LooksLikeFloorLevelText(trimmed)
+            || LooksLikeNonRoomDescriptor(trimmed))
+        {
+            return false;
+        }
+
+        var prefixLength = trimmed.TakeWhile(char.IsLetter).Count();
+        return prefixLength is 1 or 2
+            && trimmed.Skip(prefixLength).Any(char.IsDigit);
+    }
+
+    private static bool IsPotentialAreaBackedCompactRoomCodeText(string text) =>
+        AreaBackedCompactRoomCodeRegex.IsMatch(text.Trim());
 
     private static bool HasKnownRoomUseTerm(string text)
     {

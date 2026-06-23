@@ -122,6 +122,65 @@ public sealed class RoomSemanticsTests
     }
 
     [Fact]
+    public async Task ScanAsync_AddsSemanticRoomSeedFromAreaBackedCompactRoomCode()
+    {
+        var document = new PlanDocument(
+            "semantic-room-compact-code-seed",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(700, 500),
+                    new PlanPrimitive[]
+                    {
+                        Wall("wall-top", new PlanPoint(100, 120), new PlanPoint(480, 120)),
+                        Wall("wall-left", new PlanPoint(100, 120), new PlanPoint(100, 360)),
+                        Wall("wall-right-fragment", new PlanPoint(480, 120), new PlanPoint(480, 240)),
+                        RoomText("compact-code-label", "P27", new PlanRect(250, 194, 34, 16)),
+                        RoomText("compact-code-area", "9.7 m2", new PlanRect(252, 216, 60, 16))
+                    })
+            });
+
+        var result = await new OpenPlanTraceScanner().ScanAsync(document);
+        var room = Assert.Single(result.Rooms);
+
+        Assert.Equal("P27", room.Label);
+        Assert.Equal(RoomUseKind.Unknown, room.UseKind);
+        Assert.Empty(room.WallIds);
+        Assert.Equal(9.7, room.AreaSquareMeters);
+        Assert.Contains("compact-code-label", room.LabelSourcePrimitiveIds);
+        Assert.Contains("compact-code-area", room.LabelSourcePrimitiveIds);
+        Assert.Contains(room.Evidence, item => item.Contains("semantic room seed", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Diagnostics.Messages, diagnostic => diagnostic.Code == "rooms.semantic_label_seeds.detected");
+    }
+
+    [Fact]
+    public async Task ScanAsync_DoesNotCreateSemanticRoomSeedFromCompactCodeWithoutArea()
+    {
+        var document = new PlanDocument(
+            "semantic-room-compact-code-without-area",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(700, 500),
+                    new PlanPrimitive[]
+                    {
+                        Wall("wall-top", new PlanPoint(100, 120), new PlanPoint(480, 120)),
+                        Wall("wall-left", new PlanPoint(100, 120), new PlanPoint(100, 360)),
+                        Wall("wall-right-fragment", new PlanPoint(480, 120), new PlanPoint(480, 240)),
+                        RoomText("compact-code-label", "P27", new PlanRect(250, 194, 34, 16)),
+                        RoomText("nearby-dimension", "10M", new PlanRect(252, 216, 60, 16))
+                    })
+            });
+
+        var result = await new OpenPlanTraceScanner().ScanAsync(document);
+
+        Assert.Empty(result.Rooms);
+        Assert.DoesNotContain(result.Diagnostics.Messages, diagnostic => diagnostic.Code == "rooms.semantic_label_seeds.detected");
+    }
+
+    [Fact]
     public async Task ScanAsync_InfersSemanticRoomBoundaryAcrossFragmentedWallSides()
     {
         var document = new PlanDocument(
