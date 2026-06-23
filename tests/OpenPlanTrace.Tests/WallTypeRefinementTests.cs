@@ -197,7 +197,7 @@ public sealed class WallTypeRefinementTests
     }
 
     [Fact]
-    public async Task WallTypeRefinement_DoesNotPromoteTrustedRecoveredWallAwayFromPerimeter()
+    public async Task WallTypeRefinement_PromotesTrustedRecoveredWallAwayFromPerimeterToInterior()
     {
         var wall = RecoveredWallBody("wall-recovered-away-from-perimeter", 180, 100, 180, 300);
         var context = CreateContext("recovered-away-from-perimeter");
@@ -219,10 +219,52 @@ public sealed class WallTypeRefinementTests
         await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
 
         var refined = Assert.Single(context.Walls);
-        Assert.Equal(WallType.Unknown, refined.WallType);
+        Assert.Equal(WallType.Interior, refined.WallType);
+        Assert.Contains(
+            refined.Evidence,
+            item => item.Contains(WallPlacementContextGuards.TrustedRecoveredMainStructuralInteriorEvidence, StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(
             refined.Evidence,
             item => item.Contains("recovered wall body aligned to main floorplan perimeter shell", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task WallTypeRefinement_DoesNotPromoteDimensionLikeRecoveredWallAwayFromPerimeter()
+    {
+        var wall = RecoveredWallBody("wall-recovered-dimension-like", 180, 100, 180, 300);
+        wall = wall with
+        {
+            Evidence = wall.Evidence
+                .Concat(new[]
+                {
+                    "layer (unlayered) classified Dimension (0,24)",
+                    "layer evidence: contains dimension-like text"
+                })
+                .ToArray()
+        };
+        var context = CreateContext("recovered-dimension-like");
+        context.SheetRegions.AddRange(new[]
+        {
+            new SheetRegion("sheet", 1, RegionKind.Sheet, new PlanRect(0, 0, 400, 400), Confidence.High),
+            new SheetRegion("main", 1, RegionKind.MainFloorPlan, new PlanRect(40, 40, 300, 300), Confidence.High)
+        });
+        context.Walls.Add(wall);
+        context.WallGraph = GraphFor(wall);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.RecoveredWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var refined = Assert.Single(context.Walls);
+        Assert.Equal(WallType.Unknown, refined.WallType);
+        Assert.DoesNotContain(
+            refined.Evidence,
+            item => item.Contains(WallPlacementContextGuards.TrustedRecoveredMainStructuralInteriorEvidence, StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

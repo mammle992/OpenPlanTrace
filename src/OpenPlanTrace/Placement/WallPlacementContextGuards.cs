@@ -20,6 +20,12 @@ public static class WallPlacementContextGuards
     private const double MinTrustedMainStructuralInteriorFaceSeparationDrawingUnits = 2.0;
     private const double MaxTrustedMainStructuralInteriorFaceSeparationDrawingUnits = 18.0;
     private const int MaxTrustedMainStructuralInteriorFaceFragments = 64;
+    private const double MinTrustedRecoveredMainStructuralInteriorLengthDrawingUnits = 150.0;
+    private const double MinTrustedRecoveredMainStructuralInteriorPairScore = 0.80;
+    private const double MinTrustedRecoveredMainStructuralInteriorOverlapRatio = 0.95;
+    private const double MinTrustedRecoveredMainStructuralInteriorFaceSeparationDrawingUnits = 2.0;
+    private const double MaxTrustedRecoveredMainStructuralInteriorFaceSeparationDrawingUnits = 18.0;
+    private const int MaxTrustedRecoveredMainStructuralInteriorFaceFragments = 72;
 
     public const string SecondaryStructuralWithoutRoomBoundarySupportReason =
         "secondary structural wall component lacks room-boundary support";
@@ -35,6 +41,94 @@ public static class WallPlacementContextGuards
 
     public const string MainStructuralInteriorWithoutSemanticSupportReason =
         "main structural interior wall has risky linework and lacks semantic room-boundary support";
+
+    public const string TrustedRecoveredMainStructuralInteriorEvidence =
+        "trusted recovered main structural interior wall body";
+
+    public static bool IsTrustedRecoveredMainStructuralInteriorWallBody(
+        WallSegment wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? assessment,
+        IEnumerable<string>? extraEvidence = null)
+    {
+        ArgumentNullException.ThrowIfNull(wall);
+
+        if (component?.Kind != WallGraphComponentKind.MainStructural
+            || component.ExcludedFromStructuralTopology
+            || (wall.WallType != WallType.Unknown && wall.WallType != WallType.Interior)
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.DrawingLength < MinTrustedRecoveredMainStructuralInteriorLengthDrawingUnits
+            || wall.Confidence.Value < 0.78
+            || assessment is null
+            || assessment.Confidence.Value < 0.78
+            || !assessment.PlacementReady
+            || assessment.RequiresReview
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject
+            || assessment.Category != WallEvidenceCategory.RecoveredWallBody
+            || wall.PairEvidence is not { } pair)
+        {
+            return false;
+        }
+
+        if (pair.Score < MinTrustedRecoveredMainStructuralInteriorPairScore
+            || pair.OverlapRatio < MinTrustedRecoveredMainStructuralInteriorOverlapRatio
+            || pair.FaceSeparation < MinTrustedRecoveredMainStructuralInteriorFaceSeparationDrawingUnits
+            || pair.FaceSeparation > MaxTrustedRecoveredMainStructuralInteriorFaceSeparationDrawingUnits
+            || MaxFaceFragmentCount(wall, assessment) > MaxTrustedRecoveredMainStructuralInteriorFaceFragments)
+        {
+            return false;
+        }
+
+        var evidence = extraEvidence is null
+            ? WallEvidenceFor(wall, assessment)
+            : WallEvidenceFor(wall, assessment).Concat(extraEvidence).ToArray();
+        if (!EvidenceContainsAny(
+                evidence,
+                "recovered by wall evidence map",
+                "wall evidence: recovered wall body")
+            || !EvidenceContainsAny(
+                evidence,
+                "unclaimed parallel-face",
+                "parallel wall-face pair",
+                "strong double-edge wall body"))
+        {
+            return false;
+        }
+
+        return !EvidenceContainsAny(
+            evidence,
+            "layer (unlayered) classified Dimension",
+            "layer evidence: contains dimension-like text",
+            "dimension-like weak layer",
+            "classified Dimension",
+            "dimension-like text",
+            "outdoor covered-area boundary",
+            "unpaired outdoor covered-area boundary",
+            "covered-area boundary",
+            "outdoor/terrace room evidence alone",
+            "terrace",
+            "covered entry",
+            "covered-entry",
+            "overbygd",
+            "canopy",
+            "railing",
+            "trim/detail",
+            "trim linework",
+            "glazing",
+            "detail linework",
+            "surface pattern",
+            "object/fixture",
+            "fixture detail",
+            "stair",
+            "door swing",
+            "door leaf",
+            "door arc",
+            "tiny door-adjacent placement topology piece suppressed",
+            "not trusted",
+            "without shell support",
+            "alone is not trusted");
+    }
 
     public static IReadOnlyDictionary<string, IReadOnlyList<string>> BuildReviewReasons(PlanScanResult result)
     {
@@ -287,6 +381,11 @@ public static class WallPlacementContextGuards
         }
 
         if (HasTrustedLongMainStructuralInteriorWallBodySupport(wall, component, assessment, evidence))
+        {
+            return false;
+        }
+
+        if (IsTrustedRecoveredMainStructuralInteriorWallBody(wall, component, assessment, evidence))
         {
             return false;
         }

@@ -748,6 +748,18 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
                 "wall type refined exterior: structural room boundary with no shared room side");
         }
 
+        if (IsTrustedRecoveredInteriorWallBodyCandidate(
+            wall,
+            assessment,
+            component,
+            mainFloorplanBounds,
+            options))
+        {
+            return new WallTypeRefinement(
+                WallType.Interior,
+                $"wall type refined interior: {WallPlacementContextGuards.TrustedRecoveredMainStructuralInteriorEvidence} inside floorplan envelope");
+        }
+
         return new WallTypeRefinement(wall.WallType, "wall type unchanged: room-side evidence was inconclusive");
     }
 
@@ -807,6 +819,21 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
 
         return IsWallLineNearMainFloorplanPerimeter(wall.CenterLine, mainFloorplanBounds.Value, options);
     }
+
+    private static bool IsTrustedRecoveredInteriorWallBodyCandidate(
+        WallSegment wall,
+        WallEvidenceWallAssessment? assessment,
+        WallGraphComponent? component,
+        PlanRect? mainFloorplanBounds,
+        ScannerOptions options) =>
+        mainFloorplanBounds is not null
+        && wall.WallType == WallType.Unknown
+        && WallPlacementContextGuards.IsTrustedRecoveredMainStructuralInteriorWallBody(
+            wall,
+            component,
+            assessment,
+            component?.Evidence)
+        && !IsWallLineNearMainFloorplanPerimeter(wall.CenterLine, mainFloorplanBounds.Value, options);
 
     private static bool IsWallLineNearMainFloorplanPerimeter(
         PlanLineSegment line,
