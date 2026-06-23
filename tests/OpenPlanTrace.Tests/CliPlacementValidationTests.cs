@@ -105,6 +105,68 @@ public sealed class CliPlacementValidationTests
     }
 
     [Fact]
+    public async Task ValidateBatchAlias_AcceptsBatchResult()
+    {
+        using var workspace = TestWorkspace.Create();
+        var batchPath = workspace.Write("batch.json", """
+            {
+              "schemaVersion": "openplantrace.batch.v7",
+              "generatedAt": "2026-06-23T00:00:00Z",
+              "outputDirectory": null,
+              "maxDegreeOfParallelism": 1,
+              "retryCount": 0,
+              "items": []
+            }
+            """);
+        var validationPath = workspace.PathFor("validation.json");
+
+        var exitCode = await global::OpenPlanTraceCli.RunAsync(new[]
+        {
+            "validate",
+            batchPath,
+            "--kind",
+            "batch",
+            "--json",
+            validationPath,
+            "--compact-json"
+        });
+
+        Assert.Equal(0, exitCode);
+        using var validation = JsonDocument.Parse(await File.ReadAllTextAsync(validationPath));
+        Assert.True(validation.RootElement.GetProperty("valid").GetBoolean());
+        Assert.Equal("batch-result", validation.RootElement.GetProperty("kind").GetString());
+    }
+
+    [Fact]
+    public async Task ValidateBatchAlias_AcceptsBatchManifest()
+    {
+        using var workspace = TestWorkspace.Create();
+        var manifestPath = workspace.Write("batch-manifest.json", """
+            {
+              "schemaVersion": "openplantrace.batch-manifest.v1",
+              "inputs": ["sample.pdf"]
+            }
+            """);
+        var validationPath = workspace.PathFor("validation.json");
+
+        var exitCode = await global::OpenPlanTraceCli.RunAsync(new[]
+        {
+            "validate",
+            manifestPath,
+            "--kind",
+            "batch",
+            "--json",
+            validationPath,
+            "--compact-json"
+        });
+
+        Assert.Equal(0, exitCode);
+        using var validation = JsonDocument.Parse(await File.ReadAllTextAsync(validationPath));
+        Assert.True(validation.RootElement.GetProperty("valid").GetBoolean());
+        Assert.Equal("batch-manifest", validation.RootElement.GetProperty("kind").GetString());
+    }
+
+    [Fact]
     public async Task ValidatePlacementDeep_AcceptsSurfacePatternWallOverlapIssueLinkedToWallReliability()
     {
         using var workspace = TestWorkspace.Create();
