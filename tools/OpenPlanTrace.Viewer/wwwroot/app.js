@@ -9645,7 +9645,8 @@ function visualSnapshotCountRows(snapshot = state.visualSnapshot) {
     ["Drawable items", page?.drawableItemCount ?? 0],
     ["Primitive count", page?.primitiveCount ?? 0],
     ["Placement-ready walls", wallPlacement?.placementReadyWallCount ?? 0],
-    ["Omitted/review walls", wallPlacement?.placementOmittedWallCount ?? 0],
+    ["Review walls", wallPlacement?.placementReviewWallCount ?? 0],
+    ["Represented walls", wallPlacement?.representedWallCount ?? 0],
     ["Review queue", snapshot?.reviewQueueCount ?? 0],
     ["Issues", visualSnapshotIssues(snapshot).length],
     ["Quality", snapshot?.qualityGrade ?? "-"]
@@ -9662,7 +9663,8 @@ function visualSnapshotAnalysisRows(snapshot = state.visualSnapshot, page = visu
     ["Visible items", visualSnapshotVisibleItemCount(page)],
     ["All detections", page?.drawableItemCount ?? 0],
     ["Placement-ready walls", wallPlacement?.placementReadyWallCount ?? 0],
-    ["Omitted/review walls", wallPlacement?.placementOmittedWallCount ?? 0],
+    ["Review walls", wallPlacement?.placementReviewWallCount ?? 0],
+    ["Represented walls", wallPlacement?.representedWallCount ?? 0],
     ["Top wall omission", visualSnapshotTopWallOmissionLabel(wallPlacement)],
     ["Source layers", page?.layers?.length ?? 0],
     ["Review queue", page?.reviewQueueCount ?? snapshot?.reviewQueueCount ?? 0],
@@ -9676,7 +9678,9 @@ function visualSnapshotWallPlacementRows(page = visualSnapshotCurrentPage()) {
   const omissionCodes = Object.keys(wallPlacement?.omissionCounts ?? {}).length;
   return [
     ["Placement-ready walls", wallPlacement?.placementReadyWallCount ?? 0],
-    ["Omitted/review walls", wallPlacement?.placementOmittedWallCount ?? 0],
+    ["Review walls", wallPlacement?.placementReviewWallCount ?? 0],
+    ["Represented duplicate/context walls", wallPlacement?.representedWallCount ?? 0],
+    ["Omitted wall candidates total", wallPlacement?.placementOmittedWallCount ?? 0],
     ["Omission codes", omissionCodes],
     ["Top omission", visualSnapshotTopWallOmissionLabel(wallPlacement)]
   ];
@@ -14856,15 +14860,24 @@ function normalizeVisualSnapshotWallPlacementSummary(summary = null) {
     return {
       placementReadyWallCount: 0,
       placementOmittedWallCount: 0,
+      representedWallCount: 0,
+      placementReviewWallCount: 0,
       omissionCounts: {},
       topOmissions: [],
       omittedWallExamples: []
     };
   }
 
+  const placementOmittedWallCount = nonNegativeInteger(summary.placementOmittedWallCount);
+  const representedWallCount = nonNegativeInteger(summary.representedWallCount);
+  const placementReviewWallCount = summary.placementReviewWallCount === undefined
+    ? Math.max(0, placementOmittedWallCount - representedWallCount)
+    : nonNegativeInteger(summary.placementReviewWallCount);
   return {
     placementReadyWallCount: nonNegativeInteger(summary.placementReadyWallCount),
-    placementOmittedWallCount: nonNegativeInteger(summary.placementOmittedWallCount),
+    placementOmittedWallCount,
+    representedWallCount,
+    placementReviewWallCount,
     omissionCounts: summary.omissionCounts && typeof summary.omissionCounts === "object"
       ? Object.fromEntries(Object.entries(summary.omissionCounts)
         .map(([key, value]) => [key, nonNegativeInteger(value)]))

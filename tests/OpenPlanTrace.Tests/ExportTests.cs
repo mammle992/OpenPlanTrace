@@ -801,7 +801,11 @@ public sealed class ExportTests
         Assert.Contains(
             omission.GetProperty("evidence").EnumerateArray(),
             evidence => evidence.GetString()?.Contains("already represented by clean topology span", StringComparison.OrdinalIgnoreCase) == true);
-        Assert.Equal(1, document.RootElement.GetProperty("summary").GetProperty("wallTopologySpanCount").GetInt32());
+        var summary = document.RootElement.GetProperty("summary");
+        Assert.Equal(1, summary.GetProperty("wallTopologySpanCount").GetInt32());
+        Assert.Equal(1, summary.GetProperty("placementOmittedWallCount").GetInt32());
+        Assert.Equal(1, summary.GetProperty("representedWallCount").GetInt32());
+        Assert.Equal(0, summary.GetProperty("placementReviewWallCount").GetInt32());
     }
 
     [Fact]
@@ -1275,7 +1279,8 @@ public sealed class ExportTests
         Assert.Contains("clean wall topology span detail-host:clean-run:1", svg);
         Assert.Contains("x1=\"100\" y1=\"100\" x2=\"300\" y2=\"100\"", svg);
         Assert.Contains("1 placement-ready walls", svg);
-        Assert.Contains("4 omitted/review walls", svg);
+        Assert.Contains("4 review walls", svg);
+        Assert.Contains("0 represented duplicate/context walls", svg);
         Assert.Contains("1 visible wall body footprints", svg);
         Assert.Contains("1 visible topology spans", svg);
         Assert.Contains("4 hidden non-placement topology spans", svg);
@@ -1601,6 +1606,8 @@ public sealed class ExportTests
         Assert.DoesNotContain("walls", page.VisibleLayerNames);
         Assert.Equal(1, page.WallPlacement.PlacementReadyWallCount);
         Assert.Equal(4, page.WallPlacement.PlacementOmittedWallCount);
+        Assert.Equal(0, page.WallPlacement.RepresentedWallCount);
+        Assert.Equal(4, page.WallPlacement.PlacementReviewWallCount);
         Assert.Equal(1, page.WallPlacement.OmissionCounts["wall_evidence_review_required"]);
         Assert.Equal(1, page.Layers.Single(layer => layer.Name == "wallBodyFootprints").Count);
         Assert.Equal(1, page.Layers.Single(layer => layer.Name == "wallTopologySpans").Count);
@@ -1658,7 +1665,8 @@ public sealed class ExportTests
             SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.PlacementReview));
 
         Assert.Contains("1 placement-ready walls", svg);
-        Assert.Contains("5 omitted/review walls", svg);
+        Assert.Contains("5 review walls", svg);
+        Assert.Contains("0 represented duplicate/context walls", svg);
         Assert.Contains("1 visible topology spans", svg);
         Assert.Contains("1 visible wall body footprints", svg);
         Assert.Contains("5 hidden non-placement topology spans", svg);
@@ -1841,6 +1849,8 @@ public sealed class ExportTests
         var pageWallPlacement = document.RootElement.GetProperty("pages")[0].GetProperty("wallPlacement");
         Assert.True(pageWallPlacement.GetProperty("placementReadyWallCount").GetInt32() >= 1);
         Assert.True(pageWallPlacement.GetProperty("placementOmittedWallCount").GetInt32() >= 0);
+        Assert.True(pageWallPlacement.GetProperty("representedWallCount").GetInt32() >= 0);
+        Assert.True(pageWallPlacement.GetProperty("placementReviewWallCount").GetInt32() >= 0);
         Assert.Equal(JsonValueKind.Object, pageWallPlacement.GetProperty("omissionCounts").ValueKind);
         Assert.Equal(JsonValueKind.Array, pageWallPlacement.GetProperty("topOmissions").ValueKind);
         Assert.Equal(JsonValueKind.Array, pageWallPlacement.GetProperty("omittedWallExamples").ValueKind);
@@ -2059,12 +2069,12 @@ public sealed class ExportTests
             SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.WallQa));
         var page = Assert.Single(snapshot.Pages);
 
-        Assert.True(page.WallPlacement.PlacementOmittedWallCount >= page.WallPlacement.PlacementReadyWallCount * 3);
+        Assert.True(page.WallPlacement.PlacementReviewWallCount >= page.WallPlacement.PlacementReadyWallCount * 3);
         Assert.Contains(page.Issues, issue =>
             issue.Code == "visual.wall_placement_omission_ratio_high"
             && issue.Severity == "warning"
             && issue.PageNumber == 1
-            && issue.Message.Contains("omitted/review-only", StringComparison.Ordinal)
+            && issue.Message.Contains("still require review", StringComparison.Ordinal)
             && issue.Message.Contains("clean topology span", StringComparison.Ordinal));
     }
 

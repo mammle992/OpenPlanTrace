@@ -753,7 +753,9 @@ public static class PlanOverlaySvgRenderer
             $"{result.WallGraph.Components.Count(component => component.PageNumber == page.Number)} wall components",
             $"{result.Walls.Count(wall => wall.PageNumber == page.Number)} walls",
             $"{wallReadiness.PlacementReadyWallCount} placement-ready walls",
-            $"{wallReadiness.PlacementOmittedWallCount} omitted/review walls",
+            $"{wallReadiness.PlacementReviewWallCount} review walls",
+            $"{wallReadiness.RepresentedWallCount} represented duplicate/context walls",
+            $"{wallReadiness.PlacementOmittedWallCount} omitted wall candidates total",
             options.IncludeWallBodyFootprints
                 ? $"{wallBodyFootprintCount} visible wall body footprints"
                 : $"{wallBodyFootprintCount} wall body footprints hidden",

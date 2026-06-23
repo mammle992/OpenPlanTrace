@@ -6,6 +6,8 @@ namespace OpenPlanTrace.Export;
 public sealed record PlanOverlayWallPlacementSummary(
     int PlacementReadyWallCount,
     int PlacementOmittedWallCount,
+    int RepresentedWallCount,
+    int PlacementReviewWallCount,
     IReadOnlyDictionary<string, int> OmissionCounts,
     IReadOnlyList<PlanOverlayWallPlacementOmissionSummary> TopOmissions,
     IReadOnlyList<PlanOverlayWallPlacementOmittedWallExample> OmittedWallExamples)
@@ -81,6 +83,7 @@ internal static class WallPlacementOmissionSummary
         var omissionCodes = new List<string>();
         var omittedWalls = new List<PlanOverlayWallPlacementOmittedWallExample>();
         var readyCount = 0;
+        var representedCount = 0;
 
         foreach (var wall in result.Walls.Where(wall => wall.PageNumber == pageNumber))
         {
@@ -143,6 +146,11 @@ internal static class WallPlacementOmissionSummary
             else if (omission is not null)
             {
                 omissionCodes.Add(omission.Code);
+                if (IsRepresentedWall(omission.Code))
+                {
+                    representedCount++;
+                }
+
                 omittedWalls.Add(ToOmittedWallExample(wall, omission, topologySpans));
             }
         }
@@ -155,10 +163,16 @@ internal static class WallPlacementOmissionSummary
         return new PlanOverlayWallPlacementSummary(
             readyCount,
             omissionCodes.Count,
+            representedCount,
+            Math.Max(0, omissionCodes.Count - representedCount),
             omissionCounts,
             topOmissions,
             TopOmittedWallExamples(omittedWalls, maxOmittedWallExamples));
     }
+
+    private static bool IsRepresentedWall(string code) =>
+        string.Equals(code, "duplicate_clean_topology_span", StringComparison.Ordinal)
+        || string.Equals(code, "duplicate_wall_face", StringComparison.Ordinal);
 
     private static IReadOnlyList<PlanOverlayWallPlacementOmittedWallExample> TopOmittedWallExamples(
         IReadOnlyList<PlanOverlayWallPlacementOmittedWallExample> examples,

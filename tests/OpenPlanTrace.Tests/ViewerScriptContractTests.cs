@@ -210,7 +210,8 @@ public sealed class ViewerScriptContractTests
         Assert.Contains("function normalizeVisualSnapshotWallPlacementSummary", normalized);
         Assert.Contains("wallPlacement: normalizeVisualSnapshotWallPlacementSummary(page.wallPlacement)", normalized);
         Assert.Contains("[\"Placement-ready walls\", wallPlacement?.placementReadyWallCount ?? 0]", normalized);
-        Assert.Contains("[\"Omitted/review walls\", wallPlacement?.placementOmittedWallCount ?? 0]", normalized);
+        Assert.Contains("[\"Review walls\", wallPlacement?.placementReviewWallCount ?? 0]", normalized);
+        Assert.Contains("[\"Represented duplicate/context walls\", wallPlacement?.representedWallCount ?? 0]", normalized);
         Assert.Contains("function visualSnapshotWallPlacementRows", normalized);
         Assert.Contains("function visualSnapshotWallOmissionItems", normalized);
         Assert.Contains("function visualSnapshotOmittedWallExampleItems", normalized);

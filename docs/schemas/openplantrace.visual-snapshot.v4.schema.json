@@ -355,6 +355,8 @@
       "required": [
         "placementReadyWallCount",
         "placementOmittedWallCount",
+        "representedWallCount",
+        "placementReviewWallCount",
         "omissionCounts",
         "topOmissions"
       ],
@@ -363,6 +365,12 @@
           "$ref": "#/$defs/nonNegativeInteger"
         },
         "placementOmittedWallCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "representedWallCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "placementReviewWallCount": {
           "$ref": "#/$defs/nonNegativeInteger"
         },
         "omissionCounts": {

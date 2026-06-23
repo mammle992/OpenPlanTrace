@@ -532,7 +532,7 @@ public sealed record PlanOverlayPageSnapshot(
                 "visual.wall_placement_omission_ratio_high",
                 pageNumber,
                 "warning",
-                $"{wallPlacement.PlacementOmittedWallCount} wall candidate(s) were omitted/review-only versus {wallPlacement.PlacementReadyWallCount} placement-ready wall(s) and {cleanSpanCount} clean topology span(s); inspect raw detected walls and non-placement spans before trusting wall placement.");
+                $"{wallPlacement.PlacementReviewWallCount} wall candidate(s) still require review versus {wallPlacement.PlacementReadyWallCount} placement-ready wall(s), {wallPlacement.RepresentedWallCount} represented duplicate/context wall(s), and {cleanSpanCount} clean topology span(s); inspect raw detected walls and non-placement spans before trusting wall placement.");
         }
 
         var objectCount = LayerCount(layers, "objects");
@@ -574,7 +574,7 @@ public sealed record PlanOverlayPageSnapshot(
         int cleanSpanCount,
         PlanOverlayWallPlacementSummary wallPlacement)
     {
-        if (rawWallCount < 12 || wallPlacement.PlacementOmittedWallCount < 12)
+        if (rawWallCount < 12 || wallPlacement.PlacementReviewWallCount < 12)
         {
             return false;
         }
@@ -585,7 +585,7 @@ public sealed record PlanOverlayPageSnapshot(
             return true;
         }
 
-        return wallPlacement.PlacementOmittedWallCount >= readyBaseline * 3;
+        return wallPlacement.PlacementReviewWallCount >= readyBaseline * 3;
     }
 
     private static bool ItemAppliesToPage(ScanReviewQueueItemExport item, int pageNumber) =>
