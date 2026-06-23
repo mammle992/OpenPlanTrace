@@ -6,43 +6,18 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.03.013] - 2026-06-23
+
+- Small improvement to changelog style rules.
+- Improved README and contributing notes for short changelog bullets.
+
 ## [0.03.012] - 2026-06-23
 
-### Improved
-- Added a trusted long secondary interior wall lane so high-confidence paired
-  wall bodies inside the floorplan envelope can become placement-ready even
-  when they are bundled with a short review-only fragment in the same secondary
-  wall component.
-- Added a trusted two-sided fragment-merged room-boundary lane for clean
-  interior wall runs with both endpoint support, room evidence on both sides,
-  no healed gaps, and no covered/outdoor/detail/object evidence.
-- Reused the same two-sided fragment predicate across placement readiness,
-  context review guards, and source-backed topology fallback so importable
-  walls also receive usable clean placement spans.
-- Kept overbygd/terrace/canopy, stair/object, door/opening, surface-pattern,
-  glazing, trim/detail, and dimension-like evidence as blockers for these
-  promotions.
-
-### Verified
-- Added regression tests for long secondary paired-wall recovery, covered-entry
-  vetoes, trusted two-sided fragment-merged secondary room-boundary export, and
-  preserving review-only short recovered fragments beside trusted walls.
-- Ran focused scanner/export/readiness tests: `281` tests passed.
-- Ran the full test suite: `764` tests passed.
-- Ran the supplied hard, medium, and light PDF corpus in that order with compact
-  JSON, GeoJSON, placement exports, wall-QA overlays, and wall-QA screenshots
-  rendered headlessly with Edge.
-- Hard corpus improved from `10` to `11` placement-ready walls, from `12` to
-  `13` visible clean topology spans, from `0.453125` to `0.468750`
-  coordinate-ready ratio, and reduced review-required entities by `1`.
-- Medium corpus improved from `19` to `21` placement-ready walls, from `22` to
-  `24` visible clean topology spans, from `0.594203` to `0.623188`
-  coordinate-ready ratio, and reduced review-required entities by `2`.
-- Light corpus stayed stable at `48` walls, `16` placement-ready walls, `19`
-  visible clean topology spans, and `0.558824` coordinate-ready ratio.
-- Visual review confirms the recovered spans align with real wall/partition
-  runs, but the next major accuracy blocker remains wall continuity and
-  topology repair in dense bathroom, stair, door, and fixture zones.
+- Improved trusted secondary wall span recovery.
+- Improved two-sided fragment-merged room-boundary placement spans.
+- Improved source-backed topology fallback for recovered walls.
+- Small improvement to covered/outdoor/detail/object safeguards.
+- Verified `764` tests and hard/medium/light PDF wall-QA screenshots.
 
 ## [0.03.011] - 2026-06-23
 
