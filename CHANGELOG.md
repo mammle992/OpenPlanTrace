@@ -6,6 +6,36 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.03.007] - 2026-06-23
+
+### Improved
+- Placement export now blocks risky main-structural interior wall candidates
+  when they have fragmented, dimension-like, recovered, or unknown-layer
+  linework but no semantic room-boundary, trusted layer, or benchmark support.
+- Fragment-merged interior review guards now honor room-confirmed/geometric room
+  boundary evidence instead of blocking candidates that have already been
+  promoted by reliable room context.
+- Wall-QA summaries now report `main semantic support` omissions so suspicious
+  graph-connected wall spans are easy to spot in screenshots and placement
+  JSON.
+
+### Verified
+- Added placement regression tests for unconfirmed main-structural interior
+  spans and for the confirmed-room-boundary exception.
+- Ran focused scan quality and placement readiness tests: `60` tests passed.
+- Ran the supplied hard, medium, and light PDF corpus in that order with
+  compact JSON, placement exports, wall-QA SVG overlays, and fresh headless
+  wall-QA PNG screenshots.
+- Medium PDF clean output became more conservative: placement-ready walls
+  dropped from `20` to `18`, clean topology spans from `23` to `20`, and three
+  suspicious unconfirmed spans are now review-only.
+- Light PDF stayed stable at `16` placement-ready walls and `19` clean topology
+  spans.
+- Hard PDF became intentionally conservative: placement-ready walls dropped from
+  `14` to `2` because its detected room context does not yet confirm most wall
+  candidates. The next major accuracy step should recover true structural walls
+  with region/room evidence instead of exporting unconfirmed geometry as exact.
+
 ## [0.03.006] - 2026-06-23
 
 ### Improved

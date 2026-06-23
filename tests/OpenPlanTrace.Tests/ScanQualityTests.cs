@@ -1355,6 +1355,200 @@ public sealed class ScanQualityTests
     }
 
     [Fact]
+    public void PlacementExporter_BlocksRiskyMainStructuralInteriorWithoutSemanticSupport()
+    {
+        var regions = new[]
+        {
+            new SheetRegion("sheet", 1, RegionKind.Sheet, new PlanRect(0, 0, 600, 400), Confidence.High),
+            new SheetRegion("main", 1, RegionKind.MainFloorPlan, new PlanRect(0, 0, 600, 400), Confidence.High)
+        };
+        var roomBoundary = SyntheticWall("room-boundary", 120, 100, 260, 100) with
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Interior,
+            Evidence = ["parallel wall-face pair", "wall evidence: strong double-edge wall body"]
+        };
+        var suspiciousWall = SyntheticWall("unconfirmed-main-interior", 180, 180, 310, 180) with
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Interior,
+            SourcePrimitiveIds = Enumerable.Range(1, 34).Select(index => $"main-risk-source-{index}").ToArray(),
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "first face merged 31 fragments",
+                "second face merged 10 fragments",
+                "layer (unlayered) classified Unknown (0.35)",
+                "layer evidence: no strong layer name or geometry evidence",
+                "wall evidence: strong double-edge wall body"
+            ]
+        };
+        var wallGraph = new WallGraph(
+            [
+                SyntheticNode("n1", 120, 100),
+                SyntheticNode("n2", 260, 100),
+                SyntheticNode("n3", 180, 180),
+                SyntheticNode("n4", 310, 180)
+            ],
+            [
+                SyntheticEdge("e1", "n1", "n2", roomBoundary.Id),
+                SyntheticEdge("e2", "n3", "n4", suspiciousWall.Id)
+            ],
+            [
+                new WallGraphComponent(
+                    "component-main",
+                    1,
+                    WallGraphComponentKind.MainStructural,
+                    new PlanRect(116, 96, 198, 88),
+                    [roomBoundary.Id, suspiciousWall.Id],
+                    ["n1", "n2", "n3", "n4"],
+                    ["e1", "e2"],
+                    [roomBoundary.Id, suspiciousWall.Id],
+                    270,
+                    Confidence.High,
+                    ["synthetic main structural component"])
+            ]);
+        var result = CreateSyntheticResult(
+            regions: regions,
+            walls: [roomBoundary, suspiciousWall],
+            wallGraph: wallGraph,
+            rooms: [SyntheticRoom("r1", new PlanRect(120, 100, 140, 120), [roomBoundary.Id])],
+            wallEvidenceMap: new WallEvidenceMap(
+                [],
+                [],
+                [
+                    StrongPairedWallEvidence(roomBoundary, "both endpoints supported by structural context"),
+                    new WallEvidenceWallAssessment(
+                        suspiciousWall.Id,
+                        suspiciousWall.PageNumber,
+                        suspiciousWall.Bounds,
+                        WallEvidenceCategory.StrongWallBody,
+                        suspiciousWall.Confidence,
+                        PlacementReady: true,
+                        RequiresReview: false,
+                        RejectedAsNoise: false,
+                        suspiciousWall.SourcePrimitiveIds,
+                        suspiciousWall.Evidence)
+                    {
+                        Decision = WallEvidenceDecision.Accept,
+                        ScoreBreakdown = new WallEvidenceScoreBreakdown(
+                            0.70,
+                            0,
+                            0.70,
+                            0.50,
+                            0,
+                            0.20,
+                            0,
+                            0,
+                            0,
+                            ["strong parallel-face wall pair", "both endpoints supported by structural context"],
+                            [])
+                    }
+                ])) with
+        {
+            Quality = UsableQuality()
+        };
+
+        var reasons = WallPlacementContextGuards.BuildReviewReasons(result);
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var exportedWall = document.RootElement.GetProperty("walls").EnumerateArray().Single(item =>
+            item.GetProperty("id").GetString() == suspiciousWall.Id);
+
+        Assert.Contains(suspiciousWall.Id, reasons.Keys);
+        Assert.Contains(
+            WallPlacementContextGuards.MainStructuralInteriorWithoutSemanticSupportReason,
+            reasons[suspiciousWall.Id]);
+        Assert.False(exportedWall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.Empty(exportedWall.GetProperty("topologySpans").EnumerateArray());
+        Assert.Equal(
+            "main_structural_semantic_support_review_required",
+            exportedWall.GetProperty("placementOmission").GetProperty("code").GetString());
+        Assert.Equal(
+            1,
+            document.RootElement
+                .GetProperty("summary")
+                .GetProperty("wallPlacementOmissionCounts")
+                .GetProperty("main_structural_semantic_support_review_required")
+                .GetInt32());
+    }
+
+    [Fact]
+    public void PlacementExporter_AllowsRiskyMainStructuralInteriorWhenRoomBoundaryConfirmsIt()
+    {
+        var regions = new[]
+        {
+            new SheetRegion("sheet", 1, RegionKind.Sheet, new PlanRect(0, 0, 600, 400), Confidence.High),
+            new SheetRegion("main", 1, RegionKind.MainFloorPlan, new PlanRect(0, 0, 600, 400), Confidence.High)
+        };
+        var wall = SyntheticWall("confirmed-main-interior", 180, 180, 310, 180) with
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Interior,
+            SourcePrimitiveIds = Enumerable.Range(1, 34).Select(index => $"confirmed-risk-source-{index}").ToArray(),
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "first face merged 31 fragments",
+                "layer (unlayered) classified Unknown (0.35)",
+                "layer evidence: no strong layer name or geometry evidence",
+                "wall evidence: strong double-edge wall body"
+            ]
+        };
+        var wallGraph = new WallGraph(
+            [
+                SyntheticNode("n1", 180, 180),
+                SyntheticNode("n2", 310, 180)
+            ],
+            [
+                SyntheticEdge("e1", "n1", "n2", wall.Id)
+            ],
+            [
+                new WallGraphComponent(
+                    "component-main",
+                    1,
+                    WallGraphComponentKind.MainStructural,
+                    new PlanRect(176, 176, 138, 8),
+                    [wall.Id],
+                    ["n1", "n2"],
+                    ["e1"],
+                    [wall.Id],
+                    130,
+                    Confidence.High,
+                    ["synthetic main structural component"])
+            ]);
+        var result = CreateSyntheticResult(
+            regions: regions,
+            walls: [wall],
+            wallGraph: wallGraph,
+            rooms: [SyntheticRoom("r1", new PlanRect(180, 120, 130, 120), [wall.Id])],
+            wallEvidenceMap: new WallEvidenceMap(
+                [],
+                [],
+                [
+                    StrongPairedWallEvidence(wall, "both endpoints supported by structural context")
+                ])) with
+        {
+            Quality = UsableQuality()
+        };
+
+        var reasons = WallPlacementContextGuards.BuildReviewReasons(result);
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var exportedWall = document.RootElement.GetProperty("walls").EnumerateArray().Single(item =>
+            item.GetProperty("id").GetString() == wall.Id);
+
+        Assert.DoesNotContain(wall.Id, reasons.Keys);
+        Assert.True(exportedWall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.NotEmpty(exportedWall.GetProperty("topologySpans").EnumerateArray());
+        Assert.Equal(JsonValueKind.Null, exportedWall.GetProperty("placementOmission").ValueKind);
+    }
+
+    [Fact]
     public void PlacementExporter_AllowsFragmentMergedInteriorWhenItIsRoomBoundary()
     {
         var regions = new[]

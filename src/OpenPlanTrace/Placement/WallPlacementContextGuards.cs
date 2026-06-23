@@ -14,6 +14,9 @@ public static class WallPlacementContextGuards
     public const string FragmentMergedInteriorWithoutRoomBoundarySupportReason =
         "fragment-merged interior wall has suspicious linework and lacks room-boundary support";
 
+    public const string MainStructuralInteriorWithoutSemanticSupportReason =
+        "main structural interior wall has risky linework and lacks semantic room-boundary support";
+
     public static IReadOnlyDictionary<string, IReadOnlyList<string>> BuildReviewReasons(PlanScanResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -23,7 +26,7 @@ public static class WallPlacementContextGuards
             result.Walls,
             wallSnapTolerance: 2.0);
         var roomWallIds = roomWallReferences.RoomIdsByWallId.Keys.ToHashSet(StringComparer.Ordinal);
-        if (roomWallIds.Count == 0)
+        if (result.Rooms.Count == 0)
         {
             return new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
         }
@@ -44,6 +47,18 @@ public static class WallPlacementContextGuards
             componentByWallId.TryGetValue(wall.Id, out var component);
             var wallIsRoomBoundary = roomWallIds.Contains(wall.Id);
             var hasRoomBoundarySupport = SecondaryStructuralComponentHasRoomBoundarySupport(component, roomWallIds);
+            if (!wallIsRoomBoundary
+                && MainStructuralInteriorWallNeedsSemanticSupportReview(
+                    wall,
+                    component,
+                    wallEvidenceByWallId))
+            {
+                AddReason(
+                    reasonsByWallId,
+                    wall.Id,
+                    MainStructuralInteriorWithoutSemanticSupportReason);
+            }
+
             if (!wallIsRoomBoundary
                 && FragmentMergedInteriorWallNeedsRoomBoundaryReview(
                     wall,
@@ -213,6 +228,135 @@ public static class WallPlacementContextGuards
                 || item.Contains("shared by room adjacency boundary", StringComparison.OrdinalIgnoreCase));
     }
 
+    private static bool MainStructuralInteriorWallNeedsSemanticSupportReview(
+        WallSegment wall,
+        WallGraphComponent? component,
+        IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceByWallId)
+    {
+        if (component?.Kind != WallGraphComponentKind.MainStructural
+            || component.ExcludedFromStructuralTopology
+            || wall.WallType == WallType.Exterior
+            || wall.DrawingLength < 72
+            || (!wall.CenterLine.IsHorizontal() && !wall.CenterLine.IsVertical())
+            || wall.FragmentEvidence?.RequiresGeometryReview == true
+            || !wallEvidenceByWallId.TryGetValue(wall.Id, out var assessment)
+            || !assessment.PlacementReady
+            || assessment.RequiresReview
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject
+            || assessment.Category is not (WallEvidenceCategory.StrongWallBody
+                or WallEvidenceCategory.MediumWallBody
+                or WallEvidenceCategory.RecoveredWallBody))
+        {
+            return false;
+        }
+
+        var evidence = WallEvidenceFor(wall, assessment);
+        if (HasSemanticWallPlacementSupport(evidence)
+            || HasTrustedExplicitWallLayerSupport(evidence))
+        {
+            return false;
+        }
+
+        if (assessment.Category == WallEvidenceCategory.RecoveredWallBody)
+        {
+            return true;
+        }
+
+        if (EvidenceContainsAny(
+            evidence,
+            "layer (unlayered) classified Dimension",
+            "layer evidence: contains dimension-like text",
+            "dimension-like weak layer"))
+        {
+            return true;
+        }
+
+        var sourcePrimitiveCount = wall.SourcePrimitiveIds
+            .Concat(assessment.SourcePrimitiveIds)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .Count();
+        var maxFaceFragmentCount = MaxFaceFragmentCount(wall, assessment);
+        var unknownLayer = EvidenceContainsAny(
+            evidence,
+            "layer (unlayered) classified Unknown",
+            "layer evidence: no strong layer name or geometry evidence",
+            "source layer category Unknown");
+
+        return unknownLayer
+            && (sourcePrimitiveCount >= 18
+                || maxFaceFragmentCount >= 24
+                || wall.FragmentEvidence?.FragmentCount >= 8
+                || wall.FragmentEvidence?.DuplicatePrimitiveCount >= 4);
+    }
+
+    private static IReadOnlyList<string> WallEvidenceFor(
+        WallSegment wall,
+        WallEvidenceWallAssessment assessment) =>
+        wall.Evidence
+            .Concat(assessment.Evidence)
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(assessment.ScoreBreakdown.NegativeEvidence)
+            .ToArray();
+
+    private static bool HasSemanticWallPlacementSupport(IReadOnlyList<string> evidence) =>
+        EvidenceContainsAny(
+            evidence,
+            "detected room evidence on both sides",
+            "shared by room adjacency boundary",
+            "explicit room boundary support",
+            "geometric room boundary support",
+            "retained by room boundary support",
+            "room-confirmed wall body",
+            "clean fragment-merged interior room boundary promoted",
+            "room boundary evidence");
+
+    private static bool HasTrustedExplicitWallLayerSupport(IReadOnlyList<string> evidence) =>
+        EvidenceContainsAny(
+            evidence,
+            "wall-like layer",
+            "trusted benchmark",
+            "trusted exterior shell",
+            "exterior shell continuity",
+            "wall evidence: retained by exterior shell continuity");
+
+    private static int MaxFaceFragmentCount(
+        WallSegment wall,
+        WallEvidenceWallAssessment assessment)
+    {
+        var pairMax = wall.PairEvidence is null
+            ? 0
+            : Math.Max(wall.PairEvidence.FirstFaceFragmentCount, wall.PairEvidence.SecondFaceFragmentCount);
+        var evidenceMax = WallEvidenceFor(wall, assessment)
+            .SelectMany(EvidenceFragmentCounts)
+            .DefaultIfEmpty(0)
+            .Max();
+
+        return Math.Max(pairMax, evidenceMax);
+    }
+
+    private static IEnumerable<int> EvidenceFragmentCounts(string evidence)
+    {
+        var markers = new[]
+        {
+            "first face merged ",
+            "second face merged ",
+            "face merged ",
+            "max face fragments ",
+            "total face fragments "
+        };
+
+        foreach (var marker in markers)
+        {
+            var count = TryReadEvidenceCount(evidence, marker);
+            if (count.HasValue)
+            {
+                yield return count.Value;
+            }
+        }
+    }
+
     private static bool LooksLikeOverSourcedCompactSecondaryComponent(
         WallGraphComponent component,
         IReadOnlyDictionary<string, WallSegment> wallById,
@@ -275,6 +419,11 @@ public static class WallPlacementContextGuards
             || assessment.RequiresReview
             || assessment.RejectedAsNoise
             || assessment.Category != WallEvidenceCategory.MediumWallBody)
+        {
+            return false;
+        }
+
+        if (HasSemanticWallPlacementSupport(WallEvidenceFor(wall, assessment)))
         {
             return false;
         }
@@ -555,6 +704,16 @@ public static class WallPlacementContextGuards
             ? value
             : null;
     }
+
+    private static bool EvidenceContainsAny(
+        IReadOnlyList<string> evidence,
+        params string[] fragments) =>
+        fragments.Any(fragment => EvidenceContains(evidence, fragment));
+
+    private static bool EvidenceContains(
+        IReadOnlyList<string> evidence,
+        string fragment) =>
+        evidence.Any(item => item.Contains(fragment, StringComparison.OrdinalIgnoreCase));
 
     private static IReadOnlyDictionary<string, WallGraphComponent> BuildComponentByWallId(
         IReadOnlyList<WallGraphComponent> components)

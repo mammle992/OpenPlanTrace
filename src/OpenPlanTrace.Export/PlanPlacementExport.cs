@@ -1425,6 +1425,17 @@ public sealed record PlacementWallOmissionExport(
 
         if (ContainsEvidence(
             evidence,
+            WallPlacementContextGuards.MainStructuralInteriorWithoutSemanticSupportReason))
+        {
+            return new PlacementWallOmissionClassification(
+                "main_structural_semantic_support_review_required",
+                "SemanticWallSupportReview",
+                "Wall is omitted from clean placement topology because a risky main-structural interior candidate is not confirmed by room-boundary evidence.",
+                "Review the wall against the source PDF before importing exact coordinates; promote it only when room, layer, or benchmark evidence confirms it is a real partition.");
+        }
+
+        if (ContainsEvidence(
+            evidence,
             WallPlacementContextGuards.SecondaryStructuralWithoutRoomBoundarySupportReason))
         {
             return new PlacementWallOmissionClassification(
@@ -1638,6 +1649,7 @@ public sealed record PlacementWallOmissionExport(
         || evidence.Contains("unlayered fragment-merged wall candidate", StringComparison.OrdinalIgnoreCase)
         || evidence.Contains("only one trusted structural endpoint", StringComparison.OrdinalIgnoreCase)
         || evidence.Contains(WallPlacementReadinessEvaluator.ThinExteriorFacePairWithoutShellSupportReason, StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains(WallPlacementContextGuards.MainStructuralInteriorWithoutSemanticSupportReason, StringComparison.OrdinalIgnoreCase)
         || evidence.Contains("unlayered parallel-face candidate", StringComparison.OrdinalIgnoreCase)
         || evidence.Contains("repeated short unlayered", StringComparison.OrdinalIgnoreCase)
         || evidence.Contains("short high-density unknown-layer wall/detail candidate", StringComparison.OrdinalIgnoreCase)
