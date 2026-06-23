@@ -6,6 +6,41 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.03.003] - 2026-06-23
+
+### Improved
+- Placement quality gates now follow the compact import-readiness summary, so a
+  scan can no longer claim coordinate or metric placement readiness while the
+  exported wall/room/opening/object ratios are still blocked for downstream
+  import.
+- Placement quality evidence now reports import-readiness grade/score,
+  coordinate-ready and metric-ready entity ratios, placement-ready wall counts,
+  omitted/review wall counts, blocking issue codes, and recommended actions.
+- Short unlayered wall candidates inside dense stair/detail-like linework are
+  demoted from placement-ready wall output when they do not have explicit room
+  boundary, room-adjacency, endpoint, or exterior-shell support.
+- Wall type refinement diagnostics now count dense local detail wall demotions,
+  making noisy cluster cleanup visible in scan diagnostics and corpus QA.
+
+### Verified
+- Added placement-export tests proving the placement quality gate is blocked
+  when import readiness blocks geometry or metric import.
+- Added wall-type refinement tests proving dense local detail candidates are
+  demoted while room-boundary-supported walls are preserved.
+- Ran focused placement quality-gate tests: `3` tests passed.
+- Ran focused dense-detail wall refinement tests: `3` tests passed.
+- Ran the full test suite: `738` tests passed.
+- Ran the supplied hard, medium, and light PDF corpus in that order with
+  `wall-qa-review`, GeoJSON, placement JSON, visual snapshots, SVG overlays,
+  and Markdown report output.
+- The corpus completed with `3` succeeded files, `0` scan failures, and all
+  three placement quality gates correctly blocked by import readiness instead
+  of pretending the scans were safe for exact coordinate placement.
+- The medium PDF demoted `22` dense local detail wall candidates and reduced
+  placement-ready walls from `62` to `45`; rendered screenshots show the noisy
+  central detail/stair cluster is improved but still needs graph-level
+  splitting and wall recovery in the next major accuracy pass.
+
 ## [0.03.002] - 2026-06-23
 
 ### Improved

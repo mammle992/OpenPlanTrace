@@ -1300,6 +1300,73 @@ public sealed class WallTypeRefinementTests
     }
 
     [Fact]
+    public async Task WallTypeRefinement_DemotesShortPlacementReadyWallInsideDenseLocalDetailLinework()
+    {
+        var wall = ShortUnlayeredInteriorWall("wall-dense-detail-survivor", 100, 100, 146, 100);
+        var context = CreateContext("dense-local-detail-placement-ready-demotion");
+        var neighbors = DenseDetailNeighborWalls().ToArray();
+        context.Walls.Add(wall);
+        context.Walls.AddRange(neighbors);
+        context.WallGraph = GraphFor(new[] { wall }.Concat(neighbors).ToArray());
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.StrongWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var demoted = Assert.Single(context.WallEvidenceMap.WallAssessments);
+        Assert.Equal(WallEvidenceCategory.MediumWallBody, demoted.Category);
+        Assert.False(demoted.PlacementReady);
+        Assert.True(demoted.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Review, demoted.Decision);
+        Assert.Contains(
+            demoted.Evidence,
+            item => item.Contains("dense local detail/stair-like linework", StringComparison.OrdinalIgnoreCase)
+                && item.Contains("nearby walls", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "walls.architectural_type_refined"
+                && diagnostic.Properties["denseLocalDetailPlacementDemotedWallCount"] == "1");
+    }
+
+    [Fact]
+    public async Task WallTypeRefinement_KeepsDenseLocalWallWithExplicitRoomBoundarySupport()
+    {
+        var wall = ShortUnlayeredInteriorWall("wall-dense-but-room-boundary", 100, 100, 146, 100);
+        var context = CreateContext("dense-local-detail-room-boundary-protection");
+        var neighbors = DenseDetailNeighborWalls().ToArray();
+        context.Walls.Add(wall);
+        context.Walls.AddRange(neighbors);
+        context.Rooms.Add(Room("room-supported", RoomUseKind.Office, wall.Id));
+        context.WallGraph = GraphFor(new[] { wall }.Concat(neighbors).ToArray());
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.StrongWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var retained = Assert.Single(context.WallEvidenceMap.WallAssessments);
+        Assert.True(retained.PlacementReady);
+        Assert.False(retained.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Accept, retained.Decision);
+        Assert.DoesNotContain(
+            retained.Evidence,
+            item => item.Contains("dense local detail/stair-like linework", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "walls.architectural_type_refined"
+                && diagnostic.Properties["denseLocalDetailPlacementDemotedWallCount"] == "0");
+    }
+
+    [Fact]
     public async Task WallTypeRefinement_DemotesUnsupportedHighScoreFragmentedUnlayeredPair()
     {
         var wall = new WallSegment(
@@ -1479,6 +1546,51 @@ public sealed class WallTypeRefinementTests
             retained.Evidence,
             item => item.Contains("room-confirmed wall body promoted", StringComparison.OrdinalIgnoreCase));
     }
+
+    private static WallSegment ShortUnlayeredInteriorWall(string id, double x1, double y1, double x2, double y2) =>
+        new(
+            id,
+            1,
+            new PlanLineSegment(new PlanPoint(x1, y1), new PlanPoint(x2, y2)),
+            7,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Interior,
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "pair score 0,91",
+                "layer (unlayered) classified Unknown (0,35)",
+                "layer evidence: no strong layer name or geometry evidence",
+                "wall evidence: strong double-edge wall body"
+            ]
+        };
+
+    private static IEnumerable<WallSegment> DenseDetailNeighborWalls()
+    {
+        yield return DetailNeighbor("dense-neighbor-1", 95, 92, 135, 92);
+        yield return DetailNeighbor("dense-neighbor-2", 96, 110, 138, 110);
+        yield return DetailNeighbor("dense-neighbor-3", 108, 76, 108, 132);
+        yield return DetailNeighbor("dense-neighbor-4", 128, 78, 128, 132);
+        yield return DetailNeighbor("dense-neighbor-5", 90, 80, 130, 120);
+        yield return DetailNeighbor("dense-neighbor-6", 90, 120, 134, 82);
+        yield return DetailNeighbor("dense-neighbor-7", 138, 88, 156, 118);
+        yield return DetailNeighbor("dense-neighbor-8", 82, 102, 110, 134);
+    }
+
+    private static WallSegment DetailNeighbor(string id, double x1, double y1, double x2, double y2) =>
+        new(
+            id,
+            1,
+            new PlanLineSegment(new PlanPoint(x1, y1), new PlanPoint(x2, y2)),
+            4,
+            Confidence.Medium)
+        {
+            DetectionKind = WallDetectionKind.SingleLine,
+            WallType = WallType.Unknown,
+            Evidence = ["synthetic dense detail neighbor"]
+        };
 
     private static ScanContext CreateContext(string documentId) =>
         new(

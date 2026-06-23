@@ -2290,6 +2290,56 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public async Task PlacementExporter_QualityGateFollowsImportReadiness()
+    {
+        var result = await CreateScanResultAsync();
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var root = document.RootElement;
+        var qualityGate = root.GetProperty("qualityGate");
+        var importReadiness = root.GetProperty("summary").GetProperty("importReadiness");
+
+        Assert.Equal(
+            importReadiness.GetProperty("readyForGeometryImport").GetBoolean(),
+            qualityGate.GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.Equal(
+            importReadiness.GetProperty("readyForMetricImport").GetBoolean(),
+            qualityGate.GetProperty("readyForMetricPlacement").GetBoolean());
+        Assert.Contains(
+            qualityGate.GetProperty("evidence").EnumerateArray(),
+            item => item.GetString()?.Contains("Import readiness", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
+    public async Task PlacementExporter_BlocksQualityGateWhenImportReadinessBlocksGeometry()
+    {
+        var result = WithUnsupportedSecondaryStructuralComponent(await CreateScanResultAsync());
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var root = document.RootElement;
+        var importReadiness = root.GetProperty("summary").GetProperty("importReadiness");
+        var qualityGate = root.GetProperty("qualityGate");
+
+        Assert.False(importReadiness.GetProperty("readyForGeometryImport").GetBoolean());
+        Assert.Equal("Blocked", importReadiness.GetProperty("grade").GetString());
+        Assert.False(qualityGate.GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.False(qualityGate.GetProperty("readyForMetricPlacement").GetBoolean());
+        Assert.Equal("BlockedByImportReadiness", qualityGate.GetProperty("coordinateTrust").GetString());
+        Assert.Contains(
+            "placement.import.low_coordinate_ready_ratio",
+            JsonStrings(importReadiness.GetProperty("blockingIssueCodes")));
+        Assert.Contains(
+            qualityGate.GetProperty("evidence").EnumerateArray(),
+            item => item.GetString()?.Contains("geometry import readiness is not satisfied", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
     public async Task PlacementExporter_UsesPairedFaceEvidenceForSolidSpanBodyPolygon()
     {
         var result = await CreateScanResultAsync();

@@ -43,6 +43,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         var roomConfirmedPlacementPromoted = 0;
         var topologySupportedFragmentedPairPromoted = 0;
         var fragmentedPairPlacementDemoted = 0;
+        var denseLocalDetailPlacementDemoted = 0;
         var fragmentedExteriorShellContinuityRetained = 0;
         var geometricRoomBoundaryEvidenceAdded = 0;
         var explicitRoomBoundaryEvidenceAdded = 0;
@@ -150,6 +151,33 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
                 fragmentedPairPlacementDemoted++;
                 evidenceUpdated++;
                 assessment = demotedAssessment;
+            }
+            else if (assessment is not null
+                && TryDemoteDenseLocalDetailPlacementReadyWallEvidence(
+                    updatedWall,
+                    assessment,
+                    context.Options,
+                    context.Walls,
+                    component,
+                    wallRoomIds.Length,
+                    sharedWallIds.Contains(wall.Id),
+                    sideEvidence,
+                    supportedTopologyEndpointCountsByWallId.TryGetValue(wall.Id, out var denseDetailSupportedEndpointCount)
+                        ? denseDetailSupportedEndpointCount
+                        : 0,
+                    hasGeometricRoomBoundarySupport,
+                    hasExteriorShellContinuitySupport,
+                    out var denseDetailDemotedAssessment,
+                    out var denseDetailDemotionEvidence))
+            {
+                updatedAssessmentsByWallId[wall.Id] = denseDetailDemotedAssessment;
+                updatedWall = updatedWall with
+                {
+                    Evidence = AppendEvidence(updatedWall.Evidence, denseDetailDemotionEvidence)
+                };
+                denseLocalDetailPlacementDemoted++;
+                evidenceUpdated++;
+                assessment = denseDetailDemotedAssessment;
             }
             else if (assessment is not null
                 && hasExteriorShellContinuitySupport
@@ -316,6 +344,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             roomConfirmedPlacementPromoted,
             topologySupportedFragmentedPairPromoted,
             fragmentedPairPlacementDemoted,
+            denseLocalDetailPlacementDemoted,
             fragmentedExteriorShellContinuityRetained,
             geometricRoomBoundaryEvidenceAdded,
             explicitRoomBoundaryEvidenceAdded,
@@ -1022,6 +1051,119 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         return true;
     }
 
+    private static bool TryDemoteDenseLocalDetailPlacementReadyWallEvidence(
+        WallSegment wall,
+        WallEvidenceWallAssessment assessment,
+        ScannerOptions options,
+        IReadOnlyList<WallSegment> walls,
+        WallGraphComponent? component,
+        int roomReferenceCount,
+        bool isSharedByRoomAdjacency,
+        RoomSideEvidence sideEvidence,
+        int supportedTopologyEndpointCount,
+        bool hasGeometricRoomBoundarySupport,
+        bool hasExteriorShellContinuitySupport,
+        out WallEvidenceWallAssessment demotedAssessment,
+        out IReadOnlyList<string> demotionEvidence)
+    {
+        demotedAssessment = assessment;
+        demotionEvidence = Array.Empty<string>();
+
+        if (!assessment.PlacementReady
+            || assessment.RequiresReview
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject
+            || wall.WallType == WallType.Exterior
+            || wall.DrawingLength > DenseLocalDetailDemotionMaxWallLength(options)
+            || hasGeometricRoomBoundarySupport
+            || hasExteriorShellContinuitySupport
+            || roomReferenceCount > 0
+            || isSharedByRoomAdjacency
+            || sideEvidence.HasRoomsOnBothSides)
+        {
+            return false;
+        }
+
+        var evidence = wall.Evidence
+            .Concat(assessment.Evidence)
+            .ToArray();
+        if (!HasUnknownOrWeakLayerEvidence(evidence)
+            || !IsDenseLocalDetailNeighborhood(wall, walls, options, out var nearbyCount, out var shortNearbyCount, out var offAxisNearbyCount))
+        {
+            return false;
+        }
+
+        demotionEvidence =
+        [
+            $"wall evidence: demoted from placement-ready because short unlayered wall candidate sits inside dense local detail/stair-like linework; nearby walls {nearbyCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}, short nearby walls {shortNearbyCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}, off-axis nearby walls {offAxisNearbyCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}, room refs {roomReferenceCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}, side room hits {(sideEvidence.PositiveRoomHits + sideEvidence.NegativeRoomHits).ToString(System.Globalization.CultureInfo.InvariantCulture)}, supported endpoints {supportedTopologyEndpointCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}, component {component?.Kind.ToString() ?? "Unknown"}"
+        ];
+        demotedAssessment = assessment with
+        {
+            Category = assessment.Category == WallEvidenceCategory.StrongWallBody
+                ? WallEvidenceCategory.MediumWallBody
+                : assessment.Category,
+            PlacementReady = false,
+            RequiresReview = true,
+            Decision = WallEvidenceDecision.Review,
+            Evidence = AppendEvidence(assessment.Evidence, demotionEvidence)
+        };
+        return true;
+    }
+
+    private static double DenseLocalDetailDemotionMaxWallLength(ScannerOptions options) =>
+        Math.Max(72.0, Math.Max(options.MinWallLength * 3.0, options.DefaultWallThickness * 12.0));
+
+    private static double DenseLocalDetailNeighborhoodRadius(ScannerOptions options) =>
+        Math.Max(54.0, Math.Max(options.MinWallLength * 2.5, options.DefaultWallThickness * 10.0));
+
+    private static bool IsDenseLocalDetailNeighborhood(
+        WallSegment wall,
+        IReadOnlyList<WallSegment> walls,
+        ScannerOptions options,
+        out int nearbyCount,
+        out int shortNearbyCount,
+        out int offAxisNearbyCount)
+    {
+        var searchBounds = wall.Bounds.Inflate(DenseLocalDetailNeighborhoodRadius(options));
+        var maxShortLength = DenseLocalDetailDemotionMaxWallLength(options);
+        nearbyCount = 0;
+        shortNearbyCount = 0;
+        offAxisNearbyCount = 0;
+
+        foreach (var candidate in walls)
+        {
+            if (string.Equals(candidate.Id, wall.Id, StringComparison.Ordinal)
+                || candidate.PageNumber != wall.PageNumber
+                || !candidate.Bounds.Intersects(searchBounds))
+            {
+                continue;
+            }
+
+            nearbyCount++;
+            if (candidate.DrawingLength <= maxShortLength)
+            {
+                shortNearbyCount++;
+            }
+
+            if (IsOffAxisDetailLine(candidate.CenterLine))
+            {
+                offAxisNearbyCount++;
+            }
+        }
+
+        return nearbyCount >= 7
+            && shortNearbyCount >= 4
+            && (offAxisNearbyCount >= 2 || shortNearbyCount >= 7);
+    }
+
+    private static bool IsOffAxisDetailLine(PlanLineSegment line)
+    {
+        var dx = Math.Abs(line.End.X - line.Start.X);
+        var dy = Math.Abs(line.End.Y - line.Start.Y);
+        var length = Math.Max(line.Length, 0.001);
+        return dx / length > 0.08 && dy / length > 0.08;
+    }
+
     private static bool IsRetainedByExteriorShellContinuity(
         WallSegment wall,
         WallEvidenceWallAssessment assessment,
@@ -1511,6 +1653,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         int roomConfirmedPlacementPromoted,
         int topologySupportedFragmentedPairPromoted,
         int fragmentedPairPlacementDemoted,
+        int denseLocalDetailPlacementDemoted,
         int fragmentedExteriorShellContinuityRetained,
         int geometricRoomBoundaryEvidenceAdded,
         int explicitRoomBoundaryEvidenceAdded,
@@ -1542,6 +1685,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
                 ["roomConfirmedPlacementPromotedWallCount"] = roomConfirmedPlacementPromoted.ToString(),
                 ["topologySupportedFragmentedPairPromotedWallCount"] = topologySupportedFragmentedPairPromoted.ToString(),
                 ["fragmentedPairPlacementDemotedWallCount"] = fragmentedPairPlacementDemoted.ToString(),
+                ["denseLocalDetailPlacementDemotedWallCount"] = denseLocalDetailPlacementDemoted.ToString(),
                 ["fragmentedExteriorShellContinuityRetainedWallCount"] = fragmentedExteriorShellContinuityRetained.ToString(),
                 ["explicitRoomBoundaryEvidenceAddedWallCount"] = explicitRoomBoundaryEvidenceAdded.ToString(),
                 ["exteriorWallCount"] = exterior.ToString(),

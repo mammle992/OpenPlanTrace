@@ -144,6 +144,18 @@ public sealed record PlanPlacementExport(
         var placementRoutingLayer = PlacementRoutingLayerExport.From(routingLayer, result.Calibration, sourceLookup);
         var issues = PlacementIssueExport.From(result, sourceLookup, rooms, placementWallsById).ToArray();
 
+        var summary = PlacementSummaryExport.From(
+            result,
+            pages,
+            surfacePatterns,
+            walls,
+            rooms,
+            openings,
+            objectAggregates,
+            wallGraphRepairCandidates,
+            placementRoutingLayer,
+            issues);
+
         return new PlanPlacementExport(
             CurrentSchemaVersion,
             DateTimeOffset.UtcNow,
@@ -151,18 +163,8 @@ public sealed record PlanPlacementExport(
             PlacementDocumentExport.From(result.Document),
             CoordinateSystemExport.From(result.Document.Pages, result.Calibration),
             PlacementCalibrationExport.From(result),
-            PlacementQualityGateExport.From(result),
-            PlacementSummaryExport.From(
-                result,
-                pages,
-                surfacePatterns,
-                walls,
-                rooms,
-                openings,
-                objectAggregates,
-                wallGraphRepairCandidates,
-                placementRoutingLayer,
-                issues),
+            PlacementQualityGateExport.From(result, summary),
+            summary,
             pages,
             surfacePatterns,
             walls,
@@ -1101,19 +1103,30 @@ public sealed record PlacementQualityGateExport(
     int DiagnosticErrorCount,
     IReadOnlyList<string> Evidence)
 {
-    public static PlacementQualityGateExport From(PlanScanResult result)
+    public static PlacementQualityGateExport From(
+        PlanScanResult result,
+        PlacementSummaryExport summary)
     {
+        ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(summary);
+
         var hasCoordinateErrors = result.Diagnostics.HasErrors
             || result.Quality.Grade is PlanScanQualityGrade.Unknown or PlanScanQualityGrade.Poor;
-        var readyForCoordinatePlacement = !hasCoordinateErrors && result.Quality.OverallConfidence.Value >= 0.5;
+        var baselineCoordinateReady = !hasCoordinateErrors && result.Quality.OverallConfidence.Value >= 0.5;
+        var readyForCoordinatePlacement = baselineCoordinateReady && summary.ImportReadiness.ReadyForGeometryImport;
         var readyForMetricPlacement = readyForCoordinatePlacement
             && result.Calibration.HasReliableMeasurementScale
-            && !result.MeasurementConsistency.HasBlockingOutliers;
+            && !result.MeasurementConsistency.HasBlockingOutliers
+            && summary.ImportReadiness.ReadyForMetricImport;
 
         return new PlacementQualityGateExport(
             readyForCoordinatePlacement
-                ? result.Quality.RequiresReview ? "UsableWithReview" : "Usable"
-                : "Blocked",
+                ? result.Quality.RequiresReview || summary.ImportReadiness.RequiresReview
+                    ? "UsableWithReview"
+                    : "Usable"
+                : baselineCoordinateReady
+                    ? "BlockedByImportReadiness"
+                    : "Blocked",
             result.Calibration.HasReliableMeasurementScale
                 ? result.MeasurementConsistency.HasBlockingOutliers
                     ? "CalibratedWithBlockingOutlierReview"
@@ -1129,11 +1142,12 @@ public sealed record PlacementQualityGateExport(
             result.Calibration.HasReliableMeasurementScale,
             result.Diagnostics.WarningCount,
             result.Diagnostics.ErrorCount,
-            QualityEvidence(result, readyForCoordinatePlacement, readyForMetricPlacement));
+            QualityEvidence(result, summary, readyForCoordinatePlacement, readyForMetricPlacement));
     }
 
     private static IReadOnlyList<string> QualityEvidence(
         PlanScanResult result,
+        PlacementSummaryExport summary,
         bool readyForCoordinatePlacement,
         bool readyForMetricPlacement)
     {
@@ -1141,8 +1155,32 @@ public sealed record PlacementQualityGateExport(
         {
             $"Coordinate placement ready: {readyForCoordinatePlacement}.",
             $"Metric placement ready: {readyForMetricPlacement}.",
-            $"Scan quality {result.Quality.Grade} with {result.Quality.OverallConfidence.Value:0.###} confidence."
+            $"Scan quality {result.Quality.Grade} with {result.Quality.OverallConfidence.Value:0.###} confidence.",
+            $"Import readiness {summary.ImportReadiness.Grade} with score {summary.ImportReadiness.Score:0.###}.",
+            $"Coordinate-ready import entities {summary.CoordinateReadyEntityCount}/{summary.ReliabilityTrackedEntityCount} ({summary.CoordinateReadyRatio:0.###}).",
+            $"Metric-ready import entities {summary.MetricReadyEntityCount}/{summary.ReliabilityTrackedEntityCount} ({summary.MetricReadyRatio:0.###}).",
+            $"Placement-ready walls {summary.PlacementReadyWallCount}/{summary.WallCount}; omitted/review walls {summary.PlacementOmittedWallCount}/{summary.WallCount}."
         };
+
+        if (!summary.ImportReadiness.ReadyForGeometryImport)
+        {
+            evidence.Add("Coordinate placement is blocked because geometry import readiness is not satisfied.");
+        }
+
+        if (!summary.ImportReadiness.ReadyForMetricImport)
+        {
+            evidence.Add("Metric placement is blocked because metric import readiness is not satisfied.");
+        }
+
+        foreach (var code in summary.ImportReadiness.BlockingIssueCodes)
+        {
+            evidence.Add($"Import readiness blocking issue: {code}.");
+        }
+
+        foreach (var action in summary.ImportReadiness.RecommendedActions)
+        {
+            evidence.Add($"Recommended action: {action}");
+        }
 
         if (!result.Calibration.HasReliableMeasurementScale)
         {
