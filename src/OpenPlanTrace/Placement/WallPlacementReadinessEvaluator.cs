@@ -44,6 +44,9 @@ public static class WallPlacementReadinessEvaluator
     private const double MinTrustedTwoSidedRoomIsolatedFaceSeparationDrawingUnits = 2.0;
     private const double MaxTrustedTwoSidedRoomIsolatedFaceSeparationDrawingUnits = 18.0;
     private const int MaxTrustedTwoSidedRoomIsolatedFaceFragments = 32;
+    private const double MinTrustedTwoSidedFragmentMergedRoomBoundaryLengthDrawingUnits = 72.0;
+    private const int MaxTrustedTwoSidedFragmentMergedRoomBoundaryFragments = 5;
+    private const int MaxTrustedTwoSidedFragmentMergedRoomBoundaryDuplicateFragments = 2;
 
     public static WallPlacementReadiness Evaluate(
         WallSegment wall,
@@ -74,6 +77,10 @@ public static class WallPlacementReadinessEvaluator
             wall,
             component,
             evidenceAssessment);
+        var trustedTwoSidedFragmentMergedRoomBoundary = IsTrustedTwoSidedFragmentMergedRoomBoundary(
+            wall,
+            component,
+            evidenceAssessment);
 
         if (component is not null)
         {
@@ -91,7 +98,7 @@ public static class WallPlacementReadinessEvaluator
 
         if (evidenceAssessment is not null)
         {
-            AddEvidenceReasons(evidenceAssessment, reasons);
+            AddEvidenceReasons(evidenceAssessment, reasons, trustedTwoSidedFragmentMergedRoomBoundary);
         }
 
         var reviewReasonList = reviewReasons?
@@ -161,7 +168,9 @@ public static class WallPlacementReadinessEvaluator
             && !coordinatePlacementBlockedByNoisyTopologySupportedFragmentedPair
             && !coordinatePlacementBlockedByThinExteriorFacePair
             && wall.FragmentEvidence?.RequiresGeometryReview != true
-            && (evidenceAssessment is null || evidenceAssessment.PlacementReady);
+            && (evidenceAssessment is null
+                || evidenceAssessment.PlacementReady
+                || trustedTwoSidedFragmentMergedRoomBoundary);
         var readyForMetricPlacement =
             readyForCoordinatePlacement
             && calibration.HasReliableMeasurementScale;
@@ -177,9 +186,9 @@ public static class WallPlacementReadinessEvaluator
             || coordinatePlacementBlockedByWeakPromotedFragmentRoomBoundary
             || coordinatePlacementBlockedByNoisyTopologySupportedFragmentedPair
             || coordinatePlacementBlockedByThinExteriorFacePair
-            || evidenceAssessment?.RequiresReview == true
+            || (!trustedTwoSidedFragmentMergedRoomBoundary && evidenceAssessment?.RequiresReview == true)
             || evidenceAssessment?.RejectedAsNoise == true
-            || evidenceAssessment?.PlacementReady == false,
+            || (!trustedTwoSidedFragmentMergedRoomBoundary && evidenceAssessment?.PlacementReady == false),
             wall.Confidence,
             coordinatePlacementBlocked
             || coordinatePlacementBlockedByReviewReason
@@ -217,14 +226,17 @@ public static class WallPlacementReadinessEvaluator
 
     private static void AddEvidenceReasons(
         WallEvidenceWallAssessment evidenceAssessment,
-        List<string> reasons)
+        List<string> reasons,
+        bool trustedTwoSidedFragmentMergedRoomBoundary)
     {
-        if (!evidenceAssessment.PlacementReady)
+        if (!evidenceAssessment.PlacementReady
+            && !trustedTwoSidedFragmentMergedRoomBoundary)
         {
             reasons.Add($"wall evidence not placement-ready ({evidenceAssessment.Category})");
         }
 
-        if (evidenceAssessment.RequiresReview)
+        if (evidenceAssessment.RequiresReview
+            && !trustedTwoSidedFragmentMergedRoomBoundary)
         {
             reasons.Add($"wall evidence requires review ({evidenceAssessment.Category})");
         }
@@ -385,6 +397,75 @@ public static class WallPlacementReadinessEvaluator
 
         return EvidenceContains(evidence, "detected room evidence on both sides")
             && EvidenceContains(evidence, "supported wall evidence inside exterior envelope");
+    }
+
+    public static bool IsTrustedTwoSidedFragmentMergedRoomBoundary(
+        WallSegment? wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? evidenceAssessment)
+    {
+        if (wall is null
+            || component is null
+            || evidenceAssessment is null
+            || component.ExcludedFromStructuralTopology
+            || component.Kind is WallGraphComponentKind.ObjectLikeIsland or WallGraphComponentKind.IsolatedFragment
+            || wall.WallType != WallType.Interior
+            || wall.DetectionKind != WallDetectionKind.FragmentMerged
+            || wall.PairEvidence is not null
+            || wall.DrawingLength < MinTrustedTwoSidedFragmentMergedRoomBoundaryLengthDrawingUnits
+            || wall.Confidence.Value < 0.78
+            || evidenceAssessment.Confidence.Value < 0.78
+            || evidenceAssessment.RejectedAsNoise
+            || evidenceAssessment.Decision == WallEvidenceDecision.Reject
+            || evidenceAssessment.Category != WallEvidenceCategory.MediumWallBody
+            || wall.FragmentEvidence is not { RequiresGeometryReview: false } fragmentEvidence)
+        {
+            return false;
+        }
+
+        var uniqueSourcePrimitiveCount = Math.Max(0, wall.SourcePrimitiveIds.Count - fragmentEvidence.DuplicatePrimitiveCount);
+        var fragmentCount = Math.Max(fragmentEvidence.FragmentCount, uniqueSourcePrimitiveCount);
+        if (fragmentCount is < 2 or > MaxTrustedTwoSidedFragmentMergedRoomBoundaryFragments
+            || fragmentEvidence.DuplicatePrimitiveCount > MaxTrustedTwoSidedFragmentMergedRoomBoundaryDuplicateFragments
+            || fragmentEvidence.GapRatio > 0.001
+            || fragmentEvidence.TotalHealedGap > 0.001)
+        {
+            return false;
+        }
+
+        var evidence = wall.Evidence
+            .Concat(evidenceAssessment.Evidence)
+            .Concat(evidenceAssessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(evidenceAssessment.ScoreBreakdown.NegativeEvidence)
+            .Concat(component.Evidence)
+            .ToArray();
+        if (!EvidenceContains(evidence, "detected room evidence on both sides")
+            || !EvidenceContains(evidence, "supported wall evidence inside exterior envelope")
+            || !EvidenceContains(evidence, "both endpoints supported by structural context"))
+        {
+            return false;
+        }
+
+        return !EvidenceContainsAny(
+            evidence,
+            "outdoor",
+            "terrace",
+            "covered-area",
+            "covered entry",
+            "covered-entry",
+            "overbygd",
+            "canopy",
+            "railing",
+            "trim/detail",
+            "trim linework",
+            "glazing",
+            "detail linework",
+            "surface pattern",
+            "object/fixture",
+            "fixture detail",
+            "stair",
+            "door/opening",
+            "dimension-like");
     }
 
     private static bool CoordinatePlacementBlockedByRecoveredOneSidedExteriorEvidence(

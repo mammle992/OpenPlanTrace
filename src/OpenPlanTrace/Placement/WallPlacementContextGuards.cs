@@ -8,6 +8,12 @@ public static class WallPlacementContextGuards
     private const double MinTrustedSecondaryExteriorShellFaceSeparationDrawingUnits = 2.0;
     private const double MaxTrustedSecondaryExteriorShellFaceSeparationDrawingUnits = 18.0;
     private const int MaxTrustedSecondaryExteriorShellFaceFragments = 220;
+    private const double MinTrustedSecondaryInteriorWallLengthDrawingUnits = 120.0;
+    private const double MinTrustedSecondaryInteriorWallPairScore = 0.88;
+    private const double MinTrustedSecondaryInteriorWallOverlapRatio = 0.95;
+    private const double MinTrustedSecondaryInteriorWallFaceSeparationDrawingUnits = 2.0;
+    private const double MaxTrustedSecondaryInteriorWallFaceSeparationDrawingUnits = 18.0;
+    private const int MaxTrustedSecondaryInteriorWallFaceFragments = 80;
     private const double MinTrustedMainStructuralInteriorLengthDrawingUnits = 80.0;
     private const double MinTrustedMainStructuralInteriorPairScore = 0.82;
     private const double MinTrustedMainStructuralInteriorOverlapRatio = 0.95;
@@ -113,7 +119,12 @@ public static class WallPlacementContextGuards
                     wall,
                     component,
                     wallEvidenceByWallId)
+                && !SecondaryStructuralWallHasTrustedTwoSidedFragmentRoomSupport(
+                    wall,
+                    component,
+                    wallEvidenceByWallId)
                 && !SecondaryStructuralComponentHasTrustedPairedWallBodySupport(
+                    wall,
                     component,
                     wallById,
                     wallEvidenceByWallId))
@@ -451,6 +462,17 @@ public static class WallPlacementContextGuards
         return true;
     }
 
+    private static bool SecondaryStructuralWallHasTrustedTwoSidedFragmentRoomSupport(
+        WallSegment wall,
+        WallGraphComponent? component,
+        IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceByWallId) =>
+        component?.Kind == WallGraphComponentKind.SecondaryStructural
+        && wallEvidenceByWallId.TryGetValue(wall.Id, out var assessment)
+        && WallPlacementReadinessEvaluator.IsTrustedTwoSidedFragmentMergedRoomBoundary(
+            wall,
+            component,
+            assessment);
+
     private static IReadOnlyList<string> WallEvidenceFor(
         WallSegment wall,
         WallEvidenceWallAssessment assessment) =>
@@ -711,6 +733,7 @@ public static class WallPlacementContextGuards
     }
 
     private static bool SecondaryStructuralComponentHasTrustedPairedWallBodySupport(
+        WallSegment currentWall,
         WallGraphComponent? component,
         IReadOnlyDictionary<string, WallSegment> wallById,
         IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceByWallId)
@@ -722,6 +745,18 @@ public static class WallPlacementContextGuards
             || component.Confidence.Value < 0.6)
         {
             return false;
+        }
+
+        if (component.WallIds.Contains(currentWall.Id, StringComparer.Ordinal)
+            && wallEvidenceByWallId.TryGetValue(currentWall.Id, out var currentAssessment)
+            && currentAssessment.PlacementReady
+            && !currentAssessment.RequiresReview
+            && !currentAssessment.RejectedAsNoise
+            && currentAssessment.Category == WallEvidenceCategory.StrongWallBody
+            && HasStrongPairedWallBodyEvidence(currentWall, currentAssessment)
+            && LooksLikeTrustedLongSecondaryInteriorWallBody(component, currentWall, currentAssessment))
+        {
+            return true;
         }
 
         var walls = component.WallIds
@@ -752,7 +787,8 @@ public static class WallPlacementContextGuards
 
         if (component.WallIds.Count == 1)
         {
-            return LooksLikeTrustedAnchoredSinglePairedWallBody(component, walls[0], assessments[0]);
+            return LooksLikeTrustedAnchoredSinglePairedWallBody(component, walls[0], assessments[0])
+                || LooksLikeTrustedLongSecondaryInteriorWallBody(component, walls[0], assessments[0]);
         }
 
         return LooksLikeTrustedLongThinPairedWallBodyChain(component)
@@ -774,6 +810,66 @@ public static class WallPlacementContextGuards
         && component.Evidence.Any(item =>
             item.Contains("anchored single paired-wall body", StringComparison.OrdinalIgnoreCase))
         && IsThinComponent(component.Bounds, minimumLongSide: 72, maxShortSide: 18, minimumAspectRatio: 3);
+
+    private static bool LooksLikeTrustedLongSecondaryInteriorWallBody(
+        WallGraphComponent component,
+        WallSegment wall,
+        WallEvidenceWallAssessment assessment)
+    {
+        if (wall.WallType != WallType.Interior
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.DrawingLength < MinTrustedSecondaryInteriorWallLengthDrawingUnits
+            || component.DrawingLength < MinTrustedSecondaryInteriorWallLengthDrawingUnits
+            || wall.Confidence.Value < 0.82
+            || assessment.Confidence.Value < 0.82
+            || wall.PairEvidence is not { } pair
+            || !IsThinComponent(wall.Bounds, minimumLongSide: 120, maxShortSide: 24, minimumAspectRatio: 5))
+        {
+            return false;
+        }
+
+        if (pair.Score < MinTrustedSecondaryInteriorWallPairScore
+            || pair.OverlapRatio < MinTrustedSecondaryInteriorWallOverlapRatio
+            || pair.FaceSeparation < MinTrustedSecondaryInteriorWallFaceSeparationDrawingUnits
+            || pair.FaceSeparation > MaxTrustedSecondaryInteriorWallFaceSeparationDrawingUnits
+            || MaxFaceFragmentCount(wall, assessment) > MaxTrustedSecondaryInteriorWallFaceFragments)
+        {
+            return false;
+        }
+
+        var evidence = WallEvidenceFor(wall, assessment)
+            .Concat(component.Evidence)
+            .ToArray();
+        if (!EvidenceContains(evidence, "supported wall evidence inside exterior envelope"))
+        {
+            return false;
+        }
+
+        return !EvidenceContainsAny(
+            evidence,
+            "outdoor covered-area boundary",
+            "unpaired outdoor covered-area boundary",
+            "covered-area boundary",
+            "outdoor/terrace room evidence alone",
+            "terrace",
+            "covered entry",
+            "covered-entry",
+            "overbygd",
+            "canopy",
+            "railing",
+            "trim/detail",
+            "trim linework",
+            "glazing",
+            "detail linework",
+            "surface pattern",
+            "object/fixture",
+            "fixture detail",
+            "stair",
+            "tiny door-adjacent placement topology piece suppressed",
+            "not trusted",
+            "without shell support",
+            "alone is not trusted");
+    }
 
     private static bool LooksLikeTrustedCompactPairedReturn(
         WallGraphComponent component,

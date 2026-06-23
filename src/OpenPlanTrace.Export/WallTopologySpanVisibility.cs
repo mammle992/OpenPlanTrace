@@ -462,19 +462,26 @@ internal static class WallTopologySpanVisibility
                 wall,
                 component,
                 assessment);
+        var hasTrustedTwoSidedFragmentMergedRoomBoundary =
+            WallPlacementReadinessEvaluator.IsTrustedTwoSidedFragmentMergedRoomBoundary(
+                wall,
+                component,
+                assessment);
         if ((!IsPlacementReadyStructuralSpan(component, assessment)
                 && !hasTrustedExteriorShellContinuityFragment
-                && !hasTrustedRoomBoundaryIsolatedFragment)
+                && !hasTrustedRoomBoundaryIsolatedFragment
+                && !hasTrustedTwoSidedFragmentMergedRoomBoundary)
             || assessment is null
-            || !assessment.PlacementReady
-            || assessment.RequiresReview
+            || (!hasTrustedTwoSidedFragmentMergedRoomBoundary && !assessment.PlacementReady)
+            || (!hasTrustedTwoSidedFragmentMergedRoomBoundary && assessment.RequiresReview)
             || assessment.RejectedAsNoise
             || assessment.Decision == WallEvidenceDecision.Reject
             || (assessment.Category is not (WallEvidenceCategory.StrongWallBody or WallEvidenceCategory.RecoveredWallBody)
                 && !hasTopologySupportedFragmentedPairPromotion
                 && !hasTrustedFragmentMergedPromotion
                 && !hasTrustedExteriorShellContinuityFragment
-                && !hasTrustedRoomBoundaryIsolatedFragment))
+                && !hasTrustedRoomBoundaryIsolatedFragment
+                && !hasTrustedTwoSidedFragmentMergedRoomBoundary))
         {
             return false;
         }
@@ -492,7 +499,8 @@ internal static class WallTopologySpanVisibility
         return HasTrustedSourceBackedFallbackPairEvidence(wall, component, assessment)
             || hasTrustedFragmentMergedPromotion
             || hasTrustedExteriorShellContinuityFragment
-            || hasTrustedRoomBoundaryIsolatedFragment;
+            || hasTrustedRoomBoundaryIsolatedFragment
+            || hasTrustedTwoSidedFragmentMergedRoomBoundary;
     }
 
     private static bool IsTrustedSourceBackedFallbackFragmentEvidence(
@@ -639,6 +647,12 @@ internal static class WallTopologySpanVisibility
         double existingCoverageRatio)
     {
         context.WallEvidenceAssessments.TryGetValue(wall.Id, out var assessment);
+        context.ComponentByWallId.TryGetValue(wall.Id, out var component);
+        var trustedTwoSidedFragmentMergedRoomBoundary =
+            WallPlacementReadinessEvaluator.IsTrustedTwoSidedFragmentMergedRoomBoundary(
+                wall,
+                component,
+                assessment);
         var placementAxis = WallBodyFootprintBuilder.BuildPlacementAxis(wall, 0, 1);
         var centerLine = placementAxis.CenterLine;
         if (centerLine.Length <= 0.001)
@@ -658,7 +672,9 @@ internal static class WallTopologySpanVisibility
         };
         if (wall.DetectionKind == WallDetectionKind.FragmentMerged)
         {
-            evidence.Add("source-backed fallback accepted because clean promoted fragment wall-body evidence is placement-ready");
+            evidence.Add(trustedTwoSidedFragmentMergedRoomBoundary
+                ? "source-backed fallback accepted because trusted two-sided fragment-merged room boundary evidence is importable"
+                : "source-backed fallback accepted because clean promoted fragment wall-body evidence is placement-ready");
         }
         else
         {
