@@ -1220,13 +1220,6 @@ public sealed record PlacementWallOmissionExport(
     IReadOnlyList<string> RepairCandidateIds,
     IReadOnlyList<string> Evidence)
 {
-    private const double MinRepresentedByCleanTopologyOverlapRatio = 0.92;
-    private const double MinNearIsolatedFragmentRepresentedOverlapRatio = 0.88;
-    private const double MaxInteriorRepresentedByCleanTopologyAxisDistance = 6.0;
-    private const double MaxExteriorRepresentedByCleanTopologyAxisDistance = 18.0;
-    private const double MaxNearIsolatedFragmentAxisDistance = 4.0;
-    private const int MaxNearIsolatedFragmentCount = 8;
-    private const double MaxNearIsolatedFragmentGapRatio = 0.001;
     private const double MinDoorAdjacentCleanTopologyPieceLength = 20.0;
 
     public static PlacementWallOmissionExport? From(
@@ -1258,11 +1251,11 @@ public sealed record PlacementWallOmissionExport(
             .Distinct(StringComparer.Ordinal)
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToArray();
-        var representedByCleanSpan = FindRepresentingCleanTopologySpan(
+        var representedByCleanSpan = WallCleanTopologyRepresentationMatcher.FindBest(
             wall,
             component,
             evidenceAssessment,
-            reliability,
+            reliability.ReadyForCoordinatePlacement,
             topologySpans,
             allCleanTopologySpans ?? topologySpans,
             excludedFromStructuralTopology);
@@ -1270,11 +1263,11 @@ public sealed record PlacementWallOmissionExport(
             ? Array.Empty<string>()
             :
             [
-                $"wall already represented by clean topology span from wall {representedByCleanSpan.WallId}; "
+                $"wall already represented by clean topology span from wall {representedByCleanSpan.Span.WallId}; "
                 + "overlap "
-                + RepresentedByCleanTopologyOverlapRatio(wall, representedByCleanSpan).ToString("0.###", CultureInfo.InvariantCulture)
+                + representedByCleanSpan.OverlapRatio.ToString("0.###", CultureInfo.InvariantCulture)
                 + "; axis distance "
-                + RepresentedByCleanTopologyAxisDistance(wall, representedByCleanSpan).ToString("0.###", CultureInfo.InvariantCulture)
+                + representedByCleanSpan.AxisDistance.ToString("0.###", CultureInfo.InvariantCulture)
                 + " drawing units"
             ];
         var suppressedOpeningTopologyEvidence = BuildSuppressedOpeningTopologyEvidence(
@@ -1826,191 +1819,6 @@ public sealed record PlacementWallOmissionExport(
             || string.Equals(cutout.Operation, OpeningOperation.PocketSliding.ToString(), StringComparison.OrdinalIgnoreCase);
     }
 
-    private static WallGraphTopologySpan? FindRepresentingCleanTopologySpan(
-        WallSegment wall,
-        WallGraphComponent? component,
-        WallEvidenceWallAssessment? evidenceAssessment,
-        PlacementReliabilityExport reliability,
-        IReadOnlyList<WallGraphTopologySpan> topologySpans,
-        IReadOnlyList<WallGraphTopologySpan> allCleanTopologySpans,
-        bool excludedFromStructuralTopology)
-    {
-        if (topologySpans.Count > 0
-            || allCleanTopologySpans.Count == 0
-            || excludedFromStructuralTopology
-            || component?.Kind == WallGraphComponentKind.ObjectLikeIsland
-            || evidenceAssessment?.Category == WallEvidenceCategory.ObjectOrFixtureDetail
-            || evidenceAssessment?.RejectedAsNoise == true
-            || evidenceAssessment?.Decision == WallEvidenceDecision.Reject
-            || wall.CenterLine.Length <= 0.001
-            || ResolveRepresentedTopologyOrientation(wall.CenterLine) == RepresentedTopologyOrientation.Unknown)
-        {
-            return null;
-        }
-
-        return allCleanTopologySpans
-            .Where(span => span.PageNumber == wall.PageNumber)
-            .Where(span => !string.Equals(span.WallId, wall.Id, StringComparison.Ordinal))
-            .Where(span => ResolveRepresentedTopologyOrientation(span.CenterLine)
-                == ResolveRepresentedTopologyOrientation(wall.CenterLine))
-            .Select(span => new
-            {
-                Span = span,
-                Overlap = RepresentedByCleanTopologyOverlapRatio(wall, span),
-                AxisDistance = RepresentedByCleanTopologyAxisDistance(wall, span)
-            })
-            .Where(item => item.AxisDistance <= RepresentedByCleanTopologyAxisDistanceTolerance(wall, item.Span))
-            .Where(item => item.Overlap >= RepresentedByCleanTopologyOverlapRatioThreshold(
-                wall,
-                component,
-                evidenceAssessment,
-                reliability,
-                item.Span,
-                item.AxisDistance))
-            .OrderByDescending(item => item.Overlap)
-            .ThenBy(item => item.AxisDistance)
-            .ThenByDescending(item => item.Span.DrawingLength)
-            .Select(item => item.Span)
-            .FirstOrDefault();
-    }
-
-    private static double RepresentedByCleanTopologyOverlapRatioThreshold(
-        WallSegment wall,
-        WallGraphComponent? component,
-        WallEvidenceWallAssessment? evidenceAssessment,
-        PlacementReliabilityExport reliability,
-        WallGraphTopologySpan span,
-        double axisDistance) =>
-        IsNearIsolatedFragmentRepresentedByCleanTopologyCandidate(
-            wall,
-            component,
-            evidenceAssessment,
-            reliability,
-            span,
-            axisDistance)
-            ? MinNearIsolatedFragmentRepresentedOverlapRatio
-            : MinRepresentedByCleanTopologyOverlapRatio;
-
-    private static bool IsNearIsolatedFragmentRepresentedByCleanTopologyCandidate(
-        WallSegment wall,
-        WallGraphComponent? component,
-        WallEvidenceWallAssessment? evidenceAssessment,
-        PlacementReliabilityExport reliability,
-        WallGraphTopologySpan span,
-        double axisDistance)
-    {
-        if (component?.Kind != WallGraphComponentKind.IsolatedFragment
-            || component.ExcludedFromStructuralTopology
-            || wall.DetectionKind != WallDetectionKind.FragmentMerged
-            || wall.WallType != WallType.Interior
-            || evidenceAssessment?.Category != WallEvidenceCategory.MediumWallBody
-            || evidenceAssessment.Decision != WallEvidenceDecision.Review
-            || evidenceAssessment.RequiresReview != true
-            || evidenceAssessment.RejectedAsNoise
-            || reliability.ReadyForCoordinatePlacement
-            || wall.FragmentEvidence is not { RequiresGeometryReview: false } fragmentEvidence
-            || fragmentEvidence.FragmentCount > MaxNearIsolatedFragmentCount
-            || fragmentEvidence.GapRatio > MaxNearIsolatedFragmentGapRatio
-            || axisDistance > MaxNearIsolatedFragmentAxisDistance)
-        {
-            return false;
-        }
-
-        if (span.SourceWall is { WallType: not WallType.Unknown } sourceWall
-            && sourceWall.WallType != wall.WallType)
-        {
-            return false;
-        }
-
-        return !ContainsAnyEvidence(
-            wall,
-            component,
-            evidenceAssessment,
-            "covered-area",
-            "door",
-            "fixture",
-            "furniture",
-            "object",
-            "opening",
-            "railing",
-            "stair",
-            "terrace");
-    }
-
-    private static double RepresentedByCleanTopologyOverlapRatio(
-        WallSegment wall,
-        WallGraphTopologySpan span)
-    {
-        var orientation = ResolveRepresentedTopologyOrientation(wall.CenterLine);
-        if (orientation == RepresentedTopologyOrientation.Unknown
-            || orientation != ResolveRepresentedTopologyOrientation(span.CenterLine)
-            || wall.CenterLine.Length <= 0.001)
-        {
-            return 0;
-        }
-
-        var overlap = Math.Min(RepresentedAxisMax(wall.CenterLine, orientation), RepresentedAxisMax(span.CenterLine, orientation))
-            - Math.Max(RepresentedAxisMin(wall.CenterLine, orientation), RepresentedAxisMin(span.CenterLine, orientation));
-        return Math.Clamp(overlap / wall.CenterLine.Length, 0, 1);
-    }
-
-    private static double RepresentedByCleanTopologyAxisDistance(
-        WallSegment wall,
-        WallGraphTopologySpan span)
-    {
-        var orientation = ResolveRepresentedTopologyOrientation(wall.CenterLine);
-        if (orientation == RepresentedTopologyOrientation.Unknown
-            || orientation != ResolveRepresentedTopologyOrientation(span.CenterLine))
-        {
-            return double.PositiveInfinity;
-        }
-
-        return Math.Abs(RepresentedAxisCoordinate(wall.CenterLine, orientation) - RepresentedAxisCoordinate(span.CenterLine, orientation));
-    }
-
-    private static double RepresentedByCleanTopologyAxisDistanceTolerance(
-        WallSegment wall,
-        WallGraphTopologySpan span)
-    {
-        var baseTolerance = wall.WallType == WallType.Exterior || span.SourceWall?.WallType == WallType.Exterior
-            ? MaxExteriorRepresentedByCleanTopologyAxisDistance
-            : MaxInteriorRepresentedByCleanTopologyAxisDistance;
-        return Math.Max(baseTolerance, Math.Max(wall.Thickness, span.Thickness) + 1.0);
-    }
-
-    private static RepresentedTopologyOrientation ResolveRepresentedTopologyOrientation(PlanLineSegment line)
-    {
-        if (line.IsHorizontal(2))
-        {
-            return RepresentedTopologyOrientation.Horizontal;
-        }
-
-        return line.IsVertical(2)
-            ? RepresentedTopologyOrientation.Vertical
-            : RepresentedTopologyOrientation.Unknown;
-    }
-
-    private static double RepresentedAxisMin(
-        PlanLineSegment line,
-        RepresentedTopologyOrientation orientation) =>
-        orientation == RepresentedTopologyOrientation.Horizontal
-            ? Math.Min(line.Start.X, line.End.X)
-            : Math.Min(line.Start.Y, line.End.Y);
-
-    private static double RepresentedAxisMax(
-        PlanLineSegment line,
-        RepresentedTopologyOrientation orientation) =>
-        orientation == RepresentedTopologyOrientation.Horizontal
-            ? Math.Max(line.Start.X, line.End.X)
-            : Math.Max(line.Start.Y, line.End.Y);
-
-    private static double RepresentedAxisCoordinate(
-        PlanLineSegment line,
-        RepresentedTopologyOrientation orientation) =>
-        orientation == RepresentedTopologyOrientation.Horizontal
-            ? (line.Start.Y + line.End.Y) / 2.0
-            : (line.Start.X + line.End.X) / 2.0;
-
     private static IReadOnlyList<string> ExtractLinkedWallIds(
         string wallId,
         IReadOnlyList<string> evidence,
@@ -2084,65 +1892,11 @@ public sealed record PlacementWallOmissionExport(
     private static bool ContainsEvidence(IReadOnlyList<string> evidence, string text) =>
         evidence.Any(item => item.Contains(text, StringComparison.OrdinalIgnoreCase));
 
-    private static bool ContainsAnyEvidence(
-        WallSegment wall,
-        WallGraphComponent? component,
-        WallEvidenceWallAssessment? evidenceAssessment,
-        params string[] text)
-    {
-        return AllEvidence().Any(evidence => text.Any(token => evidence.Contains(token, StringComparison.OrdinalIgnoreCase)));
-
-        IEnumerable<string> AllEvidence()
-        {
-            foreach (var evidence in wall.Evidence)
-            {
-                yield return evidence;
-            }
-
-            foreach (var evidence in wall.FragmentEvidence?.Evidence ?? Array.Empty<string>())
-            {
-                yield return evidence;
-            }
-
-            foreach (var evidence in component?.Evidence ?? Array.Empty<string>())
-            {
-                yield return evidence;
-            }
-
-            if (evidenceAssessment is null)
-            {
-                yield break;
-            }
-
-            foreach (var evidence in evidenceAssessment.Evidence)
-            {
-                yield return evidence;
-            }
-
-            foreach (var evidence in evidenceAssessment.ScoreBreakdown.PositiveEvidence)
-            {
-                yield return evidence;
-            }
-
-            foreach (var evidence in evidenceAssessment.ScoreBreakdown.NegativeEvidence)
-            {
-                yield return evidence;
-            }
-        }
-    }
-
     private sealed record PlacementWallOmissionClassification(
         string Code,
         string Category,
         string Message,
         string RecommendedAction);
-
-    private enum RepresentedTopologyOrientation
-    {
-        Unknown,
-        Horizontal,
-        Vertical
-    }
 }
 
 public sealed record PlacementSurfacePatternExport(

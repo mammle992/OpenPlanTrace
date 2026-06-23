@@ -886,6 +886,41 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void ScanJsonExporter_LinksNearIsolatedFragmentToRepresentingCleanTopology()
+    {
+        var fragmentLine = new PlanLineSegment(
+            new PlanPoint(90, 102),
+            new PlanPoint(190, 102));
+        var result = WithContainedWallAsIsolatedReviewFragment(CreateContainedDuplicatePlacementRunResult(
+            fragmentLine,
+            WallDetectionKind.FragmentMerged,
+            new WallFragmentEvidence(
+                FragmentCount: 6,
+                TotalHealedGap: 0,
+                MaxHealedGap: 0,
+                DuplicatePrimitiveCount: 6,
+                GapRatio: 0,
+                RequiresGeometryReview: false,
+                Evidence: ["synthetic near-duplicate fragment with stable geometry"])));
+
+        using var document = JsonDocument.Parse(PlanTraceJsonExporter.Serialize(result));
+        var duplicateWall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(wall => wall.GetProperty("id").GetString() == "duplicate-contained-wall");
+
+        Assert.Equal("ReviewRequired", duplicateWall.GetProperty("placementStatus").GetString());
+        Assert.True(duplicateWall.GetProperty("requiresReview").GetBoolean());
+        Assert.False(duplicateWall.GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.Contains(
+            duplicateWall.GetProperty("representedByWallIds").EnumerateArray(),
+            wallId => wallId.GetString() == "duplicate-long-wall");
+        Assert.DoesNotContain(
+            duplicateWall.GetProperty("reviewReasons").EnumerateArray(),
+            reason => reason.GetString()?.Contains("no clean wall graph topology span", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
     public void PlacementExporter_DoesNotClassifyDistantIsolatedFragmentAsDuplicateCleanTopology()
     {
         var fragmentLine = new PlanLineSegment(
