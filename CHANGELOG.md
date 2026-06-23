@@ -6,6 +6,39 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.03.008] - 2026-06-23
+
+### Improved
+- Placement readiness now allows trusted secondary exterior shell walls without
+  room-boundary support when they have strong paired-wall evidence, exterior
+  envelope support, good overlap, sane face separation, and no covered-area,
+  terrace, glazing, railing, surface-pattern, or detail-linework evidence.
+- Wall type refinement can now promote recovered wall-body candidates to
+  exterior walls when they are strong paired walls aligned to the main
+  floorplan perimeter.
+- Recovered wall promotion stays conservative: similar recovered walls away
+  from the main perimeter remain unknown/reviewable instead of becoming exact
+  import geometry.
+
+### Verified
+- Added regression tests for trusted secondary exterior shell placement,
+  covered-entry/detail blocking, recovered perimeter-shell promotion, and
+  away-from-perimeter recovered wall blocking.
+- Ran focused wall refinement, scan quality, and placement readiness tests:
+  `99` tests passed.
+- Ran the full test suite: `753` tests passed.
+- Ran the supplied hard, medium, and light PDF corpus in that order with
+  compact JSON, placement exports, wall-QA SVG overlays, and high-resolution
+  cropped wall-QA PNG screenshots rendered headlessly with Edge.
+- Hard PDF improved from `2` to `6` placement-ready walls, from `3` to `7`
+  clean topology spans, and from `0.428571` to `0.5` coordinate-ready ratio.
+  It remains blocked because room recovery still finds only `1` room and most
+  central/lower wall candidates lack semantic support.
+- Medium PDF stayed stable at `18` placement-ready walls and `20` clean
+  topology spans.
+- Light PDF stayed stable at `16` placement-ready walls and `19` clean topology
+  spans.
+
 ## [0.03.007] - 2026-06-23
 
 ### Improved

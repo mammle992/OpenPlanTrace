@@ -2,6 +2,13 @@ namespace OpenPlanTrace;
 
 public static class WallPlacementContextGuards
 {
+    private const double MinTrustedSecondaryExteriorShellLengthDrawingUnits = 72.0;
+    private const double MinTrustedSecondaryExteriorShellPairScore = 0.78;
+    private const double MinTrustedSecondaryExteriorShellOverlapRatio = 0.90;
+    private const double MinTrustedSecondaryExteriorShellFaceSeparationDrawingUnits = 2.0;
+    private const double MaxTrustedSecondaryExteriorShellFaceSeparationDrawingUnits = 18.0;
+    private const int MaxTrustedSecondaryExteriorShellFaceFragments = 220;
+
     public const string SecondaryStructuralWithoutRoomBoundarySupportReason =
         "secondary structural wall component lacks room-boundary support";
 
@@ -96,6 +103,10 @@ public static class WallPlacementContextGuards
                     SecondaryStructuralObjectLineworkWithoutRoomBoundarySupportReason);
             }
             else if (!hasRoomBoundarySupport
+                && !SecondaryStructuralWallHasTrustedExteriorShellSupport(
+                    wall,
+                    component,
+                    wallEvidenceByWallId)
                 && !SecondaryStructuralComponentHasTrustedPairedWallBodySupport(
                     component,
                     wallById,
@@ -289,6 +300,83 @@ public static class WallPlacementContextGuards
                 || maxFaceFragmentCount >= 24
                 || wall.FragmentEvidence?.FragmentCount >= 8
                 || wall.FragmentEvidence?.DuplicatePrimitiveCount >= 4);
+    }
+
+    private static bool SecondaryStructuralWallHasTrustedExteriorShellSupport(
+        WallSegment wall,
+        WallGraphComponent? component,
+        IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceByWallId)
+    {
+        if (component?.Kind != WallGraphComponentKind.SecondaryStructural
+            || component.ExcludedFromStructuralTopology
+            || wall.WallType != WallType.Exterior
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.DrawingLength < MinTrustedSecondaryExteriorShellLengthDrawingUnits
+            || wall.Confidence.Value < 0.74
+            || !wallEvidenceByWallId.TryGetValue(wall.Id, out var assessment)
+            || !assessment.PlacementReady
+            || assessment.RequiresReview
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject
+            || assessment.Category != WallEvidenceCategory.StrongWallBody
+            || !HasStrongPairedWallBodyEvidence(wall, assessment))
+        {
+            return false;
+        }
+
+        var evidence = WallEvidenceFor(wall, assessment)
+            .Concat(component.Evidence)
+            .ToArray();
+        if (!EvidenceContainsAny(
+                evidence,
+                "near detected floorplan/wall envelope",
+                "local outer boundary",
+                "trusted exterior shell",
+                "exterior shell continuity"))
+        {
+            return false;
+        }
+
+        if (EvidenceContainsAny(
+                evidence,
+                "outdoor covered-area boundary",
+                "unpaired outdoor covered-area boundary",
+                "covered-area boundary",
+                "outdoor/terrace room evidence alone",
+                "terrace",
+                "covered entry",
+                "covered-entry",
+                "overbygd",
+                "canopy",
+                "railing",
+                "trim/detail",
+                "trim linework",
+                "glazing",
+                "detail linework",
+                "surface pattern",
+                "not trusted",
+                "without shell support",
+                "alone is not trusted"))
+        {
+            return false;
+        }
+
+        var pairScore = wall.PairEvidence?.Score
+            ?? evidence.Select(TryReadPairScore).Where(score => score.HasValue).Select(score => score!.Value).DefaultIfEmpty(0).Max();
+        var overlapRatio = wall.PairEvidence?.OverlapRatio
+            ?? evidence.Select(TryReadOverlapRatio).Where(ratio => ratio.HasValue).Select(ratio => ratio!.Value).DefaultIfEmpty(0).Max();
+        var faceSeparation = wall.PairEvidence?.FaceSeparation
+            ?? evidence.Select(TryReadFaceSeparation).Where(separation => separation.HasValue).Select(separation => separation!.Value).DefaultIfEmpty(0).Max();
+        if (pairScore < MinTrustedSecondaryExteriorShellPairScore
+            || overlapRatio < MinTrustedSecondaryExteriorShellOverlapRatio
+            || faceSeparation < MinTrustedSecondaryExteriorShellFaceSeparationDrawingUnits
+            || faceSeparation > MaxTrustedSecondaryExteriorShellFaceSeparationDrawingUnits
+            || MaxFaceFragmentCount(wall, assessment) > MaxTrustedSecondaryExteriorShellFaceFragments)
+        {
+            return false;
+        }
+
+        return true;
     }
 
     private static IReadOnlyList<string> WallEvidenceFor(
@@ -693,6 +781,56 @@ public static class WallPlacementContextGuards
                 || evidence[end] == ','))
         {
             end++;
+        }
+
+        var valueText = evidence[start..end].Replace(',', '.');
+        return double.TryParse(
+            valueText,
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var value)
+            ? value
+            : null;
+    }
+
+    private static double? TryReadOverlapRatio(string evidence)
+    {
+        const string Prefix = "overlap ratio ";
+        var index = evidence.IndexOf(Prefix, StringComparison.OrdinalIgnoreCase);
+        if (index < 0)
+        {
+            return null;
+        }
+
+        return TryReadEvidenceDouble(evidence, index + Prefix.Length);
+    }
+
+    private static double? TryReadFaceSeparation(string evidence)
+    {
+        const string Prefix = "face separation ";
+        var index = evidence.IndexOf(Prefix, StringComparison.OrdinalIgnoreCase);
+        if (index < 0)
+        {
+            return null;
+        }
+
+        return TryReadEvidenceDouble(evidence, index + Prefix.Length);
+    }
+
+    private static double? TryReadEvidenceDouble(string evidence, int start)
+    {
+        var end = start;
+        while (end < evidence.Length
+            && (char.IsDigit(evidence[end])
+                || evidence[end] == '.'
+                || evidence[end] == ','))
+        {
+            end++;
+        }
+
+        if (end <= start)
+        {
+            return null;
         }
 
         var valueText = evidence[start..end].Replace(',', '.');

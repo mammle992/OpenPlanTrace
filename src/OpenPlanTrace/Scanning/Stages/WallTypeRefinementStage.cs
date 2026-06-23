@@ -34,6 +34,12 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         var roomsByPage = context.Rooms
             .GroupBy(room => room.PageNumber)
             .ToDictionary(group => group.Key, group => group.ToArray());
+        var mainFloorplanBoundsByPage = context.SheetRegions
+            .Where(region => region.Kind == RegionKind.MainFloorPlan)
+            .GroupBy(region => region.PageNumber)
+            .ToDictionary(
+                group => group.Key,
+                group => PlanRect.Union(group.Select(region => region.Bounds)));
         var changed = 0;
         var evidenceUpdated = 0;
         var roomReferenced = 0;
@@ -99,7 +105,11 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
                 hasOutdoorRoomReference,
                 sideEvidence,
                 component,
-                rejectedEvidence);
+                rejectedEvidence,
+                mainFloorplanBoundsByPage.TryGetValue(wall.PageNumber, out var mainFloorplanBounds)
+                    ? mainFloorplanBounds
+                    : null,
+                context.Options);
 
             var evidence = IsActionableEvidence(refined.Evidence)
                 ? AppendEvidence(wall.Evidence, refined.Evidence)
@@ -593,7 +603,9 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         bool hasOutdoorRoomReference,
         RoomSideEvidence sideEvidence,
         WallGraphComponent? component,
-        WallEvidenceWallAssessment? rejectedEvidence)
+        WallEvidenceWallAssessment? rejectedEvidence,
+        PlanRect? mainFloorplanBounds,
+        ScannerOptions options)
     {
         if (rejectedEvidence is not null && IsNonStructuralWallComponent(component))
         {
@@ -621,6 +633,18 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             return new WallTypeRefinement(
                 WallType.Unknown,
                 "wall type refined unknown: fragment-merged wall geometry requires review before exact placement");
+        }
+
+        if (IsTrustedRecoveredExteriorShellCandidate(
+            wall,
+            assessment,
+            component,
+            mainFloorplanBounds,
+            options))
+        {
+            return new WallTypeRefinement(
+                WallType.Exterior,
+                "wall type refined exterior: recovered wall body aligned to main floorplan perimeter shell");
         }
 
         if (isSharedByRoomAdjacency)
@@ -741,6 +765,100 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         wall.Evidence.Any(item =>
             item.Contains("recovered by wall evidence map", StringComparison.OrdinalIgnoreCase)
             || item.Contains("missing-wall recovery", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsTrustedRecoveredExteriorShellCandidate(
+        WallSegment wall,
+        WallEvidenceWallAssessment? assessment,
+        WallGraphComponent? component,
+        PlanRect? mainFloorplanBounds,
+        ScannerOptions options)
+    {
+        if (mainFloorplanBounds is null
+            || wall.WallType != WallType.Unknown
+            || !IsRecoveredMissingWallCandidate(wall)
+            || !IsStructuralWallComponent(component)
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.DrawingLength < Math.Max(72.0, options.MinWallLength * 3.0)
+            || wall.Confidence.Value < 0.80
+            || wall.PairEvidence is not { } pair
+            || pair.Score < 0.80
+            || pair.OverlapRatio < 0.95
+            || pair.FaceSeparation < 2.0
+            || pair.FaceSeparation > Math.Max(18.0, options.DefaultWallThickness * 5.0)
+            || assessment is null
+            || !assessment.PlacementReady
+            || assessment.RequiresReview
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject
+            || assessment.Category != WallEvidenceCategory.RecoveredWallBody)
+        {
+            return false;
+        }
+
+        var evidence = wall.Evidence
+            .Concat(assessment.Evidence)
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(assessment.ScoreBreakdown.NegativeEvidence)
+            .ToArray();
+        if (evidence.Any(IsRecoveredExteriorShellBlockingEvidence))
+        {
+            return false;
+        }
+
+        return IsWallLineNearMainFloorplanPerimeter(wall.CenterLine, mainFloorplanBounds.Value, options);
+    }
+
+    private static bool IsWallLineNearMainFloorplanPerimeter(
+        PlanLineSegment line,
+        PlanRect bounds,
+        ScannerOptions options)
+    {
+        var tolerance = Math.Max(24.0, Math.Max(options.DefaultWallThickness * 6.0, options.WallSnapTolerance * 8.0));
+        var overlapTolerance = Math.Max(8.0, options.DefaultWallThickness * 2.0);
+        if (line.IsVertical(options.GeometryTolerance.Distance))
+        {
+            var x = line.Midpoint.X;
+            var start = Math.Min(line.Start.Y, line.End.Y);
+            var end = Math.Max(line.Start.Y, line.End.Y);
+            var axisOverlap = Math.Min(end, bounds.Bottom + overlapTolerance)
+                - Math.Max(start, bounds.Top - overlapTolerance);
+            return axisOverlap > Math.Max(12.0, line.Length * 0.35)
+                && (Math.Abs(x - bounds.Left) <= tolerance || Math.Abs(x - bounds.Right) <= tolerance);
+        }
+
+        if (line.IsHorizontal(options.GeometryTolerance.Distance))
+        {
+            var y = line.Midpoint.Y;
+            var start = Math.Min(line.Start.X, line.End.X);
+            var end = Math.Max(line.Start.X, line.End.X);
+            var axisOverlap = Math.Min(end, bounds.Right + overlapTolerance)
+                - Math.Max(start, bounds.Left - overlapTolerance);
+            return axisOverlap > Math.Max(12.0, line.Length * 0.35)
+                && (Math.Abs(y - bounds.Top) <= tolerance || Math.Abs(y - bounds.Bottom) <= tolerance);
+        }
+
+        return false;
+    }
+
+    private static bool IsRecoveredExteriorShellBlockingEvidence(string evidence) =>
+        evidence.Contains("outdoor covered-area boundary", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("unpaired outdoor covered-area boundary", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("covered-area boundary", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("outdoor/terrace room evidence alone", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("terrace", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("covered entry", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("covered-entry", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("overbygd", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("canopy", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("railing", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("trim/detail", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("trim linework", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("glazing", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("detail linework", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("surface pattern", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("not trusted", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("without shell support", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("alone is not trusted", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsUntrustedOutdoorExteriorPromotionCandidate(
         WallSegment wall,

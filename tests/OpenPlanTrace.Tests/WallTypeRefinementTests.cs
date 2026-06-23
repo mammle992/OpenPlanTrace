@@ -168,6 +168,64 @@ public sealed class WallTypeRefinementTests
     }
 
     [Fact]
+    public async Task WallTypeRefinement_PromotesTrustedRecoveredPerimeterShellToExterior()
+    {
+        var wall = RecoveredWallBody("wall-recovered-perimeter-shell", 52, 100, 52, 300);
+        var context = CreateContext("recovered-perimeter-shell");
+        context.SheetRegions.AddRange(new[]
+        {
+            new SheetRegion("sheet", 1, RegionKind.Sheet, new PlanRect(0, 0, 400, 400), Confidence.High),
+            new SheetRegion("main", 1, RegionKind.MainFloorPlan, new PlanRect(40, 40, 300, 300), Confidence.High)
+        });
+        context.Walls.Add(wall);
+        context.WallGraph = GraphFor(wall);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.RecoveredWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var refined = Assert.Single(context.Walls);
+        Assert.Equal(WallType.Exterior, refined.WallType);
+        Assert.Contains(
+            refined.Evidence,
+            item => item.Contains("recovered wall body aligned to main floorplan perimeter shell", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task WallTypeRefinement_DoesNotPromoteTrustedRecoveredWallAwayFromPerimeter()
+    {
+        var wall = RecoveredWallBody("wall-recovered-away-from-perimeter", 180, 100, 180, 300);
+        var context = CreateContext("recovered-away-from-perimeter");
+        context.SheetRegions.AddRange(new[]
+        {
+            new SheetRegion("sheet", 1, RegionKind.Sheet, new PlanRect(0, 0, 400, 400), Confidence.High),
+            new SheetRegion("main", 1, RegionKind.MainFloorPlan, new PlanRect(40, 40, 300, 300), Confidence.High)
+        });
+        context.Walls.Add(wall);
+        context.WallGraph = GraphFor(wall);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.RecoveredWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var refined = Assert.Single(context.Walls);
+        Assert.Equal(WallType.Unknown, refined.WallType);
+        Assert.DoesNotContain(
+            refined.Evidence,
+            item => item.Contains("recovered wall body aligned to main floorplan perimeter shell", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task WallTypeRefinement_KeepsRecoveredUnknownWallExteriorWhenOutdoorSideHasShellSupport()
     {
         var wall = new WallSegment(
@@ -1945,6 +2003,49 @@ public sealed class WallTypeRefinementTests
                 "wall evidence: strong double-edge wall body"
             }
         };
+
+    private static WallSegment RecoveredWallBody(string id, double x1, double y1, double x2, double y2)
+    {
+        var centerLine = new PlanLineSegment(new PlanPoint(x1, y1), new PlanPoint(x2, y2));
+        var isVertical = Math.Abs(x1 - x2) <= 0.01;
+        var firstFace = isVertical
+            ? new PlanLineSegment(new PlanPoint(x1 - 3, y1), new PlanPoint(x2 - 3, y2))
+            : new PlanLineSegment(new PlanPoint(x1, y1 - 3), new PlanPoint(x2, y2 - 3));
+        var secondFace = isVertical
+            ? new PlanLineSegment(new PlanPoint(x1 + 3, y1), new PlanPoint(x2 + 3, y2))
+            : new PlanLineSegment(new PlanPoint(x1, y1 + 3), new PlanPoint(x2, y2 + 3));
+
+        return new WallSegment(
+            id,
+            1,
+            centerLine,
+            6,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Unknown,
+            SourcePrimitiveIds = new[] { $"{id}:face-a", $"{id}:face-b" },
+            PairEvidence = new WallPairEvidence(
+                firstFace,
+                secondFace,
+                FaceSeparation: 6,
+                OverlapRatio: 0.98,
+                Score: 0.86,
+                FirstFaceFragmentCount: 1,
+                SecondFaceFragmentCount: 1,
+                FirstFaceSourcePrimitiveIds: new[] { $"{id}:face-a" },
+                SecondFaceSourcePrimitiveIds: new[] { $"{id}:face-b" }),
+            Evidence = new[]
+            {
+                "recovered by wall evidence map from unclaimed parallel wall-face evidence",
+                "wall evidence: recovered wall body from unclaimed parallel-face evidence",
+                "parallel wall-face pair",
+                "pair score 0.86",
+                "overlap ratio 0.98",
+                "wall evidence: strong double-edge wall body"
+            }
+        };
+    }
 
     private static WallGraph GraphFor(WallSegment wall) =>
         new(
