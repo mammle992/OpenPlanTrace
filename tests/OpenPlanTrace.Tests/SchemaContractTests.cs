@@ -38,7 +38,7 @@ public sealed class SchemaContractTests
         using var document = JsonDocument.Parse(schema);
 
         Assert.Equal("https://json-schema.org/draft/2020-12/schema", document.RootElement.GetProperty("$schema").GetString());
-        Assert.Equal("urn:openplantrace:schema:scan:v70", document.RootElement.GetProperty("$id").GetString());
+        Assert.Equal("urn:openplantrace:schema:scan:v71", document.RootElement.GetProperty("$id").GetString());
         Assert.Equal(
             PlanTraceExport.CurrentSchemaVersion,
             document.RootElement.GetProperty("x-openplantrace-schemaVersion").GetString());
@@ -635,7 +635,7 @@ public sealed class SchemaContractTests
         AssertDefinitionRequires(schemaDocument, "pageCoordinateFrame", "pageNumber", "width", "height", "bounds", "pageToNormalizedTransform", "normalizedToPageTransform");
         AssertDefinitionRequires(schemaDocument, "visualAiClassification", "label", "category", "confidence", "modelName", "modelVersion", "inferenceEngine", "pageNumber", "cropBounds", "cropSourceId", "alternatives", "evidence");
         AssertDefinitionRequires(schemaDocument, "visualAiAlternative", "label", "category", "confidence", "evidence");
-        AssertDefinitionRequires(schemaDocument, "wall", "id", "centerLine", "bounds", "detectionKind", "wallType", "wallComponentId", "wallComponentKind", "excludedFromStructuralTopology", "readyForCoordinatePlacement", "requiresReview", "reviewReasons", "lengthMeters", "thicknessMillimeters", "measurementScaleGroupId", "confidence", "sourcePrimitiveIds", "sourceLayers", "pairEvidence", "fragmentEvidence", "evidenceAssessment", "evidence");
+        AssertDefinitionRequires(schemaDocument, "wall", "id", "centerLine", "bounds", "detectionKind", "wallType", "wallComponentId", "wallComponentKind", "excludedFromStructuralTopology", "placementStatus", "representedByWallIds", "readyForCoordinatePlacement", "requiresReview", "reviewReasons", "lengthMeters", "thicknessMillimeters", "measurementScaleGroupId", "confidence", "sourcePrimitiveIds", "sourceLayers", "pairEvidence", "fragmentEvidence", "evidenceAssessment", "evidence");
         AssertDefinitionRequires(schemaDocument, "wallEvidenceInlineAssessment", "category", "confidence", "placementReady", "requiresReview", "rejectedAsNoise", "scoreBreakdown", "sourcePrimitiveIds", "evidence");
         AssertDefinitionRequires(schemaDocument, "wallEvidenceScoreBreakdown", "positiveScore", "negativeScore", "decisionScore", "pairSupportScore", "layerSupportScore", "structuralSupportScore", "recoverySupportScore", "noisePenalty", "fragmentReviewPenalty", "positiveEvidence", "negativeEvidence");
         AssertDefinitionRequires(schemaDocument, "wallTopologyPreparation", "graphWallCount", "acceptedGraphWallCount", "reviewGraphWallCount", "unassessedGraphWallCount", "automaticCoordinateRepairWallCount", "rejectedWallCount", "rejectedAssessmentCount", "doorOrOpeningSymbolCount", "surfacePatternDetailCount", "dimensionOrAnnotationCount", "objectOrFixtureDetailCount", "graphWallIds", "acceptedGraphWallIds", "reviewGraphWallIds", "unassessedGraphWallIds", "automaticCoordinateRepairWallIds", "rejectedWallIds", "rejectedWalls", "evidence");

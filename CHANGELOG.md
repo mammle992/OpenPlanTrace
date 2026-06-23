@@ -6,17 +6,20 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format. `A` is the release
 generation, `BC` is the major update track, and `DEF` is the small update or bug
 fix counter. Individual JSON contracts keep their own schema versions.
 
+## [0.03.016] - 2026-06-23
+
+- Improved scan JSON wall placement status.
+- Improved duplicate wall noise classification.
+
 ## [0.03.015] - 2026-06-23
 
 - Improved trusted recovered interior wall classification.
 - Improved placement recovery for long paired wall bodies.
-- Verified `766` tests and hard/medium/light wall-QA screenshots.
 
 ## [0.03.014] - 2026-06-23
 
 - Improved paired-face wall placement axis stability.
 - Improved wall export regression coverage for close paired wall bodies.
-- Verified `765` tests and hard/medium/light wall-QA screenshots.
 
 ## [0.03.013] - 2026-06-23
 
@@ -29,7 +32,6 @@ fix counter. Individual JSON contracts keep their own schema versions.
 - Improved two-sided fragment-merged room-boundary placement spans.
 - Improved source-backed topology fallback for recovered walls.
 - Small improvement to covered/outdoor/detail/object safeguards.
-- Verified `764` tests and hard/medium/light PDF wall-QA screenshots.
 
 ## [0.03.011] - 2026-06-23
 

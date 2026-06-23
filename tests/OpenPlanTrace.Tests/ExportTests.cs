@@ -805,6 +805,27 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void ScanJsonExporter_LabelsContainedDuplicateWallAsRepresentedByCleanTopology()
+    {
+        var result = CreateContainedDuplicatePlacementRunResult();
+
+        using var document = JsonDocument.Parse(PlanTraceJsonExporter.Serialize(result));
+        var duplicateWall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(wall => wall.GetProperty("id").GetString() == "duplicate-contained-wall");
+
+        Assert.Equal("RepresentedByCleanTopology", duplicateWall.GetProperty("placementStatus").GetString());
+        Assert.False(duplicateWall.GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.False(duplicateWall.GetProperty("requiresReview").GetBoolean());
+        Assert.Empty(duplicateWall.GetProperty("topologySpans").EnumerateArray());
+        Assert.Empty(duplicateWall.GetProperty("reviewReasons").EnumerateArray());
+        Assert.Contains(
+            duplicateWall.GetProperty("representedByWallIds").EnumerateArray(),
+            wallId => wallId.GetString() == "duplicate-long-wall");
+    }
+
+    [Fact]
     public void PlacementExporter_ClassifiesIsolatedFragmentCoveredByCleanSpanAsDuplicateCleanTopology()
     {
         var result = WithContainedWallAsIsolatedReviewFragment(CreateContainedDuplicatePlacementRunResult());

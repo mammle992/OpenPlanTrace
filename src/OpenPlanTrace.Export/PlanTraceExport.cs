@@ -35,7 +35,7 @@ public sealed record PlanTraceExport(
     QualityExport Quality,
     DiagnosticsExport Diagnostics)
 {
-    public const string CurrentSchemaVersion = "openplantrace.scan.v70";
+    public const string CurrentSchemaVersion = "openplantrace.scan.v71";
 
     public static PlanTraceExport From(PlanScanResult result) =>
         Create(result);
@@ -76,7 +76,8 @@ public sealed record PlanTraceExport(
                 sourceLookup,
                 wallComponentLookup,
                 wallEvidenceAssessments.TryGetValue(wall.Id, out var assessment) ? assessment : null,
-                cleanWallTopologySpansByWallId.TryGetValue(wall.Id, out var spans) ? spans : Array.Empty<WallGraphTopologySpan>())).ToArray(),
+                cleanWallTopologySpansByWallId.TryGetValue(wall.Id, out var spans) ? spans : Array.Empty<WallGraphTopologySpan>(),
+                cleanWallTopologySpans)).ToArray(),
             WallEvidenceExport.From(result.WallEvidenceMap, sourceLookup),
             WallTopologyPreparationExport.From(result.WallTopologyPreparation, sourceLookup),
             WallGraphExport.From(
@@ -1023,6 +1024,8 @@ public sealed record WallExport(
     string? WallComponentId,
     string? WallComponentKind,
     bool ExcludedFromStructuralTopology,
+    string PlacementStatus,
+    IReadOnlyList<string> RepresentedByWallIds,
     bool ReadyForCoordinatePlacement,
     bool RequiresReview,
     IReadOnlyList<string> ReviewReasons,
@@ -1044,17 +1047,34 @@ public sealed record WallExport(
         IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup,
         IReadOnlyDictionary<string, WallGraphComponent> wallComponentLookup,
         WallEvidenceWallAssessment? evidenceAssessment,
-        IReadOnlyList<WallGraphTopologySpan> topologySpans)
+        IReadOnlyList<WallGraphTopologySpan> topologySpans,
+        IReadOnlyList<WallGraphTopologySpan> cleanWallTopologySpans)
     {
         wallComponentLookup.TryGetValue(wall.Id, out var component);
         var excludedFromStructuralTopology =
             WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment);
+        var representedBy = topologySpans.Count == 0
+            ? FindRepresentingCleanTopologySpans(
+                wall,
+                component,
+                evidenceAssessment,
+                excludedFromStructuralTopology,
+                cleanWallTopologySpans)
+            : Array.Empty<RepresentedCleanTopologySpan>();
         var reviewReasons = WallEvidenceExportHelpers.CoordinateReviewReasons(
             wall,
             component,
             evidenceAssessment,
             excludedFromStructuralTopology,
-            hasPlacementGeometry: topologySpans.Count > 0);
+            hasPlacementGeometry: topologySpans.Count > 0 || representedBy.Count > 0);
+        var readyForCoordinatePlacement = topologySpans.Count > 0 && reviewReasons.Count == 0;
+        var requiresReview = reviewReasons.Count > 0;
+        var representedByWallIds = representedBy
+            .Select(item => item.Span.WallId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
         return
         new(
             wall.Id,
@@ -1068,8 +1088,10 @@ public sealed record WallExport(
             component?.Id,
             component?.Kind.ToString(),
             excludedFromStructuralTopology,
-            reviewReasons.Count == 0,
-            reviewReasons.Count > 0,
+            PlacementStatusFor(readyForCoordinatePlacement, requiresReview, representedByWallIds.Length > 0),
+            representedByWallIds,
+            readyForCoordinatePlacement,
+            requiresReview,
             reviewReasons,
             wall.DrawingLength,
             wall.LengthMeters,
@@ -1083,6 +1105,134 @@ public sealed record WallExport(
             evidenceAssessment is null ? null : WallEvidenceAssessmentExport.From(evidenceAssessment),
             wall.Evidence,
             ExportSourceHelpers.SourceLayers(wall.SourcePrimitiveIds, sourceLookup));
+    }
+
+    private static string PlacementStatusFor(
+        bool readyForCoordinatePlacement,
+        bool requiresReview,
+        bool representedByCleanTopology)
+    {
+        if (readyForCoordinatePlacement)
+        {
+            return "Ready";
+        }
+
+        if (representedByCleanTopology && !requiresReview)
+        {
+            return "RepresentedByCleanTopology";
+        }
+
+        return requiresReview ? "ReviewRequired" : "NotReady";
+    }
+
+    private static IReadOnlyList<RepresentedCleanTopologySpan> FindRepresentingCleanTopologySpans(
+        WallSegment wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? evidenceAssessment,
+        bool excludedFromStructuralTopology,
+        IReadOnlyList<WallGraphTopologySpan> cleanWallTopologySpans)
+    {
+        if (cleanWallTopologySpans.Count == 0
+            || excludedFromStructuralTopology
+            || component?.Kind == WallGraphComponentKind.ObjectLikeIsland
+            || evidenceAssessment?.RejectedAsNoise == true
+            || evidenceAssessment?.Decision == WallEvidenceDecision.Reject
+            || evidenceAssessment?.PlacementReady != true
+            || evidenceAssessment.RequiresReview
+            || wall.WallType == OpenPlanTrace.WallType.Unknown
+            || wall.CenterLine.Length <= 0.001)
+        {
+            return Array.Empty<RepresentedCleanTopologySpan>();
+        }
+
+        var orientation = ResolveRepresentedSpanOrientation(wall.CenterLine);
+        if (orientation == RepresentedSpanOrientation.Unknown)
+        {
+            return Array.Empty<RepresentedCleanTopologySpan>();
+        }
+
+        return cleanWallTopologySpans
+            .Where(span => span.PageNumber == wall.PageNumber)
+            .Where(span => !string.Equals(span.WallId, wall.Id, StringComparison.Ordinal))
+            .Where(span => ResolveRepresentedSpanOrientation(span.CenterLine) == orientation)
+            .Select(span => new RepresentedCleanTopologySpan(
+                span,
+                RepresentedOverlapRatio(wall.CenterLine, span.CenterLine, orientation),
+                RepresentedAxisDistance(wall.CenterLine, span.CenterLine, orientation)))
+            .Where(item => item.AxisDistance <= RepresentedAxisDistanceTolerance(wall))
+            .Where(item => item.OverlapRatio >= 0.92)
+            .OrderByDescending(item => item.OverlapRatio)
+            .ThenBy(item => item.AxisDistance)
+            .ThenByDescending(item => item.Span.DrawingLength)
+            .Take(3)
+            .ToArray();
+    }
+
+    private static double RepresentedAxisDistanceTolerance(WallSegment wall) =>
+        wall.WallType == OpenPlanTrace.WallType.Exterior ? 18.0 : 6.0;
+
+    private static double RepresentedOverlapRatio(
+        PlanLineSegment wallLine,
+        PlanLineSegment spanLine,
+        RepresentedSpanOrientation orientation)
+    {
+        var wallStart = orientation == RepresentedSpanOrientation.Horizontal
+            ? Math.Min(wallLine.Start.X, wallLine.End.X)
+            : Math.Min(wallLine.Start.Y, wallLine.End.Y);
+        var wallEnd = orientation == RepresentedSpanOrientation.Horizontal
+            ? Math.Max(wallLine.Start.X, wallLine.End.X)
+            : Math.Max(wallLine.Start.Y, wallLine.End.Y);
+        var spanStart = orientation == RepresentedSpanOrientation.Horizontal
+            ? Math.Min(spanLine.Start.X, spanLine.End.X)
+            : Math.Min(spanLine.Start.Y, spanLine.End.Y);
+        var spanEnd = orientation == RepresentedSpanOrientation.Horizontal
+            ? Math.Max(spanLine.Start.X, spanLine.End.X)
+            : Math.Max(spanLine.Start.Y, spanLine.End.Y);
+        var overlap = Math.Max(0, Math.Min(wallEnd, spanEnd) - Math.Max(wallStart, spanStart));
+        var wallLength = Math.Max(0.001, wallEnd - wallStart);
+        return overlap / wallLength;
+    }
+
+    private static double RepresentedAxisDistance(
+        PlanLineSegment wallLine,
+        PlanLineSegment spanLine,
+        RepresentedSpanOrientation orientation) =>
+        orientation == RepresentedSpanOrientation.Horizontal
+            ? Math.Abs(wallLine.Midpoint.Y - spanLine.Midpoint.Y)
+            : Math.Abs(wallLine.Midpoint.X - spanLine.Midpoint.X);
+
+    private static RepresentedSpanOrientation ResolveRepresentedSpanOrientation(PlanLineSegment line)
+    {
+        var dx = Math.Abs(line.End.X - line.Start.X);
+        var dy = Math.Abs(line.End.Y - line.Start.Y);
+        if (dx <= 0.001 && dy <= 0.001)
+        {
+            return RepresentedSpanOrientation.Unknown;
+        }
+
+        if (dy <= Math.Max(1.0, dx * 0.04))
+        {
+            return RepresentedSpanOrientation.Horizontal;
+        }
+
+        if (dx <= Math.Max(1.0, dy * 0.04))
+        {
+            return RepresentedSpanOrientation.Vertical;
+        }
+
+        return RepresentedSpanOrientation.Unknown;
+    }
+
+    private sealed record RepresentedCleanTopologySpan(
+        WallGraphTopologySpan Span,
+        double OverlapRatio,
+        double AxisDistance);
+
+    private enum RepresentedSpanOrientation
+    {
+        Unknown,
+        Horizontal,
+        Vertical
     }
 }
 
