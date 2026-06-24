@@ -55,11 +55,9 @@ internal static class RoomBoundaryWallReferenceBuilder
                     builder[wall.Id] = roomIds;
                 }
 
-                if (roomIds.Add(room.Id))
-                {
-                    geometryReferencedWallIds.Add(wall.Id);
-                    geometryReferenceCount++;
-                }
+                roomIds.Add(room.Id);
+                geometryReferencedWallIds.Add(wall.Id);
+                geometryReferenceCount++;
             }
         }
 

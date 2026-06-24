@@ -3,6 +3,10 @@ namespace OpenPlanTrace;
 internal sealed class WallTypeRefinementStage : IPipelineStage
 {
     private const string StageName = "wall-type-refinement";
+    private const double MinTrustedDimensionLikeDenseRoomBoundaryPairScore = 0.80;
+    private const double MinSecondaryTrustedDimensionLikeDenseRoomBoundaryLength = 32.0;
+    private const int MaxTrustedDimensionLikeDenseRoomBoundaryFaceFragments = 32;
+    private const int MaxTrustedDimensionLikeDenseRoomBoundaryTotalFaceFragments = 48;
 
     public string Name => StageName;
 
@@ -1352,7 +1356,15 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         if (!HasUnknownOrWeakLayerEvidence(evidence)
             || !IsDenseLocalDetailNeighborhood(wall, walls, options, out var nearbyCount, out var shortNearbyCount, out var offAxisNearbyCount)
             || (hasPlacementContext && !hasDimensionLikeWeakLayer)
-            || (hasGeometricRoomBoundarySupport && !hasDimensionLikeWeakLayer))
+            || (hasGeometricRoomBoundarySupport && !hasDimensionLikeWeakLayer)
+            || IsTrustedDimensionLikeDenseRoomBoundaryWall(
+                wall,
+                component,
+                evidence,
+                roomReferenceCount,
+                supportedTopologyEndpointCount,
+                hasGeometricRoomBoundarySupport,
+                offAxisNearbyCount))
         {
             return false;
         }
@@ -1372,6 +1384,48 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             Evidence = AppendEvidence(assessment.Evidence, demotionEvidence)
         };
         return true;
+    }
+
+    private static bool IsTrustedDimensionLikeDenseRoomBoundaryWall(
+        WallSegment wall,
+        WallGraphComponent? component,
+        IReadOnlyList<string> evidence,
+        int roomReferenceCount,
+        int supportedTopologyEndpointCount,
+        bool hasGeometricRoomBoundarySupport,
+        int offAxisNearbyCount)
+    {
+        if (!hasGeometricRoomBoundarySupport
+            || roomReferenceCount < 1
+            || supportedTopologyEndpointCount < 2
+            || offAxisNearbyCount > 1
+            || wall.WallType != WallType.Interior
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || component is null
+            || component.ExcludedFromStructuralTopology
+            || component.Kind is WallGraphComponentKind.ObjectLikeIsland or WallGraphComponentKind.IsolatedFragment
+            || (component.Kind != WallGraphComponentKind.MainStructural
+                && wall.DrawingLength < MinSecondaryTrustedDimensionLikeDenseRoomBoundaryLength)
+            || !TryReadPairScore(evidence, out var pairScore)
+            || pairScore < MinTrustedDimensionLikeDenseRoomBoundaryPairScore
+            || !TryReadFaceFragmentCounts(evidence, out var faceFragments)
+            || faceFragments.MaxFaceFragmentCount > MaxTrustedDimensionLikeDenseRoomBoundaryFaceFragments
+            || faceFragments.TotalFaceFragmentCount > MaxTrustedDimensionLikeDenseRoomBoundaryTotalFaceFragments)
+        {
+            return false;
+        }
+
+        return !evidence.Any(item =>
+            item.Contains("surface pattern", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("object/fixture", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("fixture detail", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("repeated short detail", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("door/opening", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("stair", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("railing", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("covered entry", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("covered-entry", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("overbygd", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool TryDemoteNonOrthogonalDimensionLikePlacementReadyWallEvidence(
