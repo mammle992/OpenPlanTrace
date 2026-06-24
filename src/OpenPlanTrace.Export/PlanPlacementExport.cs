@@ -3894,6 +3894,15 @@ public sealed record PlacementIssueExport(
     private const string RasterNoExtractedPrimitivesIssueCode = "quality.raster_no_extracted_primitives";
     private const string RasterLowExtractionConfidenceIssueCode = "quality.raster_low_extraction_confidence";
     private const string OpeningPlacementInconsistentIssueCode = "placement.opening.placement_inconsistent";
+    private static readonly string[] SpecificPlacementReviewOmissionCodes =
+    [
+        "thin_exterior_face_pair_review_required",
+        "covered_area_boundary_review_required",
+        "opening_detail_fragment_review_required",
+        "one_endpoint_fragment_review_required",
+        "fragmented_short_parallel_pair_review_required",
+        "fragment_geometry_review"
+    ];
 
     public static IEnumerable<PlacementIssueExport> From(
         PlanScanResult result,
@@ -3905,6 +3914,8 @@ public sealed record PlacementIssueExport(
             .Where(wall => !string.IsNullOrWhiteSpace(wall.Id))
             .GroupBy(wall => wall.Id, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var wallIdsWithDedicatedReviewIssues = BuildDedicatedWallReviewIssueIdSet(placementWallsById);
+        AddSurfacePatternWallOverlapReviewWallIds(wallIdsWithDedicatedReviewIssues, result.Diagnostics.Messages);
 
         foreach (var issue in result.Quality.Issues)
         {
@@ -4351,6 +4362,7 @@ public sealed record PlacementIssueExport(
         }
 
         foreach (var entry in ScanReviewQueueSummary.QueuedWallEvidenceReviews(result.WallEvidenceMap)
+                     .Where(assessment => !wallIdsWithDedicatedReviewIssues.Contains(assessment.WallId))
                      .Select((assessment, index) => new { Assessment = assessment, Index = index }))
         {
             var assessment = entry.Assessment;
@@ -4678,6 +4690,41 @@ public sealed record PlacementIssueExport(
                     ["hostWallCenterParameter"] = placement.HostWallCenterParameter.ToString("0.######", CultureInfo.InvariantCulture),
                     ["reasons"] = string.Join("; ", reasons)
                 });
+        }
+    }
+
+    private static HashSet<string> BuildDedicatedWallReviewIssueIdSet(
+        IReadOnlyDictionary<string, PlacementWallExport>? placementWallsById)
+    {
+        if (placementWallsById is null || placementWallsById.Count == 0)
+        {
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        var omissionCodes = new HashSet<string>(
+            SpecificPlacementReviewOmissionCodes,
+            StringComparer.Ordinal);
+        return placementWallsById.Values
+            .Where(wall => !string.IsNullOrWhiteSpace(wall.Id))
+            .Where(wall => wall.PlacementOmission?.Code is string code && omissionCodes.Contains(code))
+            .Select(wall => wall.Id)
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
+    private static void AddSurfacePatternWallOverlapReviewWallIds(
+        HashSet<string> wallIds,
+        IEnumerable<PlanDiagnostic> diagnostics)
+    {
+        foreach (var diagnostic in diagnostics.Where(diagnostic => string.Equals(
+                     diagnostic.Code,
+                     SurfacePatternWallOverlapDiagnosticCode,
+                     StringComparison.Ordinal)))
+        {
+            if (diagnostic.Properties.TryGetValue("wallId", out var wallId)
+                && !string.IsNullOrWhiteSpace(wallId))
+            {
+                wallIds.Add(wallId);
+            }
         }
     }
 

@@ -3066,6 +3066,146 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public async Task PlacementExporter_SuppressesGenericWallEvidenceIssueWhenSpecificReviewIssueExists()
+    {
+        var result = await CreateScanResultAsync();
+        var firstWall = result.Walls[0];
+        var secondWall = result.Walls[1];
+        result = result with
+        {
+            WallEvidenceMap = new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                new[]
+                {
+                    new WallEvidenceWallAssessment(
+                        firstWall.Id,
+                        firstWall.PageNumber,
+                        firstWall.Bounds,
+                        WallEvidenceCategory.MediumWallBody,
+                        new Confidence(0.72),
+                        PlacementReady: false,
+                        RequiresReview: true,
+                        RejectedAsNoise: false,
+                        SourcePrimitiveIds: firstWall.SourcePrimitiveIds,
+                        Evidence:
+                        [
+                            "wall evidence: unlayered fragment-merged wall candidate has only one trusted structural endpoint (4 fragments, gap ratio 0); keep for topology but block exact placement until reviewed"
+                        ])
+                    {
+                        Decision = WallEvidenceDecision.Review
+                    },
+                    new WallEvidenceWallAssessment(
+                        secondWall.Id,
+                        secondWall.PageNumber,
+                        secondWall.Bounds,
+                        WallEvidenceCategory.WeakSingleLine,
+                        new Confidence(0.43),
+                        PlacementReady: false,
+                        RequiresReview: true,
+                        RejectedAsNoise: false,
+                        SourcePrimitiveIds: secondWall.SourcePrimitiveIds,
+                        Evidence:
+                        [
+                            "wall evidence: weak wall candidate needs visual review before exact placement"
+                        ])
+                    {
+                        Decision = WallEvidenceDecision.Review
+                    }
+                })
+        };
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var issues = document.RootElement.GetProperty("issues").EnumerateArray().ToArray();
+
+        Assert.Contains(
+            issues,
+            item => item.GetProperty("code").GetString() == "placement.review.one_endpoint_fragment"
+                && item.GetProperty("itemId").GetString() == firstWall.Id);
+        Assert.DoesNotContain(
+            issues,
+            item => item.GetProperty("code").GetString() == "placement.review.wall_evidence_requires_review"
+                && item.GetProperty("itemId").GetString() == firstWall.Id);
+        Assert.Contains(
+            issues,
+            item => item.GetProperty("code").GetString() == "placement.review.wall_evidence_requires_review"
+                && item.GetProperty("itemId").GetString() == secondWall.Id);
+    }
+
+    [Fact]
+    public async Task PlacementExporter_SuppressesGenericWallEvidenceIssueWhenSurfacePatternOverlapIssueExists()
+    {
+        var result = await CreateScanResultAsync();
+        var firstWall = result.Walls[0];
+        result = result with
+        {
+            WallEvidenceMap = new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                new[]
+                {
+                    new WallEvidenceWallAssessment(
+                        firstWall.Id,
+                        firstWall.PageNumber,
+                        firstWall.Bounds,
+                        WallEvidenceCategory.MediumWallBody,
+                        new Confidence(0.58),
+                        PlacementReady: false,
+                        RequiresReview: true,
+                        RejectedAsNoise: false,
+                        SourcePrimitiveIds: firstWall.SourcePrimitiveIds,
+                        Evidence:
+                        [
+                            "wall evidence: medium wall body overlaps dense surface/detail pattern and needs visual review"
+                        ])
+                    {
+                        Decision = WallEvidenceDecision.Review
+                    }
+                }),
+            Diagnostics = result.Diagnostics with
+            {
+                Messages = result.Diagnostics.Messages
+                    .Append(new PlanDiagnostic(
+                        "wall_graph.surface_pattern_wall_overlap.review",
+                        DiagnosticSeverity.Warning,
+                        "wall-graph",
+                        "A non-excluded wall overlaps a dense surface/detail pattern.")
+                    {
+                        Scope = DiagnosticScope.Detection,
+                        PageNumber = firstWall.PageNumber,
+                        Region = firstWall.Bounds,
+                        Confidence = Confidence.Medium,
+                        SourcePrimitiveIds = firstWall.SourcePrimitiveIds,
+                        Properties = new Dictionary<string, string>
+                        {
+                            ["wallId"] = firstWall.Id,
+                            ["surfacePatternId"] = "surface-pattern-review",
+                            ["wallOverlapRatio"] = "0.91",
+                            ["sharedSourcePrimitiveCount"] = "0"
+                        }
+                    })
+                    .ToArray()
+            }
+        };
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var issues = document.RootElement.GetProperty("issues").EnumerateArray().ToArray();
+
+        Assert.Contains(
+            issues,
+            item => item.GetProperty("code").GetString() == "placement.review.surface_pattern_wall_overlap"
+                && item.GetProperty("properties").GetProperty("wallId").GetString() == firstWall.Id);
+        Assert.DoesNotContain(
+            issues,
+            item => item.GetProperty("code").GetString() == "placement.review.wall_evidence_requires_review"
+                && item.GetProperty("itemId").GetString() == firstWall.Id);
+    }
+
+    [Fact]
     public async Task PlacementExporter_UsesOpeningDetailOmissionForOpeningLinkedOneEndpointFragments()
     {
         var result = await CreateScanResultAsync();
