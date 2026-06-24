@@ -40,6 +40,7 @@ Use `artifacts/`, `real-pdf-output/`, or `*.local.*` paths for private visual QA
 - Use short one-line bullets such as `- Improved wall snapping accuracy.` or `- Small improvement to visual QA screenshots.`
 - Avoid long paragraphs in changelog entries.
 - Keep test and verification details in commit notes or PR notes, not the changelog.
+- When the small update counter reaches `030`, move the next major work cycle to the next `0.xx.000` version.
 
 ## Pull Request Checklist
 

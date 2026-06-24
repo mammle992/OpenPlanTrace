@@ -14,6 +14,11 @@ OpenPlanTrace uses project versions in `A.BC.DEF` format, for example `0.02.001`
 - `BC` is the major update track for noticeable scanner, architecture, or workflow improvements.
 - `DEF` is the small update counter for bug fixes, focused improvements, and documentation changes.
 
+When `DEF` reaches `030`, the next major work cycle moves to the next `BC` track
+and resets the small counter to `000`, for example `0.03.030` -> `0.04.000`.
+The `0.xx.000` entries should be reserved for bigger consolidated updates rather
+than tiny one-line fixes.
+
 Every bug fix, feature update, and meaningful project change should be recorded in `CHANGELOG.md`. Keep entries short: use one-line bullets such as `- Improved wall snapping accuracy.` or `- Small improvement to visual QA screenshots.` Avoid long paragraphs and keep test/verification details out of the changelog. These project versions are separate from OpenPlanTrace's JSON contract schema versions such as `openplantrace.scan.v62`.
 
 ## Current Scope
