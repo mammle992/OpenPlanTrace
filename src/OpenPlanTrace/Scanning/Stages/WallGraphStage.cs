@@ -5,6 +5,9 @@ internal sealed class WallGraphStage : IPipelineStage
     private const double MinOneEndpointMainStructuralMediumPairScore = 0.80;
     private const double MinOneEndpointMainStructuralMediumLength = 24.0;
     private const double MinCompactStructuralPairedWallPairScore = 0.68;
+    private const int MaxSecondaryInteriorFragmentPromotionFragments = 12;
+    private const int MaxSecondaryInteriorFragmentPromotionDuplicatePrimitives = 8;
+    private const double MaxSecondaryInteriorFragmentPromotionGapRatio = 0.08;
 
     public string Name => "wall-graph";
 
@@ -2012,7 +2015,7 @@ internal sealed class WallGraphStage : IPipelineStage
         if (wall.WallType != WallType.Interior
             || wall.DetectionKind != WallDetectionKind.FragmentMerged
             || wall.DrawingLength <= RecoverableInteriorFragmentLength(options)
-            || wall.FragmentEvidence?.RequiresGeometryReview == true)
+            || !HasSafeSecondaryInteriorFragmentGeometry(wall, options))
         {
             return false;
         }
@@ -2032,9 +2035,30 @@ internal sealed class WallGraphStage : IPipelineStage
         return true;
     }
 
+    private static bool HasSafeSecondaryInteriorFragmentGeometry(WallSegment wall, ScannerOptions options)
+    {
+        if (wall.FragmentEvidence is not { RequiresGeometryReview: false } fragmentEvidence)
+        {
+            return false;
+        }
+
+        var uniqueSourcePrimitiveCount = Math.Max(0, wall.SourcePrimitiveIds.Count - fragmentEvidence.DuplicatePrimitiveCount);
+        var fragmentCount = Math.Max(fragmentEvidence.FragmentCount, uniqueSourcePrimitiveCount);
+        var maxHealedGap = Math.Max(options.DefaultWallThickness * 2.0, options.WallSnapTolerance * 4.0);
+        return fragmentCount is >= 2 and <= MaxSecondaryInteriorFragmentPromotionFragments
+            && fragmentEvidence.DuplicatePrimitiveCount <= MaxSecondaryInteriorFragmentPromotionDuplicatePrimitives
+            && fragmentEvidence.GapRatio <= MaxSecondaryInteriorFragmentPromotionGapRatio
+            && fragmentEvidence.TotalHealedGap <= maxHealedGap;
+    }
+
     private static bool IsSecondaryInteriorFragmentPromotionBlockedEvidence(string evidence)
     {
         if (string.IsNullOrWhiteSpace(evidence))
+        {
+            return false;
+        }
+
+        if (IsOneEndpointFragmentReviewEvidence(evidence))
         {
             return false;
         }
@@ -2044,7 +2068,6 @@ internal sealed class WallGraphStage : IPipelineStage
             || evidence.Contains("block exact placement", StringComparison.OrdinalIgnoreCase)
             || evidence.Contains("review before exact placement", StringComparison.OrdinalIgnoreCase)
             || evidence.Contains("until reviewed", StringComparison.OrdinalIgnoreCase)
-            || evidence.Contains("one trusted structural endpoint", StringComparison.OrdinalIgnoreCase)
             || evidence.Contains("topology import", StringComparison.OrdinalIgnoreCase)
             || evidence.Contains("repair candidate", StringComparison.OrdinalIgnoreCase)
             || evidence.Contains("endpoint-to-wall snap", StringComparison.OrdinalIgnoreCase)
@@ -2052,6 +2075,10 @@ internal sealed class WallGraphStage : IPipelineStage
             || evidence.Contains("unknown fragment-merged", StringComparison.OrdinalIgnoreCase)
             || evidence.Contains("no trusted structural endpoint", StringComparison.OrdinalIgnoreCase);
     }
+
+    private static bool IsOneEndpointFragmentReviewEvidence(string evidence) =>
+        evidence.Contains("unlayered fragment-merged wall candidate", StringComparison.OrdinalIgnoreCase)
+        && evidence.Contains("only one trusted structural endpoint", StringComparison.OrdinalIgnoreCase);
 
     private static int CountSupportedTopologyEndpoints(
         IReadOnlyList<WallEdge> wallEdges,

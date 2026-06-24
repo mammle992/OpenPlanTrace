@@ -2821,6 +2821,111 @@ public sealed class ScanQualityTests
     }
 
     [Fact]
+    public void PlacementExporter_AllowsGraphPromotedLongOneEndpointSecondaryFragment()
+    {
+        var regions = new[]
+        {
+            new SheetRegion("sheet", 1, RegionKind.Sheet, new PlanRect(0, 0, 600, 400), Confidence.High),
+            new SheetRegion("main", 1, RegionKind.MainFloorPlan, new PlanRect(0, 0, 600, 400), Confidence.High)
+        };
+        var wall = SyntheticWall("graph-promoted-one-end-fragment", 180, 180, 180, 292) with
+        {
+            DetectionKind = WallDetectionKind.FragmentMerged,
+            WallType = WallType.Interior,
+            SourcePrimitiveIds = Enumerable.Range(1, 4).Select(index => $"one-end-fragment-source-{index}").ToArray(),
+            FragmentEvidence = new WallFragmentEvidence(
+                4,
+                0,
+                0,
+                0,
+                0,
+                RequiresGeometryReview: false,
+                ["fragment geometry: 4 fragment(s)", "fragment geometry healed gap ratio 0"]),
+            Evidence =
+            [
+                "merged collinear wall fragments",
+                "run merged 4 fragments",
+                "wall type interior: supported wall evidence inside exterior envelope",
+                "wall evidence assessment: long interior fragment promoted to placement-ready by secondary structural graph component secondary-fragment-component"
+            ]
+        };
+        var wallGraph = new WallGraph(
+            [SyntheticNode("n1", 180, 180), SyntheticNode("n2", 180, 292)],
+            [SyntheticEdge("e1", "n1", "n2", wall.Id)],
+            [
+                new WallGraphComponent(
+                    "secondary-fragment-component",
+                    1,
+                    WallGraphComponentKind.SecondaryStructural,
+                    new PlanRect(176, 180, 8, 112),
+                    [wall.Id],
+                    ["n1", "n2"],
+                    ["e1"],
+                    [wall.Id],
+                    wall.DrawingLength,
+                    Confidence.High,
+                    ["long interior fragment recovered as secondary structural wall context"])
+            ]);
+        var assessment = new WallEvidenceWallAssessment(
+            wall.Id,
+            wall.PageNumber,
+            wall.Bounds,
+            WallEvidenceCategory.MediumWallBody,
+            new Confidence(0.88),
+            PlacementReady: true,
+            RequiresReview: false,
+            RejectedAsNoise: false,
+            wall.SourcePrimitiveIds,
+            [
+                "merged collinear wall fragments",
+                "wall type interior: supported wall evidence inside exterior envelope",
+                "wall evidence: unlayered fragment-merged wall candidate has only one trusted structural endpoint (4 fragments, gap ratio 0); keep for topology but block exact placement until reviewed",
+                "wall evidence: promoted to placement-ready by secondary structural graph component secondary-fragment-component",
+                "wall evidence: long interior fragment has one trusted structural endpoint and is near the main wall body"
+            ])
+        {
+            Decision = WallEvidenceDecision.Accept,
+            ScoreBreakdown = new WallEvidenceScoreBreakdown(
+                0.54,
+                0,
+                0.54,
+                0,
+                0,
+                0.16,
+                0.12,
+                0,
+                0,
+                ["medium wall-body geometry", "one endpoint supported by structural context", "secondary structural interior fragment continuity"],
+                [])
+        };
+        var result = CreateSyntheticResult(
+            regions: regions,
+            walls: [wall],
+            wallGraph: wallGraph,
+            rooms: [],
+            wallEvidenceMap: new WallEvidenceMap([], [], [assessment])) with
+        {
+            Quality = UsableQuality()
+        };
+
+        var reasons = WallPlacementContextGuards.BuildReviewReasons(result);
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var exportedWall = document.RootElement.GetProperty("walls").EnumerateArray().Single(item =>
+            item.GetProperty("id").GetString() == wall.Id);
+
+        Assert.DoesNotContain(wall.Id, reasons.Keys);
+        Assert.True(exportedWall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.NotEmpty(exportedWall.GetProperty("topologySpans").EnumerateArray());
+        Assert.Equal(JsonValueKind.Null, exportedWall.GetProperty("placementOmission").ValueKind);
+        Assert.False(
+            document.RootElement.GetProperty("summary").GetProperty("wallPlacementOmissionCounts")
+                .TryGetProperty("one_endpoint_fragment_review_required", out _));
+    }
+
+    [Fact]
     public void PlacementExporter_AllowsTrustedCompactPairedSecondaryReturnWithoutRoomBoundarySupport()
     {
         var regions = new[]

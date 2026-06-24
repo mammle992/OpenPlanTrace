@@ -244,6 +244,8 @@ public static class WallPlacementContextGuards
             || assessment is null
             || assessment.Confidence.Value < MinTrustedLongOneEndpointFragmentMergedInteriorAssessmentConfidence
             || assessment.RejectedAsNoise
+            || !assessment.PlacementReady
+            || assessment.RequiresReview
             || assessment.Decision == WallEvidenceDecision.Reject
             || assessment.Category != WallEvidenceCategory.MediumWallBody)
         {
@@ -384,6 +386,10 @@ public static class WallPlacementContextGuards
                     component,
                     wallEvidenceByWallId)
                 && !SecondaryStructuralWallHasTrustedTwoSidedFragmentRoomSupport(
+                    wall,
+                    component,
+                    wallEvidenceByWallId)
+                && !SecondaryStructuralWallHasTrustedLongOneEndpointFragmentSupport(
                     wall,
                     component,
                     wallEvidenceByWallId)
@@ -814,6 +820,17 @@ public static class WallPlacementContextGuards
         component?.Kind == WallGraphComponentKind.SecondaryStructural
         && wallEvidenceByWallId.TryGetValue(wall.Id, out var assessment)
         && WallPlacementReadinessEvaluator.IsTrustedTwoSidedFragmentMergedRoomBoundary(
+            wall,
+            component,
+            assessment);
+
+    private static bool SecondaryStructuralWallHasTrustedLongOneEndpointFragmentSupport(
+        WallSegment wall,
+        WallGraphComponent? component,
+        IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceByWallId) =>
+        component?.Kind == WallGraphComponentKind.SecondaryStructural
+        && wallEvidenceByWallId.TryGetValue(wall.Id, out var assessment)
+        && IsTrustedLongOneEndpointFragmentMergedInteriorWallBody(
             wall,
             component,
             assessment);

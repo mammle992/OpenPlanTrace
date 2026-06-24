@@ -547,7 +547,7 @@ public sealed class WallGraphTopologyTests
     }
 
     [Fact]
-    public async Task WallGraphStage_KeepsLongInteriorFragmentComponentReviewOnlyForPlacement()
+    public async Task WallGraphStage_PromotesLongInteriorFragmentComponentWithGraphContext()
     {
         var mainWalls = new[]
         {
@@ -584,16 +584,16 @@ public sealed class WallGraphTopologyTests
         Assert.Equal(WallGraphComponentKind.SecondaryStructural, fragmentComponent.Kind);
         Assert.False(fragmentComponent.ExcludedFromStructuralTopology);
         Assert.Contains(fragmentComponent.Evidence, item => item.Contains("long interior fragment recovered", StringComparison.OrdinalIgnoreCase));
-        Assert.False(retainedReview.PlacementReady);
-        Assert.True(retainedReview.RequiresReview);
-        Assert.Equal(WallEvidenceDecision.Review, retainedReview.Decision);
-        Assert.DoesNotContain(
+        Assert.True(retainedReview.PlacementReady);
+        Assert.False(retainedReview.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Accept, retainedReview.Decision);
+        Assert.Contains(
             retainedReview.Evidence,
             item => item.Contains("promoted to placement-ready by secondary structural graph component", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(
+        Assert.Contains(
             retainedWall.Evidence,
             item => item.Contains("long interior fragment promoted to placement-ready", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(
+        Assert.Contains(
             context.Diagnostics.Build().Messages,
             diagnostic => diagnostic.Code == "wall_evidence.secondary_interior_fragments_promoted");
     }
