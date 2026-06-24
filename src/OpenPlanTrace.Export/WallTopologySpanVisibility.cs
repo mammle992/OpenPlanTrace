@@ -32,6 +32,11 @@ internal static class WallTopologySpanVisibility
     private const int MaxSourceBackedFallbackFaceFragmentCount = 48;
     private const int MaxLongSourceBackedFallbackFaceFragmentCount = 72;
     private const int MaxTopologySupportedSourceBackedFallbackFaceFragmentCount = 96;
+    private const double MinRoomSupportedShortPairFallbackWallLengthDrawingUnits = 24.0;
+    private const double MaxRoomSupportedShortPairFallbackWallLengthDrawingUnits = 64.0;
+    private const double MinRoomSupportedShortPairFallbackPairScore = 0.88;
+    private const double MinRoomSupportedShortPairFallbackOverlapRatio = 0.95;
+    private const int MaxRoomSupportedShortPairFallbackFaceFragmentCount = 12;
     private const double MinTopologyBlockedFallbackPairScore = 0.80;
     private const double MinTopologyBlockedFallbackOverlapRatio = 0.95;
     private const int MaxTopologyBlockedFallbackFaceFragmentCount = 48;
@@ -457,8 +462,13 @@ internal static class WallTopologySpanVisibility
         var topologyImportBlocked = context.TopologyImportBlockedWallIds.Contains(wall.Id);
         var trustedTopologyImportBlockedFallback = topologyImportBlocked
             && IsTrustedSourceBackedFallbackDespiteTopologyImportBlock(wall, component, assessment);
+        var hasTrustedRoomSupportedShortPairPromotion = IsTrustedRoomSupportedShortParallelPairPromotion(
+            wall,
+            component,
+            assessment);
 
-        if (wall.CenterLine.Length < MinSourceBackedFallbackWallLengthDrawingUnits
+        if ((wall.CenterLine.Length < MinSourceBackedFallbackWallLengthDrawingUnits
+                && !hasTrustedRoomSupportedShortPairPromotion)
             || wall.WallType == WallType.Unknown
             || wall.FragmentEvidence?.RequiresGeometryReview == true
             || ResolveDominantOrthogonalOrientation(wall.CenterLine) == PlacementRunOrientation.Unknown
@@ -505,6 +515,7 @@ internal static class WallTopologySpanVisibility
             || (assessment.Category is not (WallEvidenceCategory.StrongWallBody or WallEvidenceCategory.RecoveredWallBody)
                 && !hasTopologySupportedFragmentedPairPromotion
                 && !hasTrustedFragmentMergedPromotion
+                && !hasTrustedRoomSupportedShortPairPromotion
                 && !hasTrustedExteriorShellContinuityFragment
                 && !hasTrustedRoomBoundaryIsolatedFragment
                 && !hasTrustedTwoSidedFragmentMergedRoomBoundary))
@@ -527,9 +538,67 @@ internal static class WallTopologySpanVisibility
 
         return HasTrustedSourceBackedFallbackPairEvidence(wall, component, assessment)
             || hasTrustedFragmentMergedPromotion
+            || hasTrustedRoomSupportedShortPairPromotion
             || hasTrustedExteriorShellContinuityFragment
             || hasTrustedRoomBoundaryIsolatedFragment
             || hasTrustedTwoSidedFragmentMergedRoomBoundary;
+    }
+
+    private static bool IsTrustedRoomSupportedShortParallelPairPromotion(
+        WallSegment wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? assessment)
+    {
+        if (assessment is null
+            || assessment.Category != WallEvidenceCategory.MediumWallBody
+            || !assessment.PlacementReady
+            || assessment.RequiresReview
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject
+            || component?.Kind != WallGraphComponentKind.MainStructural
+            || component.ExcludedFromStructuralTopology
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.WallType != WallType.Interior
+            || wall.DrawingLength < MinRoomSupportedShortPairFallbackWallLengthDrawingUnits
+            || wall.DrawingLength > MaxRoomSupportedShortPairFallbackWallLengthDrawingUnits
+            || wall.PairEvidence is not { } pair
+            || pair.Score < MinRoomSupportedShortPairFallbackPairScore
+            || pair.OverlapRatio < MinRoomSupportedShortPairFallbackOverlapRatio
+            || pair.FaceSeparation < MinSourceBackedFallbackFaceSeparationDrawingUnits
+            || pair.FaceSeparation > MaxSourceBackedFallbackFaceSeparationDrawingUnits
+            || Math.Max(pair.FirstFaceFragmentCount, pair.SecondFaceFragmentCount) > MaxRoomSupportedShortPairFallbackFaceFragmentCount)
+        {
+            return false;
+        }
+
+        var evidence = wall.Evidence
+            .Concat(assessment.Evidence)
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(assessment.ScoreBreakdown.NegativeEvidence)
+            .Concat(component.Evidence)
+            .ToArray();
+        if (!ContainsEvidence(evidence, "room-confirmed wall body promoted to placement-ready")
+            || !ContainsEvidence(evidence, "supported wall evidence inside exterior envelope")
+            || (!ContainsEvidence(evidence, "explicit room boundary support")
+                && !ContainsEvidence(evidence, "geometric room boundary support")))
+        {
+            return false;
+        }
+
+        return !ContainsAnyEvidence(
+            evidence,
+            "surface pattern",
+            "object/fixture",
+            "fixture detail",
+            "repeated short detail",
+            "outdoor",
+            "covered-area",
+            "covered entry",
+            "covered-entry",
+            "overbygd",
+            "door/opening",
+            "stair",
+            "railing");
     }
 
     private static bool IsTrustedSourceBackedFallbackFragmentEvidence(
@@ -682,6 +751,10 @@ internal static class WallTopologySpanVisibility
                 wall,
                 component,
                 assessment);
+        var trustedRoomSupportedShortParallelPairPromotion = IsTrustedRoomSupportedShortParallelPairPromotion(
+            wall,
+            component,
+            assessment);
         var placementAxis = WallBodyFootprintBuilder.BuildPlacementAxis(wall, 0, 1);
         var centerLine = placementAxis.CenterLine;
         if (centerLine.Length <= 0.001)
@@ -707,7 +780,9 @@ internal static class WallTopologySpanVisibility
         }
         else
         {
-            evidence.Add("source-backed fallback accepted only because paired wall-face evidence is placement-ready");
+            evidence.Add(trustedRoomSupportedShortParallelPairPromotion
+                ? "source-backed fallback accepted because high-score short paired wall body has explicit room-boundary support"
+                : "source-backed fallback accepted only because paired wall-face evidence is placement-ready");
         }
 
         if (context.TopologyImportBlockedWallIds.Contains(wall.Id))
