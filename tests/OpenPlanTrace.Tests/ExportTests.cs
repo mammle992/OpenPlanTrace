@@ -1162,10 +1162,13 @@ public sealed class ExportTests
             result,
             new PlanPlacementJsonExportOptions { WriteIndented = false }));
 
-        var span = Assert.Single(document.RootElement
+        var spans = document.RootElement
             .GetProperty("walls")
             .EnumerateArray()
-            .SelectMany(wall => wall.GetProperty("topologySpans").EnumerateArray()));
+            .SelectMany(wall => wall.GetProperty("topologySpans").EnumerateArray())
+            .ToArray();
+        var span = Assert.Single(spans.Where(item =>
+            item.GetProperty("id").GetString() == "parallel-face-outer:clean-run:1"));
 
         Assert.Equal("parallel-face-outer:clean-run:1", span.GetProperty("id").GetString());
         Assert.InRange(span.GetProperty("centerLine").GetProperty("start").GetProperty("x").GetDouble(), 106.0, 106.3);
@@ -1175,7 +1178,9 @@ public sealed class ExportTests
         Assert.Contains(
             span.GetProperty("evidence").EnumerateArray(),
             item => item.GetString()?.Contains("centered between close parallel exterior face spans", StringComparison.OrdinalIgnoreCase) == true);
-        Assert.Equal(1, document.RootElement.GetProperty("summary").GetProperty("wallTopologySpanCount").GetInt32());
+        Assert.Contains(spans, item =>
+            item.GetProperty("id").GetString() == "parallel-face-partial-fragment:clean-run:1");
+        Assert.Equal(2, document.RootElement.GetProperty("summary").GetProperty("wallTopologySpanCount").GetInt32());
     }
 
     [Fact]
@@ -1316,7 +1321,7 @@ public sealed class ExportTests
     }
 
     [Fact]
-    public void PlacementExporter_SuppressesTrustedShortDoorAdjacentPairedWallJamb()
+    public void PlacementExporter_KeepsTrustedShortDoorAdjacentPairedWallJamb()
     {
         var result = WithTrustedPairEvidence(
             CreateOpeningCutoutPlacementReviewResult(startParameter: 0.0, endParameter: 0.969),
@@ -1326,16 +1331,16 @@ public sealed class ExportTests
             result,
             new PlanPlacementJsonExportOptions { WriteIndented = false }));
         var wall = Assert.Single(document.RootElement.GetProperty("walls").EnumerateArray());
+        var span = Assert.Single(wall.GetProperty("topologySpans").EnumerateArray());
 
-        Assert.Empty(wall.GetProperty("topologySpans").EnumerateArray());
-        var omission = wall.GetProperty("placementOmission");
-        Assert.Equal("tiny_door_adjacent_topology_suppressed", omission.GetProperty("code").GetString());
-        Assert.Equal("OpeningSplitReview", omission.GetProperty("category").GetString());
+        Assert.Equal("cutout-wall:clean-run:1:opening-piece:1", span.GetProperty("id").GetString());
+        Assert.Equal(6.2, span.GetProperty("drawingLength").GetDouble(), precision: 3);
         Assert.Contains(
-            omission.GetProperty("evidence").EnumerateArray(),
-            item => item.GetString()?.Contains("tiny door-adjacent placement topology piece", StringComparison.OrdinalIgnoreCase) == true);
-        Assert.False(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
-        Assert.Equal(0, document.RootElement.GetProperty("summary").GetProperty("wallTopologySpanCount").GetInt32());
+            span.GetProperty("evidence").EnumerateArray(),
+            item => item.GetString()?.Contains("previous adjacent opening cutout cutout-door", StringComparison.Ordinal) == true);
+        Assert.Equal(JsonValueKind.Null, wall.GetProperty("placementOmission").ValueKind);
+        Assert.True(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.Equal(1, document.RootElement.GetProperty("summary").GetProperty("wallTopologySpanCount").GetInt32());
     }
 
     [Fact]
@@ -1842,7 +1847,7 @@ public sealed class ExportTests
     }
 
     [Fact]
-    public void PlacementJsonExporter_SuppressesTinyDoorAdjacentCleanTopologySlivers()
+    public void PlacementJsonExporter_KeepsTrustedTinyDoorAdjacentCleanTopologyJambs()
     {
         var result = CreateDoorOpeningSplitTopologyResult();
 
@@ -1850,10 +1855,14 @@ public sealed class ExportTests
         var wall = Assert.Single(parsed.RootElement.GetProperty("walls").EnumerateArray());
         var topologySpans = wall.GetProperty("topologySpans").EnumerateArray().ToArray();
 
-        var span = Assert.Single(topologySpans);
+        Assert.Equal(2, topologySpans.Length);
+        var span = Assert.Single(topologySpans.Where(item =>
+            item.GetProperty("id").GetString() == "door-split-wall:clean-run:1:opening-piece:1"));
+        var jamb = Assert.Single(topologySpans.Where(item =>
+            item.GetProperty("id").GetString() == "door-split-wall:clean-run:1:opening-piece:2"));
         Assert.Equal("door-split-wall:clean-run:1:opening-piece:1", span.GetProperty("id").GetString());
         Assert.Equal(20, span.GetProperty("drawingLength").GetDouble(), 3);
-        Assert.DoesNotContain(topologySpans, item => item.GetProperty("drawingLength").GetDouble() < 20);
+        Assert.Equal(6, jamb.GetProperty("drawingLength").GetDouble(), 3);
     }
 
     [Fact]

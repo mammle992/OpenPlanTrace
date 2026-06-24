@@ -15,6 +15,8 @@ internal static class WallTopologySpanVisibility
     private const double MaxExteriorFacePairAxisDistanceDrawingUnits = 18.0;
     private const double MinExteriorFacePairOverlapRatio = 0.88;
     private const double MinExteriorFacePairSpanLengthDrawingUnits = 80.0;
+    private const double MaxExteriorFacePairLengthRatio = 1.75;
+    private const double MaxExteriorFacePairOverrunDrawingUnits = 36.0;
     private const double MinPlacementRegularizationToleranceDrawingUnits = 1.25;
     private const double MaxPlacementRegularizationToleranceDrawingUnits = 6.0;
     private const double MinPlacementRegularizationClusterLengthDrawingUnits = 60.0;
@@ -1233,6 +1235,7 @@ internal static class WallTopologySpanVisibility
         var suppressedSpanIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var group in spans
             .Where(span => span.SourceWall?.WallType == WallType.Exterior)
+            .Where(span => !IsSourceBackedFallbackSpan(span))
             .Where(IsAxisAlignedPlacementSpan)
             .GroupBy(span => new PlacementRegularizationKey(
                 span.PageNumber,
@@ -1308,7 +1311,31 @@ internal static class WallTopologySpanVisibility
         }
 
         var shorterLength = Math.Max(Math.Min(first.DrawingLength, second.DrawingLength), 0.001);
+        var longerLength = Math.Max(first.DrawingLength, second.DrawingLength);
+        if (longerLength / shorterLength > MaxExteriorFacePairLengthRatio)
+        {
+            return false;
+        }
+
+        var firstOverrun = ExteriorFacePairOverrun(first, second);
+        var secondOverrun = ExteriorFacePairOverrun(second, first);
+        if (Math.Max(firstOverrun, secondOverrun) > MaxExteriorFacePairOverrunDrawingUnits)
+        {
+            return false;
+        }
+
         return overlap / shorterLength >= MinExteriorFacePairOverlapRatio;
+    }
+
+    private static double ExteriorFacePairOverrun(
+        WallGraphTopologySpan candidate,
+        WallGraphTopologySpan reference)
+    {
+        var candidateMin = AxisMin(candidate.CenterLine);
+        var candidateMax = AxisMax(candidate.CenterLine);
+        var referenceMin = AxisMin(reference.CenterLine);
+        var referenceMax = AxisMax(reference.CenterLine);
+        return Math.Max(0, referenceMin - candidateMin) + Math.Max(0, candidateMax - referenceMax);
     }
 
     private static WallGraphTopologySpan CreateCanonicalExteriorFaceSpan(
@@ -1437,6 +1464,13 @@ internal static class WallTopologySpanVisibility
             var overlapRatio = overlap / Math.Max(candidate.DrawingLength, 0.001);
             if (overlapRatio >= MinContainedDuplicateOverlapRatio)
             {
+                if (candidate.SourceWall?.WallType == WallType.Exterior
+                    && kept.SourceWall?.WallType == WallType.Exterior
+                    && !HasComparableExteriorFaceExtent(candidate, kept))
+                {
+                    continue;
+                }
+
                 if (candidateIsSourceBackedFallback
                     && !IsSameSourceBackedFallbackPlacement(candidate, kept))
                 {
@@ -1456,6 +1490,22 @@ internal static class WallTopologySpanVisibility
         string.Equals(candidate.WallId, kept.WallId, StringComparison.Ordinal)
         || HasSharedSourceReference(candidate.SourcePrimitiveIds, kept.SourcePrimitiveIds)
         || HasSharedSourceReference(candidate.SourceWallGraphEdgeIds, kept.SourceWallGraphEdgeIds);
+
+    private static bool HasComparableExteriorFaceExtent(
+        WallGraphTopologySpan first,
+        WallGraphTopologySpan second)
+    {
+        var shorterLength = Math.Max(Math.Min(first.DrawingLength, second.DrawingLength), 0.001);
+        var longerLength = Math.Max(first.DrawingLength, second.DrawingLength);
+        if (longerLength / shorterLength > MaxExteriorFacePairLengthRatio)
+        {
+            return false;
+        }
+
+        return Math.Max(
+            ExteriorFacePairOverrun(first, second),
+            ExteriorFacePairOverrun(second, first)) <= MaxExteriorFacePairOverrunDrawingUnits;
+    }
 
     private static bool HasSharedSourceReference(
         IReadOnlyList<string> first,
@@ -1623,7 +1673,7 @@ internal static class WallTopologySpanVisibility
 
         if (HasDoorLikeAdjacentCutout(previousCutout) || HasDoorLikeAdjacentCutout(nextCutout))
         {
-            return IsTopologyBlockedSourceBackedFallbackSpan(span) && IsTrustedOpeningAdjacentShortRun(span, sourceWall)
+            return IsTrustedOpeningAdjacentShortRun(span, sourceWall)
                 ? MinTrustedOpeningAdjacentCleanRunLengthDrawingUnits
                 : MinOpeningAdjacentCleanRunLengthDrawingUnits;
         }
@@ -1672,7 +1722,31 @@ internal static class WallTopologySpanVisibility
         }
 
         var maxFaceFragmentCount = Math.Max(pair.FirstFaceFragmentCount, pair.SecondFaceFragmentCount);
-        var fragmentLimit = sourceWall.DrawingLength >= MinLongSourceBackedFallbackWallLengthDrawingUnits
+        var evidence = sourceWall.Evidence
+            .Concat(span.Evidence)
+            .ToArray();
+        var trustedNoisyMainStructuralShortRun =
+            sourceWall.WallType == WallType.Interior
+            && sourceWall.DrawingLength >= 72.0
+            && sourceWall.Confidence.Value >= 0.84
+            && pair.Score >= 0.76
+            && pair.OverlapRatio >= 0.85
+            && ContainsEvidence(evidence, "supported wall evidence inside exterior envelope")
+            && !ContainsAnyEvidence(
+                evidence,
+                "covered-area",
+                "covered entry",
+                "covered-entry",
+                "door swing",
+                "door leaf",
+                "fixture",
+                "object",
+                "railing",
+                "stair",
+                "terrace");
+        var fragmentLimit = trustedNoisyMainStructuralShortRun
+            ? 360
+            : sourceWall.DrawingLength >= MinLongSourceBackedFallbackWallLengthDrawingUnits
             ? MaxLongSourceBackedFallbackFaceFragmentCount
             : MaxSourceBackedFallbackFaceFragmentCount;
         if (maxFaceFragmentCount > fragmentLimit)

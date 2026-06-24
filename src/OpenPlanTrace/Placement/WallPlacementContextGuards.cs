@@ -20,7 +20,10 @@ public static class WallPlacementContextGuards
     private const double MinTrustedMainStructuralInteriorFaceSeparationDrawingUnits = 2.0;
     private const double MaxTrustedMainStructuralInteriorFaceSeparationDrawingUnits = 18.0;
     private const int MaxTrustedMainStructuralInteriorFaceFragments = 64;
-    private const double MinTrustedRecoveredMainStructuralInteriorLengthDrawingUnits = 150.0;
+    private const double MinTrustedNoisyMainStructuralInteriorPairScore = 0.76;
+    private const double MinTrustedNoisyMainStructuralInteriorOverlapRatio = 0.85;
+    private const int MaxTrustedNoisyMainStructuralInteriorFaceFragments = 360;
+    private const double MinTrustedRecoveredMainStructuralInteriorLengthDrawingUnits = 100.0;
     private const double MinTrustedRecoveredMainStructuralInteriorPairScore = 0.80;
     private const double MinTrustedRecoveredMainStructuralInteriorOverlapRatio = 0.95;
     private const double MinTrustedRecoveredMainStructuralInteriorFaceSeparationDrawingUnits = 2.0;
@@ -385,6 +388,11 @@ public static class WallPlacementContextGuards
             return false;
         }
 
+        if (HasTrustedNoisyMainStructuralInteriorWallBodySupport(wall, component, assessment, evidence))
+        {
+            return false;
+        }
+
         if (IsTrustedRecoveredMainStructuralInteriorWallBody(wall, component, assessment, evidence))
         {
             return false;
@@ -479,6 +487,66 @@ public static class WallPlacementContextGuards
             "fixture detail",
             "stair",
             "tiny door-adjacent placement topology piece suppressed",
+            "not trusted",
+            "without shell support",
+            "alone is not trusted");
+    }
+
+    private static bool HasTrustedNoisyMainStructuralInteriorWallBodySupport(
+        WallSegment wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment assessment,
+        IReadOnlyList<string> evidence)
+    {
+        if (component?.Kind != WallGraphComponentKind.MainStructural
+            || component.ExcludedFromStructuralTopology
+            || wall.WallType != WallType.Interior
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.DrawingLength < MinTrustedMainStructuralInteriorLengthDrawingUnits
+            || wall.Confidence.Value < 0.80
+            || assessment.Confidence.Value < 0.80
+            || assessment.Category != WallEvidenceCategory.StrongWallBody
+            || wall.PairEvidence is not { } pair
+            || !HasStrongPairedWallBodyEvidence(wall, assessment)
+            || !EvidenceContains(evidence, "supported wall evidence inside exterior envelope")
+            || !EvidenceContains(evidence, "both endpoints supported by structural context"))
+        {
+            return false;
+        }
+
+        if (pair.Score < MinTrustedNoisyMainStructuralInteriorPairScore
+            || pair.OverlapRatio < MinTrustedNoisyMainStructuralInteriorOverlapRatio
+            || pair.FaceSeparation < MinTrustedMainStructuralInteriorFaceSeparationDrawingUnits
+            || pair.FaceSeparation > MaxTrustedMainStructuralInteriorFaceSeparationDrawingUnits
+            || Math.Max(pair.FirstFaceFragmentCount, pair.SecondFaceFragmentCount)
+                > MaxTrustedNoisyMainStructuralInteriorFaceFragments)
+        {
+            return false;
+        }
+
+        return !EvidenceContainsAny(
+            evidence,
+            "outdoor covered-area boundary",
+            "unpaired outdoor covered-area boundary",
+            "covered-area boundary",
+            "outdoor/terrace room evidence alone",
+            "terrace",
+            "covered entry",
+            "covered-entry",
+            "overbygd",
+            "canopy",
+            "railing",
+            "trim/detail",
+            "trim linework",
+            "glazing",
+            "detail linework",
+            "surface pattern",
+            "object/fixture",
+            "fixture detail",
+            "stair",
+            "door swing",
+            "door leaf",
+            "door arc",
             "not trusted",
             "without shell support",
             "alone is not trusted");
