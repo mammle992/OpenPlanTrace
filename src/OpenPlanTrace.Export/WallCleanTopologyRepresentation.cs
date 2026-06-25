@@ -8,6 +8,7 @@ internal sealed record WallCleanTopologyRepresentation(
 internal static class WallCleanTopologyRepresentationMatcher
 {
     private const double MinRepresentedByCleanTopologyOverlapRatio = 0.92;
+    private const double MinRecoveredRoomBoundaryRepresentedOverlapRatio = 0.80;
     private const double MinNearIsolatedFragmentRepresentedOverlapRatio = 0.88;
     private const double MaxInteriorRepresentedByCleanTopologyAxisDistance = 6.0;
     private const double MaxExteriorRepresentedByCleanTopologyAxisDistance = 18.0;
@@ -98,7 +99,65 @@ internal static class WallCleanTopologyRepresentationMatcher
             span,
             axisDistance)
             ? MinNearIsolatedFragmentRepresentedOverlapRatio
+            : IsRecoveredRoomBoundaryPairCandidate(
+                wall,
+                component,
+                evidenceAssessment,
+                readyForCoordinatePlacement,
+                span)
+                ? MinRecoveredRoomBoundaryRepresentedOverlapRatio
             : MinRepresentedByCleanTopologyOverlapRatio;
+
+    private static bool IsRecoveredRoomBoundaryPairCandidate(
+        WallSegment wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? evidenceAssessment,
+        bool readyForCoordinatePlacement,
+        WallGraphTopologySpan span)
+    {
+        if (!readyForCoordinatePlacement
+            || component is null
+            || component.ExcludedFromStructuralTopology
+            || component.Kind is WallGraphComponentKind.ObjectLikeIsland or WallGraphComponentKind.IsolatedFragment
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.WallType != WallType.Interior
+            || wall.PairEvidence is not { Score: >= 0.85, OverlapRatio: >= 0.90 }
+            || evidenceAssessment?.Category != WallEvidenceCategory.RecoveredWallBody
+            || evidenceAssessment.Decision != WallEvidenceDecision.Accept
+            || evidenceAssessment.RequiresReview
+            || evidenceAssessment.RejectedAsNoise
+            || evidenceAssessment.PlacementReady != true
+            || span.SourceWall is null
+            || span.SourceWall.WallType != WallType.Interior
+            || span.DrawingLength < wall.DrawingLength)
+        {
+            return false;
+        }
+
+        return ContainsAnyEvidence(
+                wall,
+                component,
+                evidenceAssessment,
+                "geometric room boundary support",
+                "shared by room adjacency boundary",
+                "explicit room boundary support")
+            && !ContainsAnyEvidence(
+                wall,
+                component,
+                evidenceAssessment,
+                "outdoor",
+                "terrace",
+                "covered-area",
+                "covered entry",
+                "covered-entry",
+                "overbygd",
+                "surface pattern",
+                "object/fixture",
+                "fixture detail",
+                "door/opening",
+                "stair",
+                "railing");
+    }
 
     private static bool IsNearIsolatedFragmentCandidate(
         WallSegment wall,

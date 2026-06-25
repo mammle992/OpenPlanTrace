@@ -19,20 +19,23 @@ internal static class RoomBoundaryWallReferenceBuilder
 
         foreach (var room in rooms)
         {
-            foreach (var wallId in room.WallIds)
+            if (!RoomBoundaryReliability.IsWeakReviewSupportedSemanticBoundary(room))
             {
-                if (string.IsNullOrWhiteSpace(wallId))
+                foreach (var wallId in room.WallIds)
                 {
-                    continue;
-                }
+                    if (string.IsNullOrWhiteSpace(wallId))
+                    {
+                        continue;
+                    }
 
-                if (!builder.TryGetValue(wallId, out var roomIds))
-                {
-                    roomIds = new HashSet<string>(StringComparer.Ordinal);
-                    builder[wallId] = roomIds;
-                }
+                    if (!builder.TryGetValue(wallId, out var roomIds))
+                    {
+                        roomIds = new HashSet<string>(StringComparer.Ordinal);
+                        builder[wallId] = roomIds;
+                    }
 
-                roomIds.Add(room.Id);
+                    roomIds.Add(room.Id);
+                }
             }
 
             if (!CanUseRoomBoundaryGeometryForWallSupport(room))
@@ -80,15 +83,7 @@ internal static class RoomBoundaryWallReferenceBuilder
             return false;
         }
 
-        if (room.WallIds.Count >= 2)
-        {
-            return true;
-        }
-
-        return room.Evidence.Any(item =>
-            item.Contains("closed orthogonal cycle", StringComparison.OrdinalIgnoreCase)
-            || item.Contains("bounded by nearby orthogonal wall evidence", StringComparison.OrdinalIgnoreCase)
-            || item.Contains("semantic room boundary inferred from nearby walls", StringComparison.OrdinalIgnoreCase));
+        return RoomBoundaryReliability.HasReliableBoundaryEvidence(room);
     }
 
     private static bool WallAlignsWithRoomBoundary(

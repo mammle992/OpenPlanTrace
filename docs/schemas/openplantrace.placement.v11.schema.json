@@ -2606,6 +2606,7 @@
         "confidence",
         "sourcePrimitiveIds",
         "sourceLayers",
+        "sourceWallGraphEdgeIds",
         "evidence"
       ],
       "properties": {
@@ -2629,6 +2630,7 @@
         "confidence": { "$ref": "#/$defs/ratio" },
         "sourcePrimitiveIds": { "$ref": "#/$defs/stringArray" },
         "sourceLayers": { "$ref": "#/$defs/stringArray" },
+        "sourceWallGraphEdgeIds": { "$ref": "#/$defs/stringArray" },
         "evidence": { "$ref": "#/$defs/stringArray" }
       }
     },

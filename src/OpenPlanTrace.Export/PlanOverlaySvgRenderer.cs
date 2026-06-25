@@ -94,6 +94,13 @@ public static class PlanOverlaySvgRenderer
             .wall-graph-repair-high { stroke: #b42318; stroke-width: 1.8; }
             .wall-graph-repair-marker { fill: #ffffff; stroke: #d04b24; stroke-width: 0.75; vector-effect: non-scaling-stroke; }
             .wall-graph-repair-target { fill: #d04b24; }
+            .placement-wall-graph-edge { stroke: #111827; stroke-width: 1.25; stroke-linecap: round; fill: none; vector-effect: non-scaling-stroke; }
+            .placement-wall-graph-edge-exterior { stroke: #075ecf; stroke-width: 2.55; }
+            .placement-wall-graph-edge-interior { stroke: #087a45; stroke-width: 1.95; }
+            .placement-wall-graph-edge-excluded { stroke: #a65f00; stroke-width: 1.05; stroke-dasharray: 2.5 4.5; }
+            .placement-wall-graph-node { fill: #ffffff; stroke: #111827; stroke-width: 0.78; vector-effect: non-scaling-stroke; }
+            .placement-wall-graph-node-junction { fill: #eef6ff; stroke: #075ecf; stroke-width: 0.92; }
+            .placement-wall-graph-node-endpoint { fill: #f7fff9; stroke: #087a45; }
             .node { fill: rgba(255,255,255,0.65); stroke: #b82f42; stroke-width: 0.42; vector-effect: non-scaling-stroke; }
             .room { fill: rgba(63, 143, 87, 0.075); stroke: #3f8f57; stroke-width: 0.95; vector-effect: non-scaling-stroke; }
             .room-cluster { fill: rgba(47, 125, 104, 0.035); stroke: #2f7d68; stroke-width: 1; stroke-dasharray: 9 6; vector-effect: non-scaling-stroke; }
@@ -455,6 +462,30 @@ public static class PlanOverlaySvgRenderer
             builder.AppendLine("</g>");
         }
 
+        if (options.IncludePlacementWallGraph)
+        {
+            var placement = PlanPlacementExport.From(result);
+            var placementWallsById = placement.Walls.ToDictionary(wall => wall.Id, StringComparer.Ordinal);
+            builder.AppendLine("""<g id="placement-wall-graph-edges" aria-label="Exported placement wall graph edges">""");
+            foreach (var edge in placement.WallGraph.Edges.Where(edge => edge.PageNumber == page.Number && edge.CenterLine is not null))
+            {
+                placementWallsById.TryGetValue(edge.WallId, out var wall);
+                var title = PlacementWallGraphEdgeTitle(edge, wall);
+                builder.AppendLine($"""<line class="{PlacementWallGraphEdgeCssClass(edge, wall)}" x1="{N(edge.CenterLine!.Start.X)}" y1="{N(edge.CenterLine.Start.Y)}" x2="{N(edge.CenterLine.End.X)}" y2="{N(edge.CenterLine.End.Y)}" opacity="{N(PlacementGraphOpacity(edge.Confidence))}"><title>{Esc(title)}</title></line>""");
+            }
+            builder.AppendLine("</g>");
+
+            if (options.IncludePlacementWallGraphNodes)
+            {
+                builder.AppendLine("""<g id="placement-wall-graph-nodes" aria-label="Exported placement wall graph nodes">""");
+                foreach (var node in placement.WallGraph.Nodes.Where(node => node.PageNumber == page.Number))
+                {
+                    builder.AppendLine($"""<circle class="{PlacementWallGraphNodeCssClass(node)}" cx="{N(node.Position.X)}" cy="{N(node.Position.Y)}" r="{N(PlacementWallGraphNodeRadius(node))}" opacity="{N(PlacementGraphOpacity(node.Confidence))}"><title>{Esc(PlacementWallGraphNodeTitle(node))}</title></circle>""");
+                }
+                builder.AppendLine("</g>");
+            }
+        }
+
         if (options.IncludeWalls)
         {
             builder.AppendLine("""<g id="walls">""");
@@ -465,7 +496,7 @@ public static class PlanOverlaySvgRenderer
                 componentByWallId.TryGetValue(wall.Id, out var component);
                 wallEvidenceAssessments.TryGetValue(wall.Id, out var assessment);
                 var title = WallTitle(wall, component, assessment);
-                builder.AppendLine($"""<line class="{WallCssClass(component, assessment)}" x1="{N(wall.CenterLine.Start.X)}" y1="{N(wall.CenterLine.Start.Y)}" x2="{N(wall.CenterLine.End.X)}" y2="{N(wall.CenterLine.End.Y)}" opacity="{N(WallOpacity(wall.Confidence, component, assessment))}"><title>{Esc(title)}</title></line>""");
+                builder.AppendLine($"""<line class="{WallCssClass(wall, component, assessment)}" x1="{N(wall.CenterLine.Start.X)}" y1="{N(wall.CenterLine.Start.Y)}" x2="{N(wall.CenterLine.End.X)}" y2="{N(wall.CenterLine.End.Y)}" opacity="{N(WallOpacity(wall, wall.Confidence, component, assessment))}"><title>{Esc(title)}</title></line>""");
             }
             builder.AppendLine("</g>");
         }
@@ -708,6 +739,15 @@ public static class PlanOverlaySvgRenderer
         {
             rows.Add("Placement-ready wall spans");
         }
+        else if (options.Profile == SvgOverlayRenderProfile.PlacementGraphQa)
+        {
+            rows.Add("Exported placement wall graph only");
+            rows.Add("Blue = exterior, green = interior");
+            if (options.CropToFloorplanContent)
+            {
+                rows.Add("Focused exported graph crop");
+            }
+        }
         else if (options.Profile is SvgOverlayRenderProfile.WallQa or SvgOverlayRenderProfile.WallQaReview or SvgOverlayRenderProfile.WallQaFocus)
         {
             rows.Add(options.Profile == SvgOverlayRenderProfile.WallQaReview
@@ -737,6 +777,9 @@ public static class PlanOverlaySvgRenderer
         var visibleTopologySpanCount = WallTopologySpanCount(result, page.Number, options);
         var hiddenTopologySpanCount = HiddenNonPlacementTopologySpanCount(result, page.Number, options);
         var wallBodyFootprintCount = WallBodyFootprintCount(result, page.Number, options);
+        var placementWallGraph = options.IncludePlacementWallGraph
+            ? PlanPlacementExport.From(result).WallGraph
+            : null;
         var wallReadiness = WallPlacementOmissionSummary.From(result, page.Number);
         var repairCandidateCount = result.WallGraph.RepairCandidates.Count(candidate => candidate.PageNumber == page.Number);
         var blockingRepairCandidateCount = result.WallGraph.RepairCandidates.Count(candidate =>
@@ -766,6 +809,12 @@ public static class PlanOverlaySvgRenderer
             options.IncludeWallGraphRepairs
                 ? $"{repairCandidateCount} visible wall graph repairs ({blockingRepairCandidateCount} blocking)"
                 : $"{repairCandidateCount} wall graph repairs hidden ({blockingRepairCandidateCount} blocking)",
+            placementWallGraph is null
+                ? "exported wall graph hidden"
+                : $"{placementWallGraph.Edges.Count(edge => edge.PageNumber == page.Number)} exported wall graph edges",
+            placementWallGraph is null
+                ? "exported wall graph nodes hidden"
+                : $"{placementWallGraph.Nodes.Count(node => node.PageNumber == page.Number)} exported wall graph nodes",
             $"{result.Rooms.Count(room => room.PageNumber == page.Number)} rooms",
             $"{result.RoomAdjacencyGraph.Clusters.Count(cluster => cluster.PageNumber == page.Number)} room clusters",
             $"{result.RoomAdjacencyGraph.Edges.Count(edge => edge.PageNumber == page.Number)} room links",
@@ -858,13 +907,23 @@ public static class PlanOverlaySvgRenderer
     private static double Opacity(Confidence confidence) =>
         Math.Clamp(0.32 + (confidence.Value * 0.68), 0.32, 1.0);
 
+    private static double PlacementGraphOpacity(double confidence) =>
+        Math.Clamp(0.42 + (confidence * 0.58), 0.42, 1.0);
+
     private static double WallOpacity(
+        WallSegment wall,
         Confidence confidence,
         WallGraphComponent? component,
         WallEvidenceWallAssessment? evidenceAssessment)
     {
         var opacity = Opacity(confidence);
+        var trustedRecoveredRoomBoundaryObjectLikeWall =
+            WallPlacementReadinessEvaluator.IsTrustedRecoveredRoomBoundaryObjectLikeWall(
+                wall,
+                component,
+                evidenceAssessment);
         return WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment)
+            && !trustedRecoveredRoomBoundaryObjectLikeWall
             ? Math.Max(0.12, opacity * 0.32)
             : opacity;
     }
@@ -881,9 +940,21 @@ public static class PlanOverlaySvgRenderer
         };
 
     private static string WallCssClass(
+        WallSegment wall,
         WallGraphComponent? component,
-        WallEvidenceWallAssessment? evidenceAssessment) =>
-        component?.Kind switch
+        WallEvidenceWallAssessment? evidenceAssessment)
+    {
+        var trustedRecoveredRoomBoundaryObjectLikeWall =
+            WallPlacementReadinessEvaluator.IsTrustedRecoveredRoomBoundaryObjectLikeWall(
+                wall,
+                component,
+                evidenceAssessment);
+        if (trustedRecoveredRoomBoundaryObjectLikeWall)
+        {
+            return WallCssClass("wall wall-secondary wall-recovered-room-boundary", component, evidenceAssessment, ignoreTopologyExclusion: true);
+        }
+
+        return component?.Kind switch
         {
             WallGraphComponentKind.MainStructural => WallCssClass("wall wall-main", component, evidenceAssessment),
             WallGraphComponentKind.SecondaryStructural => WallCssClass("wall wall-secondary", component, evidenceAssessment),
@@ -891,12 +962,15 @@ public static class PlanOverlaySvgRenderer
             WallGraphComponentKind.IsolatedFragment => WallCssClass("wall wall-fragment", component, evidenceAssessment),
             _ => WallCssClass("wall", component, evidenceAssessment)
         };
+    }
 
     private static string WallCssClass(
         string cssClass,
         WallGraphComponent? component,
-        WallEvidenceWallAssessment? evidenceAssessment) =>
+        WallEvidenceWallAssessment? evidenceAssessment,
+        bool ignoreTopologyExclusion = false) =>
         WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment)
+            && !ignoreTopologyExclusion
             ? $"{cssClass} wall-excluded"
             : cssClass;
 
@@ -949,13 +1023,20 @@ public static class PlanOverlaySvgRenderer
                 span.SourceWall,
                 component,
                 evidenceAssessment);
+        var trustedRecoveredRoomBoundaryObjectLikeWall =
+            WallPlacementReadinessEvaluator.IsTrustedRecoveredRoomBoundaryObjectLikeWall(
+                span.SourceWall,
+                component,
+                evidenceAssessment);
 
-        if (WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment))
+        if (WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment)
+            && !trustedRecoveredRoomBoundaryObjectLikeWall)
         {
             classes.Add("wall-topology-span-excluded");
         }
         else if (!trustedExteriorShellContinuityFragment
             && !trustedRoomBoundaryIsolatedFragment
+            && !trustedRecoveredRoomBoundaryObjectLikeWall
             && !WallTopologySpanVisibility.IsPlacementReadyStructuralSpan(component, evidenceAssessment))
         {
             classes.Add("wall-topology-span-review-only");
@@ -1013,10 +1094,17 @@ public static class PlanOverlaySvgRenderer
                 footprint.SourceWall,
                 component,
                 evidenceAssessment);
+        var trustedRecoveredRoomBoundaryObjectLikeWall =
+            WallPlacementReadinessEvaluator.IsTrustedRecoveredRoomBoundaryObjectLikeWall(
+                footprint.SourceWall,
+                component,
+                evidenceAssessment);
 
-        if (WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment)
+        if ((WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment)
+                && !trustedRecoveredRoomBoundaryObjectLikeWall)
             || (!trustedExteriorShellContinuityFragment
                 && !trustedRoomBoundaryIsolatedFragment
+                && !trustedRecoveredRoomBoundaryObjectLikeWall
                 && !WallTopologySpanVisibility.IsPlacementReadyStructuralSpan(component, evidenceAssessment)))
         {
             classes.Add("wall-body-footprint-excluded");
@@ -1048,6 +1136,83 @@ public static class PlanOverlaySvgRenderer
 
     private static string WallGraphRepairCandidateTitle(WallGraphRepairCandidate candidate) =>
         $"{candidate.Kind} {candidate.SuggestedAction}; {candidate.Severity} severity; {candidate.ImportImpact}; gap {N(candidate.GapDistance)} drawing units; safe {N(candidate.SafeSnapDistance)}; review limit {N(candidate.ReviewDistanceLimit)}; walls {string.Join(", ", candidate.WallIds)}";
+
+    private static string PlacementWallGraphEdgeCssClass(
+        PlacementWallGraphEdgeExport edge,
+        PlacementWallExport? wall)
+    {
+        var classes = new List<string> { "placement-wall-graph-edge" };
+        switch (ResolvedPlacementWallGraphDisplayWallType(wall))
+        {
+            case nameof(WallType.Exterior):
+                classes.Add("placement-wall-graph-edge-exterior");
+                break;
+            case nameof(WallType.Interior):
+                classes.Add("placement-wall-graph-edge-interior");
+                break;
+        }
+
+        if (edge.ExcludedFromStructuralTopology)
+        {
+            classes.Add("placement-wall-graph-edge-excluded");
+        }
+
+        return string.Join(" ", classes);
+    }
+
+    private static string PlacementWallGraphEdgeTitle(
+        PlacementWallGraphEdgeExport edge,
+        PlacementWallExport? wall)
+    {
+        var wallType = ResolvedPlacementWallGraphDisplayWallType(wall);
+        var sourceEdges = edge.SourceWallGraphEdgeIds.Count == 0
+            ? "none"
+            : string.Join(", ", edge.SourceWallGraphEdgeIds);
+        return $"placement wall graph edge {edge.Id}; source wall {edge.WallId}; {wallType}; from {edge.FromNodeId}; to {edge.ToNodeId}; length {N(edge.DrawingLength)} drawing units; thickness {N(edge.ThicknessDrawingUnits)}; excluded {edge.ExcludedFromStructuralTopology}; source graph edges {sourceEdges}";
+    }
+
+    private static string ResolvedPlacementWallGraphDisplayWallType(PlacementWallExport? wall)
+    {
+        if (wall is null)
+        {
+            return "Unknown";
+        }
+
+        if (string.Equals(wall.WallType, nameof(WallType.Unknown), StringComparison.Ordinal)
+            && wall.Evidence.Any(item => item.Contains("wall type exterior", StringComparison.OrdinalIgnoreCase)))
+        {
+            return nameof(WallType.Exterior);
+        }
+
+        return wall.WallType;
+    }
+
+    private static string PlacementWallGraphNodeCssClass(PlacementWallGraphNodeExport node)
+    {
+        var classes = new List<string> { "placement-wall-graph-node" };
+        switch (node.Kind)
+        {
+            case nameof(WallNodeKind.Junction):
+            case nameof(WallNodeKind.Crossing):
+            case nameof(WallNodeKind.TJunction):
+                classes.Add("placement-wall-graph-node-junction");
+                break;
+            case nameof(WallNodeKind.Endpoint):
+                classes.Add("placement-wall-graph-node-endpoint");
+                break;
+        }
+
+        return string.Join(" ", classes);
+    }
+
+    private static double PlacementWallGraphNodeRadius(PlacementWallGraphNodeExport node) =>
+        node.Degree >= 3 ? 1.55 : node.Degree == 2 ? 1.25 : 1.05;
+
+    private static string PlacementWallGraphNodeTitle(PlacementWallGraphNodeExport node)
+    {
+        var directions = node.Directions.Count == 0 ? "none" : string.Join(", ", node.Directions);
+        return $"placement wall graph node {node.Id}; {node.Kind}; degree {node.Degree}; directions {directions}";
+    }
 
     private static string RoutingObstacleCssClass(RoutingObstacleKind kind) =>
         kind switch

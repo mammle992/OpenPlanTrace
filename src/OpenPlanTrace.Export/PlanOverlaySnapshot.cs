@@ -175,6 +175,8 @@ public sealed record PlanOverlayPageSnapshot(
         Add(options.IncludeReviewOnlyWallTopologySpans, "wallTopologyReviewSpans");
         Add(options.IncludeWallBodyFootprints, "wallBodyFootprints");
         Add(options.IncludeWallGraphRepairs, "wallGraphRepairs");
+        Add(options.IncludePlacementWallGraph, "placementWallGraphEdges");
+        Add(options.IncludePlacementWallGraphNodes, "placementWallGraphNodes");
         Add(options.IncludeWalls, "walls");
         Add(options.IncludeWallNodes, "wallNodes");
         Add(options.IncludeRooms, "rooms");
@@ -225,6 +227,9 @@ public sealed record PlanOverlayPageSnapshot(
 
         var routing = result.RoutingLayer;
         var page = result.Document.Pages.FirstOrDefault(item => item.Number == pageNumber);
+        var placementExport = options.IncludePlacementWallGraph || options.IncludePlacementWallGraphNodes
+            ? PlanPlacementExport.From(result)
+            : null;
 
         if (page is not null
             && options.IncludeSourceContext
@@ -311,6 +316,29 @@ public sealed record PlanOverlayPageSnapshot(
             result.Walls.Where(item => item.PageNumber == pageNumber),
             item => item.Bounds,
             item => item.Confidence);
+
+        if (placementExport is not null)
+        {
+            yield return Layer(
+                "placementWallGraphEdges",
+                placementExport.WallGraph.Edges.Where(item => item.PageNumber == pageNumber && item.CenterLine is not null),
+                PlacementWallGraphEdgeBounds,
+                item => new Confidence(item.Confidence),
+                placementExport.WallGraph.Edges
+                    .Where(item => item.PageNumber == pageNumber && item.CenterLine is not null)
+                    .GroupBy(item => item.ExcludedFromStructuralTopology ? "Excluded" : "PlacementReady")
+                    .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal));
+
+            yield return Layer(
+                "placementWallGraphNodes",
+                placementExport.WallGraph.Nodes.Where(item => item.PageNumber == pageNumber),
+                item => new PlanRect(item.Position.X, item.Position.Y, 0, 0),
+                item => new Confidence(item.Confidence),
+                placementExport.WallGraph.Nodes
+                    .Where(item => item.PageNumber == pageNumber)
+                    .GroupBy(item => item.Kind)
+                    .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal));
+        }
 
         var visibleTopologySpans = WallTopologySpanVisibility.BuildVisibleTopologySpans(result, pageNumber, options);
         yield return Layer(
@@ -442,6 +470,25 @@ public sealed record PlanOverlayPageSnapshot(
             routing.RoomUseHints.Where(item => item.PageNumber == pageNumber),
             item => item.Bounds,
             item => item.Confidence);
+    }
+
+    private static PlanRect PlacementWallGraphEdgeBounds(PlacementWallGraphEdgeExport edge)
+    {
+        if (edge.Bounds is { } bounds)
+        {
+            return new PlanRect(bounds.X, bounds.Y, bounds.Width, bounds.Height);
+        }
+
+        if (edge.CenterLine is null)
+        {
+            return PlanRect.Empty;
+        }
+
+        var minX = Math.Min(edge.CenterLine.Start.X, edge.CenterLine.End.X);
+        var minY = Math.Min(edge.CenterLine.Start.Y, edge.CenterLine.End.Y);
+        var width = Math.Abs(edge.CenterLine.End.X - edge.CenterLine.Start.X);
+        var height = Math.Abs(edge.CenterLine.End.Y - edge.CenterLine.Start.Y);
+        return new PlanRect(minX, minY, width, height);
     }
 
     private static PlanOverlayLayerSnapshot BuildLayer<T>(

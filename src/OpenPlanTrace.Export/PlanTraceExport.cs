@@ -1560,7 +1560,14 @@ internal static class WallEvidenceExportHelpers
         bool hasPlacementGeometry)
     {
         var reasons = new List<string>();
-        if (component?.Kind == WallGraphComponentKind.ObjectLikeIsland)
+        var trustedRecoveredRoomBoundaryObjectLikeWall =
+            WallPlacementReadinessEvaluator.IsTrustedRecoveredRoomBoundaryObjectLikeWall(
+                wall,
+                component,
+                evidenceAssessment);
+
+        if (component?.Kind == WallGraphComponentKind.ObjectLikeIsland
+            && !trustedRecoveredRoomBoundaryObjectLikeWall)
         {
             reasons.Add("wall graph component is object-like detail, not placement wall geometry");
         }
@@ -1570,7 +1577,8 @@ internal static class WallEvidenceExportHelpers
             reasons.Add("wall graph component is an isolated fragment requiring review");
         }
 
-        if (excludedFromStructuralTopology)
+        if (excludedFromStructuralTopology
+            && !trustedRecoveredRoomBoundaryObjectLikeWall)
         {
             reasons.Add("excluded from structural topology");
         }

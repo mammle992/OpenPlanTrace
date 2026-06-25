@@ -1772,6 +1772,98 @@ public sealed class WallLayerFilteringTests
     }
 
     [Fact]
+    public async Task WallEvidenceRefinement_KeepsStructurallySupportedDimensionLikePairForRoomRefinement()
+    {
+        var firstFace = new PlanLineSegment(new PlanPoint(140, 185), new PlanPoint(340, 185));
+        var secondFace = new PlanLineSegment(new PlanPoint(140, 191), new PlanPoint(340, 191));
+        var document = new PlanDocument(
+            "wall-evidence-supported-dimension-like-pair-review",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(520, 320),
+                    new PlanPrimitive[]
+                    {
+                        Line("left-host", "A-WALL", new PlanPoint(140, 120), new PlanPoint(140, 250)),
+                        Line("right-host", "A-WALL", new PlanPoint(340, 120), new PlanPoint(340, 250)),
+                        Line("dimension-like-face-a", "A-DIMS", firstFace.Start, firstFace.End),
+                        Line("dimension-like-face-b", "A-DIMS", secondFace.Start, secondFace.End)
+                    })
+            });
+        var context = new ScanContext(
+            document,
+            new ScannerOptions
+            {
+                EnableWallEvidenceNoiseRejection = true
+            })
+        {
+            LayerAnalysis = new PlanLayerAnalysis(new[]
+            {
+                Layer("A-WALL", LayerCategory.Wall, Confidence.High),
+                Layer("A-DIMS", LayerCategory.Dimension, Confidence.High)
+            })
+        };
+        context.WallCandidates.Add(new WallSegment(
+            "wall-left-host",
+            1,
+            new PlanLineSegment(new PlanPoint(140, 120), new PlanPoint(140, 250)),
+            4,
+            Confidence.High)
+        {
+            SourcePrimitiveIds = new[] { "left-host" },
+            Evidence = new[] { "test left structural wall" }
+        });
+        context.WallCandidates.Add(new WallSegment(
+            "wall-right-host",
+            1,
+            new PlanLineSegment(new PlanPoint(340, 120), new PlanPoint(340, 250)),
+            4,
+            Confidence.High)
+        {
+            SourcePrimitiveIds = new[] { "right-host" },
+            Evidence = new[] { "test right structural wall" }
+        });
+        context.WallCandidates.Add(new WallSegment(
+            "wall-dimension-like-supported-pair",
+            1,
+            new PlanLineSegment(new PlanPoint(140, 188), new PlanPoint(340, 188)),
+            6,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            SourcePrimitiveIds = new[] { "dimension-like-face-a", "dimension-like-face-b" },
+            PairEvidence = new WallPairEvidence(
+                firstFace,
+                secondFace,
+                FaceSeparation: 6,
+                OverlapRatio: 1,
+                Score: 0.86,
+                FirstFaceFragmentCount: 1,
+                SecondFaceFragmentCount: 1,
+                FirstFaceSourcePrimitiveIds: new[] { "dimension-like-face-a" },
+                SecondFaceSourcePrimitiveIds: new[] { "dimension-like-face-b" }),
+            Evidence = new[] { "test supported dimension-like pair candidate" }
+        });
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Contains(context.Walls, wall => wall.SourcePrimitiveIds.Contains("dimension-like-face-a"));
+
+        var assessment = Assert.Single(
+            context.WallEvidenceMap.WallAssessments,
+            item => item.SourcePrimitiveIds.Contains("dimension-like-face-a"));
+        Assert.Equal(WallEvidenceCategory.MediumWallBody, assessment.Category);
+        Assert.Equal(WallEvidenceDecision.Review, assessment.Decision);
+        Assert.False(assessment.RejectedAsNoise);
+        Assert.False(assessment.PlacementReady);
+        Assert.True(assessment.RequiresReview);
+        Assert.Contains(
+            assessment.Evidence,
+            item => item.Contains("dimension/text/grid-layer paired wall body has structural endpoint support", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task WallEvidenceRefinement_RejectsUnlayeredWallCandidateAlignedWithDetectedDimensionLine()
     {
         var dimensionLine = new PlanLineSegment(new PlanPoint(140, 190), new PlanPoint(340, 190));

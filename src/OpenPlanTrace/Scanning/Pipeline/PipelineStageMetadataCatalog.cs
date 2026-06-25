@@ -148,7 +148,7 @@ public static class PipelineStageMetadataCatalog
             PipelineStageKind.Topology,
             Reads(PlanArtifactKind.Walls, PlanArtifactKind.WallEvidence, PlanArtifactKind.WallGraph, PlanArtifactKind.Rooms, PlanArtifactKind.RoomAdjacency),
             Writes(PlanArtifactKind.Diagnostics),
-            Capabilities("room-side-wall-classification", "shared-wall-refinement", "exterior-boundary-refinement", "room-confirmed-wall-evidence")),
+            Capabilities("room-side-wall-classification", "shared-wall-refinement", "exterior-boundary-refinement", "exterior-shell-repair", "room-confirmed-wall-evidence", "unsupported-room-boundary-repair")),
         Create(
             "measurement-scale-provenance",
             "Measurement scale provenance",

@@ -8,6 +8,129 @@ fix counter. When `DEF` reaches `030`, the next major work cycle moves to the
 next `BC` track and resets to `000`. Individual JSON contracts keep their own
 schema versions.
 
+## [0.05.020] - 2026-06-25
+
+- Improved source-backed wall continuation merging.
+- Improved placement graph inline node cleanup.
+- Small improvement to continuation merge regression tests.
+
+## [0.05.019] - 2026-06-25
+
+- Improved placement wall graph long-run compaction.
+- Improved source-backed exterior shell recovery.
+- Improved no-component wall merge isolation.
+- Small improvement to wall placement regression tests.
+
+## [0.05.018] - 2026-06-25
+
+- Improved endpoint-on-wall graph cleanup.
+- Improved placement graph junction alignment.
+- Improved floating wall-node suppression.
+- Small improvement to placement graph tests.
+
+## [0.05.017] - 2026-06-25
+
+- Improved placement graph node alignment.
+- Improved reused node cleanup after opening splits.
+- Improved near-contained duplicate wall suppression.
+- Improved wall QA footprint cleanup.
+- Small improvement to wall export regression tests.
+
+## [0.05.016] - 2026-06-25
+
+- Improved weak semantic room wall support.
+- Improved dimension-like perimeter wall review safety.
+- Improved cross-component wall graph node cleanup.
+- Improved exact placement graph compaction.
+- Small improvement to wall accuracy tests.
+
+## [0.05.015] - 2026-06-25
+
+- Improved contained wall fragment cleanup.
+- Improved placement graph node cleanup.
+- Improved same-wall opening gap compaction.
+- Improved exterior duplicate safety.
+- Small improvement to wall compaction tests.
+
+## [0.05.014] - 2026-06-25
+
+- Improved long exterior shell inference.
+- Improved partial shell coverage checks.
+- Improved recovered wall graph consistency.
+- Small improvement to exterior wall recovery tests.
+
+## [0.05.013] - 2026-06-25
+
+- Improved straight-wall placement graph compaction.
+- Improved inline node cleanup.
+- Improved raw non-placement edge suppression.
+- Small improvement to wall graph regression coverage.
+
+## [0.05.012] - 2026-06-25
+
+- Improved placement wall graph compaction.
+- Improved source wall graph edge traceability.
+- Small improvement to placement schema validation.
+
+## [0.05.011] - 2026-06-25
+
+- Improved clean wall endpoint alignment.
+- Improved placement graph node cleanup.
+- Small improvement to wall placement regression coverage.
+
+## [0.05.010] - 2026-06-25
+
+- Improved exterior wall run bridging.
+- Improved clean topology span compaction.
+- Small improvement to wall run regression coverage.
+
+## [0.05.009] - 2026-06-25
+
+- Improved exterior envelope wall reclassification.
+- Improved dimension-like shell wall safety.
+- Small improvement to exterior wall regression coverage.
+
+## [0.05.008] - 2026-06-25
+
+- Improved global exterior envelope recovery.
+- Improved shell repair precedence.
+- Small improvement to covered-area wall safety tests.
+
+## [0.05.007] - 2026-06-24
+
+- Improved exterior wall recovery.
+- Improved filled wall-solid detection.
+- Improved wall footprint QA export.
+- Small improvement to wall accuracy tests.
+
+## [0.05.006] - 2026-06-24
+
+- Improved long fragment room-boundary wall recovery.
+- Improved recovered duplicate wall classification.
+- Improved collapsed paired-face evidence parsing.
+- Improved source-backed room wall placement.
+- Small improvement to wall accuracy regression coverage.
+
+## [0.05.005] - 2026-06-24
+
+- Improved unsupported room-boundary wall recovery.
+- Improved rejected room-boundary wall restoration.
+- Improved shared room-boundary gap inference.
+- Improved door-safe wall repair gating.
+- Small improvement to wall refinement diagnostics.
+
+## [0.05.004] - 2026-06-24
+
+- Improved room-backed wall fragment recovery.
+- Improved source-backed wall fallback safety.
+- Small improvement to wall recall regression coverage.
+
+## [0.05.003] - 2026-06-24
+
+- Improved missing wall recovery.
+- Improved dimension-like wall evidence handling.
+- Small improvement to wall recovery safety gates.
+
 ## [0.05.002] - 2026-06-24
 
 - Improved graph-promoted fragment walls.

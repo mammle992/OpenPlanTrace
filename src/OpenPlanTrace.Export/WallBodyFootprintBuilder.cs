@@ -106,7 +106,8 @@ internal static class WallBodyFootprintBuilder
 
     public static IReadOnlyList<WallBodyFootprint> FromPlacementSolidSpans(
         PlanScanResult result,
-        IEnumerable<WallGraphTopologySpan> topologySpans)
+        IEnumerable<WallGraphTopologySpan> topologySpans,
+        bool includePlacementReadyFallbackBodies = false)
     {
         ArgumentNullException.ThrowIfNull(result);
 
@@ -115,14 +116,21 @@ internal static class WallBodyFootprintBuilder
             .Where(id => !string.IsNullOrWhiteSpace(id))
             .Distinct(StringComparer.Ordinal)
             .ToHashSet(StringComparer.Ordinal);
-        if (visibleWallIds.Count == 0)
-        {
-            return Array.Empty<WallBodyFootprint>();
-        }
 
+        var componentByWallId = result.WallGraph.Components
+            .SelectMany(component => component.WallIds.Select(wallId => new { wallId, component }))
+            .GroupBy(item => item.wallId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First().component, StringComparer.Ordinal);
+        var assessmentByWallId = result.WallEvidenceMap.WallAssessments
+            .Where(assessment => !string.IsNullOrWhiteSpace(assessment.WallId))
+            .GroupBy(assessment => assessment.WallId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
         var openingsByWallId = BuildOpeningLookup(result.Openings);
         var footprints = new List<WallBodyFootprint>();
-        foreach (var wall in result.Walls.Where(wall => visibleWallIds.Contains(wall.Id)))
+        foreach (var wall in result.Walls.Where(wall =>
+            visibleWallIds.Contains(wall.Id)
+            || (includePlacementReadyFallbackBodies
+                && IsPlacementReadyWallBodyFootprintCandidate(wall, componentByWallId, assessmentByWallId))))
         {
             var openings = openingsByWallId.TryGetValue(wall.Id, out var wallOpenings)
                 ? wallOpenings
@@ -182,6 +190,59 @@ internal static class WallBodyFootprintBuilder
             .ThenBy(footprint => footprint.Id, StringComparer.Ordinal)
             .ToArray();
     }
+
+    private static bool IsPlacementReadyWallBodyFootprintCandidate(
+        WallSegment wall,
+        IReadOnlyDictionary<string, WallGraphComponent> componentByWallId,
+        IReadOnlyDictionary<string, WallEvidenceWallAssessment> assessmentByWallId)
+    {
+        if (wall.WallType == WallType.Unknown
+            || wall.DrawingLength <= 0.001
+            || wall.Thickness <= 0.001
+            || wall.FragmentEvidence?.RequiresGeometryReview == true)
+        {
+            return false;
+        }
+
+        componentByWallId.TryGetValue(wall.Id, out var component);
+        assessmentByWallId.TryGetValue(wall.Id, out var assessment);
+        if (component?.ExcludedFromStructuralTopology == true
+            || component?.Kind is WallGraphComponentKind.ObjectLikeIsland or WallGraphComponentKind.IsolatedFragment
+            || assessment is null
+            || !assessment.PlacementReady
+            || assessment.RequiresReview
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject
+            || assessment.Category is not (WallEvidenceCategory.StrongWallBody
+                or WallEvidenceCategory.MediumWallBody
+                or WallEvidenceCategory.RecoveredWallBody))
+        {
+            return false;
+        }
+
+        var evidence = wall.Evidence
+            .Concat(assessment.Evidence)
+            .Concat(assessment.ScoreBreakdown.NegativeEvidence)
+            .Concat(component?.Evidence ?? Array.Empty<string>())
+            .ToArray();
+        return !evidence.Any(IsNonPlacementWallBodyEvidence);
+    }
+
+    private static bool IsNonPlacementWallBodyEvidence(string evidence) =>
+        evidence.Contains("surface pattern", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("object/fixture", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("fixture detail", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("repeated short detail", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("door/opening", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("door swing", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("door leaf", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("door arc", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("dimension-like", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("dimension/annotation", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("witness/extension", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("non-wall", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("railing", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("stair-like", StringComparison.OrdinalIgnoreCase);
 
     private static IReadOnlyDictionary<string, OpeningCandidate[]> BuildOpeningLookup(
         IReadOnlyList<OpeningCandidate> openings)

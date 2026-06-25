@@ -82,14 +82,8 @@ public sealed record PlanPlacementExport(
             BuildWallReviewReasons(result.Diagnostics.Messages),
             WallPlacementContextGuards.BuildReviewReasons(result));
         var routingLayer = result.RoutingLayer;
-        var rawWallTopologySpans = WallGraphTopologySpanBuilder
-            .Build(result.WallGraph, result.Walls)
-            .ToArray();
         var wallTopologySpans = WallTopologySpanVisibility
             .BuildCleanPlacementTopologySpans(result)
-            .ToArray();
-        var wallGraphTopologySpans = rawWallTopologySpans
-            .Concat(wallTopologySpans)
             .ToArray();
         var wallTopologySpansByWallId = wallTopologySpans
             .GroupBy(span => span.WallId, StringComparer.Ordinal)
@@ -150,7 +144,7 @@ public sealed record PlanPlacementExport(
             .ToArray();
         var placementWallGraph = PlacementWallGraphExport.From(
             result.WallGraph,
-            wallGraphTopologySpans,
+            wallTopologySpans,
             result.Calibration,
             sourceLookup,
             wallComponentLookup,
@@ -1410,6 +1404,17 @@ public sealed record PlacementWallOmissionExport(
         ArgumentNullException.ThrowIfNull(reliability);
 
         var unsafeCleanTopologyProjectionEvidence = BuildUnsafeCleanTopologyProjectionEvidence(wall, topologySpans);
+        if (unsafeCleanTopologyProjectionEvidence.Count > 0
+            && IsTrustedRoomBoundaryOpeningSplitProjectionDrift(
+                wall,
+                component,
+                evidenceAssessment,
+                topologySpans))
+        {
+            unsafeCleanTopologyProjectionEvidence = unsafeCleanTopologyProjectionEvidence
+                .Where(item => !item.Contains("clean placement projection drift requires review", StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+        }
         if (reliability.ReadyForCoordinatePlacement
             && topologySpans.Count > 0
             && !excludedFromStructuralTopology
@@ -1491,6 +1496,12 @@ public sealed record PlacementWallOmissionExport(
         IReadOnlyList<WallGraphRepairCandidate> repairCandidates,
         IReadOnlyList<string> evidence)
     {
+        var trustedRecoveredRoomBoundaryObjectLikeWall =
+            WallPlacementReadinessEvaluator.IsTrustedRecoveredRoomBoundaryObjectLikeWall(
+                wall,
+                component,
+                evidenceAssessment);
+
         if (repairCandidates.Any(candidate => candidate.ImportImpact == WallGraphRepairImportImpact.TopologyImportBlocked))
         {
             return new PlacementWallOmissionClassification(
@@ -1548,7 +1559,8 @@ public sealed record PlacementWallOmissionExport(
                 "Do not import this wall unless a reviewer explicitly corrects the classification.");
         }
 
-        if (component?.Kind == WallGraphComponentKind.ObjectLikeIsland)
+        if (component?.Kind == WallGraphComponentKind.ObjectLikeIsland
+            && !trustedRecoveredRoomBoundaryObjectLikeWall)
         {
             return new PlacementWallOmissionClassification(
                 "object_like_linework",
@@ -1567,7 +1579,8 @@ public sealed record PlacementWallOmissionExport(
                 "Keep the candidate for review evidence, but do not import it as a structural wall unless a reviewer promotes it.");
         }
 
-        if (excludedFromStructuralTopology)
+        if (excludedFromStructuralTopology
+            && !trustedRecoveredRoomBoundaryObjectLikeWall)
         {
             return new PlacementWallOmissionClassification(
                 "structural_topology_excluded",
@@ -2144,6 +2157,11 @@ public sealed record PlacementWallOmissionExport(
         var evidence = new List<string>();
         foreach (var span in topologySpans)
         {
+            if (IsTrustedSourceBackedFallbackSpan(span))
+            {
+                continue;
+            }
+
             var limit = CleanTopologyProjectionDriftLimit(wall, span);
             var maxProjectionDistance = MaxNullable(
                 span.SourceWallStartProjectionDistanceDrawingUnits,
@@ -2175,6 +2193,71 @@ public sealed record PlacementWallOmissionExport(
         }
 
         return evidence.Distinct(StringComparer.Ordinal).ToArray();
+    }
+
+    private static bool IsTrustedSourceBackedFallbackSpan(WallGraphTopologySpan span) =>
+        WallTopologySpanVisibility.IsSourceBackedFallbackTopologySpan(span)
+        && span.Evidence.Any(item =>
+            item.Contains("source-backed clean placement fallback", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsTrustedRoomBoundaryOpeningSplitProjectionDrift(
+        WallSegment wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? evidenceAssessment,
+        IReadOnlyList<WallGraphTopologySpan> topologySpans)
+    {
+        if (component is null
+            || evidenceAssessment is null
+            || component.ExcludedFromStructuralTopology
+            || component.Kind is not (WallGraphComponentKind.MainStructural or WallGraphComponentKind.SecondaryStructural)
+            || wall.WallType != WallType.Interior
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.PairEvidence is not { } pair
+            || pair.Score < 0.80
+            || pair.OverlapRatio < 0.90
+            || pair.FaceSeparation < 1.5
+            || pair.FaceSeparation > 24.0
+            || Math.Max(pair.FirstFaceFragmentCount, pair.SecondFaceFragmentCount) > 72
+            || pair.FirstFaceFragmentCount + pair.SecondFaceFragmentCount > 96
+            || !evidenceAssessment.PlacementReady
+            || evidenceAssessment.RequiresReview
+            || evidenceAssessment.RejectedAsNoise
+            || evidenceAssessment.Decision == WallEvidenceDecision.Reject
+            || evidenceAssessment.Category is not (WallEvidenceCategory.StrongWallBody
+                or WallEvidenceCategory.MediumWallBody
+                or WallEvidenceCategory.RecoveredWallBody))
+        {
+            return false;
+        }
+
+        var evidence = wall.Evidence
+            .Concat(evidenceAssessment.Evidence)
+            .Concat(evidenceAssessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(component.Evidence)
+            .Concat(topologySpans.SelectMany(span => span.Evidence))
+            .ToArray();
+        if (!ContainsEvidence(evidence, "split around anchored door/opening cutouts")
+            || (!ContainsEvidence(evidence, "explicit room boundary support")
+                && !ContainsEvidence(evidence, "geometric room boundary support")
+                && !ContainsEvidence(evidence, "shared by room adjacency boundary")))
+        {
+            return false;
+        }
+
+        return !ContainsEvidence(evidence, "surface pattern")
+            && !ContainsEvidence(evidence, "object/fixture")
+            && !ContainsEvidence(evidence, "object-like")
+            && !ContainsEvidence(evidence, "repeated short detail")
+            && !ContainsEvidence(evidence, "review as detail/object")
+            && !ContainsEvidence(evidence, "outdoor covered-area boundary")
+            && !ContainsEvidence(evidence, "unpaired outdoor covered-area boundary")
+            && !ContainsEvidence(evidence, "covered-area boundary")
+            && !ContainsEvidence(evidence, "covered entry")
+            && !ContainsEvidence(evidence, "covered-entry")
+            && !ContainsEvidence(evidence, "overbygd")
+            && !ContainsEvidence(evidence, "terrace")
+            && !ContainsEvidence(evidence, "railing")
+            && !ContainsEvidence(evidence, "stair-like linework");
     }
 
     private static double CleanTopologyProjectionDriftLimit(WallSegment wall, WallGraphTopologySpan span)
@@ -2337,8 +2420,13 @@ public sealed record PlacementWallExport(
             .ThenBy(cutout => cutout.OpeningId, StringComparer.Ordinal)
             .ToArray();
         var excludedFromStructuralTopology =
-            WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment);
+            WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment)
+            && !WallPlacementReadinessEvaluator.IsTrustedLongIsolatedExteriorShellWallBody(
+                wall,
+                component,
+                evidenceAssessment);
         var reliability = PlacementReliability.ForWall(wall, calibration, component, evidenceAssessment, combinedReviewReasons);
+        reliability = ApplySourceBackedFallbackToReliability(reliability, topologySpans, calibration);
         var placementOmission = PlacementWallOmissionExport.From(
             wall,
             component,
@@ -2411,6 +2499,32 @@ public sealed record PlacementWallExport(
             RequiresReview = true,
             Reasons = reliability.Reasons
                 .Append(omissionReason)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray()
+        };
+    }
+
+    private static PlacementReliabilityExport ApplySourceBackedFallbackToReliability(
+        PlacementReliabilityExport reliability,
+        IReadOnlyList<WallGraphTopologySpan> topologySpans,
+        PlanCalibration calibration)
+    {
+        if (!topologySpans.Any(WallTopologySpanVisibility.IsSourceBackedFallbackTopologySpan))
+        {
+            return reliability;
+        }
+
+        var filteredReasons = reliability.Reasons
+            .Where(reason => !reason.Contains("wall fragment geometry requires review before exact placement", StringComparison.OrdinalIgnoreCase))
+            .Where(reason => !reason.Contains("no clean wall graph topology span", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        return reliability with
+        {
+            ReadyForCoordinatePlacement = true,
+            ReadyForMetricPlacement = calibration.HasReliableMeasurementScale,
+            RequiresReview = filteredReasons.Length > 0,
+            Reasons = filteredReasons
+                .Append("coordinate placement backed by source-backed fallback topology span")
                 .Distinct(StringComparer.Ordinal)
                 .ToArray()
         };
@@ -3281,6 +3395,23 @@ public sealed record PlacementWallGraphExport(
     IReadOnlyList<string> RepairCandidateIds,
     IReadOnlyList<string> Evidence)
 {
+    private const double MaxCoincidentPlacementNodeDistanceDrawingUnits = 1.0;
+    private const double MaxInlinePlacementGraphMergeAxisDistanceDrawingUnits = 1.5;
+    private const double MaxInlinePlacementGraphMergeAxisDistanceByThicknessDrawingUnits = 4.0;
+    private const double MaxInlinePlacementGraphMergeGapDrawingUnits = 12.0;
+    private const double MaxInlinePlacementGraphStructuralMergeGapDrawingUnits = 36.0;
+    private const double MaxInlinePlacementGraphSameWallGapDrawingUnits = 48.0;
+    private const double MaxInlinePlacementGraphMergeThicknessDeltaDrawingUnits = 4.0;
+    private const double MaxContainedPlacementGraphEdgeAxisDistanceDrawingUnits = 1.5;
+    private const double MaxNearContainedPlacementGraphEdgeAxisDistanceDrawingUnits = 4.0;
+    private const double MinContainedPlacementGraphEdgeOverlapRatio = 0.985;
+    private const double MinNearContainedPlacementGraphEdgeOverlapRatio = 0.95;
+    private const double MaxNearContainedPlacementGraphEdgeOverhangDrawingUnits = 4.0;
+    private const double MinPlacementEndpointOnWallSplitFraction = 0.025;
+    private const double MinPlacementEndpointOnWallSplitDistanceDrawingUnits = 2.0;
+    private const double MinPlacementEndpointOnWallCandidateLengthDrawingUnits = 6.0;
+    private const double MaxPlacementEndpointOnWallAbsorptionDistanceDrawingUnits = 2.5;
+
     public static PlacementWallGraphExport From(
         WallGraph graph,
         IReadOnlyList<WallGraphTopologySpan> topologySpans,
@@ -3290,10 +3421,7 @@ public sealed record PlacementWallGraphExport(
         IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceAssessments)
     {
         var spansByEdgeId = BuildTopologySpanLookupByWallGraphEdgeId(topologySpans);
-        var nodes = graph.Nodes
-            .Select(node => PlacementWallGraphNodeExport.From(node, calibration))
-            .ToArray();
-        var edges = graph.Edges
+        var rawEdges = graph.Edges
             .Select(edge => PlacementWallGraphEdgeExport.From(
                 edge,
                 spansByEdgeId.TryGetValue(edge.Id, out var span) ? span : null,
@@ -3302,14 +3430,56 @@ public sealed record PlacementWallGraphExport(
                 wallComponentLookup,
                 wallEvidenceAssessments))
             .ToArray();
+        var representedSpanIds = rawEdges
+            .Where(edge => edge.CenterLine is not null)
+            .Select(edge => edge.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var appendedTopologyEdges = topologySpans
+            .Where(span => !representedSpanIds.Contains(span.Id))
+            .Select(span => PlacementWallGraphEdgeExport.From(
+                span,
+                calibration,
+                sourceLookup,
+                wallComponentLookup,
+                wallEvidenceAssessments))
+            .ToArray();
+        var edges = CollapseCleanPlacementGraphEdges(rawEdges.Concat(appendedTopologyEdges).ToArray());
+        edges = CollapseInlineCollinearPlacementGraphEdges(edges);
+        var suppressedRawEdgeCount = edges.Count(edge => edge.CenterLine is null);
+        edges = edges
+            .Where(edge => edge.CenterLine is not null)
+            .ToArray();
+        edges = SuppressContainedPlacementGraphEdges(edges, out var suppressedContainedEdgeCount);
+        edges = CollapseInlineCollinearPlacementGraphEdges(edges);
+        var nodeNormalization = NormalizePlacementGraphNodeReferencesFromGeometry(edges);
+        edges = nodeNormalization.Edges;
+        var endpointAbsorption = AbsorbPlacementGraphEndpointNodesOnHostEdges(edges);
+        edges = endpointAbsorption.Edges;
+        var postAbsorptionEdgeCount = edges.Length;
+        edges = CollapseInlineCollinearPlacementGraphEdges(edges);
+        edges = SuppressContainedPlacementGraphEdges(edges, out var postAbsorptionSuppressedContainedEdgeCount);
+        var postAbsorptionNodeNormalization = NormalizePlacementGraphNodeReferencesFromGeometry(edges);
+        edges = postAbsorptionNodeNormalization.Edges;
+        var postAbsorptionCompactedEdgeCount = Math.Max(0, postAbsorptionEdgeCount - edges.Length);
+        var nodes = BuildPlacementWallGraphNodes(graph, edges, calibration);
         var components = graph.Components
-            .Select(component => PlacementWallGraphComponentExport.From(component, calibration, sourceLookup))
+            .Select(component => PlacementWallGraphComponentExport.From(component, calibration, sourceLookup, edges))
             .ToArray();
         var repairCandidateIds = graph.RepairCandidates.Select(candidate => candidate.Id).ToArray();
-        var summary = PlacementWallGraphSummaryExport.From(graph, edges);
+        var summary = PlacementWallGraphSummaryExport.From(graph, nodes, edges);
         var evidence = new[]
         {
-            $"placement wall graph exports {nodes.Length} node(s), {edges.Length} edge(s), and {components.Length} component(s)",
+            $"placement wall graph exports {nodes.Count} cleaned node(s), {edges.Length} edge(s), and {components.Length} component(s)",
+            $"placement wall graph collapsed {Math.Max(0, rawEdges.Length + appendedTopologyEdges.Length - suppressedRawEdgeCount - edges.Length)} raw edge fragment(s) into clean topology edges",
+            $"placement wall graph appended {appendedTopologyEdges.Length} recovered/source-backed clean topology edge(s)",
+            $"placement wall graph suppressed {suppressedRawEdgeCount} raw non-placement edge(s) without clean geometry",
+            $"placement wall graph suppressed {suppressedContainedEdgeCount} contained duplicate clean edge(s)",
+            $"placement wall graph split {nodeNormalization.SplitNodeReferenceCount} reused node reference(s) whose clean endpoint coordinates no longer coincide",
+            $"placement wall graph absorbed {endpointAbsorption.AbsorbedEndpointCount} endpoint node(s) onto host wall edge(s) and split {endpointAbsorption.SplitHostEdgeCount} host edge(s) at true junctions",
+            $"placement wall graph compacted {postAbsorptionCompactedEdgeCount} post-junction wall fragment(s) back into long straight run(s)",
+            $"placement wall graph suppressed {postAbsorptionSuppressedContainedEdgeCount} post-junction contained duplicate edge(s)",
+            $"placement wall graph split {postAbsorptionNodeNormalization.SplitNodeReferenceCount} post-junction reused node reference(s) after long-run compaction",
+            $"placement wall graph suppressed {Math.Max(0, graph.Nodes.Count - nodes.Count)} raw node(s) after clean topology endpoint normalization",
             $"repair candidate ids exported: {repairCandidateIds.Length}"
         };
 
@@ -3351,6 +3521,1553 @@ public sealed record PlacementWallGraphExport(
             }
         }
     }
+
+    private static PlacementWallGraphEdgeExport[] CollapseCleanPlacementGraphEdges(
+        IReadOnlyList<PlacementWallGraphEdgeExport> edges)
+    {
+        if (edges.Count <= 1)
+        {
+            return edges.ToArray();
+        }
+
+        return edges
+            .GroupBy(edge => edge.CenterLine is null ? $"raw:{edge.Id}" : $"clean:{edge.Id}", StringComparer.Ordinal)
+            .Select(group => group.Count() == 1 || group.First().CenterLine is null
+                ? group.First()
+                : MergeCleanPlacementGraphEdges(group.ToArray()))
+            .OrderBy(edge => edge.PageNumber)
+            .ThenBy(edge => edge.Bounds?.Y ?? double.MaxValue)
+            .ThenBy(edge => edge.Bounds?.X ?? double.MaxValue)
+            .ThenBy(edge => edge.Id, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static PlacementWallGraphEdgeExport MergeCleanPlacementGraphEdges(
+        IReadOnlyList<PlacementWallGraphEdgeExport> edges)
+    {
+        var primary = edges
+            .OrderBy(edge => edge.Id.Length)
+            .ThenBy(edge => edge.Id, StringComparer.Ordinal)
+            .First();
+        var sourceEdgeIds = edges
+            .SelectMany(edge => edge.SourceWallGraphEdgeIds)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var evidence = edges
+            .SelectMany(edge => edge.Evidence)
+            .Append($"placement wall graph edge collapsed from {edges.Count} source wall graph edge fragment(s)")
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        return primary with
+        {
+            Confidence = edges.Min(edge => edge.Confidence),
+            SourcePrimitiveIds = edges
+                .SelectMany(edge => edge.SourcePrimitiveIds)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray(),
+            SourceLayers = edges
+                .SelectMany(edge => edge.SourceLayers)
+                .Where(layer => !string.IsNullOrWhiteSpace(layer))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
+            SourceWallGraphEdgeIds = sourceEdgeIds,
+            Evidence = evidence
+        };
+    }
+
+    private static PlacementWallGraphEdgeExport[] CollapseInlineCollinearPlacementGraphEdges(
+        IReadOnlyList<PlacementWallGraphEdgeExport> edges)
+    {
+        if (edges.Count <= 1)
+        {
+            return edges.ToArray();
+        }
+
+        var spans = edges
+            .Select((edge, index) => TryCreatePlacementGraphMergeSpan(index, edge))
+            .Where(span => span is not null)
+            .Select(span => span!)
+            .ToArray();
+        if (spans.Length <= 1)
+        {
+            return edges.ToArray();
+        }
+
+        var collapsedIndexes = new HashSet<int>();
+        var mergedEdges = new List<PlacementWallGraphEdgeExport>();
+        foreach (var group in spans.GroupBy(span => span.GroupKey))
+        {
+            var clusters = BuildPlacementGraphMergeClusters(group);
+            foreach (var cluster in clusters.Where(cluster => cluster.Count > 1))
+            {
+                mergedEdges.Add(MergeInlineCollinearPlacementGraphEdges(cluster));
+                foreach (var span in cluster)
+                {
+                    collapsedIndexes.Add(span.Index);
+                }
+            }
+        }
+
+        if (mergedEdges.Count == 0)
+        {
+            return edges.ToArray();
+        }
+
+        return edges
+            .Where((_, index) => !collapsedIndexes.Contains(index))
+            .Concat(mergedEdges)
+            .OrderBy(edge => edge.PageNumber)
+            .ThenBy(edge => edge.Bounds?.Y ?? double.MaxValue)
+            .ThenBy(edge => edge.Bounds?.X ?? double.MaxValue)
+            .ThenBy(edge => edge.Id, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static PlacementWallGraphEdgeExport[] SuppressContainedPlacementGraphEdges(
+        IReadOnlyList<PlacementWallGraphEdgeExport> edges,
+        out int suppressedCount)
+    {
+        suppressedCount = 0;
+        if (edges.Count <= 1)
+        {
+            return edges.ToArray();
+        }
+
+        var spans = edges
+            .Select((edge, index) => TryCreatePlacementGraphMergeSpan(index, edge))
+            .Where(span => span is not null)
+            .Select(span => span!)
+            .ToArray();
+        if (spans.Length <= 1)
+        {
+            return edges.ToArray();
+        }
+
+        var axisAlignedIndexes = spans
+            .Select(span => span.Index)
+            .ToHashSet();
+        var kept = new List<PlacementGraphMergeSpan>();
+        foreach (var span in spans
+            .OrderByDescending(span => span.Length)
+            .ThenBy(span => span.Axis)
+            .ThenBy(span => span.Start)
+            .ThenBy(span => span.Edge.Id, StringComparer.Ordinal))
+        {
+            var representativeIndex = FindContainedPlacementGraphEdgeRepresentative(span, kept, out var overlapRatio, out var axisDistance);
+            if (representativeIndex >= 0)
+            {
+                kept[representativeIndex] = AddContainedPlacementGraphEdgeEvidence(
+                    kept[representativeIndex],
+                    span,
+                    overlapRatio,
+                    axisDistance);
+                suppressedCount++;
+                continue;
+            }
+
+            kept.Add(span);
+        }
+
+        if (suppressedCount == 0)
+        {
+            return edges.ToArray();
+        }
+
+        return edges
+            .Where((_, index) => !axisAlignedIndexes.Contains(index))
+            .Concat(kept.Select(span => span.Edge))
+            .OrderBy(edge => edge.PageNumber)
+            .ThenBy(edge => edge.Bounds?.Y ?? double.MaxValue)
+            .ThenBy(edge => edge.Bounds?.X ?? double.MaxValue)
+            .ThenBy(edge => edge.Id, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static int FindContainedPlacementGraphEdgeRepresentative(
+        PlacementGraphMergeSpan candidate,
+        IReadOnlyList<PlacementGraphMergeSpan> kept,
+        out double overlapRatio,
+        out double axisDistance)
+    {
+        overlapRatio = 0;
+        axisDistance = 0;
+        var bestIndex = -1;
+        var bestScore = double.PositiveInfinity;
+        for (var index = 0; index < kept.Count; index++)
+        {
+            var representative = kept[index];
+            if (representative.Edge.PageNumber != candidate.Edge.PageNumber
+                || representative.Orientation != candidate.Orientation)
+            {
+                continue;
+            }
+
+            var candidateAxisDistance = Math.Abs(candidate.Axis - representative.Axis);
+            if (candidateAxisDistance > ContainedPlacementGraphEdgeAxisTolerance(candidate, representative))
+            {
+                continue;
+            }
+
+            var overlap = Math.Min(candidate.End, representative.End) - Math.Max(candidate.Start, representative.Start);
+            if (overlap <= 0.001)
+            {
+                continue;
+            }
+
+            var candidateOverlapRatio = overlap / Math.Max(candidate.Length, 0.001);
+            if (!IsContainedPlacementGraphOverlapAcceptable(
+                    candidate,
+                    representative,
+                    candidateOverlapRatio))
+            {
+                continue;
+            }
+
+            var score = candidateAxisDistance + Math.Max(0, candidate.End - representative.End) + Math.Max(0, representative.Start - candidate.Start);
+            if (score < bestScore)
+            {
+                bestScore = score;
+                bestIndex = index;
+                overlapRatio = candidateOverlapRatio;
+                axisDistance = candidateAxisDistance;
+            }
+        }
+
+        return bestIndex;
+    }
+
+    private static double ContainedPlacementGraphEdgeAxisTolerance(
+        PlacementGraphMergeSpan candidate,
+        PlacementGraphMergeSpan representative)
+    {
+        var thicknessTolerance = Math.Max(
+            candidate.Edge.ThicknessDrawingUnits,
+            representative.Edge.ThicknessDrawingUnits);
+        if (!StructuralPlacementGraphKindsMatch(candidate.Edge, representative.Edge))
+        {
+            return MaxContainedPlacementGraphEdgeAxisDistanceDrawingUnits;
+        }
+
+        return Math.Clamp(
+            thicknessTolerance,
+            MaxContainedPlacementGraphEdgeAxisDistanceDrawingUnits,
+            MaxNearContainedPlacementGraphEdgeAxisDistanceDrawingUnits);
+    }
+
+    private static bool IsContainedPlacementGraphOverlapAcceptable(
+        PlacementGraphMergeSpan candidate,
+        PlacementGraphMergeSpan representative,
+        double candidateOverlapRatio)
+    {
+        if (candidateOverlapRatio >= MinContainedPlacementGraphEdgeOverlapRatio)
+        {
+            return true;
+        }
+
+        if (candidateOverlapRatio < MinNearContainedPlacementGraphEdgeOverlapRatio
+            || !StructuralPlacementGraphKindsMatch(candidate.Edge, representative.Edge))
+        {
+            return false;
+        }
+
+        var overhang = Math.Max(0, representative.Start - candidate.Start)
+            + Math.Max(0, candidate.End - representative.End);
+        return overhang <= NearContainedPlacementGraphEdgeOverhangTolerance(candidate, representative);
+    }
+
+    private static double NearContainedPlacementGraphEdgeOverhangTolerance(
+        PlacementGraphMergeSpan candidate,
+        PlacementGraphMergeSpan representative)
+    {
+        var thicknessTolerance = Math.Max(
+            candidate.Edge.ThicknessDrawingUnits,
+            representative.Edge.ThicknessDrawingUnits) / 2.0;
+        return Math.Clamp(
+            thicknessTolerance,
+            MaxContainedPlacementGraphEdgeAxisDistanceDrawingUnits,
+            MaxNearContainedPlacementGraphEdgeOverhangDrawingUnits);
+    }
+
+    private static bool StructuralPlacementGraphKindsMatch(
+        PlacementWallGraphEdgeExport first,
+        PlacementWallGraphEdgeExport second) =>
+        IsStructuralPlacementGraphMergeContinuation(first)
+        && IsStructuralPlacementGraphMergeContinuation(second)
+        && string.Equals(
+            PlacementGraphMergeComponentKindGroup(first),
+            PlacementGraphMergeComponentKindGroup(second),
+            StringComparison.Ordinal);
+
+    private static PlacementGraphMergeSpan AddContainedPlacementGraphEdgeEvidence(
+        PlacementGraphMergeSpan representative,
+        PlacementGraphMergeSpan contained,
+        double overlapRatio,
+        double axisDistance)
+    {
+        var edge = representative.Edge;
+        var containedEdge = contained.Edge;
+        var evidence = edge.Evidence
+            .Concat(containedEdge.Evidence)
+            .Append(
+                "placement wall graph contained-edge suppression: "
+                + $"suppressed {containedEdge.Id} into {edge.Id}; overlap {overlapRatio:0.###}, "
+                + $"axis distance {axisDistance:0.###} drawing units")
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        return representative with
+        {
+            Edge = edge with
+            {
+                Confidence = Math.Min(edge.Confidence, containedEdge.Confidence),
+                SourcePrimitiveIds = edge.SourcePrimitiveIds
+                    .Concat(containedEdge.SourcePrimitiveIds)
+                    .Where(id => !string.IsNullOrWhiteSpace(id))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray(),
+                SourceLayers = edge.SourceLayers
+                    .Concat(containedEdge.SourceLayers)
+                    .Where(layer => !string.IsNullOrWhiteSpace(layer))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray(),
+                SourceWallGraphEdgeIds = edge.SourceWallGraphEdgeIds
+                    .Concat(containedEdge.SourceWallGraphEdgeIds)
+                    .Where(id => !string.IsNullOrWhiteSpace(id))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray(),
+                Evidence = evidence
+            }
+        };
+    }
+
+    private static IReadOnlyList<IReadOnlyList<PlacementGraphMergeSpan>> BuildPlacementGraphMergeClusters(
+        IEnumerable<PlacementGraphMergeSpan> spans)
+    {
+        var clusters = new List<List<PlacementGraphMergeSpan>>();
+        foreach (var span in spans
+            .OrderBy(span => span.Axis)
+            .ThenBy(span => span.Start)
+            .ThenBy(span => span.End)
+            .ThenBy(span => span.Edge.Id, StringComparer.Ordinal))
+        {
+            var cluster = clusters.LastOrDefault(candidate => CanMergeIntoPlacementGraphCluster(candidate, span));
+            if (cluster is null)
+            {
+                clusters.Add([span]);
+                continue;
+            }
+
+            cluster.Add(span);
+        }
+
+        return clusters;
+    }
+
+    private static bool CanMergeIntoPlacementGraphCluster(
+        IReadOnlyList<PlacementGraphMergeSpan> cluster,
+        PlacementGraphMergeSpan span)
+    {
+        var axis = WeightedAxis(cluster);
+        if (Math.Abs(span.Axis - axis) > PlacementGraphMergeAxisTolerance(cluster, span))
+        {
+            return false;
+        }
+
+        var minThickness = cluster.Min(item => item.Edge.ThicknessDrawingUnits);
+        var maxThickness = cluster.Max(item => item.Edge.ThicknessDrawingUnits);
+        minThickness = Math.Min(minThickness, span.Edge.ThicknessDrawingUnits);
+        maxThickness = Math.Max(maxThickness, span.Edge.ThicknessDrawingUnits);
+        if (maxThickness - minThickness > MaxInlinePlacementGraphMergeThicknessDeltaDrawingUnits)
+        {
+            return false;
+        }
+
+        var clusterStart = cluster.Min(item => item.Start);
+        var clusterEnd = cluster.Max(item => item.End);
+        var maxGap = PlacementGraphMergeGapTolerance(cluster, span);
+        return span.Start <= clusterEnd + maxGap
+            && span.End >= clusterStart - maxGap;
+    }
+
+    private static double PlacementGraphMergeAxisTolerance(
+        IReadOnlyList<PlacementGraphMergeSpan> cluster,
+        PlacementGraphMergeSpan span)
+    {
+        var maxThickness = cluster
+            .Select(item => item.Edge.ThicknessDrawingUnits)
+            .Append(span.Edge.ThicknessDrawingUnits)
+            .DefaultIfEmpty(0)
+            .Max();
+        return Math.Clamp(
+            maxThickness / 2.0,
+            MaxInlinePlacementGraphMergeAxisDistanceDrawingUnits,
+            MaxInlinePlacementGraphMergeAxisDistanceByThicknessDrawingUnits);
+    }
+
+    private static double PlacementGraphMergeGapTolerance(
+        IReadOnlyList<PlacementGraphMergeSpan> cluster,
+        PlacementGraphMergeSpan span)
+    {
+        if (IsSameSourceWallPlacementGraphRun(cluster, span))
+        {
+            return MaxInlinePlacementGraphSameWallGapDrawingUnits;
+        }
+
+        if (cluster.All(item => IsStructuralPlacementGraphMergeContinuation(item.Edge))
+            && IsStructuralPlacementGraphMergeContinuation(span.Edge))
+        {
+            var maxThickness = cluster
+                .Select(item => item.Edge.ThicknessDrawingUnits)
+                .Append(span.Edge.ThicknessDrawingUnits)
+                .DefaultIfEmpty(0)
+                .Max();
+            return Math.Clamp(
+                maxThickness * 9.0,
+                MaxInlinePlacementGraphMergeGapDrawingUnits,
+                MaxInlinePlacementGraphStructuralMergeGapDrawingUnits);
+        }
+
+        return MaxInlinePlacementGraphMergeGapDrawingUnits;
+    }
+
+    private static bool IsSameSourceWallPlacementGraphRun(
+        IReadOnlyList<PlacementGraphMergeSpan> cluster,
+        PlacementGraphMergeSpan span) =>
+        !string.IsNullOrWhiteSpace(span.Edge.WallId)
+        && cluster.All(item => string.Equals(item.Edge.WallId, span.Edge.WallId, StringComparison.Ordinal));
+
+    private static PlacementWallGraphEdgeExport MergeInlineCollinearPlacementGraphEdges(
+        IReadOnlyList<PlacementGraphMergeSpan> spans)
+    {
+        var ordered = spans
+            .OrderBy(span => span.Start)
+            .ThenBy(span => span.End)
+            .ThenBy(span => span.Edge.Id, StringComparer.Ordinal)
+            .ToArray();
+        var primary = ordered
+            .OrderByDescending(span => span.Length)
+            .ThenBy(span => span.Edge.Id.Length)
+            .ThenBy(span => span.Edge.Id, StringComparer.Ordinal)
+            .First()
+            .Edge;
+        var orientation = ordered[0].Orientation;
+        var start = ordered.Min(span => span.Start);
+        var end = ordered.Max(span => span.End);
+        var axis = WeightedAxis(ordered);
+        var line = orientation == PlacementGraphEdgeOrientation.Horizontal
+            ? new PlanLineSegment(new PlanPoint(start, axis), new PlanPoint(end, axis))
+            : new PlanLineSegment(new PlanPoint(axis, start), new PlanPoint(axis, end));
+        var thickness = ordered.Max(span => span.Edge.ThicknessDrawingUnits);
+        var bounds = BoundsForMergedPlacementGraphRun(line, orientation, thickness);
+        var scale = primary.MillimetersPerDrawingUnit;
+        var sourceEdgeIds = ordered
+            .SelectMany(span => span.Edge.SourceWallGraphEdgeIds)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var sourceWallIds = ordered
+            .Select(span => span.Edge.WallId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var evidence = ordered
+            .SelectMany(span => span.Edge.Evidence)
+            .Append($"placement wall graph inline run merged {ordered.Length} collinear edge(s) and removed {ordered.Length - 1} inline node(s)")
+            .Concat(sourceWallIds.Length > 1
+                ? new[] { $"placement wall graph inline run preserves {sourceWallIds.Length} source wall id(s) through sourceWallGraphEdgeIds" }
+                : Array.Empty<string>())
+            .Concat(ordered.Any(span => IsTrustedSourceBackedIsolatedPlacementContinuation(span.Edge))
+                ? new[] { "placement wall graph inline run absorbed source-backed isolated continuation into structural run" }
+                : Array.Empty<string>())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        return primary with
+        {
+            FromNodeId = ordered.First().StartNodeId,
+            ToNodeId = ordered.OrderByDescending(span => span.End).First().EndNodeId,
+            CenterLine = LineExport.From(line),
+            CenterLineMillimeters = ScaleLine(line, scale),
+            Bounds = RectExport.From(bounds),
+            BoundsMillimeters = ScaleRect(bounds, scale),
+            DrawingLength = line.Length,
+            LengthMeters = scale is > 0 ? line.Length * scale.Value / 1000.0 : null,
+            ThicknessDrawingUnits = thickness,
+            ThicknessMillimeters = scale is > 0 && thickness > 0 ? thickness * scale.Value : null,
+            Confidence = ordered.Min(span => span.Edge.Confidence),
+            SourcePrimitiveIds = ordered
+                .SelectMany(span => span.Edge.SourcePrimitiveIds)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray(),
+            SourceLayers = ordered
+                .SelectMany(span => span.Edge.SourceLayers)
+                .Where(layer => !string.IsNullOrWhiteSpace(layer))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
+            SourceWallGraphEdgeIds = sourceEdgeIds,
+            Evidence = evidence
+        };
+    }
+
+    private static PlacementGraphMergeSpan? TryCreatePlacementGraphMergeSpan(
+        int index,
+        PlacementWallGraphEdgeExport edge)
+    {
+        if (edge.CenterLine is null
+            || (edge.ExcludedFromStructuralTopology
+                && !IsTrustedSourceBackedIsolatedPlacementContinuation(edge))
+            || edge.DrawingLength <= 0)
+        {
+            return null;
+        }
+
+        var start = ToPlanPoint(edge.CenterLine.Start);
+        var end = ToPlanPoint(edge.CenterLine.End);
+        var dx = Math.Abs(end.X - start.X);
+        var dy = Math.Abs(end.Y - start.Y);
+        if (dx <= double.Epsilon && dy <= double.Epsilon)
+        {
+            return null;
+        }
+
+        var axisTolerance = PlacementGraphInlineAxisTolerance(edge);
+        if (dy <= axisTolerance && dx >= dy)
+        {
+            var startIsFirst = start.X <= end.X;
+            var componentGroupId = PlacementGraphMergeComponentGroupId(edge);
+            return new PlacementGraphMergeSpan(
+                index,
+                edge,
+                new PlacementGraphMergeGroupKey(
+                    edge.PageNumber,
+                    PlacementGraphEdgeOrientation.Horizontal,
+                    componentGroupId,
+                    PlacementGraphMergeComponentKindGroup(edge)),
+                PlacementGraphEdgeOrientation.Horizontal,
+                (start.Y + end.Y) / 2.0,
+                Math.Min(start.X, end.X),
+                Math.Max(start.X, end.X),
+                startIsFirst ? edge.FromNodeId : edge.ToNodeId,
+                startIsFirst ? edge.ToNodeId : edge.FromNodeId);
+        }
+
+        if (dx <= axisTolerance && dy > dx)
+        {
+            var startIsFirst = start.Y <= end.Y;
+            var componentGroupId = PlacementGraphMergeComponentGroupId(edge);
+            return new PlacementGraphMergeSpan(
+                index,
+                edge,
+                new PlacementGraphMergeGroupKey(
+                    edge.PageNumber,
+                    PlacementGraphEdgeOrientation.Vertical,
+                    componentGroupId,
+                    PlacementGraphMergeComponentKindGroup(edge)),
+                PlacementGraphEdgeOrientation.Vertical,
+                (start.X + end.X) / 2.0,
+                Math.Min(start.Y, end.Y),
+                Math.Max(start.Y, end.Y),
+                startIsFirst ? edge.FromNodeId : edge.ToNodeId,
+                startIsFirst ? edge.ToNodeId : edge.FromNodeId);
+        }
+
+        return null;
+    }
+
+    private static double PlacementGraphInlineAxisTolerance(PlacementWallGraphEdgeExport edge) =>
+        Math.Clamp(
+            edge.ThicknessDrawingUnits / 2.0,
+            MaxInlinePlacementGraphMergeAxisDistanceDrawingUnits,
+            MaxInlinePlacementGraphMergeAxisDistanceByThicknessDrawingUnits);
+
+    private static string PlacementGraphMergeComponentGroupId(PlacementWallGraphEdgeExport edge) =>
+        IsStructuralPlacementGraphMergeContinuation(edge)
+            ? string.Empty
+            : edge.WallComponentId ?? edge.WallId ?? string.Empty;
+
+    private static string PlacementGraphMergeComponentKindGroup(PlacementWallGraphEdgeExport edge) =>
+        IsStructuralPlacementGraphMergeContinuation(edge)
+            ? "StructuralContinuation"
+            : edge.WallComponentKind ?? string.Empty;
+
+    private static bool IsStructuralPlacementGraphMergeContinuation(PlacementWallGraphEdgeExport edge) =>
+        IsStructuralPlacementGraphComponentKind(edge.WallComponentKind)
+        || IsTrustedSourceBackedIsolatedPlacementContinuation(edge);
+
+    private static bool IsTrustedSourceBackedIsolatedPlacementContinuation(PlacementWallGraphEdgeExport edge)
+    {
+        if (!string.Equals(edge.WallComponentKind, nameof(WallGraphComponentKind.IsolatedFragment), StringComparison.Ordinal)
+            || !edge.Evidence.Any(item => item.Contains("source-backed clean placement fallback", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        if (!edge.Evidence.Any(item =>
+            item.Contains("global exterior-shell repair confirmed", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("exterior shell repair promoted", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("source-backed exterior shell closure", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("trusted two-sided fragment-merged room boundary", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("clean promoted fragment wall-body evidence is placement-ready", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("shared indoor room-boundary inference is placement-ready", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        return !edge.Evidence.Any(item =>
+            item.Contains("object-like", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("object/fixture", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("surface pattern", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("covered-area", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("covered entry", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("covered-entry", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("overbygd", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("terrace", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("railing", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("stair-like linework", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsStructuralPlacementGraphComponentKind(string? componentKind) =>
+        string.Equals(componentKind, nameof(WallGraphComponentKind.MainStructural), StringComparison.Ordinal)
+        || string.Equals(componentKind, nameof(WallGraphComponentKind.SecondaryStructural), StringComparison.Ordinal);
+
+    private static double WeightedAxis(IReadOnlyList<PlacementGraphMergeSpan> spans)
+    {
+        var totalLength = spans.Sum(span => Math.Max(span.Length, 0.001));
+        return spans.Sum(span => span.Axis * Math.Max(span.Length, 0.001)) / totalLength;
+    }
+
+    private static PlanRect BoundsForMergedPlacementGraphRun(
+        PlanLineSegment line,
+        PlacementGraphEdgeOrientation orientation,
+        double thickness)
+    {
+        var width = Math.Max(thickness, 0.001);
+        return orientation == PlacementGraphEdgeOrientation.Horizontal
+            ? new PlanRect(
+                Math.Min(line.Start.X, line.End.X),
+                line.Start.Y - width / 2.0,
+                Math.Abs(line.End.X - line.Start.X),
+                width)
+            : new PlanRect(
+                line.Start.X - width / 2.0,
+                Math.Min(line.Start.Y, line.End.Y),
+                width,
+                Math.Abs(line.End.Y - line.Start.Y));
+    }
+
+    private static PlacementGraphNodeReferenceNormalizationResult NormalizePlacementGraphNodeReferencesFromGeometry(
+        IReadOnlyList<PlacementWallGraphEdgeExport> edges)
+    {
+        if (edges.Count == 0)
+        {
+            return new PlacementGraphNodeReferenceNormalizationResult(edges.ToArray(), 0);
+        }
+
+        var observations = BuildPlacementGraphEndpointObservations(edges);
+        if (observations.Count == 0)
+        {
+            return new PlacementGraphNodeReferenceNormalizationResult(edges.ToArray(), 0);
+        }
+
+        var clusters = BuildPlacementGraphEndpointClusters(observations);
+        if (clusters.Count == 0)
+        {
+            return new PlacementGraphNodeReferenceNormalizationResult(edges.ToArray(), 0);
+        }
+
+        var originalClusterUse = BuildPlacementGraphNodeOriginalClusterUse(clusters);
+        var canonicalByCluster = BuildPlacementGraphCanonicalNodeIds(clusters, originalClusterUse);
+        var nodeIdByEndpoint = new Dictionary<PlacementGraphEndpointKey, string>();
+        var splitCount = 0;
+
+        for (var clusterIndex = 0; clusterIndex < clusters.Count; clusterIndex++)
+        {
+            var canonicalId = canonicalByCluster[clusterIndex];
+            foreach (var observation in clusters[clusterIndex])
+            {
+                nodeIdByEndpoint[new PlacementGraphEndpointKey(observation.EdgeIndex, observation.IsStart)] = canonicalId;
+                if (!string.Equals(observation.OriginalNodeId, canonicalId, StringComparison.Ordinal)
+                    && originalClusterUse.TryGetValue(observation.OriginalNodeId, out var usedClusterIndexes)
+                    && usedClusterIndexes.Count > 1)
+                {
+                    splitCount++;
+                }
+            }
+        }
+
+        var normalized = edges
+            .Select((edge, index) =>
+            {
+                var from = nodeIdByEndpoint.TryGetValue(new PlacementGraphEndpointKey(index, IsStart: true), out var fromId)
+                    ? fromId
+                    : edge.FromNodeId;
+                var to = nodeIdByEndpoint.TryGetValue(new PlacementGraphEndpointKey(index, IsStart: false), out var toId)
+                    ? toId
+                    : edge.ToNodeId;
+                return edge with
+                {
+                    FromNodeId = from,
+                    ToNodeId = to
+                };
+            })
+            .ToArray();
+
+        return new PlacementGraphNodeReferenceNormalizationResult(normalized, splitCount);
+    }
+
+    private static PlacementGraphNodeOnEdgeAbsorptionResult AbsorbPlacementGraphEndpointNodesOnHostEdges(
+        IReadOnlyList<PlacementWallGraphEdgeExport> edges)
+    {
+        if (edges.Count <= 1)
+        {
+            return new PlacementGraphNodeOnEdgeAbsorptionResult(edges.ToArray(), 0, 0);
+        }
+
+        var observations = BuildPlacementGraphEndpointObservations(edges);
+        if (observations.Count == 0)
+        {
+            return new PlacementGraphNodeOnEdgeAbsorptionResult(edges.ToArray(), 0, 0);
+        }
+
+        var endpointUseCount = observations
+            .GroupBy(observation => observation.OriginalNodeId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+        var spans = edges
+            .Select((edge, index) => TryCreatePlacementGraphMergeSpan(index, edge))
+            .Where(span => span is not null)
+            .Select(span => span!)
+            .ToArray();
+        if (spans.Length <= 1)
+        {
+            return new PlacementGraphNodeOnEdgeAbsorptionResult(edges.ToArray(), 0, 0);
+        }
+
+        var spansByIndex = spans.ToDictionary(span => span.Index);
+        var absorptions = observations
+            .Where(observation => endpointUseCount.GetValueOrDefault(observation.OriginalNodeId) == 1)
+            .Select(observation => TryCreatePlacementGraphEndpointOnWallAbsorption(observation, edges, spans, spansByIndex))
+            .Where(absorption => absorption is not null)
+            .Select(absorption => absorption!)
+            .GroupBy(absorption => new PlacementGraphEndpointKey(absorption.Endpoint.EdgeIndex, absorption.Endpoint.IsStart))
+            .Select(group => group
+                .OrderBy(absorption => absorption.Distance)
+                .ThenByDescending(absorption => absorption.HostSpan.Length)
+                .ThenBy(absorption => absorption.HostSpan.Edge.Id, StringComparer.Ordinal)
+                .First())
+            .OrderBy(absorption => absorption.Endpoint.EdgeIndex)
+            .ThenBy(absorption => absorption.Endpoint.IsStart ? 0 : 1)
+            .ToArray();
+
+        if (absorptions.Length == 0)
+        {
+            return new PlacementGraphNodeOnEdgeAbsorptionResult(edges.ToArray(), 0, 0);
+        }
+
+        var snappedEdges = edges.ToArray();
+        var splitPointsByHostEdgeIndex = new Dictionary<int, List<PlacementGraphHostSplitPoint>>();
+        foreach (var absorption in absorptions)
+        {
+            snappedEdges[absorption.Endpoint.EdgeIndex] = SnapPlacementGraphEndpointOntoHostWall(
+                snappedEdges[absorption.Endpoint.EdgeIndex],
+                absorption.Endpoint.IsStart,
+                absorption.HostPoint,
+                absorption.HostSpan.Edge.Id,
+                absorption.Distance);
+
+            if (!splitPointsByHostEdgeIndex.TryGetValue(absorption.HostSpan.Index, out var splitPoints))
+            {
+                splitPoints = new List<PlacementGraphHostSplitPoint>();
+                splitPointsByHostEdgeIndex[absorption.HostSpan.Index] = splitPoints;
+            }
+
+            splitPoints.Add(new PlacementGraphHostSplitPoint(
+                absorption.Endpoint.OriginalNodeId,
+                absorption.HostCoordinate,
+                absorption.HostPoint,
+                absorption.Endpoint.EdgeIndex,
+                absorption.Distance));
+        }
+
+        var resultEdges = new List<PlacementWallGraphEdgeExport>(snappedEdges.Length + absorptions.Length);
+        var splitHostEdgeCount = 0;
+        for (var index = 0; index < snappedEdges.Length; index++)
+        {
+            if (splitPointsByHostEdgeIndex.TryGetValue(index, out var splitPoints)
+                && TryCreatePlacementGraphMergeSpan(index, snappedEdges[index]) is { } hostSpan)
+            {
+                var splitEdges = SplitPlacementGraphHostEdgeAtAbsorbedJunctions(
+                    snappedEdges[index],
+                    hostSpan,
+                    splitPoints);
+                if (splitEdges.Length > 1)
+                {
+                    resultEdges.AddRange(splitEdges);
+                    splitHostEdgeCount++;
+                    continue;
+                }
+            }
+
+            resultEdges.Add(snappedEdges[index]);
+        }
+
+        return new PlacementGraphNodeOnEdgeAbsorptionResult(
+            resultEdges
+                .OrderBy(edge => edge.PageNumber)
+                .ThenBy(edge => edge.Bounds?.Y ?? double.MaxValue)
+                .ThenBy(edge => edge.Bounds?.X ?? double.MaxValue)
+                .ThenBy(edge => edge.Id, StringComparer.Ordinal)
+                .ToArray(),
+            absorptions.Length,
+            splitHostEdgeCount);
+    }
+
+    private static PlacementGraphEndpointOnWallAbsorption? TryCreatePlacementGraphEndpointOnWallAbsorption(
+        PlacementGraphEndpointObservation endpoint,
+        IReadOnlyList<PlacementWallGraphEdgeExport> edges,
+        IReadOnlyList<PlacementGraphMergeSpan> hostSpans,
+        IReadOnlyDictionary<int, PlacementGraphMergeSpan> spansByIndex)
+    {
+        if (!spansByIndex.TryGetValue(endpoint.EdgeIndex, out var endpointSpan)
+            || endpointSpan.Length < MinPlacementEndpointOnWallCandidateLengthDrawingUnits)
+        {
+            return null;
+        }
+
+        PlacementGraphEndpointOnWallAbsorption? best = null;
+        foreach (var hostSpan in hostSpans)
+        {
+            if (!CanAbsorbPlacementGraphEndpointOntoHostSpan(endpointSpan, hostSpan))
+            {
+                continue;
+            }
+
+            var splitCoordinate = hostSpan.Orientation == PlacementGraphEdgeOrientation.Horizontal
+                ? endpoint.Position.X
+                : endpoint.Position.Y;
+            var minHostMargin = Math.Max(
+                MinPlacementEndpointOnWallSplitDistanceDrawingUnits,
+                hostSpan.Length * MinPlacementEndpointOnWallSplitFraction);
+            if (splitCoordinate <= hostSpan.Start + minHostMargin
+                || splitCoordinate >= hostSpan.End - minHostMargin)
+            {
+                continue;
+            }
+
+            var hostPoint = PointOnPlacementGraphSpan(hostSpan, splitCoordinate);
+            var distance = endpoint.Position.DistanceTo(hostPoint);
+            if (distance > PlacementEndpointOnWallAbsorptionTolerance(endpointSpan.Edge, hostSpan.Edge))
+            {
+                continue;
+            }
+
+            var candidate = new PlacementGraphEndpointOnWallAbsorption(
+                endpoint,
+                hostSpan,
+                splitCoordinate,
+                hostPoint,
+                distance);
+            if (best is null
+                || candidate.Distance < best.Distance
+                || (Math.Abs(candidate.Distance - best.Distance) <= 0.001
+                    && candidate.HostSpan.Length > best.HostSpan.Length))
+            {
+                best = candidate;
+            }
+        }
+
+        return best;
+    }
+
+    private static bool CanAbsorbPlacementGraphEndpointOntoHostSpan(
+        PlacementGraphMergeSpan endpointSpan,
+        PlacementGraphMergeSpan hostSpan)
+    {
+        if (endpointSpan.Index == hostSpan.Index
+            || endpointSpan.Edge.PageNumber != hostSpan.Edge.PageNumber
+            || endpointSpan.Edge.CenterLine is null
+            || hostSpan.Edge.CenterLine is null
+            || endpointSpan.Edge.ExcludedFromStructuralTopology
+            || hostSpan.Edge.ExcludedFromStructuralTopology
+            || endpointSpan.Orientation == hostSpan.Orientation
+            || hostSpan.Length <= MinPlacementEndpointOnWallSplitDistanceDrawingUnits * 2.0)
+        {
+            return false;
+        }
+
+        return IsStructuralPlacementGraphComponentKind(endpointSpan.Edge.WallComponentKind)
+            || IsStructuralPlacementGraphComponentKind(hostSpan.Edge.WallComponentKind)
+            || endpointSpan.Edge.Evidence.Any(IsExteriorPlacementGraphEvidence)
+            || hostSpan.Edge.Evidence.Any(IsExteriorPlacementGraphEvidence);
+    }
+
+    private static bool IsExteriorPlacementGraphEvidence(string evidence) =>
+        evidence.Contains("wall type exterior", StringComparison.OrdinalIgnoreCase)
+        || evidence.Contains("exterior shell", StringComparison.OrdinalIgnoreCase);
+
+    private static double PlacementEndpointOnWallAbsorptionTolerance(
+        PlacementWallGraphEdgeExport endpointEdge,
+        PlacementWallGraphEdgeExport hostEdge)
+    {
+        var maxThickness = Math.Max(endpointEdge.ThicknessDrawingUnits, hostEdge.ThicknessDrawingUnits);
+        return Math.Clamp(
+            maxThickness / 4.0,
+            MaxCoincidentPlacementNodeDistanceDrawingUnits,
+            MaxPlacementEndpointOnWallAbsorptionDistanceDrawingUnits);
+    }
+
+    private static PlanPoint PointOnPlacementGraphSpan(PlacementGraphMergeSpan span, double coordinate) =>
+        span.Orientation == PlacementGraphEdgeOrientation.Horizontal
+            ? new PlanPoint(coordinate, span.Axis)
+            : new PlanPoint(span.Axis, coordinate);
+
+    private static PlacementWallGraphEdgeExport SnapPlacementGraphEndpointOntoHostWall(
+        PlacementWallGraphEdgeExport edge,
+        bool isStart,
+        PlanPoint snappedPoint,
+        string hostEdgeId,
+        double distance)
+    {
+        if (edge.CenterLine is null)
+        {
+            return edge;
+        }
+
+        var originalLine = new PlanLineSegment(ToPlanPoint(edge.CenterLine.Start), ToPlanPoint(edge.CenterLine.End));
+        var line = isStart
+            ? new PlanLineSegment(snappedPoint, originalLine.End)
+            : new PlanLineSegment(originalLine.Start, snappedPoint);
+        var bounds = BoundsForPlacementGraphLine(line, edge.ThicknessDrawingUnits);
+        var scale = edge.MillimetersPerDrawingUnit;
+        var evidence = edge.Evidence
+            .Append(
+                "placement wall graph endpoint-on-wall absorption: "
+                + $"snapped {(isStart ? "start" : "end")} endpoint onto host edge {hostEdgeId}; "
+                + $"offset {distance:0.###} drawing units")
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        return edge with
+        {
+            CenterLine = LineExport.From(line),
+            CenterLineMillimeters = ScaleLine(line, scale),
+            Bounds = RectExport.From(bounds),
+            BoundsMillimeters = ScaleRect(bounds, scale),
+            DrawingLength = line.Length,
+            LengthMeters = scale is > 0 ? line.Length * scale.Value / 1000.0 : null,
+            Evidence = evidence
+        };
+    }
+
+    private static PlacementWallGraphEdgeExport[] SplitPlacementGraphHostEdgeAtAbsorbedJunctions(
+        PlacementWallGraphEdgeExport edge,
+        PlacementGraphMergeSpan hostSpan,
+        IReadOnlyList<PlacementGraphHostSplitPoint> splitPoints)
+    {
+        var distinctSplitPoints = DistinctPlacementGraphHostSplitPoints(hostSpan, splitPoints);
+        if (distinctSplitPoints.Count == 0)
+        {
+            return [edge];
+        }
+
+        var pieces = new List<PlacementWallGraphEdgeExport>();
+        var startCoordinate = hostSpan.Start;
+        var startNodeId = hostSpan.StartNodeId;
+        var pieceIndex = 1;
+        foreach (var splitPoint in distinctSplitPoints)
+        {
+            AddPiece(startCoordinate, splitPoint.Coordinate, startNodeId, splitPoint.NodeId, splitPoint);
+            startCoordinate = splitPoint.Coordinate;
+            startNodeId = splitPoint.NodeId;
+        }
+
+        AddPiece(startCoordinate, hostSpan.End, startNodeId, hostSpan.EndNodeId, null);
+        return pieces.ToArray();
+
+        void AddPiece(
+            double fromCoordinate,
+            double toCoordinate,
+            string fromNodeId,
+            string toNodeId,
+            PlacementGraphHostSplitPoint? splitPoint)
+        {
+            if (toCoordinate - fromCoordinate <= 0.001)
+            {
+                return;
+            }
+
+            var line = hostSpan.Orientation == PlacementGraphEdgeOrientation.Horizontal
+                ? new PlanLineSegment(
+                    new PlanPoint(fromCoordinate, hostSpan.Axis),
+                    new PlanPoint(toCoordinate, hostSpan.Axis))
+                : new PlanLineSegment(
+                    new PlanPoint(hostSpan.Axis, fromCoordinate),
+                    new PlanPoint(hostSpan.Axis, toCoordinate));
+            var bounds = BoundsForMergedPlacementGraphRun(line, hostSpan.Orientation, edge.ThicknessDrawingUnits);
+            var scale = edge.MillimetersPerDrawingUnit;
+            var evidence = edge.Evidence
+                .Append(
+                    "placement wall graph endpoint-on-wall absorption: "
+                    + $"split host edge {edge.Id} into junction piece {pieceIndex} of {distinctSplitPoints.Count + 1}")
+                .Concat(splitPoint is null
+                    ? Array.Empty<string>()
+                    : new[]
+                    {
+                        $"placement wall graph endpoint-on-wall absorption: host split uses absorbed node {splitPoint.NodeId} from edge index {splitPoint.EndpointEdgeIndex}"
+                    })
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+
+            pieces.Add(edge with
+            {
+                Id = $"{edge.Id}:junction-piece:{pieceIndex}",
+                FromNodeId = fromNodeId,
+                ToNodeId = toNodeId,
+                CenterLine = LineExport.From(line),
+                CenterLineMillimeters = ScaleLine(line, scale),
+                Bounds = RectExport.From(bounds),
+                BoundsMillimeters = ScaleRect(bounds, scale),
+                DrawingLength = line.Length,
+                LengthMeters = scale is > 0 ? line.Length * scale.Value / 1000.0 : null,
+                Evidence = evidence
+            });
+            pieceIndex++;
+        }
+    }
+
+    private static IReadOnlyList<PlacementGraphHostSplitPoint> DistinctPlacementGraphHostSplitPoints(
+        PlacementGraphMergeSpan hostSpan,
+        IReadOnlyList<PlacementGraphHostSplitPoint> splitPoints)
+    {
+        var minHostMargin = Math.Max(
+            MinPlacementEndpointOnWallSplitDistanceDrawingUnits,
+            hostSpan.Length * MinPlacementEndpointOnWallSplitFraction);
+        var distinct = new List<PlacementGraphHostSplitPoint>();
+        foreach (var splitPoint in splitPoints
+            .Where(splitPoint => splitPoint.Coordinate > hostSpan.Start + minHostMargin
+                && splitPoint.Coordinate < hostSpan.End - minHostMargin)
+            .OrderBy(splitPoint => splitPoint.Coordinate)
+            .ThenBy(splitPoint => splitPoint.NodeId, StringComparer.Ordinal))
+        {
+            if (distinct.Count > 0
+                && Math.Abs(splitPoint.Coordinate - distinct[^1].Coordinate) <= MaxCoincidentPlacementNodeDistanceDrawingUnits)
+            {
+                continue;
+            }
+
+            distinct.Add(splitPoint);
+        }
+
+        return distinct;
+    }
+
+    private static PlanRect BoundsForPlacementGraphLine(PlanLineSegment line, double thickness)
+    {
+        var padding = Math.Max(thickness, 0.001) / 2.0;
+        return line.Bounds.Inflate(padding);
+    }
+
+    private static IReadOnlyList<PlacementGraphEndpointObservation> BuildPlacementGraphEndpointObservations(
+        IReadOnlyList<PlacementWallGraphEdgeExport> edges)
+    {
+        var observations = new List<PlacementGraphEndpointObservation>();
+        for (var index = 0; index < edges.Count; index++)
+        {
+            var edge = edges[index];
+            if (edge.CenterLine is null)
+            {
+                continue;
+            }
+
+            observations.Add(new PlacementGraphEndpointObservation(
+                index,
+                IsStart: true,
+                edge.FromNodeId,
+                edge.PageNumber,
+                ToPlanPoint(edge.CenterLine.Start)));
+            observations.Add(new PlacementGraphEndpointObservation(
+                index,
+                IsStart: false,
+                edge.ToNodeId,
+                edge.PageNumber,
+                ToPlanPoint(edge.CenterLine.End)));
+        }
+
+        return observations;
+    }
+
+    private static IReadOnlyList<IReadOnlyList<PlacementGraphEndpointObservation>> BuildPlacementGraphEndpointClusters(
+        IReadOnlyList<PlacementGraphEndpointObservation> observations)
+    {
+        var clusters = new List<List<PlacementGraphEndpointObservation>>();
+        foreach (var observation in observations
+            .OrderBy(item => item.PageNumber)
+            .ThenBy(item => item.Position.Y)
+            .ThenBy(item => item.Position.X)
+            .ThenBy(item => item.OriginalNodeId, StringComparer.Ordinal)
+            .ThenBy(item => item.EdgeIndex)
+            .ThenBy(item => item.IsStart ? 0 : 1))
+        {
+            var cluster = clusters.FirstOrDefault(candidate =>
+                candidate[0].PageNumber == observation.PageNumber
+                && ClusterCentroid(candidate).DistanceTo(observation.Position) <= MaxCoincidentPlacementNodeDistanceDrawingUnits);
+            if (cluster is null)
+            {
+                clusters.Add([observation]);
+                continue;
+            }
+
+            cluster.Add(observation);
+        }
+
+        return clusters;
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlySet<int>> BuildPlacementGraphNodeOriginalClusterUse(
+        IReadOnlyList<IReadOnlyList<PlacementGraphEndpointObservation>> clusters)
+    {
+        var usage = new Dictionary<string, HashSet<int>>(StringComparer.Ordinal);
+        for (var index = 0; index < clusters.Count; index++)
+        {
+            foreach (var nodeId in clusters[index]
+                .Select(item => item.OriginalNodeId)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal))
+            {
+                if (!usage.TryGetValue(nodeId, out var indexes))
+                {
+                    indexes = new HashSet<int>();
+                    usage[nodeId] = indexes;
+                }
+
+                indexes.Add(index);
+            }
+        }
+
+        return usage.ToDictionary(
+            item => item.Key,
+            item => (IReadOnlySet<int>)item.Value,
+            StringComparer.Ordinal);
+    }
+
+    private static IReadOnlyList<string> BuildPlacementGraphCanonicalNodeIds(
+        IReadOnlyList<IReadOnlyList<PlacementGraphEndpointObservation>> clusters,
+        IReadOnlyDictionary<string, IReadOnlySet<int>> originalClusterUse)
+    {
+        var preferredReusableClusterByNodeId = PreferredReusableClusterByNodeId(clusters, originalClusterUse);
+        var used = new HashSet<string>(StringComparer.Ordinal);
+        var canonical = new string[clusters.Count];
+        for (var index = 0; index < clusters.Count; index++)
+        {
+            var cluster = clusters[index];
+            var stableSingleUse = cluster
+                .GroupBy(item => item.OriginalNodeId, StringComparer.Ordinal)
+                .Where(group => !string.IsNullOrWhiteSpace(group.Key)
+                    && originalClusterUse.TryGetValue(group.Key!, out var usedClusters)
+                    && usedClusters.Count == 1
+                    && !used.Contains(group.Key!))
+                .OrderByDescending(group => group.Count())
+                .ThenBy(group => group.Key!.Length)
+                .ThenBy(group => group.Key, StringComparer.Ordinal)
+                .Select(group => group.Key!)
+                .FirstOrDefault();
+            if (stableSingleUse is not null)
+            {
+                canonical[index] = stableSingleUse;
+                used.Add(stableSingleUse);
+                continue;
+            }
+
+            var reusable = cluster
+                .GroupBy(item => item.OriginalNodeId, StringComparer.Ordinal)
+                .Where(group => !string.IsNullOrWhiteSpace(group.Key)
+                    && preferredReusableClusterByNodeId.TryGetValue(group.Key!, out var preferredIndex)
+                    && preferredIndex == index
+                    && !used.Contains(group.Key!))
+                .OrderByDescending(group => group.Count())
+                .ThenBy(group => group.Key!.Length)
+                .ThenBy(group => group.Key, StringComparer.Ordinal)
+                .Select(group => group.Key!)
+                .FirstOrDefault();
+            if (reusable is not null)
+            {
+                canonical[index] = reusable;
+                used.Add(reusable);
+                continue;
+            }
+
+            var derived = DerivedPlacementNodeId(cluster, index);
+            while (!used.Add(derived))
+            {
+                derived = $"{derived}:dup";
+            }
+
+            canonical[index] = derived;
+        }
+
+        return canonical;
+    }
+
+    private static IReadOnlyDictionary<string, int> PreferredReusableClusterByNodeId(
+        IReadOnlyList<IReadOnlyList<PlacementGraphEndpointObservation>> clusters,
+        IReadOnlyDictionary<string, IReadOnlySet<int>> originalClusterUse)
+    {
+        var preferred = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var item in originalClusterUse.Where(item => item.Value.Count > 1))
+        {
+            preferred[item.Key] = item.Value
+                .OrderByDescending(index => clusters[index].Count(observation =>
+                    string.Equals(observation.OriginalNodeId, item.Key, StringComparison.Ordinal)))
+                .ThenBy(index => index)
+                .First();
+        }
+
+        return preferred;
+    }
+
+    private static string DerivedPlacementNodeId(
+        IReadOnlyList<PlacementGraphEndpointObservation> cluster,
+        int clusterIndex)
+    {
+        var pageNumber = cluster.Count == 0 ? 1 : cluster[0].PageNumber;
+        return string.Create(CultureInfo.InvariantCulture, $"page:{pageNumber}:placement-node:{clusterIndex + 1:0000}");
+    }
+
+    private static PlanPoint ClusterCentroid(IReadOnlyList<PlacementGraphEndpointObservation> cluster) =>
+        new(cluster.Average(item => item.Position.X), cluster.Average(item => item.Position.Y));
+
+    private static IReadOnlyList<PlacementWallGraphNodeExport> BuildPlacementWallGraphNodes(
+        WallGraph graph,
+        IReadOnlyList<PlacementWallGraphEdgeExport> edges,
+        PlanCalibration calibration)
+    {
+        var rawNodesById = graph.Nodes.ToDictionary(node => node.Id, StringComparer.Ordinal);
+        var observations = new Dictionary<string, List<PlanPoint>>(StringComparer.Ordinal);
+        var pageNumbers = new Dictionary<string, int>(StringComparer.Ordinal);
+        var directionLookup = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        var cleanObservationCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        foreach (var edge in edges)
+        {
+            if (edge.CenterLine is null)
+            {
+                AddRawNode(edge.FromNodeId);
+                AddRawNode(edge.ToNodeId);
+                continue;
+            }
+
+            var start = ToPlanPoint(edge.CenterLine.Start);
+            var end = ToPlanPoint(edge.CenterLine.End);
+            AddObservation(edge.FromNodeId, edge.PageNumber, start, isCleanObservation: true);
+            AddObservation(edge.ToNodeId, edge.PageNumber, end, isCleanObservation: true);
+            AddDirection(edge.FromNodeId, start, end);
+            AddDirection(edge.ToNodeId, end, start);
+        }
+
+        var interiorAttachmentsByNodeId = BuildPlacementGraphInteriorNodeAttachments(edges, observations);
+
+        return observations
+            .Select(item =>
+            {
+                rawNodesById.TryGetValue(item.Key, out var rawNode);
+                var position = AveragePoint(item.Value);
+                var interiorAttachments = interiorAttachmentsByNodeId.TryGetValue(item.Key, out var foundInteriorAttachments)
+                    ? foundInteriorAttachments
+                    : Array.Empty<PlacementGraphInteriorNodeAttachment>();
+                var directions = directionLookup.TryGetValue(item.Key, out var foundDirections)
+                    ? foundDirections
+                        .Concat(interiorAttachments.SelectMany(attachment => attachment.Directions))
+                        .Distinct(StringComparer.Ordinal)
+                        .OrderBy(DirectionSortOrder)
+                        .ToArray()
+                    : rawNode?.Directions ?? Array.Empty<string>();
+                var degree = edges.Count(edge => edge.FromNodeId == item.Key || edge.ToNodeId == item.Key)
+                    + interiorAttachments.Sum(attachment => attachment.Directions.Count);
+                var evidence = (rawNode?.Evidence ?? Array.Empty<string>())
+                    .Append("placement wall graph node normalized from cleaned topology endpoint(s)")
+                    .Append($"clean topology endpoint observations: {cleanObservationCounts.GetValueOrDefault(item.Key)}")
+                    .Concat(interiorAttachments.Select(attachment =>
+                        "placement wall graph node attached to host wall edge "
+                        + $"{attachment.HostEdgeId} without splitting long wall run; "
+                        + $"offset {attachment.Distance:0.###} drawing units"))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray();
+
+                return PlacementWallGraphNodeExport.From(
+                    item.Key,
+                    pageNumbers[item.Key],
+                    position,
+                    ClassifyPlacementNode(degree, directions),
+                    degree,
+                    directions,
+                    rawNode?.Confidence ?? (degree > 1 ? Confidence.High : Confidence.Medium),
+                    evidence,
+                    calibration);
+            })
+            .OrderBy(node => node.PageNumber)
+            .ThenBy(node => node.Position.Y)
+            .ThenBy(node => node.Position.X)
+            .ThenBy(node => node.Id, StringComparer.Ordinal)
+            .ToArray();
+
+        void AddRawNode(string nodeId)
+        {
+            if (!rawNodesById.TryGetValue(nodeId, out var rawNode))
+            {
+                return;
+            }
+
+            AddObservation(nodeId, rawNode.PageNumber, rawNode.Position, isCleanObservation: false);
+            foreach (var direction in rawNode.Directions)
+            {
+                AddDirectionName(nodeId, direction);
+            }
+        }
+
+        void AddObservation(string nodeId, int pageNumber, PlanPoint position, bool isCleanObservation)
+        {
+            if (string.IsNullOrWhiteSpace(nodeId))
+            {
+                return;
+            }
+
+            if (!observations.TryGetValue(nodeId, out var points))
+            {
+                points = new List<PlanPoint>();
+                observations[nodeId] = points;
+                pageNumbers[nodeId] = pageNumber;
+            }
+
+            points.Add(position);
+            if (isCleanObservation)
+            {
+                cleanObservationCounts[nodeId] = cleanObservationCounts.TryGetValue(nodeId, out var count)
+                    ? count + 1
+                    : 1;
+            }
+        }
+
+        void AddDirection(string nodeId, PlanPoint from, PlanPoint to)
+        {
+            var dx = to.X - from.X;
+            var dy = to.Y - from.Y;
+            var direction = Math.Abs(dx) <= double.Epsilon && Math.Abs(dy) <= double.Epsilon
+                ? "Other"
+                : Math.Abs(dx) >= Math.Abs(dy)
+                    ? dx >= 0 ? "East" : "West"
+                    : dy >= 0 ? "South" : "North";
+            AddDirectionName(nodeId, direction);
+        }
+
+        void AddDirectionName(string nodeId, string direction)
+        {
+            if (string.IsNullOrWhiteSpace(nodeId) || string.IsNullOrWhiteSpace(direction))
+            {
+                return;
+            }
+
+            if (!directionLookup.TryGetValue(nodeId, out var directions))
+            {
+                directions = new List<string>();
+                directionLookup[nodeId] = directions;
+            }
+
+            directions.Add(direction);
+        }
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<PlacementGraphInteriorNodeAttachment>> BuildPlacementGraphInteriorNodeAttachments(
+        IReadOnlyList<PlacementWallGraphEdgeExport> edges,
+        IReadOnlyDictionary<string, List<PlanPoint>> observations)
+    {
+        if (edges.Count <= 1 || observations.Count == 0)
+        {
+            return new Dictionary<string, IReadOnlyList<PlacementGraphInteriorNodeAttachment>>(StringComparer.Ordinal);
+        }
+
+        var hostSpans = edges
+            .Select((edge, index) => TryCreatePlacementGraphMergeSpan(index, edge))
+            .Where(span => span is not null)
+            .Select(span => span!)
+            .OrderByDescending(span => span.Length)
+            .ToArray();
+        if (hostSpans.Length == 0)
+        {
+            return new Dictionary<string, IReadOnlyList<PlacementGraphInteriorNodeAttachment>>(StringComparer.Ordinal);
+        }
+
+        var attachmentsByNodeId = new Dictionary<string, List<PlacementGraphInteriorNodeAttachment>>(StringComparer.Ordinal);
+        foreach (var item in observations)
+        {
+            var nodeId = item.Key;
+            if (string.IsNullOrWhiteSpace(nodeId))
+            {
+                continue;
+            }
+
+            var point = AveragePoint(item.Value);
+            foreach (var hostSpan in hostSpans)
+            {
+                if (string.Equals(hostSpan.StartNodeId, nodeId, StringComparison.Ordinal)
+                    || string.Equals(hostSpan.EndNodeId, nodeId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var coordinate = hostSpan.Orientation == PlacementGraphEdgeOrientation.Horizontal
+                    ? point.X
+                    : point.Y;
+                var minHostMargin = Math.Max(
+                    MinPlacementEndpointOnWallSplitDistanceDrawingUnits,
+                    hostSpan.Length * MinPlacementEndpointOnWallSplitFraction);
+                if (coordinate <= hostSpan.Start + minHostMargin
+                    || coordinate >= hostSpan.End - minHostMargin)
+                {
+                    continue;
+                }
+
+                var hostPoint = PointOnPlacementGraphSpan(hostSpan, coordinate);
+                var distance = point.DistanceTo(hostPoint);
+                if (distance > PlacementInteriorNodeHostAttachmentTolerance(hostSpan.Edge))
+                {
+                    continue;
+                }
+
+                if (!attachmentsByNodeId.TryGetValue(nodeId, out var attachments))
+                {
+                    attachments = new List<PlacementGraphInteriorNodeAttachment>();
+                    attachmentsByNodeId[nodeId] = attachments;
+                }
+
+                if (attachments.Any(attachment => string.Equals(attachment.HostEdgeId, hostSpan.Edge.Id, StringComparison.Ordinal)))
+                {
+                    continue;
+                }
+
+                attachments.Add(new PlacementGraphInteriorNodeAttachment(
+                    hostSpan.Edge.Id,
+                    hostSpan.Orientation == PlacementGraphEdgeOrientation.Horizontal
+                        ? new[] { "East", "West" }
+                        : new[] { "North", "South" },
+                    distance));
+            }
+        }
+
+        return attachmentsByNodeId.ToDictionary(
+            item => item.Key,
+            item => (IReadOnlyList<PlacementGraphInteriorNodeAttachment>)item.Value
+                .OrderBy(attachment => attachment.Distance)
+                .ThenBy(attachment => attachment.HostEdgeId, StringComparer.Ordinal)
+                .ToArray(),
+            StringComparer.Ordinal);
+    }
+
+    private static double PlacementInteriorNodeHostAttachmentTolerance(PlacementWallGraphEdgeExport hostEdge) =>
+        Math.Clamp(
+            hostEdge.ThicknessDrawingUnits / 4.0,
+            MaxCoincidentPlacementNodeDistanceDrawingUnits,
+            MaxPlacementEndpointOnWallAbsorptionDistanceDrawingUnits);
+
+    private static WallNodeKind ClassifyPlacementNode(int degree, IReadOnlyList<string> directions)
+    {
+        var set = directions.ToHashSet(StringComparer.Ordinal);
+        var hasEastWest = set.Contains("East") && set.Contains("West");
+        var hasNorthSouth = set.Contains("North") && set.Contains("South");
+        var hasHorizontal = set.Contains("East") || set.Contains("West");
+        var hasVertical = set.Contains("North") || set.Contains("South");
+        return degree switch
+        {
+            <= 1 => WallNodeKind.Endpoint,
+            2 when hasEastWest || hasNorthSouth => WallNodeKind.Inline,
+            2 when hasHorizontal && hasVertical => WallNodeKind.Corner,
+            3 when (hasEastWest || hasNorthSouth) && hasHorizontal && hasVertical => WallNodeKind.TJunction,
+            >= 4 when hasEastWest && hasNorthSouth => WallNodeKind.Crossing,
+            _ => WallNodeKind.Junction
+        };
+    }
+
+    private static int DirectionSortOrder(string direction) =>
+        direction switch
+        {
+            "North" => 0,
+            "East" => 1,
+            "South" => 2,
+            "West" => 3,
+            _ => 4
+        };
+
+    private static PlanPoint AveragePoint(IReadOnlyList<PlanPoint> points) =>
+        new(points.Average(point => point.X), points.Average(point => point.Y));
+
+    private static PlanPoint ToPlanPoint(PointExport point) => new(point.X, point.Y);
+
+    private enum PlacementGraphEdgeOrientation
+    {
+        Horizontal,
+        Vertical
+    }
+
+    private sealed record PlacementGraphMergeGroupKey(
+        int PageNumber,
+        PlacementGraphEdgeOrientation Orientation,
+        string WallComponentId,
+        string WallComponentKind);
+
+    private sealed record PlacementGraphMergeSpan(
+        int Index,
+        PlacementWallGraphEdgeExport Edge,
+        PlacementGraphMergeGroupKey GroupKey,
+        PlacementGraphEdgeOrientation Orientation,
+        double Axis,
+        double Start,
+        double End,
+        string StartNodeId,
+        string EndNodeId)
+    {
+        public double Length => Math.Max(0, End - Start);
+    }
+
+    private sealed record PlacementGraphNodeReferenceNormalizationResult(
+        PlacementWallGraphEdgeExport[] Edges,
+        int SplitNodeReferenceCount);
+
+    private sealed record PlacementGraphNodeOnEdgeAbsorptionResult(
+        PlacementWallGraphEdgeExport[] Edges,
+        int AbsorbedEndpointCount,
+        int SplitHostEdgeCount);
+
+    private sealed record PlacementGraphEndpointOnWallAbsorption(
+        PlacementGraphEndpointObservation Endpoint,
+        PlacementGraphMergeSpan HostSpan,
+        double HostCoordinate,
+        PlanPoint HostPoint,
+        double Distance);
+
+    private sealed record PlacementGraphHostSplitPoint(
+        string NodeId,
+        double Coordinate,
+        PlanPoint Point,
+        int EndpointEdgeIndex,
+        double Distance);
+
+    private sealed record PlacementGraphInteriorNodeAttachment(
+        string HostEdgeId,
+        IReadOnlyList<string> Directions,
+        double Distance);
+
+    private sealed record PlacementGraphEndpointObservation(
+        int EdgeIndex,
+        bool IsStart,
+        string OriginalNodeId,
+        int PageNumber,
+        PlanPoint Position);
+
+    private sealed record PlacementGraphEndpointKey(
+        int EdgeIndex,
+        bool IsStart);
 }
 
 public sealed record PlacementWallGraphSummaryExport(
@@ -3370,10 +5087,11 @@ public sealed record PlacementWallGraphSummaryExport(
 {
     public static PlacementWallGraphSummaryExport From(
         WallGraph graph,
+        IReadOnlyList<PlacementWallGraphNodeExport> nodes,
         IReadOnlyList<PlacementWallGraphEdgeExport> edges) =>
         new(
-            graph.Nodes.Count,
-            graph.Edges.Count,
+            nodes.Count,
+            edges.Count,
             graph.Components.Count,
             graph.Components.Count(component => component.Kind == WallGraphComponentKind.MainStructural),
             graph.Components.Count(component => component.Kind == WallGraphComponentKind.SecondaryStructural),
@@ -3401,18 +5119,39 @@ public sealed record PlacementWallGraphNodeExport(
     public static PlacementWallGraphNodeExport From(
         WallNode node,
         PlanCalibration calibration)
+        => From(
+            node.Id,
+            node.PageNumber,
+            node.Position,
+            node.Kind,
+            node.Degree,
+            node.Directions,
+            node.Confidence,
+            node.Evidence,
+            calibration);
+
+    public static PlacementWallGraphNodeExport From(
+        string id,
+        int pageNumber,
+        PlanPoint position,
+        WallNodeKind kind,
+        int degree,
+        IReadOnlyList<string> directions,
+        Confidence confidence,
+        IReadOnlyList<string> evidence,
+        PlanCalibration calibration)
     {
         var scale = ResolveMillimetersPerDrawingUnit(calibration, scaleGroupId: null);
         return new PlacementWallGraphNodeExport(
-            node.Id,
-            node.PageNumber,
-            PointExport.From(node.Position),
-            ScalePoint(node.Position, scale),
-            node.Kind.ToString(),
-            node.Degree,
-            node.Directions,
-            node.Confidence.Value,
-            node.Evidence);
+            id,
+            pageNumber,
+            PointExport.From(position),
+            ScalePoint(position, scale),
+            kind.ToString(),
+            degree,
+            directions,
+            confidence.Value,
+            evidence);
     }
 }
 
@@ -3437,6 +5176,7 @@ public sealed record PlacementWallGraphEdgeExport(
     double Confidence,
     IReadOnlyList<string> SourcePrimitiveIds,
     IReadOnlyList<string> SourceLayers,
+    IReadOnlyList<string> SourceWallGraphEdgeIds,
     IReadOnlyList<string> Evidence)
 {
     public static PlacementWallGraphEdgeExport From(
@@ -3453,12 +5193,16 @@ public sealed record PlacementWallGraphEdgeExport(
         var drawingLength = topologySpan?.DrawingLength ?? 0;
         var thickness = topologySpan?.Thickness ?? 0;
         var excludedFromStructuralTopology =
-            WallStructuralTrust.IsExcludedFromStructuralTopology(component, evidenceAssessment);
+            WallStructuralTrust.IsExcludedFromStructuralTopology(component, evidenceAssessment)
+            && !WallPlacementReadinessEvaluator.IsTrustedLongIsolatedExteriorShellWallBody(
+                topologySpan?.SourceWall,
+                component,
+                evidenceAssessment);
         return new PlacementWallGraphEdgeExport(
-            edge.Id,
+            topologySpan?.Id ?? edge.Id,
             edge.PageNumber,
-            edge.FromNodeId,
-            edge.ToNodeId,
+            topologySpan?.FromNodeId ?? edge.FromNodeId,
+            topologySpan?.ToNodeId ?? edge.ToNodeId,
             edge.WallId,
             component?.Id,
             component?.Kind.ToString(),
@@ -3477,6 +5221,50 @@ public sealed record PlacementWallGraphEdgeExport(
             topologySpan is null
                 ? Array.Empty<string>()
                 : ExportSourceHelpers.SourceLayers(topologySpan.SourcePrimitiveIds, sourceLookup),
+            topologySpan?.SourceWallGraphEdgeIds ?? new[] { edge.Id },
+            EdgeEvidence(topologySpan, evidenceAssessment));
+    }
+
+    public static PlacementWallGraphEdgeExport From(
+        WallGraphTopologySpan topologySpan,
+        PlanCalibration calibration,
+        IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup,
+        IReadOnlyDictionary<string, WallGraphComponent> wallComponentLookup,
+        IReadOnlyDictionary<string, WallEvidenceWallAssessment> wallEvidenceAssessments)
+    {
+        wallComponentLookup.TryGetValue(topologySpan.WallId, out var component);
+        wallEvidenceAssessments.TryGetValue(topologySpan.WallId, out var evidenceAssessment);
+        var scale = ResolveMillimetersPerDrawingUnit(calibration, topologySpan.SourceWall?.MeasurementScaleGroupId);
+        var drawingLength = topologySpan.DrawingLength;
+        var thickness = topologySpan.Thickness;
+        var excludedFromStructuralTopology =
+            WallStructuralTrust.IsExcludedFromStructuralTopology(component, evidenceAssessment)
+            && !WallPlacementReadinessEvaluator.IsTrustedLongIsolatedExteriorShellWallBody(
+                topologySpan.SourceWall,
+                component,
+                evidenceAssessment);
+        return new PlacementWallGraphEdgeExport(
+            topologySpan.Id,
+            topologySpan.PageNumber,
+            topologySpan.FromNodeId,
+            topologySpan.ToNodeId,
+            topologySpan.WallId,
+            component?.Id,
+            component?.Kind.ToString(),
+            excludedFromStructuralTopology,
+            LineExport.From(topologySpan.CenterLine),
+            ScaleLine(topologySpan.CenterLine, scale),
+            RectExport.From(topologySpan.Bounds),
+            ScaleRect(topologySpan.Bounds, scale),
+            drawingLength,
+            scale is > 0 && drawingLength > 0 ? drawingLength * scale.Value / 1000.0 : null,
+            thickness,
+            scale is > 0 && thickness > 0 ? thickness * scale.Value : null,
+            scale,
+            topologySpan.Confidence.Value,
+            topologySpan.SourcePrimitiveIds,
+            ExportSourceHelpers.SourceLayers(topologySpan.SourcePrimitiveIds, sourceLookup),
+            topologySpan.SourceWallGraphEdgeIds,
             EdgeEvidence(topologySpan, evidenceAssessment));
     }
 
@@ -3517,9 +5305,24 @@ public sealed record PlacementWallGraphComponentExport(
     public static PlacementWallGraphComponentExport From(
         WallGraphComponent component,
         PlanCalibration calibration,
-        IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup)
+        IReadOnlyDictionary<string, PrimitiveSourceExport> sourceLookup,
+        IReadOnlyList<PlacementWallGraphEdgeExport>? placementEdges = null)
     {
         var scale = ResolveMillimetersPerDrawingUnit(calibration, scaleGroupId: null);
+        var usePlacementEdges = placementEdges is not null;
+        var componentEdges = (placementEdges ?? Array.Empty<PlacementWallGraphEdgeExport>())
+            .Where(edge => string.Equals(edge.WallComponentId, component.Id, StringComparison.Ordinal))
+            .ToArray();
+        var edgeIds = usePlacementEdges
+            ? componentEdges.Select(edge => edge.Id).Distinct(StringComparer.Ordinal).ToArray()
+            : component.EdgeIds;
+        var nodeIds = usePlacementEdges
+            ? componentEdges
+                .SelectMany(edge => new[] { edge.FromNodeId, edge.ToNodeId })
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray()
+            : component.NodeIds;
         return new PlacementWallGraphComponentExport(
             component.Id,
             component.PageNumber,
@@ -3527,13 +5330,13 @@ public sealed record PlacementWallGraphComponentExport(
             RectExport.From(component.Bounds),
             ScaleRect(component.Bounds, scale),
             component.WallIds,
-            component.NodeIds,
-            component.EdgeIds,
+            nodeIds,
+            edgeIds,
             component.SourcePrimitiveIds,
             ExportSourceHelpers.SourceLayers(component.SourcePrimitiveIds, sourceLookup),
             component.WallCount,
-            component.NodeCount,
-            component.EdgeCount,
+            nodeIds.Count,
+            edgeIds.Count,
             component.DrawingLength,
             scale is > 0 ? component.DrawingLength * scale.Value / 1000.0 : null,
             component.Confidence.Value,

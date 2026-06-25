@@ -9,8 +9,18 @@ internal static class WallTopologySpanVisibility
     private const double MinOpeningAdjacentCleanRunLengthDrawingUnits = 20.0;
     private const double MinTrustedOpeningAdjacentCleanRunLengthDrawingUnits = 6.0;
     private const double MaxContainedDuplicateAxisDistanceDrawingUnits = 1.25;
+    private const double MaxNearContainedDuplicateAxisDistanceDrawingUnits = 4.0;
     private const double MaxOverlappingCollinearMergeAxisDistanceDrawingUnits = 1.25;
+    private const double MaxCollinearExteriorRunBridgeAxisDistanceDrawingUnits = 5.0;
+    private const double MaxCollinearExteriorRunBridgeGapDrawingUnits = 72.0;
+    private const double MinCollinearExteriorRunBridgeLongNeighborLengthDrawingUnits = 48.0;
+    private const double MaxCollinearExteriorRunBridgeGapToLongNeighborRatio = 0.45;
+    private const double MinContinuousExteriorOpeningTopologyLengthDrawingUnits = 80.0;
+    private const double MaxCleanEndpointSnapToOrthogonalWallDistanceDrawingUnits = 8.0;
+    private const double MaxCleanEndpointSnapProjectionOverrunDrawingUnits = 8.0;
     private const double MinContainedDuplicateOverlapRatio = 0.92;
+    private const double MinNearContainedDuplicateOverlapRatio = 0.95;
+    private const double MaxNearContainedDuplicateOverhangDrawingUnits = 4.0;
     private const double MinExteriorFacePairAxisDistanceDrawingUnits = 2.0;
     private const double MaxExteriorFacePairAxisDistanceDrawingUnits = 18.0;
     private const double MinExteriorFacePairOverlapRatio = 0.88;
@@ -31,6 +41,9 @@ internal static class WallTopologySpanVisibility
     private const double MaxSourceBackedFallbackFaceSeparationDrawingUnits = 24.0;
     private const double MaxSourceBackedFallbackExistingCoverageRatio = 0.68;
     private const double MinLongSourceBackedFallbackWallLengthDrawingUnits = 120.0;
+    private const double MinUnsafeCleanTopologyProjectionDriftDrawingUnits = 12.0;
+    private const double MaxUnsafeCleanTopologyProjectionDriftThicknessRatio = 3.0;
+    private const double MinUnsafeCleanTopologyLengthOverrunRatio = 0.10;
     private const int MaxSourceBackedFallbackFaceFragmentCount = 48;
     private const int MaxLongSourceBackedFallbackFaceFragmentCount = 72;
     private const int MaxTopologySupportedSourceBackedFallbackFaceFragmentCount = 96;
@@ -86,9 +99,18 @@ internal static class WallTopologySpanVisibility
             graphCleanSpans,
             context,
             pageNumber);
+        var unsafeSourceBackedFallbackWallIds = sourceBackedFallbackSpans
+            .Where(IsUnsafeCleanProjectionSourceBackedFallbackSpan)
+            .Select(span => span.WallId)
+            .ToHashSet(StringComparer.Ordinal);
+        var mergedForSecondPass = unsafeSourceBackedFallbackWallIds.Count == 0
+            ? merged
+            : merged
+                .Where(span => !unsafeSourceBackedFallbackWallIds.Contains(span.WallId))
+                .ToArray();
         var combined = sourceBackedFallbackSpans.Count == 0
             ? graphCleanSpans
-            : merged.Concat(sourceBackedFallbackSpans).ToArray();
+            : mergedForSecondPass.Concat(sourceBackedFallbackSpans).ToArray();
 
         if (sourceBackedFallbackSpans.Count == 0)
         {
@@ -310,7 +332,28 @@ internal static class WallTopologySpanVisibility
             BuildNodeIncidentLookup(result.WallGraph.Edges),
             BuildTopologyImportBlockedWallIds(result.WallGraph.RepairCandidates),
             WallPlacementContextGuards.BuildReviewReasons(result),
+            BuildRoomReferenceCounts(result.Rooms),
             result.Calibration);
+
+    private static IReadOnlyDictionary<string, int> BuildRoomReferenceCounts(IReadOnlyList<RoomRegion> rooms)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var room in rooms)
+        {
+            foreach (var wallId in room.WallIds)
+            {
+                if (string.IsNullOrWhiteSpace(wallId))
+                {
+                    continue;
+                }
+
+                counts.TryGetValue(wallId, out var existing);
+                counts[wallId] = existing + 1;
+            }
+        }
+
+        return counts;
+    }
 
     private static bool IsShortDanglingTopologySpan(
         WallGraphTopologySpan span,
@@ -411,6 +454,12 @@ internal static class WallTopologySpanVisibility
             .Where(reason => !IsTopologyImportBlockedWallGraphRepairReason(reason))
             .ToArray();
 
+    private static IReadOnlyList<string> FilterSourceBackedFallbackReviewReasons(
+        IEnumerable<string> reviewReasons) =>
+        reviewReasons
+            .Where(reason => !reason.Contains("no clean wall graph topology span", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
     private static bool IsTopologyImportBlockedWallGraphRepairReason(string reason) =>
         reason.Contains("wall graph repair candidate", StringComparison.OrdinalIgnoreCase)
         && reason.Contains(nameof(WallGraphRepairImportImpact.TopologyImportBlocked), StringComparison.OrdinalIgnoreCase);
@@ -434,14 +483,24 @@ internal static class WallTopologySpanVisibility
                 continue;
             }
 
-            var coverageRatio = CleanPlacementCoverageRatio(wall, cleanSpans);
-            if (coverageRatio >= MaxSourceBackedFallbackExistingCoverageRatio
+            var unsafeCleanProjectionSpanCount = UnsafeCleanPlacementProjectionSpanCount(wall, cleanSpans);
+            var canRecoverUnsafeCleanProjection = unsafeCleanProjectionSpanCount > 0
+                && IsTrustedExteriorSourceBackedFallbackForUnsafeCleanProjection(wall, context);
+            var coverageRatio = CleanPlacementCoverageRatio(
+                wall,
+                cleanSpans,
+                ignoreUnsafeCleanPlacementProjection: canRecoverUnsafeCleanProjection);
+            if ((coverageRatio >= MaxSourceBackedFallbackExistingCoverageRatio && !canRecoverUnsafeCleanProjection)
                 || !ShouldBuildSourceBackedFallbackSpan(wall, context))
             {
                 continue;
             }
 
-            var span = CreateSourceBackedFallbackSpan(wall, context, coverageRatio);
+            var span = CreateSourceBackedFallbackSpan(
+                wall,
+                context,
+                coverageRatio,
+                canRecoverUnsafeCleanProjection ? unsafeCleanProjectionSpanCount : 0);
             if (span is not null)
             {
                 fallbackSpans.Add(span);
@@ -465,15 +524,39 @@ internal static class WallTopologySpanVisibility
         var topologyImportBlocked = context.TopologyImportBlockedWallIds.Contains(wall.Id);
         var trustedTopologyImportBlockedFallback = topologyImportBlocked
             && IsTrustedSourceBackedFallbackDespiteTopologyImportBlock(wall, component, assessment);
+        var trustedUnsafeExteriorCleanProjectionFallback =
+            IsTrustedExteriorSourceBackedFallbackForUnsafeCleanProjection(wall, context);
+        var trustedExteriorShellRepairSupportedWall =
+            WallPlacementReadinessEvaluator.IsTrustedExteriorShellRepairSupportedWall(
+                wall,
+                component,
+                assessment);
+        var hasTrustedMainStructuralExteriorWallBody =
+            WallPlacementReadinessEvaluator.IsTrustedMainStructuralExteriorWallBody(
+                wall,
+                component,
+                assessment);
+        var hasTrustedLongIsolatedExteriorShellWallBody =
+            WallPlacementReadinessEvaluator.IsTrustedLongIsolatedExteriorShellWallBody(
+                wall,
+                component,
+                assessment);
         var hasTrustedRoomSupportedShortPairPromotion = IsTrustedRoomSupportedShortParallelPairPromotion(
             wall,
             component,
             assessment);
+        var hasTrustedSourceBackedExteriorShellClosure =
+            IsTrustedSourceBackedExteriorShellClosureFallback(wall, assessment);
 
         if ((wall.CenterLine.Length < MinSourceBackedFallbackWallLengthDrawingUnits
-                && !hasTrustedRoomSupportedShortPairPromotion)
-            || wall.WallType == WallType.Unknown
-            || wall.FragmentEvidence?.RequiresGeometryReview == true
+                && !hasTrustedRoomSupportedShortPairPromotion
+                && !hasTrustedLongIsolatedExteriorShellWallBody
+                && !trustedExteriorShellRepairSupportedWall
+                && !hasTrustedSourceBackedExteriorShellClosure)
+            || (wall.WallType == WallType.Unknown && !hasTrustedLongIsolatedExteriorShellWallBody)
+            || (wall.FragmentEvidence?.RequiresGeometryReview == true
+                && !trustedUnsafeExteriorCleanProjectionFallback
+                && !trustedExteriorShellRepairSupportedWall)
             || ResolveDominantOrthogonalOrientation(wall.CenterLine) == PlacementRunOrientation.Unknown
             || (topologyImportBlocked && !trustedTopologyImportBlockedFallback))
         {
@@ -501,6 +584,16 @@ internal static class WallTopologySpanVisibility
                 wall,
                 component,
                 assessment);
+        var hasTrustedRecoveredRoomBoundaryObjectLikeWall =
+            WallPlacementReadinessEvaluator.IsTrustedRecoveredRoomBoundaryObjectLikeWall(
+                wall,
+                component,
+                assessment);
+        var hasTrustedInferredSharedRoomBoundary =
+            IsTrustedInferredSharedRoomBoundaryFallback(
+                wall,
+                component,
+                assessment);
         var hasTrustedTwoSidedFragmentMergedRoomBoundary =
             WallPlacementReadinessEvaluator.IsTrustedTwoSidedFragmentMergedRoomBoundary(
                 wall,
@@ -516,18 +609,53 @@ internal static class WallTopologySpanVisibility
                 wall,
                 component,
                 assessment);
+        var hasTrustedGeometricRoomBoundaryPairPromotion =
+            IsTrustedGeometricRoomBoundaryPairPromotion(
+                wall,
+                component,
+                assessment);
+        var hasTrustedRoomReferencedPlacementReadyPair =
+            IsTrustedRoomReferencedPlacementReadyPairFallback(
+                wall,
+                component,
+                assessment,
+                context.RoomReferenceCountsByWallId);
         if ((!IsPlacementReadyStructuralSpan(component, assessment)
                 && !hasTrustedExteriorShellContinuityFragment
                 && !hasTrustedRoomBoundaryIsolatedFragment
+                && !hasTrustedRecoveredRoomBoundaryObjectLikeWall
+                && !hasTrustedInferredSharedRoomBoundary
                 && !hasTrustedTwoSidedFragmentMergedRoomBoundary
                 && !hasTrustedOneEndpointNoisyMainStructuralInterior
-                && !hasTrustedLongOneEndpointFragmentMergedInterior)
+                && !hasTrustedLongOneEndpointFragmentMergedInterior
+                && !hasTrustedMainStructuralExteriorWallBody
+                && !hasTrustedLongIsolatedExteriorShellWallBody
+                && !hasTrustedGeometricRoomBoundaryPairPromotion
+                && !hasTrustedRoomReferencedPlacementReadyPair
+                && !trustedExteriorShellRepairSupportedWall
+                && !hasTrustedSourceBackedExteriorShellClosure)
             || assessment is null
             || (!hasTrustedTwoSidedFragmentMergedRoomBoundary
+                && !hasTrustedRecoveredRoomBoundaryObjectLikeWall
+                && !hasTrustedInferredSharedRoomBoundary
                 && !hasTrustedLongOneEndpointFragmentMergedInterior
+                && !hasTrustedMainStructuralExteriorWallBody
+                && !hasTrustedLongIsolatedExteriorShellWallBody
+                && !hasTrustedGeometricRoomBoundaryPairPromotion
+                && !hasTrustedRoomReferencedPlacementReadyPair
+                && !trustedExteriorShellRepairSupportedWall
+                && !hasTrustedSourceBackedExteriorShellClosure
                 && !assessment.PlacementReady)
             || (!hasTrustedTwoSidedFragmentMergedRoomBoundary
+                && !hasTrustedRecoveredRoomBoundaryObjectLikeWall
+                && !hasTrustedInferredSharedRoomBoundary
                 && !hasTrustedLongOneEndpointFragmentMergedInterior
+                && !hasTrustedMainStructuralExteriorWallBody
+                && !hasTrustedLongIsolatedExteriorShellWallBody
+                && !hasTrustedGeometricRoomBoundaryPairPromotion
+                && !hasTrustedRoomReferencedPlacementReadyPair
+                && !trustedExteriorShellRepairSupportedWall
+                && !hasTrustedSourceBackedExteriorShellClosure
                 && assessment.RequiresReview)
             || assessment.RejectedAsNoise
             || assessment.Decision == WallEvidenceDecision.Reject
@@ -537,8 +665,16 @@ internal static class WallTopologySpanVisibility
                 && !hasTrustedRoomSupportedShortPairPromotion
                 && !hasTrustedExteriorShellContinuityFragment
                 && !hasTrustedRoomBoundaryIsolatedFragment
+                && !hasTrustedRecoveredRoomBoundaryObjectLikeWall
+                && !hasTrustedInferredSharedRoomBoundary
                 && !hasTrustedTwoSidedFragmentMergedRoomBoundary
-                && !hasTrustedLongOneEndpointFragmentMergedInterior))
+                && !hasTrustedLongOneEndpointFragmentMergedInterior
+                && !hasTrustedMainStructuralExteriorWallBody
+                && !hasTrustedLongIsolatedExteriorShellWallBody
+                && !hasTrustedGeometricRoomBoundaryPairPromotion
+                && !hasTrustedRoomReferencedPlacementReadyPair
+                && !trustedExteriorShellRepairSupportedWall
+                && !hasTrustedSourceBackedExteriorShellClosure))
         {
             return false;
         }
@@ -546,24 +682,318 @@ internal static class WallTopologySpanVisibility
         var placementReviewReasons = trustedTopologyImportBlockedFallback
             ? FilterTopologyImportBlockedReviewReasons(reviewReasons)
             : reviewReasons;
+        placementReviewReasons = FilterSourceBackedFallbackReviewReasons(placementReviewReasons);
         if (!WallPlacementReadinessEvaluator.Evaluate(
             wall,
             context.Calibration,
             component,
             assessment,
-            placementReviewReasons).ReadyForCoordinatePlacement)
+            placementReviewReasons).ReadyForCoordinatePlacement
+            && !trustedUnsafeExteriorCleanProjectionFallback
+            && !hasTrustedMainStructuralExteriorWallBody
+            && !hasTrustedLongIsolatedExteriorShellWallBody
+            && !trustedExteriorShellRepairSupportedWall
+            && !hasTrustedSourceBackedExteriorShellClosure)
         {
             return false;
         }
 
-        return HasTrustedSourceBackedFallbackPairEvidence(wall, component, assessment)
+        return trustedUnsafeExteriorCleanProjectionFallback
+            || trustedExteriorShellRepairSupportedWall
+            || HasTrustedSourceBackedFallbackPairEvidence(wall, component, assessment)
             || hasTrustedFragmentMergedPromotion
             || hasTrustedRoomSupportedShortPairPromotion
             || hasTrustedExteriorShellContinuityFragment
             || hasTrustedRoomBoundaryIsolatedFragment
+            || hasTrustedRecoveredRoomBoundaryObjectLikeWall
+            || hasTrustedInferredSharedRoomBoundary
             || hasTrustedTwoSidedFragmentMergedRoomBoundary
             || hasTrustedOneEndpointNoisyMainStructuralInterior
-            || hasTrustedLongOneEndpointFragmentMergedInterior;
+            || hasTrustedLongOneEndpointFragmentMergedInterior
+            || hasTrustedMainStructuralExteriorWallBody
+            || hasTrustedLongIsolatedExteriorShellWallBody
+            || hasTrustedGeometricRoomBoundaryPairPromotion
+            || hasTrustedRoomReferencedPlacementReadyPair
+            || hasTrustedSourceBackedExteriorShellClosure;
+    }
+
+    private static bool IsTrustedSourceBackedExteriorShellClosureFallback(
+        WallSegment wall,
+        WallEvidenceWallAssessment? assessment)
+    {
+        if (assessment is null
+            || wall.WallType != WallType.Exterior
+            || wall.DrawingLength < MinLongSourceBackedFallbackWallLengthDrawingUnits
+            || wall.SourcePrimitiveIds.Count == 0
+            || assessment.Category != WallEvidenceCategory.RecoveredWallBody
+            || !assessment.PlacementReady
+            || assessment.RequiresReview
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject
+            || ResolveDominantOrthogonalOrientation(wall.CenterLine) == PlacementRunOrientation.Unknown)
+        {
+            return false;
+        }
+
+        return ContainsEvidence(
+            wall.Evidence
+                .Concat(assessment.Evidence)
+                .Concat(assessment.ScoreBreakdown.PositiveEvidence),
+            "source-backed exterior shell closure");
+    }
+
+    private static bool IsTrustedExteriorSourceBackedFallbackForUnsafeCleanProjection(
+        WallSegment wall,
+        WallTopologySpanVisibilityContext context)
+    {
+        context.ComponentByWallId.TryGetValue(wall.Id, out var component);
+        context.WallEvidenceAssessments.TryGetValue(wall.Id, out var assessment);
+        if (assessment is null
+            || component is null
+            || component.ExcludedFromStructuralTopology
+            || component.Kind is WallGraphComponentKind.ObjectLikeIsland or WallGraphComponentKind.IsolatedFragment
+            || wall.WallType != WallType.Exterior
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.PairEvidence is not { } pair
+            || pair.Score < 0.84
+            || pair.OverlapRatio < 0.88
+            || pair.FaceSeparation < MinSourceBackedFallbackFaceSeparationDrawingUnits
+            || pair.FaceSeparation > MaxSourceBackedFallbackFaceSeparationDrawingUnits
+            || !assessment.PlacementReady
+            || assessment.RequiresReview
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject
+            || assessment.Category is not (WallEvidenceCategory.StrongWallBody
+                or WallEvidenceCategory.MediumWallBody
+                or WallEvidenceCategory.RecoveredWallBody))
+        {
+            return false;
+        }
+
+        var evidence = wall.Evidence
+            .Concat(assessment.Evidence)
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(component.Evidence)
+            .ToArray();
+        if (ContainsAnyEvidence(
+                evidence,
+                "outdoor covered-area boundary",
+                "unpaired outdoor covered-area boundary",
+                "covered-area boundary",
+                "covered entry",
+                "covered-entry",
+                "overbygd",
+                "terrace",
+                "railing",
+                "surface pattern",
+                "object/fixture",
+                "fixture detail",
+                "repeated short detail",
+                "door swing",
+                "door leaf"))
+        {
+            return false;
+        }
+
+        return component.Kind == WallGraphComponentKind.MainStructural
+            || ContainsAnyEvidence(
+                evidence,
+                "exterior shell",
+                "global envelope",
+                "floorplan/wall envelope",
+                "local outer boundary",
+                "near detected floorplan",
+                "wall type exterior");
+    }
+
+    private static bool IsTrustedRoomReferencedPlacementReadyPairFallback(
+        WallSegment wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? assessment,
+        IReadOnlyDictionary<string, int> roomReferenceCountsByWallId)
+    {
+        if (assessment is null
+            || component is null
+            || !roomReferenceCountsByWallId.TryGetValue(wall.Id, out var roomReferenceCount)
+            || roomReferenceCount <= 0
+            || component.ExcludedFromStructuralTopology
+            || component.Kind is not (WallGraphComponentKind.MainStructural or WallGraphComponentKind.SecondaryStructural)
+            || wall.WallType != WallType.Interior
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.PairEvidence is not { } pair
+            || wall.DrawingLength < 72.0
+            || pair.Score < 0.80
+            || pair.OverlapRatio < 0.90
+            || pair.FaceSeparation < MinSourceBackedFallbackFaceSeparationDrawingUnits
+            || pair.FaceSeparation > MaxSourceBackedFallbackFaceSeparationDrawingUnits
+            || Math.Max(pair.FirstFaceFragmentCount, pair.SecondFaceFragmentCount) > 72
+            || pair.FirstFaceFragmentCount + pair.SecondFaceFragmentCount > 96
+            || !assessment.PlacementReady
+            || assessment.RequiresReview
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject
+            || assessment.Category is not (WallEvidenceCategory.StrongWallBody
+                or WallEvidenceCategory.MediumWallBody
+                or WallEvidenceCategory.RecoveredWallBody))
+        {
+            return false;
+        }
+
+        var evidence = wall.Evidence
+            .Concat(assessment.Evidence)
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(component.Evidence)
+            .ToArray();
+        var hasRoomBoundaryEvidence =
+            roomReferenceCount >= 2
+            || ContainsEvidence(evidence, "explicit room boundary support")
+            || ContainsEvidence(evidence, "geometric room boundary support")
+            || ContainsEvidence(evidence, "shared by room adjacency boundary");
+        if (!hasRoomBoundaryEvidence)
+        {
+            return false;
+        }
+
+        return !ContainsEvidence(evidence, "surface pattern")
+            && !ContainsEvidence(evidence, "object/fixture")
+            && !ContainsEvidence(evidence, "object-like")
+            && !ContainsEvidence(evidence, "repeated short detail")
+            && !ContainsEvidence(evidence, "review as detail/object")
+            && !ContainsEvidence(evidence, "outdoor covered-area boundary")
+            && !ContainsEvidence(evidence, "unpaired outdoor covered-area boundary")
+            && !ContainsEvidence(evidence, "covered-area boundary")
+            && !ContainsEvidence(evidence, "covered entry")
+            && !ContainsEvidence(evidence, "covered-entry")
+            && !ContainsEvidence(evidence, "overbygd")
+            && !ContainsEvidence(evidence, "terrace")
+            && !ContainsEvidence(evidence, "railing")
+            && !ContainsEvidence(evidence, "stair-like linework");
+    }
+
+    private static bool IsTrustedInferredSharedRoomBoundaryFallback(
+        WallSegment wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? assessment)
+    {
+        if (assessment is null
+            || assessment.Category != WallEvidenceCategory.MediumWallBody
+            || !assessment.PlacementReady
+            || assessment.RequiresReview
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject
+            || wall.WallType != WallType.Interior
+            || wall.DetectionKind != WallDetectionKind.SingleLine
+            || wall.DrawingLength < 54.0
+            || wall.FragmentEvidence?.RequiresGeometryReview == true
+            || component?.Kind is WallGraphComponentKind.ObjectLikeIsland or WallGraphComponentKind.IsolatedFragment)
+        {
+            return false;
+        }
+
+        var evidence = wall.Evidence
+            .Concat(assessment.Evidence)
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(assessment.ScoreBreakdown.NegativeEvidence)
+            .Concat(component?.Evidence ?? Array.Empty<string>())
+            .ToArray();
+        if (!ContainsEvidence(evidence, "inferred interior wall from unsupported shared indoor room-boundary edge")
+            || !ContainsEvidence(evidence, "shared room-boundary inference rooms"))
+        {
+            return false;
+        }
+
+        return !ContainsAnyEvidence(
+            evidence,
+            "outdoor",
+            "terrace",
+            "covered-area",
+            "covered entry",
+            "covered-entry",
+            "overbygd",
+            "canopy",
+            "surface pattern",
+            "object/fixture",
+            "fixture detail",
+            "door/opening",
+            "door swing",
+            "door leaf",
+            "door arc",
+            "railing",
+            "stair",
+            "non-wall",
+            "dimension annotation");
+    }
+
+    private static bool IsTrustedGeometricRoomBoundaryPairPromotion(
+        WallSegment wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? assessment)
+    {
+        if (assessment is null
+            || assessment.Category != WallEvidenceCategory.MediumWallBody
+            || !assessment.PlacementReady
+            || assessment.RequiresReview
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject
+            || wall.WallType != WallType.Interior
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.PairEvidence is not { } pair
+            || component is null
+            || component.ExcludedFromStructuralTopology
+            || component.Kind is WallGraphComponentKind.ObjectLikeIsland or WallGraphComponentKind.IsolatedFragment)
+        {
+            return false;
+        }
+
+        var evidence = wall.Evidence
+            .Concat(assessment.Evidence)
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(assessment.ScoreBreakdown.NegativeEvidence)
+            .Concat(component.Evidence)
+            .ToArray();
+        if (!ContainsEvidence(evidence, "geometric room-boundary paired wall promoted")
+            || !ContainsEvidence(evidence, "geometric room boundary support")
+            || !ContainsEvidence(evidence, "supported wall evidence inside exterior envelope")
+            || !ContainsEvidence(evidence, "parallel wall-face pair"))
+        {
+            return false;
+        }
+
+        if (pair.Score < 0.60
+            || pair.OverlapRatio < 0.90
+            || Math.Max(pair.FirstFaceFragmentCount, pair.SecondFaceFragmentCount) > 144
+            || pair.FirstFaceFragmentCount + pair.SecondFaceFragmentCount > 180)
+        {
+            return false;
+        }
+
+        if (ContainsAnyEvidence(
+                evidence,
+                "outdoor",
+                "terrace",
+                "covered-area",
+                "covered entry",
+                "covered-entry",
+                "overbygd",
+                "canopy",
+                "railing",
+                "surface pattern",
+                "object/fixture",
+                "fixture detail",
+                "repeated short detail",
+                "door/opening",
+                "door swing",
+                "door leaf",
+                "door arc",
+                "stair",
+                "not trusted",
+                "without shell support",
+                "alone is not trusted"))
+        {
+            return false;
+        }
+
+        return true;
     }
 
     private static bool IsTrustedRoomSupportedShortParallelPairPromotion(
@@ -584,7 +1014,6 @@ internal static class WallTopologySpanVisibility
             || wall.DrawingLength < MinRoomSupportedShortPairFallbackWallLengthDrawingUnits
             || wall.DrawingLength > MaxRoomSupportedShortPairFallbackWallLengthDrawingUnits
             || wall.PairEvidence is not { } pair
-            || pair.Score < MinRoomSupportedShortPairFallbackPairScore
             || pair.OverlapRatio < MinRoomSupportedShortPairFallbackOverlapRatio
             || pair.FaceSeparation < MinSourceBackedFallbackFaceSeparationDrawingUnits
             || pair.FaceSeparation > MaxSourceBackedFallbackFaceSeparationDrawingUnits
@@ -599,10 +1028,32 @@ internal static class WallTopologySpanVisibility
             .Concat(assessment.ScoreBreakdown.NegativeEvidence)
             .Concat(component.Evidence)
             .ToArray();
+        var hasExplicitOrGeometricRoomBoundary =
+            ContainsEvidence(evidence, "explicit room boundary support")
+            || ContainsEvidence(evidence, "geometric room boundary support");
+        var hasStrongTwoSidedTopologySupport =
+            ContainsEvidence(evidence, "two-sided room evidence True")
+            && HasTopologySupportedEndpointCount(evidence, minimumEndpointCount: 2);
         if (!ContainsEvidence(evidence, "room-confirmed wall body promoted to placement-ready")
             || !ContainsEvidence(evidence, "supported wall evidence inside exterior envelope")
-            || (!ContainsEvidence(evidence, "explicit room boundary support")
-                && !ContainsEvidence(evidence, "geometric room boundary support")))
+            || (!hasExplicitOrGeometricRoomBoundary && !hasStrongTwoSidedTopologySupport))
+        {
+            return false;
+        }
+
+        var minimumPairScore = hasStrongTwoSidedTopologySupport
+            ? 0.76
+            : MinRoomSupportedShortPairFallbackPairScore;
+        if (pair.Score < minimumPairScore)
+        {
+            return false;
+        }
+
+        if (ContainsAnyEvidence(
+                evidence,
+                "dimension-like",
+                "layer (unlayered) classified Dimension")
+            && (!hasExplicitOrGeometricRoomBoundary || pair.Score < 0.80))
         {
             return false;
         }
@@ -621,6 +1072,43 @@ internal static class WallTopologySpanVisibility
             "door/opening",
             "stair",
             "railing");
+    }
+
+    private static bool HasTopologySupportedEndpointCount(
+        IReadOnlyList<string> evidence,
+        int minimumEndpointCount)
+    {
+        foreach (var item in evidence)
+        {
+            var count = TryReadEvidenceCount(item, "topology-supported endpoints ");
+            if (count.HasValue && count.Value >= minimumEndpointCount)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static int? TryReadEvidenceCount(string evidence, string marker)
+    {
+        var index = evidence.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (index < 0)
+        {
+            return null;
+        }
+
+        var start = index + marker.Length;
+        var end = start;
+        while (end < evidence.Length && char.IsDigit(evidence[end]))
+        {
+            end++;
+        }
+
+        return end > start
+            && int.TryParse(end == evidence.Length ? evidence[start..] : evidence[start..end], out var count)
+                ? count
+                : null;
     }
 
     private static bool IsTrustedSourceBackedFallbackFragmentEvidence(
@@ -771,7 +1259,8 @@ internal static class WallTopologySpanVisibility
     private static WallGraphTopologySpan? CreateSourceBackedFallbackSpan(
         WallSegment wall,
         WallTopologySpanVisibilityContext context,
-        double existingCoverageRatio)
+        double existingCoverageRatio,
+        int unsafeCleanProjectionSpanCount)
     {
         context.WallEvidenceAssessments.TryGetValue(wall.Id, out var assessment);
         context.ComponentByWallId.TryGetValue(wall.Id, out var component);
@@ -790,10 +1279,28 @@ internal static class WallTopologySpanVisibility
                 wall,
                 component,
                 assessment);
+        var trustedInferredSharedRoomBoundary =
+            IsTrustedInferredSharedRoomBoundaryFallback(
+                wall,
+                component,
+                assessment);
         var trustedRoomSupportedShortParallelPairPromotion = IsTrustedRoomSupportedShortParallelPairPromotion(
             wall,
             component,
             assessment);
+        var trustedRoomReferencedPlacementReadyPair =
+            IsTrustedRoomReferencedPlacementReadyPairFallback(
+                wall,
+                component,
+                assessment,
+                context.RoomReferenceCountsByWallId);
+        var trustedExteriorShellRepairSupportedWall =
+            WallPlacementReadinessEvaluator.IsTrustedExteriorShellRepairSupportedWall(
+                wall,
+                component,
+                assessment);
+        var trustedSourceBackedExteriorShellClosure =
+            IsTrustedSourceBackedExteriorShellClosureFallback(wall, assessment);
         var placementAxis = WallBodyFootprintBuilder.BuildPlacementAxis(wall, 0, 1);
         var centerLine = placementAxis.CenterLine;
         if (centerLine.Length <= 0.001)
@@ -817,13 +1324,29 @@ internal static class WallTopologySpanVisibility
                 ? "source-backed fallback accepted because trusted two-sided fragment-merged room boundary evidence is importable"
                 : trustedLongOneEndpointFragmentMergedInterior
                     ? "source-backed fallback accepted because long one-end fragment-merged interior wall body is clean, structural, and coordinate-safe"
-                    : "source-backed fallback accepted because clean promoted fragment wall-body evidence is placement-ready");
+                    : trustedExteriorShellRepairSupportedWall
+                        ? "source-backed fallback accepted because global exterior-shell repair confirmed the fragmented exterior wall run"
+                        : "source-backed fallback accepted because clean promoted fragment wall-body evidence is placement-ready");
+        }
+        else if (trustedExteriorShellRepairSupportedWall)
+        {
+            evidence.Add("source-backed fallback accepted because global exterior-shell repair confirmed the exterior wall run");
+        }
+        else if (trustedSourceBackedExteriorShellClosure)
+        {
+            evidence.Add("source-backed fallback accepted because source-backed exterior shell closure is placement-ready");
+        }
+        else if (trustedInferredSharedRoomBoundary)
+        {
+            evidence.Add("source-backed fallback accepted because shared indoor room-boundary inference is placement-ready");
         }
         else
         {
             evidence.Add(trustedRoomSupportedShortParallelPairPromotion
                 ? "source-backed fallback accepted because high-score short paired wall body has explicit room-boundary support"
-                : trustedOneEndpointNoisyMainStructuralInterior
+                : trustedRoomReferencedPlacementReadyPair
+                    ? "source-backed fallback accepted because placement-ready paired wall is explicitly referenced by detected room boundaries"
+                    : trustedOneEndpointNoisyMainStructuralInterior
                     ? "source-backed fallback accepted because noisy one-end main structural wall body has strong paired-face geometry"
                     : "source-backed fallback accepted only because paired wall-face evidence is placement-ready");
         }
@@ -831,6 +1354,13 @@ internal static class WallTopologySpanVisibility
         if (context.TopologyImportBlockedWallIds.Contains(wall.Id))
         {
             evidence.Add("source-backed fallback accepted despite blocked graph repair because source wall-body geometry is independently coordinate-safe");
+        }
+
+        if (unsafeCleanProjectionSpanCount > 0)
+        {
+            evidence.Add(
+                "source-backed fallback accepted because existing clean topology projected away from trusted exterior shell; "
+                + $"unsafe clean span count {unsafeCleanProjectionSpanCount}");
         }
 
         if (placementAxis.UsesPairedFaceEvidence)
@@ -884,7 +1414,8 @@ internal static class WallTopologySpanVisibility
 
     private static double CleanPlacementCoverageRatio(
         WallSegment wall,
-        IReadOnlyList<WallGraphTopologySpan> cleanSpans)
+        IReadOnlyList<WallGraphTopologySpan> cleanSpans,
+        bool ignoreUnsafeCleanPlacementProjection = false)
     {
         if (wall.CenterLine.Length <= 0.001)
         {
@@ -893,6 +1424,8 @@ internal static class WallTopologySpanVisibility
 
         var intervals = cleanSpans
             .Where(span => span.WallId == wall.Id)
+            .Where(span => !ignoreUnsafeCleanPlacementProjection
+                || !IsUnsafeCleanPlacementProjection(wall, span))
             .Select(span => CleanSpanIntervalForWall(span, wall))
             .Where(interval => interval.End - interval.Start > 0.001)
             .OrderBy(interval => interval.Start)
@@ -921,6 +1454,49 @@ internal static class WallTopologySpanVisibility
 
         covered += currentEnd - currentStart;
         return Math.Clamp(covered, 0, 1);
+    }
+
+    private static int UnsafeCleanPlacementProjectionSpanCount(
+        WallSegment wall,
+        IReadOnlyList<WallGraphTopologySpan> cleanSpans) =>
+        cleanSpans.Count(span => span.WallId == wall.Id && IsUnsafeCleanPlacementProjection(wall, span));
+
+    private static bool IsUnsafeCleanProjectionSourceBackedFallbackSpan(WallGraphTopologySpan span) =>
+        IsSourceBackedFallbackSpan(span)
+        && ContainsEvidence(span.Evidence, "existing clean topology projected away from trusted exterior shell");
+
+    private static bool IsUnsafeCleanPlacementProjection(
+        WallSegment wall,
+        WallGraphTopologySpan span)
+    {
+        var limit = CleanTopologyProjectionDriftLimit(wall, span);
+        var maxProjectionDistance = MaxNullable(
+            span.SourceWallStartProjectionDistanceDrawingUnits,
+            span.SourceWallEndProjectionDistanceDrawingUnits);
+        if (maxProjectionDistance is > 0 && maxProjectionDistance.Value > limit)
+        {
+            return true;
+        }
+
+        if (span.SourceWallProjectedLengthDrawingUnits is not { } sourceProjectedLength
+            || sourceProjectedLength <= 0.001)
+        {
+            return false;
+        }
+
+        var overrun = Math.Max(0, span.DrawingLength - sourceProjectedLength);
+        return overrun > limit
+            && overrun / sourceProjectedLength >= MinUnsafeCleanTopologyLengthOverrunRatio;
+    }
+
+    private static double CleanTopologyProjectionDriftLimit(
+        WallSegment wall,
+        WallGraphTopologySpan span)
+    {
+        var thickness = Math.Max(Math.Max(wall.Thickness, span.Thickness), 1.0);
+        return Math.Max(
+            MinUnsafeCleanTopologyProjectionDriftDrawingUnits,
+            thickness * MaxUnsafeCleanTopologyProjectionDriftThicknessRatio);
     }
 
     private static CleanSpanInterval CleanSpanIntervalForWall(
@@ -991,9 +1567,9 @@ internal static class WallTopologySpanVisibility
             {
                 var next = intervals[index];
                 var gap = Math.Max(0, next.StartParameter - current.EndParameter) * sourceWall.CenterLine.Length;
-                if (gap <= MaxCleanRunJoinGapDrawingUnits)
+                if (gap <= CleanRunJoinGapLimit(sourceWall, current, next))
                 {
-                    current = current.Merge(next);
+                    current = current.Merge(next, gap);
                     continue;
                 }
 
@@ -1010,6 +1586,47 @@ internal static class WallTopologySpanVisibility
             .ThenBy(span => span.Bounds.X)
             .ThenBy(span => span.WallId, StringComparer.Ordinal)
             .ToArray();
+    }
+
+    private static double CleanRunJoinGapLimit(
+        WallSegment sourceWall,
+        CleanRunInterval current,
+        CleanRunInterval next)
+    {
+        if (sourceWall.WallType != WallType.Exterior)
+        {
+            return MaxCleanRunJoinGapDrawingUnits;
+        }
+
+        var longerInterval = Math.Max(current.LengthDrawingUnits, next.LengthDrawingUnits);
+        if (longerInterval < MinCollinearExteriorRunBridgeLongNeighborLengthDrawingUnits
+            || sourceWall.Confidence.Value < 0.70
+            || sourceWall.FragmentEvidence?.RequiresGeometryReview == true)
+        {
+            return MaxCleanRunJoinGapDrawingUnits;
+        }
+
+        var evidence = sourceWall.Evidence
+            .Concat(current.Evidence)
+            .Concat(next.Evidence)
+            .ToArray();
+        if (ContainsAnyEvidence(
+                evidence,
+                "door leaf",
+                "door swing",
+                "fixture detail",
+                "object/fixture",
+                "repeated short detail",
+                "surface pattern",
+                "wall-like linework near anchored opening"))
+        {
+            return MaxCleanRunJoinGapDrawingUnits;
+        }
+
+        return Math.Clamp(
+            longerInterval * MaxCollinearExteriorRunBridgeGapToLongNeighborRatio,
+            MaxCleanRunJoinGapDrawingUnits,
+            MaxCollinearExteriorRunBridgeGapDrawingUnits);
     }
 
     private static IReadOnlyList<WallGraphTopologySpan> RegularizeCleanPlacementRuns(
@@ -1082,10 +1699,251 @@ internal static class WallTopologySpanVisibility
     }
 
     private static IReadOnlyList<WallGraphTopologySpan> FinalizeCleanPlacementSpans(
-        IReadOnlyList<WallGraphTopologySpan> spans) =>
-        SuppressContainedDuplicatePlacementSpans(
-            MergeOverlappingCollinearPlacementSpans(
-                CanonicalizeExteriorParallelFaceSpans(spans)));
+        IReadOnlyList<WallGraphTopologySpan> spans)
+    {
+        var canonical = CanonicalizeExteriorParallelFaceSpans(spans);
+        var overlapped = MergeOverlappingCollinearPlacementSpans(canonical);
+        var bridged = BridgeCollinearExteriorPlacementRunGaps(overlapped);
+        var endpointSnapped = SnapCleanPlacementSpanEndpointsToNearbyOrthogonalSpans(bridged);
+        var rebridged = BridgeCollinearExteriorPlacementRunGaps(endpointSnapped);
+        return SuppressContainedDuplicatePlacementSpans(MergeOverlappingCollinearPlacementSpans(rebridged));
+    }
+
+    private static IReadOnlyList<WallGraphTopologySpan> SnapCleanPlacementSpanEndpointsToNearbyOrthogonalSpans(
+        IReadOnlyList<WallGraphTopologySpan> spans)
+    {
+        if (spans.Count <= 1)
+        {
+            return spans;
+        }
+
+        var candidates = spans
+            .Where(IsAxisAlignedPlacementSpan)
+            .Where(span => !IsSourceBackedFallbackSpan(span))
+            .ToArray();
+        if (candidates.Length <= 1)
+        {
+            return spans;
+        }
+
+        var replacements = new Dictionary<string, WallGraphTopologySpan>(StringComparer.Ordinal);
+        foreach (var span in candidates)
+        {
+            var orientation = ResolveAxisOrientation(span.CenterLine);
+            if (orientation == PlacementRunOrientation.Unknown)
+            {
+                continue;
+            }
+
+            var start = span.CenterLine.Start;
+            var end = span.CenterLine.End;
+            var evidence = new List<string>();
+            var startShift = 0.0;
+            var endShift = 0.0;
+            if (TrySnapEndpointToOrthogonalSpan(
+                    span,
+                    span.CenterLine.Start,
+                    orientation,
+                    candidates,
+                    out var snappedStart,
+                    out var startEvidence,
+                    out startShift))
+            {
+                start = snappedStart;
+                evidence.Add(startEvidence);
+            }
+
+            if (TrySnapEndpointToOrthogonalSpan(
+                    span,
+                    span.CenterLine.End,
+                    orientation,
+                    candidates,
+                    out var snappedEnd,
+                    out var endEvidence,
+                    out endShift))
+            {
+                end = snappedEnd;
+                evidence.Add(endEvidence);
+            }
+
+            if (evidence.Count == 0)
+            {
+                continue;
+            }
+
+            var line = new PlanLineSegment(start, end);
+            if (line.Length < MinCleanRunLengthDrawingUnits)
+            {
+                continue;
+            }
+
+            replacements[span.Id] = RebuildPlacementSpanLine(
+                span,
+                line,
+                evidence,
+                Math.Max(startShift, endShift));
+        }
+
+        if (replacements.Count == 0)
+        {
+            return spans;
+        }
+
+        return spans
+            .Select(span => replacements.TryGetValue(span.Id, out var replacement) ? replacement : span)
+            .ToArray();
+    }
+
+    private static bool TrySnapEndpointToOrthogonalSpan(
+        WallGraphTopologySpan span,
+        PlanPoint endpoint,
+        PlacementRunOrientation orientation,
+        IReadOnlyList<WallGraphTopologySpan> candidates,
+        out PlanPoint snappedEndpoint,
+        out string evidence,
+        out double shift)
+    {
+        snappedEndpoint = endpoint;
+        evidence = string.Empty;
+        shift = 0;
+        EndpointSnapCandidate? best = null;
+        foreach (var target in candidates)
+        {
+            if (ReferenceEquals(span, target)
+                || span.Id == target.Id
+                || span.PageNumber != target.PageNumber
+                || target.DrawingLength < MinCleanRunLengthDrawingUnits
+                || IsSourceBackedFallbackSpan(target))
+            {
+                continue;
+            }
+
+            var targetOrientation = ResolveAxisOrientation(target.CenterLine);
+            if (!IsOrthogonal(orientation, targetOrientation))
+            {
+                continue;
+            }
+
+            var axisDistance = orientation == PlacementRunOrientation.Horizontal
+                ? Math.Abs(endpoint.X - AxisCoordinate(target))
+                : Math.Abs(endpoint.Y - AxisCoordinate(target));
+            if (axisDistance <= 0.001
+                || axisDistance > MaxCleanEndpointSnapToOrthogonalWallDistanceDrawingUnits)
+            {
+                continue;
+            }
+
+            var projectedCoordinate = orientation == PlacementRunOrientation.Horizontal
+                ? endpoint.Y
+                : endpoint.X;
+            var projectionOverrun = IntervalOverrun(
+                projectedCoordinate,
+                AxisMin(target.CenterLine),
+                AxisMax(target.CenterLine));
+            if (projectionOverrun > MaxCleanEndpointSnapProjectionOverrunDrawingUnits)
+            {
+                continue;
+            }
+
+            var score = axisDistance + projectionOverrun;
+            if (best is null
+                || score < best.Score
+                || (Math.Abs(score - best.Score) <= 0.001 && target.DrawingLength > best.Target.DrawingLength))
+            {
+                best = new EndpointSnapCandidate(target, axisDistance, projectionOverrun, score);
+            }
+        }
+
+        if (best is null)
+        {
+            return false;
+        }
+
+        snappedEndpoint = orientation == PlacementRunOrientation.Horizontal
+            ? new PlanPoint(AxisCoordinate(best.Target), endpoint.Y)
+            : new PlanPoint(endpoint.X, AxisCoordinate(best.Target));
+        shift = best.AxisDistance;
+        evidence =
+            "clean placement endpoint snap: aligned endpoint to nearby orthogonal wall span "
+            + $"{best.Target.Id}; axis shift {best.AxisDistance:0.###}, projection overrun "
+            + $"{best.ProjectionOverrun:0.###} drawing units";
+        return true;
+    }
+
+    private static bool IsOrthogonal(
+        PlacementRunOrientation first,
+        PlacementRunOrientation second) =>
+        first == PlacementRunOrientation.Horizontal && second == PlacementRunOrientation.Vertical
+        || first == PlacementRunOrientation.Vertical && second == PlacementRunOrientation.Horizontal;
+
+    private static double IntervalOverrun(double value, double min, double max)
+    {
+        if (value < min)
+        {
+            return min - value;
+        }
+
+        if (value > max)
+        {
+            return value - max;
+        }
+
+        return 0;
+    }
+
+    private static WallGraphTopologySpan RebuildPlacementSpanLine(
+        WallGraphTopologySpan span,
+        PlanLineSegment line,
+        IReadOnlyList<string> extraEvidence,
+        double maxEndpointShift)
+    {
+        var bounds = line.Bounds.Inflate(Math.Max(span.Thickness / 2.0, 0.5));
+        var evidence = span.Evidence
+            .Concat(extraEvidence)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var sourceWall = span.SourceWall;
+        if (sourceWall is null || sourceWall.CenterLine.Length <= 0.001)
+        {
+            return span with
+            {
+                CenterLine = line,
+                Bounds = bounds,
+                DrawingLength = line.Length,
+                SourceWallStartProjectionDistanceDrawingUnits = MaxNullable(
+                    span.SourceWallStartProjectionDistanceDrawingUnits,
+                    maxEndpointShift),
+                SourceWallEndProjectionDistanceDrawingUnits = MaxNullable(
+                    span.SourceWallEndProjectionDistanceDrawingUnits,
+                    maxEndpointShift),
+                Evidence = evidence
+            };
+        }
+
+        var sourceLine = sourceWall.CenterLine;
+        var sourceLength = sourceLine.Length;
+        var startParameter = sourceLine.ProjectParameter(line.Start);
+        var endParameter = sourceLine.ProjectParameter(line.End);
+        var centerParameter = sourceLine.ProjectParameter(line.Midpoint);
+        var startOffset = startParameter * sourceLength;
+        var endOffset = endParameter * sourceLength;
+
+        return span with
+        {
+            CenterLine = line,
+            Bounds = bounds,
+            DrawingLength = line.Length,
+            SourceWallStartOffsetDrawingUnits = startOffset,
+            SourceWallEndOffsetDrawingUnits = endOffset,
+            SourceWallProjectedLengthDrawingUnits = Math.Abs(endOffset - startOffset),
+            SourceWallStartParameter = startParameter,
+            SourceWallEndParameter = endParameter,
+            SourceWallCenterParameter = centerParameter,
+            SourceWallStartProjectionDistanceDrawingUnits = sourceLine.DistanceToPoint(line.Start),
+            SourceWallEndProjectionDistanceDrawingUnits = sourceLine.DistanceToPoint(line.End),
+            Evidence = evidence
+        };
+    }
 
     private static IReadOnlyList<WallGraphTopologySpan> MergeOverlappingCollinearPlacementSpans(
         IReadOnlyList<WallGraphTopologySpan> spans)
@@ -1178,6 +2036,193 @@ internal static class WallTopologySpanVisibility
         }
 
         return merged;
+    }
+
+    private static IReadOnlyList<WallGraphTopologySpan> BridgeCollinearExteriorPlacementRunGaps(
+        IReadOnlyList<WallGraphTopologySpan> spans)
+    {
+        if (spans.Count <= 1)
+        {
+            return spans;
+        }
+
+        var bridged = new List<WallGraphTopologySpan>();
+        var axisAlignedSpanIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var group in spans
+            .Where(IsAxisAlignedPlacementSpan)
+            .Where(span => span.SourceWall?.WallType == WallType.Exterior)
+            .Where(span => !IsSourceBackedFallbackSpan(span))
+            .GroupBy(span => new PlacementRegularizationKey(
+                span.PageNumber,
+                WallType.Exterior,
+                ResolveAxisOrientation(span.CenterLine))))
+        {
+            var ordered = group
+                .OrderBy(AxisCoordinate)
+                .ThenBy(span => AxisMin(span.CenterLine))
+                .ThenByDescending(span => span.DrawingLength)
+                .ThenBy(span => span.Id, StringComparer.Ordinal)
+                .ToArray();
+            var clusters = new List<List<WallGraphTopologySpan>>();
+            foreach (var span in ordered)
+            {
+                axisAlignedSpanIds.Add(span.Id);
+                var current = clusters.Count == 0 ? null : clusters[^1];
+                if (current is null
+                    || Math.Abs(AxisCoordinate(span) - WeightedAxisCoordinate(current))
+                        > MaxCollinearExteriorRunBridgeAxisDistanceDrawingUnits)
+                {
+                    clusters.Add([span]);
+                    continue;
+                }
+
+                current.Add(span);
+            }
+
+            foreach (var cluster in clusters)
+            {
+                bridged.AddRange(BridgeCollinearExteriorPlacementRunGapCluster(cluster));
+            }
+        }
+
+        bridged.AddRange(spans.Where(span => !axisAlignedSpanIds.Contains(span.Id)));
+        return bridged
+            .OrderBy(span => span.PageNumber)
+            .ThenBy(span => span.Bounds.Y)
+            .ThenBy(span => span.Bounds.X)
+            .ThenBy(span => span.WallId, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<WallGraphTopologySpan> BridgeCollinearExteriorPlacementRunGapCluster(
+        IReadOnlyList<WallGraphTopologySpan> cluster)
+    {
+        if (cluster.Count <= 1)
+        {
+            return cluster;
+        }
+
+        var bridged = new List<WallGraphTopologySpan>();
+        WallGraphTopologySpan? current = null;
+        foreach (var span in cluster
+            .OrderBy(span => AxisMin(span.CenterLine))
+            .ThenByDescending(span => span.DrawingLength)
+            .ThenBy(span => span.Id, StringComparer.Ordinal))
+        {
+            if (current is null)
+            {
+                current = span;
+                continue;
+            }
+
+            if (ShouldBridgeCollinearExteriorPlacementRunGap(current, span, out var gap))
+            {
+                current = CreateBridgedCollinearExteriorPlacementSpan(current, span, gap);
+                continue;
+            }
+
+            bridged.Add(current);
+            current = span;
+        }
+
+        if (current is not null)
+        {
+            bridged.Add(current);
+        }
+
+        return bridged;
+    }
+
+    private static bool ShouldBridgeCollinearExteriorPlacementRunGap(
+        WallGraphTopologySpan first,
+        WallGraphTopologySpan second,
+        out double gap)
+    {
+        gap = AxisMin(second.CenterLine) - AxisMax(first.CenterLine);
+        if (first.WallId == second.WallId
+            || first.SourceWall?.WallType != WallType.Exterior
+            || second.SourceWall?.WallType != WallType.Exterior
+            || IsSourceBackedFallbackSpan(first)
+            || IsSourceBackedFallbackSpan(second)
+            || ResolveAxisOrientation(first.CenterLine) != ResolveAxisOrientation(second.CenterLine)
+            || Math.Abs(AxisCoordinate(first) - AxisCoordinate(second))
+                > MaxCollinearExteriorRunBridgeAxisDistanceDrawingUnits
+            || gap <= 0.001)
+        {
+            return false;
+        }
+
+        var longerLength = Math.Max(first.DrawingLength, second.DrawingLength);
+        if (longerLength < MinCollinearExteriorRunBridgeLongNeighborLengthDrawingUnits)
+        {
+            return false;
+        }
+
+        var adaptiveGapLimit = Math.Clamp(
+            longerLength * MaxCollinearExteriorRunBridgeGapToLongNeighborRatio,
+            MaxCleanRunJoinGapDrawingUnits,
+            MaxCollinearExteriorRunBridgeGapDrawingUnits);
+        return gap <= adaptiveGapLimit;
+    }
+
+    private static WallGraphTopologySpan CreateBridgedCollinearExteriorPlacementSpan(
+        WallGraphTopologySpan first,
+        WallGraphTopologySpan second,
+        double gap)
+    {
+        var orientation = ResolveAxisOrientation(first.CenterLine);
+        var targetCoordinate = WeightedAxisCoordinate([first, second]);
+        var start = Math.Min(AxisMin(first.CenterLine), AxisMin(second.CenterLine));
+        var end = Math.Max(AxisMax(first.CenterLine), AxisMax(second.CenterLine));
+        var line = orientation == PlacementRunOrientation.Horizontal
+            ? new PlanLineSegment(new PlanPoint(start, targetCoordinate), new PlanPoint(end, targetCoordinate))
+            : new PlanLineSegment(new PlanPoint(targetCoordinate, start), new PlanPoint(targetCoordinate, end));
+        var axisShift = Math.Max(
+            Math.Abs(AxisCoordinate(first) - targetCoordinate),
+            Math.Abs(AxisCoordinate(second) - targetCoordinate));
+        var thickness = Math.Max(first.Thickness, second.Thickness);
+        var bounds = line.Bounds.Inflate(Math.Max(thickness / 2.0, 0.5));
+        var evidence = first.Evidence
+            .Concat(second.Evidence)
+            .Append(
+                "clean placement exterior run bridge: bridged collinear exterior placement spans "
+                + $"{first.Id} and {second.Id}; gap {gap:0.###}, axis shift {axisShift:0.###} drawing units")
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        return first with
+        {
+            Id = $"{first.Id}:bridged",
+            ToNodeId = second.ToNodeId,
+            CenterLine = line,
+            Bounds = bounds,
+            DrawingLength = line.Length,
+            SourceWallStartOffsetDrawingUnits = MinNullable(first.SourceWallStartOffsetDrawingUnits, second.SourceWallStartOffsetDrawingUnits),
+            SourceWallEndOffsetDrawingUnits = MaxNullable(first.SourceWallEndOffsetDrawingUnits, second.SourceWallEndOffsetDrawingUnits),
+            SourceWallProjectedLengthDrawingUnits = MaxNullable(first.SourceWallProjectedLengthDrawingUnits, second.SourceWallProjectedLengthDrawingUnits),
+            SourceWallStartParameter = MinNullable(first.SourceWallStartParameter, second.SourceWallStartParameter),
+            SourceWallEndParameter = MaxNullable(first.SourceWallEndParameter, second.SourceWallEndParameter),
+            SourceWallCenterParameter = AverageNullable(
+                MinNullable(first.SourceWallStartParameter, second.SourceWallStartParameter),
+                MaxNullable(first.SourceWallEndParameter, second.SourceWallEndParameter)),
+            SourceWallStartProjectionDistanceDrawingUnits = MaxNullable(
+                MaxNullable(first.SourceWallStartProjectionDistanceDrawingUnits, second.SourceWallStartProjectionDistanceDrawingUnits),
+                axisShift),
+            SourceWallEndProjectionDistanceDrawingUnits = MaxNullable(
+                MaxNullable(first.SourceWallEndProjectionDistanceDrawingUnits, second.SourceWallEndProjectionDistanceDrawingUnits),
+                axisShift),
+            Thickness = thickness,
+            Confidence = new Confidence(Math.Min(first.Confidence.Value, second.Confidence.Value)),
+            SourcePrimitiveIds = first.SourcePrimitiveIds
+                .Concat(second.SourcePrimitiveIds)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray(),
+            SourceWallGraphEdgeIds = first.SourceWallGraphEdgeIds
+                .Concat(second.SourceWallGraphEdgeIds)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray(),
+            Evidence = evidence
+        };
     }
 
     private static bool ShouldMergeOverlappingCollinearPlacementSpans(
@@ -1437,15 +2482,15 @@ internal static class WallTopologySpanVisibility
         var suppressedSpanIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var group in spans
             .Where(IsAxisAlignedPlacementSpan)
-            .GroupBy(span => new PlacementRegularizationKey(
+            .GroupBy(span => new ContainedDuplicatePlacementKey(
                 span.PageNumber,
-                span.SourceWall?.WallType ?? WallType.Unknown,
                 ResolveAxisOrientation(span.CenterLine))))
         {
             var kept = new List<WallGraphTopologySpan>();
             foreach (var span in group
-                .OrderBy(span => IsSourceBackedFallbackSpan(span) ? 1 : 0)
+                .OrderBy(span => IsTopologyBlockedSourceBackedFallbackSpan(span) ? 1 : 0)
                 .ThenByDescending(span => span.DrawingLength)
+                .ThenBy(span => IsSourceBackedFallbackSpan(span) ? 1 : 0)
                 .ThenByDescending(span => span.Confidence.Value)
                 .ThenBy(span => span.Id, StringComparer.Ordinal))
             {
@@ -1490,8 +2535,9 @@ internal static class WallTopologySpanVisibility
         foreach (var kept in keptSpans)
         {
             var maxAxisDistance = ContainedDuplicateAxisDistance(candidate, kept);
+            var axisDistance = Math.Abs(AxisCoordinate(candidate) - AxisCoordinate(kept));
             if (ResolveAxisOrientation(kept.CenterLine) != candidateOrientation
-                || Math.Abs(AxisCoordinate(candidate) - AxisCoordinate(kept)) > maxAxisDistance)
+                || axisDistance > maxAxisDistance)
             {
                 continue;
             }
@@ -1503,17 +2549,21 @@ internal static class WallTopologySpanVisibility
             }
 
             var overlapRatio = overlap / Math.Max(candidate.DrawingLength, 0.001);
-            if (overlapRatio >= MinContainedDuplicateOverlapRatio)
+            if (IsContainedDuplicateOverlapAcceptable(candidate, kept, overlapRatio, axisDistance))
             {
                 if (candidate.SourceWall?.WallType == WallType.Exterior
                     && kept.SourceWall?.WallType == WallType.Exterior
+                    && !candidateIsSourceBackedFallback
+                    && !IsSourceBackedFallbackSpan(kept)
+                    && !IsSameLineContainedExteriorDuplicate(candidate, kept)
                     && !HasComparableExteriorFaceExtent(candidate, kept))
                 {
                     continue;
                 }
 
                 if (candidateIsSourceBackedFallback
-                    && !IsSameSourceBackedFallbackPlacement(candidate, kept))
+                    && !IsSameSourceBackedFallbackPlacement(candidate, kept)
+                    && !CanRepresentContainedSourceBackedFallback(candidate, kept))
                 {
                     continue;
                 }
@@ -1525,12 +2575,78 @@ internal static class WallTopologySpanVisibility
         return false;
     }
 
+    private static bool IsContainedDuplicateOverlapAcceptable(
+        WallGraphTopologySpan candidate,
+        WallGraphTopologySpan kept,
+        double overlapRatio,
+        double axisDistance)
+    {
+        if (axisDistance <= MaxContainedDuplicateAxisDistanceDrawingUnits
+            && overlapRatio >= MinContainedDuplicateOverlapRatio)
+        {
+            return true;
+        }
+
+        if (overlapRatio < MinNearContainedDuplicateOverlapRatio)
+        {
+            return false;
+        }
+
+        var candidateMin = AxisMin(candidate.CenterLine);
+        var candidateMax = AxisMax(candidate.CenterLine);
+        var keptMin = AxisMin(kept.CenterLine);
+        var keptMax = AxisMax(kept.CenterLine);
+        var overhang = Math.Max(0, keptMin - candidateMin)
+            + Math.Max(0, candidateMax - keptMax);
+        return overhang <= NearContainedDuplicateOverhangTolerance(candidate, kept);
+    }
+
+    private static bool IsSameLineContainedExteriorDuplicate(
+        WallGraphTopologySpan candidate,
+        WallGraphTopologySpan kept)
+    {
+        if (Math.Abs(AxisCoordinate(candidate) - AxisCoordinate(kept)) > MaxContainedDuplicateAxisDistanceDrawingUnits)
+        {
+            return false;
+        }
+
+        var candidateMin = AxisMin(candidate.CenterLine);
+        var candidateMax = AxisMax(candidate.CenterLine);
+        var keptMin = AxisMin(kept.CenterLine);
+        var keptMax = AxisMax(kept.CenterLine);
+        var overlap = Math.Min(candidateMax, keptMax) - Math.Max(candidateMin, keptMin);
+        if (overlap <= 0)
+        {
+            return false;
+        }
+
+        var containedRatio = overlap / Math.Max(candidate.DrawingLength, 0.001);
+        return containedRatio >= 0.985
+            && candidateMin >= keptMin - MaxContainedDuplicateAxisDistanceDrawingUnits
+            && candidateMax <= keptMax + MaxContainedDuplicateAxisDistanceDrawingUnits;
+    }
+
     private static bool IsSameSourceBackedFallbackPlacement(
         WallGraphTopologySpan candidate,
         WallGraphTopologySpan kept) =>
         string.Equals(candidate.WallId, kept.WallId, StringComparison.Ordinal)
         || HasSharedSourceReference(candidate.SourcePrimitiveIds, kept.SourcePrimitiveIds)
         || HasSharedSourceReference(candidate.SourceWallGraphEdgeIds, kept.SourceWallGraphEdgeIds);
+
+    private static bool CanRepresentContainedSourceBackedFallback(
+        WallGraphTopologySpan candidate,
+        WallGraphTopologySpan kept) =>
+        candidate.SourceWall?.WallType == WallType.Exterior
+        && kept.SourceWall?.WallType == WallType.Exterior
+        && !IsTopologyBlockedSourceBackedFallbackSpan(candidate)
+        && !IsTopologyBlockedSourceBackedFallbackSpan(kept)
+        && candidate.DrawingLength <= kept.DrawingLength
+        && ContainsAnyEvidence(
+            candidate.Evidence,
+            "global exterior-shell repair confirmed",
+            "trusted exterior shell continuity",
+            "exterior shell repair confirmed",
+            "exterior-shell repair confirmed");
 
     private static bool HasComparableExteriorFaceExtent(
         WallGraphTopologySpan first,
@@ -1573,7 +2689,16 @@ internal static class WallTopologySpanVisibility
     private static double ContainedDuplicateAxisDistance(WallGraphTopologySpan candidate, WallGraphTopologySpan kept) =>
         candidate.SourceWall?.WallType == WallType.Exterior && kept.SourceWall?.WallType == WallType.Exterior
             ? MaxExteriorFacePairAxisDistanceDrawingUnits
-            : MaxContainedDuplicateAxisDistanceDrawingUnits;
+            : Math.Clamp(
+                Math.Max(candidate.Thickness, kept.Thickness),
+                MaxContainedDuplicateAxisDistanceDrawingUnits,
+                MaxNearContainedDuplicateAxisDistanceDrawingUnits);
+
+    private static double NearContainedDuplicateOverhangTolerance(WallGraphTopologySpan candidate, WallGraphTopologySpan kept) =>
+        Math.Clamp(
+            Math.Max(candidate.Thickness, kept.Thickness) / 2.0,
+            MaxContainedDuplicateAxisDistanceDrawingUnits,
+            MaxNearContainedDuplicateOverhangDrawingUnits);
 
     private static IReadOnlyList<WallGraphTopologySpan> SplitCleanTopologyRunsAroundOpenings(
         IReadOnlyList<WallGraphTopologySpan> spans,
@@ -1631,6 +2756,11 @@ internal static class WallTopologySpanVisibility
             return [span];
         }
 
+        if (ShouldKeepExteriorTopologyContinuousAcrossOpeningCutouts(span, sourceWall, cutouts))
+        {
+            return [CreateContinuousExteriorOpeningTopologySpan(span, cutouts)];
+        }
+
         var pieces = new List<WallGraphTopologySpan>();
         var cursor = spanStart;
         var sequence = 1;
@@ -1668,6 +2798,56 @@ internal static class WallTopologySpanVisibility
             nextCutout: null);
 
         return pieces.Count == 0 ? Array.Empty<WallGraphTopologySpan>() : pieces.ToArray();
+    }
+
+    private static bool ShouldKeepExteriorTopologyContinuousAcrossOpeningCutouts(
+        WallGraphTopologySpan span,
+        WallSegment sourceWall,
+        IReadOnlyList<PlacementWallOpeningCutoutExport> cutouts)
+    {
+        if (sourceWall.WallType != WallType.Exterior
+            || sourceWall.DrawingLength < MinContinuousExteriorOpeningTopologyLengthDrawingUnits
+            || sourceWall.Confidence.Value < 0.70
+            || span.Confidence.Value < 0.70
+            || sourceWall.FragmentEvidence?.RequiresGeometryReview == true
+            || cutouts.Count == 0)
+        {
+            return false;
+        }
+
+        var evidence = sourceWall.Evidence
+            .Concat(span.Evidence)
+            .Concat(cutouts.SelectMany(cutout => cutout.Evidence))
+            .ToArray();
+        return !ContainsAnyEvidence(
+            evidence,
+            "door leaf",
+            "door swing",
+            "fixture detail",
+            "object/fixture",
+            "repeated short detail",
+            "surface pattern",
+            "wall-like linework near anchored opening");
+    }
+
+    private static WallGraphTopologySpan CreateContinuousExteriorOpeningTopologySpan(
+        WallGraphTopologySpan span,
+        IReadOnlyList<PlacementWallOpeningCutoutExport> cutouts)
+    {
+        var openingIds = string.Join(
+            ", ",
+            cutouts
+                .Select(cutout => cutout.OpeningId)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal));
+        var evidence = span.Evidence
+            .Append(
+                "clean placement exterior topology kept continuous across anchored opening cutouts"
+                + (string.IsNullOrWhiteSpace(openingIds) ? "" : $" {openingIds}"))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        return span with { Evidence = evidence };
     }
 
     private static void AddSplitPiece(
@@ -2317,6 +3497,7 @@ internal static class WallTopologySpanVisibility
         IReadOnlyDictionary<string, int> NodeDegreeById,
         IReadOnlySet<string> TopologyImportBlockedWallIds,
         IReadOnlyDictionary<string, IReadOnlyList<string>> ReviewReasonsByWallId,
+        IReadOnlyDictionary<string, int> RoomReferenceCountsByWallId,
         PlanCalibration Calibration);
 
     private readonly record struct PlacementRegularizationKey(
@@ -2324,7 +3505,17 @@ internal static class WallTopologySpanVisibility
         WallType WallType,
         PlacementRunOrientation Orientation);
 
+    private readonly record struct ContainedDuplicatePlacementKey(
+        int PageNumber,
+        PlacementRunOrientation Orientation);
+
     private readonly record struct CleanSpanInterval(double Start, double End);
+
+    private sealed record EndpointSnapCandidate(
+        WallGraphTopologySpan Target,
+        double AxisDistance,
+        double ProjectionOverrun,
+        double Score);
 
     private enum PlacementRunOrientation
     {
@@ -2370,17 +3561,28 @@ internal static class WallTopologySpanVisibility
                 [span.Id]);
         }
 
-        public CleanRunInterval Merge(CleanRunInterval next) =>
-            this with
+        public CleanRunInterval Merge(CleanRunInterval next, double gapDrawingUnits)
+        {
+            var evidence = Evidence
+                .Concat(next.Evidence)
+                .ToList();
+            if (gapDrawingUnits > MaxCleanRunJoinGapDrawingUnits)
+            {
+                evidence.Add(
+                    $"clean placement exterior source-wall run bridge: merged clean intervals across gap {gapDrawingUnits:0.###} drawing units");
+            }
+
+            return this with
             {
                 EndParameter = Math.Max(EndParameter, next.EndParameter),
                 Confidence = new Confidence(Math.Min(Confidence.Value, next.Confidence.Value)),
                 Thickness = Math.Max(Thickness, next.Thickness),
                 SourcePrimitiveIds = SourcePrimitiveIds.Concat(next.SourcePrimitiveIds).Distinct(StringComparer.Ordinal).ToArray(),
-                Evidence = Evidence.Concat(next.Evidence).Distinct(StringComparer.Ordinal).ToArray(),
+                Evidence = evidence.Distinct(StringComparer.Ordinal).ToArray(),
                 SourceToNodeId = next.SourceToNodeId,
                 SourceSpanIds = SourceSpanIds.Concat(next.SourceSpanIds).Distinct(StringComparer.Ordinal).ToArray()
             };
+        }
 
         public WallGraphTopologySpan ToSpan(WallSegment sourceWall, int runIndex)
         {

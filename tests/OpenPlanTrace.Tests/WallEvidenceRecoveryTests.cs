@@ -65,6 +65,68 @@ public sealed class WallEvidenceRecoveryTests
     }
 
     [Fact]
+    public async Task WallEvidenceRefinement_RecoversWallBandWhenOneFaceWasAlreadyWeakSingleLine()
+    {
+        var document = new PlanDocument(
+            "wall-evidence-recovery-reuses-weak-face",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(520, 280),
+                    new PlanPrimitive[]
+                    {
+                        Line("recover-face-a", new PlanPoint(100, 118), new PlanPoint(400, 118)),
+                        Line("recover-face-b", new PlanPoint(100, 124), new PlanPoint(400, 124))
+                    })
+            });
+        var context = new ScanContext(document, new ScannerOptions { DefaultWallThickness = 6 });
+        context.WallCandidates.Add(HostWall("host-left", new PlanPoint(100, 50), new PlanPoint(100, 240)));
+        context.WallCandidates.Add(HostWall("host-right", new PlanPoint(400, 50), new PlanPoint(400, 240)));
+        context.WallCandidates.Add(SingleLineWall("recover-face-a", new PlanPoint(100, 118), new PlanPoint(400, 118)));
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var recovered = Assert.Single(context.Walls.Where(wall =>
+            wall.Evidence.Any(item => item.Contains("recovered by wall evidence map", StringComparison.OrdinalIgnoreCase))));
+        Assert.Equal(WallDetectionKind.ParallelLinePair, recovered.DetectionKind);
+        Assert.Contains("recover-face-a", recovered.SourcePrimitiveIds);
+        Assert.Contains("recover-face-b", recovered.SourcePrimitiveIds);
+
+        var assessment = Assert.Single(context.WallEvidenceMap.WallAssessments, item => item.WallId == recovered.Id);
+        Assert.Equal(WallEvidenceDecision.Accept, assessment.Decision);
+        Assert.True(assessment.PlacementReady);
+    }
+
+    [Fact]
+    public async Task WallEvidenceRefinement_RecoversWallBandFromRectangleEdges()
+    {
+        var document = new PlanDocument(
+            "wall-evidence-recovery-rectangle-edges",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(520, 280),
+                    new PlanPrimitive[]
+                    {
+                        Rectangle("rect-wall-body", new PlanRect(100, 118, 300, 6))
+                    })
+            });
+        var context = new ScanContext(document, new ScannerOptions { DefaultWallThickness = 6 });
+        context.WallCandidates.Add(HostWall("host-left", new PlanPoint(100, 50), new PlanPoint(100, 240)));
+        context.WallCandidates.Add(HostWall("host-right", new PlanPoint(400, 50), new PlanPoint(400, 240)));
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var recovered = Assert.Single(context.Walls.Where(wall =>
+            wall.Evidence.Any(item => item.Contains("recovered by wall evidence map", StringComparison.OrdinalIgnoreCase))));
+        Assert.Equal(WallDetectionKind.ParallelLinePair, recovered.DetectionKind);
+        Assert.Contains("rect-wall-body", recovered.SourcePrimitiveIds);
+        Assert.Equal(6, recovered.PairEvidence?.FaceSeparation);
+    }
+
+    [Fact]
     public async Task WallEvidenceRefinement_DoesNotRecoverDenseParallelDetailBands()
     {
         var primitives = new List<PlanPrimitive>
@@ -349,6 +411,114 @@ public sealed class WallEvidenceRecoveryTests
         Assert.Contains(
             assessment.Evidence,
             item => item.Contains("short recovered unlayered/unknown wall segment requires review", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task WallEvidenceRefinement_DoesNotRecoverUnsupportedOneEndedShortReturns()
+    {
+        var document = new PlanDocument(
+            "wall-evidence-one-ended-short-return-gate",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(260, 220),
+                    new PlanPrimitive[]
+                    {
+                        Line("one-ended-short-return", new PlanPoint(100, 100), new PlanPoint(122, 100))
+                    })
+            });
+        var context = new ScanContext(
+            document,
+            new ScannerOptions
+            {
+                DefaultWallThickness = 4,
+                MinWallFragmentLength = 4,
+                MinWallLength = 36
+            });
+        context.WallCandidates.Add(HostWall("host-left", new PlanPoint(100, 50), new PlanPoint(100, 180)));
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.DoesNotContain(
+            context.Walls.SelectMany(wall => wall.SourcePrimitiveIds),
+            source => source == "one-ended-short-return");
+    }
+
+    [Fact]
+    public async Task WallEvidenceRefinement_RecoversStructurallySupportedDimensionLikeShortWallsAsReviewOnly()
+    {
+        var document = new PlanDocument(
+            "wall-evidence-dimension-like-short-wall-recovery",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(260, 220),
+                    new PlanPrimitive[]
+                    {
+                        Line("dimension-like-short-wall", new PlanPoint(100, 100), new PlanPoint(122, 100), "A-DIMS")
+                    })
+            });
+        var context = new ScanContext(
+            document,
+            new ScannerOptions
+            {
+                DefaultWallThickness = 4,
+                MinWallFragmentLength = 4,
+                MinWallLength = 36
+            });
+        context.LayerAnalysis = new PlanLayerAnalysis(new[]
+        {
+            Layer("A-DIMS", LayerCategory.Dimension)
+        });
+        context.WallCandidates.Add(HostWall("host-left", new PlanPoint(100, 50), new PlanPoint(100, 180)));
+        context.WallCandidates.Add(HostWall("host-right", new PlanPoint(122, 50), new PlanPoint(122, 180)));
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var recovered = Assert.Single(context.Walls.Where(wall => wall.SourcePrimitiveIds.Contains("dimension-like-short-wall")));
+        Assert.Contains(
+            recovered.Evidence,
+            item => item.Contains("source layer category Dimension", StringComparison.OrdinalIgnoreCase));
+
+        var assessment = Assert.Single(context.WallEvidenceMap.WallAssessments, item => item.WallId == recovered.Id);
+        Assert.Equal(WallEvidenceCategory.RecoveredWallBody, assessment.Category);
+        Assert.Equal(WallEvidenceDecision.Review, assessment.Decision);
+        Assert.False(assessment.PlacementReady);
+    }
+
+    [Fact]
+    public async Task WallEvidenceRefinement_DoesNotRecoverOneEndedDoorLeafLineNearSwingArc()
+    {
+        var document = new PlanDocument(
+            "wall-evidence-short-recovery-door-leaf-gate",
+            new[]
+            {
+                new PlanPage(
+                    1,
+                    new PlanSize(300, 220),
+                    new PlanPrimitive[]
+                    {
+                        Line("door-leaf-line", new PlanPoint(200, 100), new PlanPoint(232, 100)),
+                        DoorArc("door-swing", new PlanPoint(200, 100), 32, 0, Math.PI / 2)
+                    })
+            });
+        var context = new ScanContext(
+            document,
+            new ScannerOptions
+            {
+                DefaultWallThickness = 4,
+                MinWallFragmentLength = 4,
+                MinWallLength = 36
+            });
+        context.WallCandidates.Add(HostWall("host-hinge-side", new PlanPoint(200, 50), new PlanPoint(200, 180)));
+
+        await new WallEvidenceRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.DoesNotContain(
+            context.Walls.SelectMany(wall => wall.SourcePrimitiveIds),
+            source => source == "door-leaf-line");
     }
 
     [Fact]
@@ -1190,6 +1360,21 @@ public sealed class WallEvidenceRecoveryTests
             }
         };
 
+    private static RectanglePrimitive Rectangle(string sourceId, PlanRect bounds, string? layer = null) =>
+        new(bounds)
+        {
+            SourceId = sourceId,
+            Layer = layer,
+            Source = new PrimitiveSourceMetadata
+            {
+                SourceFormat = "test",
+                SourceId = sourceId,
+                Layer = layer,
+                EntityType = "RECTANGLE",
+                DrawingSpace = SourceDrawingSpace.Model
+            }
+        };
+
     private static TextPrimitive Text(string sourceId, string value, PlanRect bounds) =>
         new(value, bounds)
         {
@@ -1199,6 +1384,24 @@ public sealed class WallEvidenceRecoveryTests
                 SourceFormat = "test",
                 SourceId = sourceId,
                 EntityType = "TEXT",
+                DrawingSpace = SourceDrawingSpace.Model
+            }
+        };
+
+    private static ArcPrimitive DoorArc(
+        string sourceId,
+        PlanPoint center,
+        double radius,
+        double startAngleRadians,
+        double sweepAngleRadians) =>
+        new(center, radius, startAngleRadians, sweepAngleRadians)
+        {
+            SourceId = sourceId,
+            Source = new PrimitiveSourceMetadata
+            {
+                SourceFormat = "test",
+                SourceId = sourceId,
+                EntityType = "ARC",
                 DrawingSpace = SourceDrawingSpace.Model
             }
         };

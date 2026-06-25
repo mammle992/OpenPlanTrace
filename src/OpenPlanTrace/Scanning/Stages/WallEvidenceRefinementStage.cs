@@ -5,6 +5,8 @@ namespace OpenPlanTrace;
 internal sealed class WallEvidenceRefinementStage : IPipelineStage
 {
     private const string StageName = "wall-evidence";
+    private const int MinDimensionLikeFragmentedPerimeterPairMaxFaceFragments = 40;
+    private const int MinDimensionLikeFragmentedPerimeterPairTotalFaceFragments = 48;
 
     public string Name => StageName;
 
@@ -158,6 +160,14 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
             requiresReview = true;
             evidence.Add(pairedObjectEvidence);
         }
+        else if (TryClassifyStructurallySupportedPairedAnnotationWallReview(wall, context, out var pairedAnnotationWallEvidence))
+        {
+            category = WallEvidenceCategory.MediumWallBody;
+            confidence = new Confidence(Math.Min(0.90, Math.Max(wall.Confidence.Value, 0.70)));
+            placementReady = false;
+            requiresReview = true;
+            evidence.Add(pairedAnnotationWallEvidence);
+        }
         else if (TryClassifyPairedDimensionOrAnnotationNoise(wall, context, out var pairedDimensionEvidence))
         {
             category = WallEvidenceCategory.DimensionOrAnnotation;
@@ -181,6 +191,14 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
             placementReady = false;
             requiresReview = true;
             evidence.Add(outdoorBoundaryReviewEvidence);
+        }
+        else if (TryClassifyDimensionLikeFragmentedPerimeterPairReview(wall, context, out var dimensionLikePerimeterEvidence))
+        {
+            category = WallEvidenceCategory.MediumWallBody;
+            confidence = new Confidence(Math.Min(0.90, Math.Max(wall.Confidence.Value, 0.70)));
+            placementReady = false;
+            requiresReview = true;
+            evidence.Add(dimensionLikePerimeterEvidence);
         }
         else if (TryClassifyContinuitySupportedPairedWall(wall, context, out var continuityEvidence))
         {
@@ -629,6 +647,50 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
 
     private static double ShortFragmentedPairedWallReviewLength(ScannerOptions options) =>
         Math.Max(options.MinWallLength * 3.0, options.DefaultWallThickness * 18.0);
+
+    private static bool TryClassifyDimensionLikeFragmentedPerimeterPairReview(
+        WallSegment wall,
+        ScanContext context,
+        out string evidence)
+    {
+        evidence = string.Empty;
+        if (wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.PairEvidence is not { } pair
+            || IsWallLayerBacked(wall, context)
+            || wall.FragmentEvidence?.RequiresGeometryReview == true
+            || wall.WallType != WallType.Exterior && !HasLocalBoundaryEvidence(wall)
+            || !HasDimensionLikeEvidence(wall.Evidence))
+        {
+            return false;
+        }
+
+        var evidenceFragmentCounts = ReadFaceFragmentCountsFromEvidence(wall.Evidence);
+        var maxFaceFragments = Math.Max(
+            Math.Max(pair.FirstFaceFragmentCount, pair.SecondFaceFragmentCount),
+            evidenceFragmentCounts.MaxFaceFragments);
+        var totalFaceFragments = Math.Max(
+            pair.FirstFaceFragmentCount + pair.SecondFaceFragmentCount,
+            evidenceFragmentCounts.TotalFaceFragments);
+        if (maxFaceFragments < MinDimensionLikeFragmentedPerimeterPairMaxFaceFragments
+            && totalFaceFragments < MinDimensionLikeFragmentedPerimeterPairTotalFaceFragments)
+        {
+            return false;
+        }
+
+        evidence = string.Format(
+            CultureInfo.InvariantCulture,
+            "wall evidence: dimension-like fragmented perimeter parallel-face candidate needs review before exact placement (pair score {0:0.###}, max face fragments {1}, total face fragments {2})",
+            pair.Score,
+            maxFaceFragments,
+            totalFaceFragments);
+        return true;
+    }
+
+    private static bool HasDimensionLikeEvidence(IEnumerable<string> evidence) =>
+        evidence.Any(item =>
+            item.Contains("classified Dimension", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("dimension-like", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("dimension/annotation", StringComparison.OrdinalIgnoreCase));
 
     private static FaceFragmentCounts ReadFaceFragmentCountsFromEvidence(IEnumerable<string> evidence)
     {
@@ -1334,6 +1396,50 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
         return true;
     }
 
+    private static bool TryClassifyStructurallySupportedPairedAnnotationWallReview(
+        WallSegment wall,
+        ScanContext context,
+        out string evidence)
+    {
+        evidence = string.Empty;
+        if (wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.PairEvidence is not { } pair
+            || IsWallLayerBacked(wall, context))
+        {
+            return false;
+        }
+
+        var categories = SourceLayerCategories(wall, context)
+            .Distinct()
+            .ToArray();
+        if (!categories.Any(IsAnnotationLayerCategory))
+        {
+            return false;
+        }
+
+        var structuralEndpointSupportCount = CountStructuralEndpointSupport(
+            wall.CenterLine,
+            wall.PageNumber,
+            context.WallCandidates,
+            context.Options);
+        if (structuralEndpointSupportCount <= 0
+            || pair.Score < 0.74
+            || pair.OverlapRatio < 0.75
+            || pair.FaceSeparation < 1.5
+            || pair.FaceSeparation > Math.Max(context.Options.MaxWallPairSeparation, context.Options.DefaultWallThickness * 4.0)
+            || wall.DrawingLength < Math.Max(context.Options.MinWallLength * 1.15, 20.0))
+        {
+            return false;
+        }
+
+        evidence = string.Format(
+            CultureInfo.InvariantCulture,
+            "wall evidence: dimension/text/grid-layer paired wall body has structural endpoint support ({0}) and pair score {1:0.###}; keep for topology and room-boundary refinement before exact placement",
+            structuralEndpointSupportCount,
+            pair.Score);
+        return true;
+    }
+
     private static bool HasTwoSidedStructuralSupport(WallSegment wall, ScanContext context) =>
         CountDistinctStructuralSupportWalls(
             wall.CenterLine,
@@ -1986,9 +2092,7 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
             .Where(pattern => pattern.ExcludedFromWallDetection || pattern.ExcludedFromStructuralTopology)
             .SelectMany(pattern => pattern.SourcePrimitiveIds)
             .ToHashSet(StringComparer.Ordinal);
-        var usedSourceIds = context.WallCandidates
-            .SelectMany(wall => wall.SourcePrimitiveIds)
-            .ToHashSet(StringComparer.Ordinal);
+        var blockedSourceIds = BlockedWallRecoverySourceIds(context.WallCandidates, context);
         var existingWalls = context.WallCandidates.ToArray();
 
         foreach (var page in context.Document.Pages)
@@ -2000,7 +2104,7 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
                 .OrderByDescending(region => region.Bounds.Area)
                 .FirstOrDefault();
             var allowedBounds = mainRegion?.Bounds ?? page.Bounds;
-            var lineCandidates = PageLineCandidates(page, allowedBounds, surfaceSourceIds, usedSourceIds, context)
+            var lineCandidates = PageLineCandidates(page, allowedBounds, surfaceSourceIds, blockedSourceIds, context)
                 .ToArray();
             var pageRecovered = RecoverAxisPairsForPage(
                     page.Number,
@@ -2064,12 +2168,18 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
                     continue;
                 }
 
+                if (IsShortRecoveryDoorLeafNoise(candidate, page, context.Options))
+                {
+                    continue;
+                }
+
                 var structuralSupportCount = CountStructuralEndpointSupport(
                     candidate.Segment,
                     page.Number,
                     pageExistingWalls,
                     context.Options);
                 var wallLayerBacked = IsWallLikeCategory(candidate.LayerCategory);
+                var annotationLikeLayerBacked = IsAnnotationLikeShortRecoveryCategory(candidate.LayerCategory);
                 var minimumLayerBackedLength = Math.Max(
                     context.Options.MinWallLength * 0.50,
                     context.Options.DefaultWallThickness * 3.0);
@@ -2083,6 +2193,13 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
                         continue;
                     }
                 }
+                else if (annotationLikeLayerBacked)
+                {
+                    if (structuralSupportCount < 2 || candidate.Length < minimumUnlayeredLength)
+                    {
+                        continue;
+                    }
+                }
                 else if (structuralSupportCount < 2 || candidate.Length < minimumUnlayeredLength)
                 {
                     continue;
@@ -2091,6 +2208,7 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
                 var score = Math.Clamp(
                     0.54
                     + (wallLayerBacked ? 0.10 : 0)
+                    + (annotationLikeLayerBacked ? 0.02 : 0)
                     + (structuralSupportCount * 0.08)
                     + Math.Min(0.08, candidate.Length / Math.Max(context.Options.MinWallLength * 8.0, 1)),
                     0,
@@ -2301,6 +2419,17 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
             });
     }
 
+    private static IReadOnlySet<string> BlockedWallRecoverySourceIds(IEnumerable<WallSegment> walls, ScanContext context) =>
+        walls
+            .Where(wall =>
+                (wall.PairEvidence is not null
+                    && wall.FragmentEvidence?.RequiresGeometryReview != true
+                    && wall.Confidence.Value >= 0.62)
+                || IsWallLayerBacked(wall, context))
+            .SelectMany(wall => wall.SourcePrimitiveIds)
+            .Where(sourceId => !string.IsNullOrWhiteSpace(sourceId))
+            .ToHashSet(StringComparer.Ordinal);
+
     private static IEnumerable<PrimitiveLineCandidate> PageShortLineCandidates(
         PlanPage page,
         PlanRect allowedBounds,
@@ -2313,40 +2442,26 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
             context.Options.DefaultWallThickness * 2.5);
         var maximumLength = Math.Max(context.Options.MinWallLength * 1.15, minimumLength + 1);
 
-        for (var index = 0; index < page.Primitives.Count; index++)
+        foreach (var primitiveLine in PrimitiveGeometry.EnumerateLines(page, context))
         {
-            if (page.Primitives[index] is not LinePrimitive line)
-            {
-                continue;
-            }
-
-            var sourceId = context.PrimitiveId(page.Number, index, line);
+            var sourceId = primitiveLine.PrimitiveId;
+            var segment = primitiveLine.Segment;
             if (usedSourceIds.Contains(sourceId)
                 || surfaceSourceIds.Contains(sourceId)
-                || line.Segment.Length < minimumLength
-                || line.Segment.Length >= maximumLength
-                || !allowedBounds.Intersects(line.Segment.Bounds.Inflate(context.Options.WallSnapTolerance)))
+                || segment.Length < minimumLength
+                || segment.Length >= maximumLength
+                || !allowedBounds.Intersects(segment.Bounds.Inflate(context.Options.WallSnapTolerance)))
             {
                 continue;
             }
 
-            var category = LayerCategoryFor(line.Layer ?? line.Source.Layer, context);
-            if (category is LayerCategory.Dimension
-                or LayerCategory.Text
-                or LayerCategory.Grid
-                or LayerCategory.Door
-                or LayerCategory.Window
-                or LayerCategory.Equipment
-                or LayerCategory.Electrical
-                or LayerCategory.HVAC
-                or LayerCategory.Plumbing
-                or LayerCategory.FireSafety
-                or LayerCategory.SurfacePattern)
+            var category = LayerCategoryFor(primitiveLine.Primitive.Layer ?? primitiveLine.Primitive.Source.Layer, context);
+            if (IsHardBlockedShortRecoveryLayer(category))
             {
                 continue;
             }
 
-            var orientation = ResolveAxisOrientation(line.Segment);
+            var orientation = ResolveAxisOrientation(segment);
             if (orientation == WallOrientation.Unknown)
             {
                 continue;
@@ -2355,12 +2470,30 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
             yield return new PrimitiveLineCandidate(
                 sourceId,
                 page.Number,
-                line.Segment,
+                segment,
                 orientation,
                 category,
-                line.Layer ?? line.Source.Layer);
+                primitiveLine.Primitive.Layer ?? primitiveLine.Primitive.Source.Layer);
         }
     }
+
+    private static bool IsHardBlockedShortRecoveryLayer(LayerCategory category) =>
+        category is LayerCategory.Door
+            or LayerCategory.Window
+            or LayerCategory.Room
+            or LayerCategory.Equipment
+            or LayerCategory.Electrical
+            or LayerCategory.HVAC
+            or LayerCategory.Plumbing
+            or LayerCategory.FireSafety
+            or LayerCategory.Furniture
+            or LayerCategory.Fixture
+            or LayerCategory.SurfacePattern;
+
+    private static bool IsAnnotationLikeShortRecoveryCategory(LayerCategory category) =>
+        category is LayerCategory.Dimension
+            or LayerCategory.Text
+            or LayerCategory.Grid;
 
     private static IEnumerable<PrimitiveLineCandidate> PageLineCandidates(
         PlanPage page,
@@ -2369,23 +2502,19 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
         IReadOnlySet<string> usedSourceIds,
         ScanContext context)
     {
-        for (var index = 0; index < page.Primitives.Count; index++)
+        foreach (var primitiveLine in PrimitiveGeometry.EnumerateLines(page, context))
         {
-            if (page.Primitives[index] is not LinePrimitive line)
-            {
-                continue;
-            }
-
-            var sourceId = context.PrimitiveId(page.Number, index, line);
+            var sourceId = primitiveLine.PrimitiveId;
+            var segment = primitiveLine.Segment;
             if (usedSourceIds.Contains(sourceId)
                 || surfaceSourceIds.Contains(sourceId)
-                || line.Segment.Length < Math.Max(context.Options.MinWallLength * 1.15, 20)
-                || !allowedBounds.Intersects(line.Segment.Bounds.Inflate(context.Options.WallSnapTolerance)))
+                || segment.Length < Math.Max(context.Options.MinWallLength * 1.15, 20)
+                || !allowedBounds.Intersects(segment.Bounds.Inflate(context.Options.WallSnapTolerance)))
             {
                 continue;
             }
 
-            var category = LayerCategoryFor(line.Layer ?? line.Source.Layer, context);
+            var category = LayerCategoryFor(primitiveLine.Primitive.Layer ?? primitiveLine.Primitive.Source.Layer, context);
             if (category is LayerCategory.Dimension
                 or LayerCategory.Text
                 or LayerCategory.Grid
@@ -2401,7 +2530,7 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
                 continue;
             }
 
-            var orientation = ResolveAxisOrientation(line.Segment);
+            var orientation = ResolveAxisOrientation(segment);
             if (orientation == WallOrientation.Unknown)
             {
                 continue;
@@ -2410,10 +2539,10 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
             yield return new PrimitiveLineCandidate(
                 sourceId,
                 page.Number,
-                line.Segment,
+                segment,
                 orientation,
                 category,
-                line.Layer ?? line.Source.Layer);
+                primitiveLine.Primitive.Layer ?? primitiveLine.Primitive.Source.Layer);
         }
     }
 
@@ -2456,8 +2585,18 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
                         continue;
                     }
 
+                    var lengthBalance = Math.Min(first.Length, second.Length) / Math.Max(1, Math.Max(first.Length, second.Length));
+                    if (lengthBalance < 0.55)
+                    {
+                        continue;
+                    }
+
                     var centerLine = CenterLine(first, second, overlap.Start, overlap.End);
-                    if (IsRepresentedByExistingWall(centerLine, existingWalls, context.Options))
+                    if (IsRepresentedByExistingWall(
+                            centerLine,
+                            existingWalls,
+                            context.Options,
+                            nearbySingleLineRepresents: false))
                     {
                         continue;
                     }
@@ -2478,6 +2617,7 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
                     var score = Math.Clamp(
                         0.44
                         + (overlapRatio * 0.22)
+                        + (lengthBalance * 0.10)
                         + (wallLayerBacked ? 0.18 : 0)
                         + (structuralSupportCount * 0.08)
                         - (Math.Abs(separation - context.Options.DefaultWallThickness) / Math.Max(context.Options.MaxWallPairSeparation, 1) * 0.08),
@@ -2508,7 +2648,11 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
                 continue;
             }
 
-            if (IsRepresentedByExistingWall(pair.CenterLine, existingWalls.Concat(recovered).ToArray(), context.Options))
+            if (IsRepresentedByExistingWall(
+                    pair.CenterLine,
+                    existingWalls.Concat(recovered).ToArray(),
+                    context.Options,
+                    nearbySingleLineRepresents: false))
             {
                 continue;
             }
@@ -2709,6 +2853,9 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
             {
                 "recovered by wall evidence map as short supported wall segment",
                 $"structural endpoint support count {structuralSupportCount.ToString(CultureInfo.InvariantCulture)}",
+                structuralSupportCount >= 2
+                    ? "short recovery used two-ended structural support"
+                    : "short recovery used wall-layer-backed structural support",
                 $"source layer category {candidate.LayerCategory}",
                 $"recovery score {Math.Round(score, 3).ToString(CultureInfo.InvariantCulture)}"
             },
@@ -2718,10 +2865,33 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
         };
     }
 
+    private static bool IsShortRecoveryDoorLeafNoise(
+        PrimitiveLineCandidate candidate,
+        PlanPage page,
+        ScannerOptions options)
+    {
+        var syntheticWall = new WallSegment(
+            "wall-evidence-short-recovery-candidate",
+            page.Number,
+            candidate.Segment,
+            options.DefaultWallThickness,
+            Confidence.Low);
+        var radialLeafSupport = NearbyRadialDoorLeafArcSupport(syntheticWall, page, options);
+        if (radialLeafSupport.Score >= 0.70)
+        {
+            return true;
+        }
+
+        var arcSupport = NearbyDoorArcSupport(syntheticWall, page, options);
+        return arcSupport.Score >= 0.86
+            && candidate.Length <= Math.Max(options.MaxOpeningGap * 1.05, options.MinWallLength * 1.15);
+    }
+
     private static bool IsRepresentedByExistingWall(
         PlanLineSegment centerLine,
         IReadOnlyList<WallSegment> existingWalls,
-        ScannerOptions options)
+        ScannerOptions options,
+        bool nearbySingleLineRepresents = true)
     {
         foreach (var wall in existingWalls)
         {
@@ -2734,6 +2904,13 @@ internal sealed class WallEvidenceRefinementStage : IPipelineStage
                 centerLine.DistanceToPoint(wall.CenterLine.Midpoint),
                 wall.CenterLine.DistanceToPoint(centerLine.Midpoint));
             if (distance > Math.Max(options.WallSnapTolerance * 2.0, options.DefaultWallThickness * 1.5))
+            {
+                continue;
+            }
+
+            if (!nearbySingleLineRepresents
+                && wall.PairEvidence is null
+                && distance > Math.Max(0.5, options.WallSnapTolerance * 0.75))
             {
                 continue;
             }

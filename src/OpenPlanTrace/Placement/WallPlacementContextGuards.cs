@@ -244,10 +244,19 @@ public static class WallPlacementContextGuards
             || assessment is null
             || assessment.Confidence.Value < MinTrustedLongOneEndpointFragmentMergedInteriorAssessmentConfidence
             || assessment.RejectedAsNoise
-            || !assessment.PlacementReady
-            || assessment.RequiresReview
             || assessment.Decision == WallEvidenceDecision.Reject
             || assessment.Category != WallEvidenceCategory.MediumWallBody)
+        {
+            return false;
+        }
+
+        var reviewOnlyMainStructuralFragment =
+            component.Kind == WallGraphComponentKind.MainStructural
+            && !assessment.PlacementReady
+            && assessment.RequiresReview
+            && assessment.Decision == WallEvidenceDecision.Review;
+        if ((!assessment.PlacementReady || assessment.RequiresReview)
+            && !reviewOnlyMainStructuralFragment)
         {
             return false;
         }
@@ -269,6 +278,12 @@ public static class WallPlacementContextGuards
             || (!EvidenceContains(evidence, "one endpoint supported by structural context")
                 && !EvidenceContains(evidence, "both endpoints supported by structural context"))
             || !EvidenceContains(evidence, "merged collinear wall fragments"))
+        {
+            return false;
+        }
+
+        if (reviewOnlyMainStructuralFragment
+            && !EvidenceContains(evidence, "unlayered fragment-merged wall candidate has only one trusted structural endpoint"))
         {
             return false;
         }

@@ -192,6 +192,12 @@ internal sealed class WallDetectionStage : IPipelineStage
                 + AddAxisWalls(page.Number, mainRegion.Id, verticalRuns, axisPairSeparationProfile, context);
             var nonAxisPairCount = AddNonAxisWalls(page.Number, mainRegion.Id, nonAxisRuns, context);
             var reconstructedPairs = axisPairCount + nonAxisPairCount;
+            var filledWallSolidCount = AddFilledWallSolidCandidates(
+                page.Number,
+                mainRegion.Id,
+                page.Primitives,
+                mainRegion.Bounds,
+                context);
             AddWallPairSeparationProfileDiagnostic(page.Number, mainRegion.Id, "axis", axisPairSeparationProfile, axisPairCount, context);
 
             if (layerFilteredCandidates.Length > 0)
@@ -451,6 +457,30 @@ internal sealed class WallDetectionStage : IPipelineStage
                     mainRegion,
                     reconstructedWalls,
                     context);
+            }
+
+            if (filledWallSolidCount > 0)
+            {
+                var filledWallSolids = context.WallCandidates
+                    .Skip(wallStartCount)
+                    .Where(wall => wall.Evidence.Any(item =>
+                        item.Contains("filled wall-solid primitive", StringComparison.OrdinalIgnoreCase)))
+                    .ToArray();
+                context.AddDiagnostic(
+                    "walls.filled_solids.recovered",
+                    DiagnosticSeverity.Info,
+                    Name,
+                    $"{filledWallSolidCount} filled long-thin wall solid primitive(s) were recovered as wall candidates.",
+                    page.Number,
+                    PlanRect.Union(filledWallSolids.Select(wall => wall.Bounds)).ClampTo(page.Bounds),
+                    Confidence.Medium,
+                    scope: DiagnosticScope.Detection,
+                    sourcePrimitiveIds: filledWallSolids.SelectMany(wall => wall.SourcePrimitiveIds),
+                    properties: new Dictionary<string, string>
+                    {
+                        ["filledWallSolidCount"] = filledWallSolidCount.ToString(),
+                        ["sourceRegionId"] = mainRegion.Id
+                    });
             }
 
             var unsupportedWallBodyLinework = FilterUnsupportedWallBodyLinework(
@@ -3543,6 +3573,278 @@ internal sealed class WallDetectionStage : IPipelineStage
 
         AddWallPairSeparationProfileDiagnostic(pageNumber, sourceRegionId, "nonOrthogonal", profile, pairs.Length, context);
         return pairs.Length;
+    }
+
+    private static int AddFilledWallSolidCandidates(
+        int pageNumber,
+        string sourceRegionId,
+        IReadOnlyList<PlanPrimitive> primitives,
+        PlanRect mainRegionBounds,
+        ScanContext context)
+    {
+        var added = 0;
+
+        for (var index = 0; index < primitives.Count; index++)
+        {
+            var primitive = primitives[index];
+            if (!TryGetFilledWallSolidBounds(primitive, context.Options, out var bounds)
+                || !mainRegionBounds.Intersects(bounds.Inflate(context.Options.WallSnapTolerance)))
+            {
+                continue;
+            }
+
+            var sourceId = context.PrimitiveId(pageNumber, index, primitive);
+            if (TryAugmentExistingFilledWallSolidCandidate(
+                    context,
+                    pageNumber,
+                    sourceId,
+                    bounds))
+            {
+                added++;
+                continue;
+            }
+
+            context.WallCandidates.Add(CreateFilledWallSolidWall(
+                pageNumber,
+                sourceRegionId,
+                sourceId,
+                bounds,
+                context.WallCandidates.Count + 1,
+                context.Options,
+                context.Calibration));
+            added++;
+        }
+
+        return added;
+    }
+
+    private static bool TryAugmentExistingFilledWallSolidCandidate(
+        ScanContext context,
+        int pageNumber,
+        string sourceId,
+        PlanRect bounds)
+    {
+        var horizontal = bounds.Width >= bounds.Height;
+        var longSide = Math.Max(bounds.Width, bounds.Height);
+        var centerCoordinate = horizontal
+            ? bounds.Top + (bounds.Height / 2.0)
+            : bounds.Left + (bounds.Width / 2.0);
+        var tolerance = Math.Max(context.Options.WallSnapTolerance * 2.0, Math.Min(bounds.Width, bounds.Height));
+
+        var bestIndex = -1;
+        var bestLength = 0.0;
+        for (var index = 0; index < context.WallCandidates.Count; index++)
+        {
+            var wall = context.WallCandidates[index];
+            if (wall.PageNumber != pageNumber
+                || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+                || !wall.SourcePrimitiveIds.Contains(sourceId, StringComparer.Ordinal)
+                || wall.DrawingLength < longSide * 0.72
+                || wall.DrawingLength < bestLength)
+            {
+                continue;
+            }
+
+            var wallHorizontal = wall.CenterLine.IsHorizontal(context.Options.GeometryTolerance.Distance);
+            var wallVertical = wall.CenterLine.IsVertical(context.Options.GeometryTolerance.Distance);
+            var wallCoordinate = horizontal
+                ? (wall.CenterLine.Start.Y + wall.CenterLine.End.Y) / 2.0
+                : (wall.CenterLine.Start.X + wall.CenterLine.End.X) / 2.0;
+            if ((horizontal && !wallHorizontal)
+                || (!horizontal && !wallVertical)
+                || Math.Abs(wallCoordinate - centerCoordinate) > tolerance)
+            {
+                continue;
+            }
+
+            bestIndex = index;
+            bestLength = wall.DrawingLength;
+        }
+
+        if (bestIndex < 0)
+        {
+            return false;
+        }
+
+        var existing = context.WallCandidates[bestIndex];
+        var evidence = AppendUniqueEvidence(
+            existing.Evidence,
+            "filled wall-solid primitive",
+            "wall evidence: filled closed vector wall body",
+            $"filled wall-solid bounds {Math.Round(bounds.Width, 3)} x {Math.Round(bounds.Height, 3)} drawing units");
+        if (evidence.Count == existing.Evidence.Count)
+        {
+            return false;
+        }
+
+        context.WallCandidates[bestIndex] = existing with { Evidence = evidence };
+        return true;
+    }
+
+    private static bool TryGetFilledWallSolidBounds(
+        PlanPrimitive primitive,
+        ScannerOptions options,
+        out PlanRect bounds)
+    {
+        bounds = primitive switch
+        {
+            RectanglePrimitive rectangle => rectangle.Rectangle,
+            PolylinePrimitive { Closed: true } polyline => polyline.Bounds,
+            _ => PlanRect.Empty
+        };
+
+        if (bounds.IsEmpty
+            || !IsFilledNonWhiteClosedPrimitive(primitive)
+            || bounds.Width <= 0
+            || bounds.Height <= 0)
+        {
+            return false;
+        }
+
+        var longSide = Math.Max(bounds.Width, bounds.Height);
+        var shortSide = Math.Min(bounds.Width, bounds.Height);
+        var minimumLength = Math.Max(options.MinWallLength * 1.15, 30.0);
+        var minimumThickness = Math.Max(1.2, options.MinWallPairSeparation * 0.6);
+        var maximumThickness = Math.Max(options.MaxWallPairSeparation, options.DefaultWallThickness * 6.0);
+        if (longSide < minimumLength
+            || shortSide < minimumThickness
+            || shortSide > maximumThickness)
+        {
+            return false;
+        }
+
+        var aspectRatio = longSide / Math.Max(shortSide, 0.001);
+        return aspectRatio >= 3.0;
+    }
+
+    private static bool IsFilledNonWhiteClosedPrimitive(PlanPrimitive primitive)
+    {
+        if (!primitive.Source.Properties.TryGetValue("isFilled", out var filled)
+            || !bool.TryParse(filled, out var isFilled)
+            || !isFilled)
+        {
+            return false;
+        }
+
+        if (primitive.Source.Properties.TryGetValue("isClipping", out var clipping)
+            && bool.TryParse(clipping, out var isClipping)
+            && isClipping)
+        {
+            return false;
+        }
+
+        if (string.Equals(primitive.Source.LineType, "dashed", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return !LooksLikeWhiteOrBackgroundColor(primitive.Source.Color);
+    }
+
+    private static bool LooksLikeWhiteOrBackgroundColor(string? color)
+    {
+        if (string.IsNullOrWhiteSpace(color))
+        {
+            return false;
+        }
+
+        var normalized = color.Replace(" ", string.Empty, StringComparison.Ordinal).ToUpperInvariant();
+        return normalized.Contains("RGB:(1,1,1)", StringComparison.Ordinal)
+            || normalized.Contains("RGB:(1,000000,1,000000,1,000000)", StringComparison.Ordinal)
+            || normalized.Contains("DEVICEGRAY:1", StringComparison.Ordinal)
+            || normalized.Contains("GRAY:1", StringComparison.Ordinal)
+            || normalized.Contains("GREY:1", StringComparison.Ordinal)
+            || normalized.Contains("WHITE", StringComparison.Ordinal);
+    }
+
+    private static WallSegment CreateFilledWallSolidWall(
+        int pageNumber,
+        string sourceRegionId,
+        string sourceId,
+        PlanRect bounds,
+        int wallNumber,
+        ScannerOptions options,
+        PlanCalibration calibration)
+    {
+        var horizontal = bounds.Width >= bounds.Height;
+        var thickness = horizontal ? bounds.Height : bounds.Width;
+        var centerLine = horizontal
+            ? new PlanLineSegment(
+                new PlanPoint(bounds.Left, bounds.Top + (bounds.Height / 2.0)),
+                new PlanPoint(bounds.Right, bounds.Top + (bounds.Height / 2.0)))
+            : new PlanLineSegment(
+                new PlanPoint(bounds.Left + (bounds.Width / 2.0), bounds.Top),
+                new PlanPoint(bounds.Left + (bounds.Width / 2.0), bounds.Bottom));
+        var firstFace = horizontal
+            ? new PlanLineSegment(new PlanPoint(bounds.Left, bounds.Top), new PlanPoint(bounds.Right, bounds.Top))
+            : new PlanLineSegment(new PlanPoint(bounds.Left, bounds.Top), new PlanPoint(bounds.Left, bounds.Bottom));
+        var secondFace = horizontal
+            ? new PlanLineSegment(new PlanPoint(bounds.Left, bounds.Bottom), new PlanPoint(bounds.Right, bounds.Bottom))
+            : new PlanLineSegment(new PlanPoint(bounds.Right, bounds.Top), new PlanPoint(bounds.Right, bounds.Bottom));
+        var scaleGroup = calibration.SelectMeasurementScaleGroup(
+            pageNumber,
+            centerLine.Bounds.Inflate(Math.Max(thickness / 2.0, 0.5)),
+            sourceRegionId);
+
+        var confidence = new Confidence(Math.Clamp(
+            0.82 + Math.Min(0.1, centerLine.Length / Math.Max(1.0, options.MinWallLength * 24.0)),
+            0.82,
+            0.92));
+        var pairScore = Math.Clamp(
+            0.86 + Math.Min(0.08, centerLine.Length / Math.Max(1.0, options.MinWallLength * 20.0)),
+            0.86,
+            0.94);
+
+        return new WallSegment(
+            $"page:{pageNumber}:wall:{wallNumber}",
+            pageNumber,
+            centerLine,
+            thickness,
+            confidence)
+        {
+            SourceRegionId = sourceRegionId,
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            SourcePrimitiveIds = new[] { sourceId },
+            Evidence = new[]
+            {
+                "filled wall-solid primitive",
+                "parallel wall-face pair",
+                $"face separation {Math.Round(thickness, 3)} drawing units",
+                $"pair score {Math.Round(pairScore, 3)}",
+                "overlap ratio 1",
+                $"filled wall-solid bounds {Math.Round(bounds.Width, 3)} x {Math.Round(bounds.Height, 3)} drawing units",
+                "wall evidence: filled closed vector wall body"
+            },
+            PairEvidence = new WallPairEvidence(
+                firstFace,
+                secondFace,
+                Math.Round(thickness, 3),
+                OverlapRatio: 1,
+                Score: Math.Round(pairScore, 3),
+                FirstFaceFragmentCount: 1,
+                SecondFaceFragmentCount: 1,
+                FirstFaceSourcePrimitiveIds: new[] { sourceId },
+                SecondFaceSourcePrimitiveIds: new[] { sourceId }),
+            LengthMeters = calibration.ToMeters(centerLine.Length, scaleGroup),
+            ThicknessMillimeters = calibration.ToMillimeters(thickness, scaleGroup),
+            MeasurementScaleGroupId = scaleGroup?.Id
+        };
+    }
+
+    private static IReadOnlyList<string> AppendUniqueEvidence(
+        IReadOnlyList<string> existing,
+        params string[] evidence)
+    {
+        var result = existing.ToList();
+        foreach (var item in evidence)
+        {
+            if (!result.Contains(item, StringComparer.OrdinalIgnoreCase))
+            {
+                result.Add(item);
+            }
+        }
+
+        return result;
     }
 
     private static WallSegment CreateAxisWall(
