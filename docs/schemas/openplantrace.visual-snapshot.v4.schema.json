@@ -358,6 +358,7 @@
         "representedWallCount",
         "placementSuppressedWallCount",
         "placementReviewWallCount",
+        "residualEndpointOnHostWall",
         "omissionCounts",
         "topOmissions"
       ],
@@ -377,6 +378,9 @@
         "placementReviewWallCount": {
           "$ref": "#/$defs/nonNegativeInteger"
         },
+        "residualEndpointOnHostWall": {
+          "$ref": "#/$defs/wallGraphResidualSummary"
+        },
         "omissionCounts": {
           "$ref": "#/$defs/countBreakdown"
         },
@@ -391,6 +395,34 @@
           "items": {
             "$ref": "#/$defs/wallPlacementOmittedWallExample"
           }
+        }
+      }
+    },
+    "wallGraphResidualSummary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "candidateEndpointCount",
+        "coincidentCandidateEndpointCount",
+        "sameAxisCandidateEndpointCount",
+        "perpendicularCandidateEndpointCount",
+        "maxDistance"
+      ],
+      "properties": {
+        "candidateEndpointCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "coincidentCandidateEndpointCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "sameAxisCandidateEndpointCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "perpendicularCandidateEndpointCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "maxDistance": {
+          "$ref": "#/$defs/nonNegativeNumber"
         }
       }
     },

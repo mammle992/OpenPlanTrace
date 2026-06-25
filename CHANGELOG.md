@@ -8,6 +8,36 @@ fix counter. When `DEF` reaches `030`, the next major work cycle moves to the
 next `BC` track and resets to `000`. Individual JSON contracts keep their own
 schema versions.
 
+## [0.05.030] - 2026-06-25
+
+- Improved tiny wall-stub cleanup.
+- Improved wall graph residual QA counts.
+- Small improvement to visual snapshot schema and viewer summaries.
+
+## [0.05.029] - 2026-06-25
+
+- Improved wall graph residual diagnostics.
+- Improved endpoint-on-host-wall QA evidence.
+- Small improvement to topology diagnostic tests.
+
+## [0.05.028] - 2026-06-25
+
+- Improved final endpoint-on-wall cleanup.
+- Improved near-corner wall graph snapping.
+- Small improvement to wall topology regression tests.
+
+## [0.05.027] - 2026-06-25
+
+- Improved shared wall-junction graph splitting.
+- Improved branch node preservation during wall compaction.
+- Small improvement to placement graph topology cleanup.
+
+## [0.05.026] - 2026-06-25
+
+- Improved placement graph import gating.
+- Improved isolated exterior fragment suppression.
+- Small improvement to visual snapshot wall counts.
+
 ## [0.05.025] - 2026-06-25
 
 - Improved dominant wall-axis merging.

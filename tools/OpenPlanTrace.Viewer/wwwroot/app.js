@@ -9638,6 +9638,7 @@ function visualSnapshotCurrentPage(snapshot = state.visualSnapshot) {
 function visualSnapshotCountRows(snapshot = state.visualSnapshot) {
   const page = visualSnapshotCurrentPage(snapshot);
   const wallPlacement = page?.wallPlacement;
+  const residual = wallPlacement?.residualEndpointOnHostWall;
   return [
     ["Pages", snapshot?.pages?.length ?? 0],
     ["Current page", page ? `${page.pageNumber}` : "-"],
@@ -9648,6 +9649,7 @@ function visualSnapshotCountRows(snapshot = state.visualSnapshot) {
     ["Review walls", wallPlacement?.placementReviewWallCount ?? 0],
     ["Suppressed walls", wallPlacement?.placementSuppressedWallCount ?? 0],
     ["Represented walls", wallPlacement?.representedWallCount ?? 0],
+    ["Endpoint-on-wall residuals", residual?.candidateEndpointCount ?? 0],
     ["Review queue", snapshot?.reviewQueueCount ?? 0],
     ["Issues", visualSnapshotIssues(snapshot).length],
     ["Quality", snapshot?.qualityGrade ?? "-"]
@@ -9657,6 +9659,7 @@ function visualSnapshotCountRows(snapshot = state.visualSnapshot) {
 function visualSnapshotAnalysisRows(snapshot = state.visualSnapshot, page = visualSnapshotCurrentPage(snapshot), layerSummary = "-") {
   const issues = visualSnapshotIssuesForPage(page, snapshot);
   const wallPlacement = page?.wallPlacement;
+  const residual = wallPlacement?.residualEndpointOnHostWall;
   return [
     ["Current page", page ? `${page.pageNumber}` : "-"],
     ["Page size", page ? `${formatCoordinateNumber(page.width)} x ${formatCoordinateNumber(page.height)}` : "-"],
@@ -9667,6 +9670,7 @@ function visualSnapshotAnalysisRows(snapshot = state.visualSnapshot, page = visu
     ["Review walls", wallPlacement?.placementReviewWallCount ?? 0],
     ["Suppressed walls", wallPlacement?.placementSuppressedWallCount ?? 0],
     ["Represented walls", wallPlacement?.representedWallCount ?? 0],
+    ["Endpoint-on-wall residuals", residual?.candidateEndpointCount ?? 0],
     ["Top wall omission", visualSnapshotTopWallOmissionLabel(wallPlacement)],
     ["Source layers", page?.layers?.length ?? 0],
     ["Review queue", page?.reviewQueueCount ?? snapshot?.reviewQueueCount ?? 0],
@@ -9677,6 +9681,7 @@ function visualSnapshotAnalysisRows(snapshot = state.visualSnapshot, page = visu
 
 function visualSnapshotWallPlacementRows(page = visualSnapshotCurrentPage()) {
   const wallPlacement = page?.wallPlacement;
+  const residual = wallPlacement?.residualEndpointOnHostWall;
   const omissionCodes = Object.keys(wallPlacement?.omissionCounts ?? {}).length;
   return [
     ["Placement-ready walls", wallPlacement?.placementReadyWallCount ?? 0],
@@ -9685,6 +9690,11 @@ function visualSnapshotWallPlacementRows(page = visualSnapshotCurrentPage()) {
     ["Represented duplicate/context walls", wallPlacement?.representedWallCount ?? 0],
     ["Omitted wall candidates total", wallPlacement?.placementOmittedWallCount ?? 0],
     ["Omission codes", omissionCodes],
+    ["Residual endpoint-on-wall", residual?.candidateEndpointCount ?? 0],
+    ["Residual coincident", residual?.coincidentCandidateEndpointCount ?? 0],
+    ["Residual same-axis", residual?.sameAxisCandidateEndpointCount ?? 0],
+    ["Residual perpendicular", residual?.perpendicularCandidateEndpointCount ?? 0],
+    ["Residual max distance", formatCoordinateNumber(residual?.maxDistance ?? 0)],
     ["Top omission", visualSnapshotTopWallOmissionLabel(wallPlacement)]
   ];
 }
@@ -14866,6 +14876,7 @@ function normalizeVisualSnapshotWallPlacementSummary(summary = null) {
       representedWallCount: 0,
       placementSuppressedWallCount: 0,
       placementReviewWallCount: 0,
+      residualEndpointOnHostWall: normalizeVisualSnapshotWallGraphResidualSummary(),
       omissionCounts: {},
       topOmissions: [],
       omittedWallExamples: []
@@ -14890,6 +14901,7 @@ function normalizeVisualSnapshotWallPlacementSummary(summary = null) {
     representedWallCount,
     placementSuppressedWallCount,
     placementReviewWallCount,
+    residualEndpointOnHostWall: normalizeVisualSnapshotWallGraphResidualSummary(summary.residualEndpointOnHostWall),
     omissionCounts,
     topOmissions: (Array.isArray(summary.topOmissions) ? summary.topOmissions : [])
       .map((item) => ({
@@ -14902,6 +14914,26 @@ function normalizeVisualSnapshotWallPlacementSummary(summary = null) {
     omittedWallExamples: (Array.isArray(summary.omittedWallExamples) ? summary.omittedWallExamples : [])
       .map(normalizeVisualSnapshotOmittedWallExample)
       .filter(Boolean)
+  };
+}
+
+function normalizeVisualSnapshotWallGraphResidualSummary(summary = null) {
+  if (!summary || typeof summary !== "object") {
+    return {
+      candidateEndpointCount: 0,
+      coincidentCandidateEndpointCount: 0,
+      sameAxisCandidateEndpointCount: 0,
+      perpendicularCandidateEndpointCount: 0,
+      maxDistance: 0
+    };
+  }
+
+  return {
+    candidateEndpointCount: nonNegativeInteger(summary.candidateEndpointCount),
+    coincidentCandidateEndpointCount: nonNegativeInteger(summary.coincidentCandidateEndpointCount),
+    sameAxisCandidateEndpointCount: nonNegativeInteger(summary.sameAxisCandidateEndpointCount),
+    perpendicularCandidateEndpointCount: nonNegativeInteger(summary.perpendicularCandidateEndpointCount),
+    maxDistance: nullableFiniteNumber(summary.maxDistance) ?? 0
   };
 }
 

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 using static OpenPlanTrace.Export.PlacementMetricTransform;
 
 namespace OpenPlanTrace.Export;
@@ -9,6 +10,7 @@ public sealed record PlanOverlayWallPlacementSummary(
     int RepresentedWallCount,
     int PlacementSuppressedWallCount,
     int PlacementReviewWallCount,
+    PlanOverlayWallGraphResidualSummary ResidualEndpointOnHostWall,
     IReadOnlyDictionary<string, int> OmissionCounts,
     IReadOnlyList<PlanOverlayWallPlacementOmissionSummary> TopOmissions,
     IReadOnlyList<PlanOverlayWallPlacementOmittedWallExample> OmittedWallExamples)
@@ -22,6 +24,58 @@ public sealed record PlanOverlayWallPlacementOmissionSummary(
     string Label,
     int Count,
     bool IsPriority);
+
+public sealed record PlanOverlayWallGraphResidualSummary(
+    int CandidateEndpointCount,
+    int CoincidentCandidateEndpointCount,
+    int SameAxisCandidateEndpointCount,
+    int PerpendicularCandidateEndpointCount,
+    double MaxDistance)
+{
+    public static PlanOverlayWallGraphResidualSummary Empty { get; } = new(0, 0, 0, 0, 0);
+
+    public static PlanOverlayWallGraphResidualSummary FromEvidence(IReadOnlyList<string>? evidence)
+    {
+        var line = evidence?.FirstOrDefault(item =>
+            item.StartsWith(
+                "placement wall graph residual endpoint-on-host-wall candidates after cleanup:",
+                StringComparison.OrdinalIgnoreCase));
+        if (string.IsNullOrWhiteSpace(line))
+        {
+            return Empty;
+        }
+
+        var match = Regex.Match(
+            line,
+            @"(?<total>\d+) total,\s+(?<coincident>\d+) coincident,\s+(?<sameAxis>\d+) same-axis,\s+(?<perpendicular>\d+) perpendicular,\s+max distance (?<distance>[0-9]+(?:[\.,][0-9]+)?) drawing units",
+            RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+        if (!match.Success)
+        {
+            return Empty;
+        }
+
+        return new PlanOverlayWallGraphResidualSummary(
+            ParseInt(match, "total"),
+            ParseInt(match, "coincident"),
+            ParseInt(match, "sameAxis"),
+            ParseInt(match, "perpendicular"),
+            PlanOverlaySnapshot.Round(ParseDouble(match, "distance")));
+    }
+
+    private static int ParseInt(Match match, string groupName) =>
+        int.TryParse(match.Groups[groupName].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
+            ? value
+            : 0;
+
+    private static double ParseDouble(Match match, string groupName) =>
+        double.TryParse(
+            match.Groups[groupName].Value.Replace(',', '.'),
+            NumberStyles.Float,
+            CultureInfo.InvariantCulture,
+            out var value)
+            ? value
+            : 0;
+}
 
 public sealed record PlanOverlayWallPlacementOmittedWallExample(
     string WallId,
@@ -66,7 +120,9 @@ internal static class WallPlacementOmissionSummary
         PlanScanResult result,
         int pageNumber,
         int maxTopOmissions = 5,
-        int maxOmittedWallExamples = 12)
+        int maxOmittedWallExamples = 12,
+        PlacementPageSummaryExport? placementPageSummary = null,
+        PlacementWallGraphExport? placementWallGraph = null)
     {
         var componentByWallId = BuildWallComponentLookup(result.WallGraph.Components);
         var wallEvidenceAssessments = WallEvidenceExportHelpers.BuildAssessmentLookup(result.WallEvidenceMap);
@@ -167,16 +223,33 @@ internal static class WallPlacementOmissionSummary
             .OrderBy(group => group.Key, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
         var topOmissions = TopOmissions(omissionCounts, maxTopOmissions);
-        return new PlanOverlayWallPlacementSummary(
+        var summary = new PlanOverlayWallPlacementSummary(
             readyCount,
             omissionCodes.Count,
             representedCount,
             suppressedCount,
             Math.Max(0, omissionCodes.Count - representedCount - suppressedCount),
+            ExtractResidualEndpointOnHostWallSummary(placementWallGraph),
             omissionCounts,
             topOmissions,
             TopOmittedWallExamples(omittedWalls, maxOmittedWallExamples));
+        return placementPageSummary is null
+            ? summary
+            : summary with
+            {
+                PlacementReadyWallCount = placementPageSummary.PlacementReadyWallCount,
+                PlacementOmittedWallCount = placementPageSummary.PlacementOmittedWallCount,
+                RepresentedWallCount = placementPageSummary.RepresentedWallCount,
+                PlacementSuppressedWallCount = placementPageSummary.PlacementSuppressedWallCount,
+                PlacementReviewWallCount = placementPageSummary.PlacementReviewWallCount,
+                OmissionCounts = placementPageSummary.WallPlacementOmissionCounts,
+                TopOmissions = TopOmissions(placementPageSummary.WallPlacementOmissionCounts, maxTopOmissions)
+            };
     }
+
+    private static PlanOverlayWallGraphResidualSummary ExtractResidualEndpointOnHostWallSummary(
+        PlacementWallGraphExport? placementWallGraph) =>
+        PlanOverlayWallGraphResidualSummary.FromEvidence(placementWallGraph?.Evidence);
 
     private static bool IsRepresentedWall(string code) =>
         string.Equals(code, "duplicate_clean_topology_span", StringComparison.Ordinal)

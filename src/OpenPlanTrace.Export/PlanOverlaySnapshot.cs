@@ -34,8 +34,18 @@ public sealed record PlanOverlaySnapshot(
             .Where(source => !string.IsNullOrWhiteSpace(source.SourceId))
             .ToDictionary(source => source.SourceId, StringComparer.Ordinal);
         var reviewQueue = ScanReviewQueueItemExport.From(result, sourceLookup);
+        var placementExport = PlanPlacementExport.From(result);
+        var placementPageSummaries = placementExport.Summary.PageSummaries
+            .ToDictionary(summary => summary.PageNumber);
         var pages = result.Document.Pages
-            .Select(page => PlanOverlayPageSnapshot.From(result, page, reviewQueue, svgPathsByPage, svgOptions))
+            .Select(page => PlanOverlayPageSnapshot.From(
+                result,
+                page,
+                reviewQueue,
+                svgPathsByPage,
+                svgOptions,
+                placementPageSummaries.TryGetValue(page.Number, out var pageSummary) ? pageSummary : null,
+                placementExport.WallGraph))
             .ToArray();
 
         return new PlanOverlaySnapshot(
@@ -99,7 +109,9 @@ public sealed record PlanOverlayPageSnapshot(
         PlanPage page,
         IReadOnlyList<ScanReviewQueueItemExport> reviewQueue,
         IReadOnlyDictionary<int, string>? svgPathsByPage = null,
-        SvgOverlayRenderOptions? svgOptions = null)
+        SvgOverlayRenderOptions? svgOptions = null,
+        PlacementPageSummaryExport? placementPageSummary = null,
+        PlacementWallGraphExport? placementWallGraph = null)
     {
         ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(page);
@@ -133,7 +145,11 @@ public sealed record PlanOverlayPageSnapshot(
         var reviewItems = pageReviewQueue
             .Select(PlanOverlayReviewQueueItemSnapshot.From)
             .ToArray();
-        var wallPlacement = WallPlacementOmissionSummary.From(result, page.Number);
+        var wallPlacement = WallPlacementOmissionSummary.From(
+            result,
+            page.Number,
+            placementPageSummary: placementPageSummary,
+            placementWallGraph: placementWallGraph);
         var issues = BuildIssues(result, page, pageBounds, layers, detectionBounds, coverage, pageReviewQueue, wallPlacement).ToArray();
 
         return new PlanOverlayPageSnapshot(
@@ -580,6 +596,19 @@ public sealed record PlanOverlayPageSnapshot(
                 pageNumber,
                 "warning",
                 $"{wallPlacement.PlacementReviewWallCount} wall candidate(s) still require review versus {wallPlacement.PlacementReadyWallCount} placement-ready wall(s), {wallPlacement.PlacementSuppressedWallCount} suppressed/noise wall candidate(s), {wallPlacement.RepresentedWallCount} represented duplicate/context wall(s), and {cleanSpanCount} clean topology span(s); inspect raw detected walls and non-placement spans before trusting wall placement.");
+        }
+
+        if (wallPlacement.ResidualEndpointOnHostWall.CandidateEndpointCount > 0)
+        {
+            var residual = wallPlacement.ResidualEndpointOnHostWall;
+            var severity = residual.CoincidentCandidateEndpointCount > 0 || residual.SameAxisCandidateEndpointCount > 0
+                ? "warning"
+                : "info";
+            yield return Issue(
+                "visual.wall_graph_residual_endpoint_on_host_wall",
+                pageNumber,
+                severity,
+                $"{residual.CandidateEndpointCount} placement wall graph endpoint(s) still sit on or near host wall runs after cleanup; {residual.CoincidentCandidateEndpointCount} coincident, {residual.SameAxisCandidateEndpointCount} same-axis, {residual.PerpendicularCandidateEndpointCount} perpendicular, max distance {residual.MaxDistance:0.###} drawing units.");
         }
 
         var objectCount = LayerCount(layers, "objects");
