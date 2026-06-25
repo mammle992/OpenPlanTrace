@@ -777,8 +777,11 @@ public static class PlanOverlaySvgRenderer
         var visibleTopologySpanCount = WallTopologySpanCount(result, page.Number, options);
         var hiddenTopologySpanCount = HiddenNonPlacementTopologySpanCount(result, page.Number, options);
         var wallBodyFootprintCount = WallBodyFootprintCount(result, page.Number, options);
+        var placementExport = PlanPlacementExport.From(result);
+        var placementPageSummary = placementExport.Summary.PageSummaries
+            .FirstOrDefault(summary => summary.PageNumber == page.Number);
         var placementWallGraph = options.IncludePlacementWallGraph
-            ? PlanPlacementExport.From(result).WallGraph
+            ? placementExport.WallGraph
             : null;
         var wallReadiness = WallPlacementOmissionSummary.From(result, page.Number);
         var repairCandidateCount = result.WallGraph.RepairCandidates.Count(candidate => candidate.PageNumber == page.Number);
@@ -795,11 +798,11 @@ public static class PlanOverlaySvgRenderer
             $"{result.GridBaySpacings.Count(bay => bay.PageNumber == page.Number)} grid bays",
             $"{result.WallGraph.Components.Count(component => component.PageNumber == page.Number)} wall components",
             $"{result.Walls.Count(wall => wall.PageNumber == page.Number)} walls",
-            $"{wallReadiness.PlacementReadyWallCount} placement-ready walls",
-            $"{wallReadiness.PlacementReviewWallCount} review walls",
-            $"{wallReadiness.PlacementSuppressedWallCount} suppressed/noise walls",
-            $"{wallReadiness.RepresentedWallCount} represented duplicate/context walls",
-            $"{wallReadiness.PlacementOmittedWallCount} omitted wall candidates total",
+            $"{placementPageSummary?.PlacementReadyWallCount ?? wallReadiness.PlacementReadyWallCount} placement-ready walls",
+            $"{placementPageSummary?.PlacementReviewWallCount ?? wallReadiness.PlacementReviewWallCount} review walls",
+            $"{placementPageSummary?.PlacementSuppressedWallCount ?? wallReadiness.PlacementSuppressedWallCount} suppressed/noise walls",
+            $"{placementPageSummary?.RepresentedWallCount ?? wallReadiness.RepresentedWallCount} represented duplicate/context walls",
+            $"{placementPageSummary?.PlacementOmittedWallCount ?? wallReadiness.PlacementOmittedWallCount} omitted wall candidates total",
             options.IncludeWallBodyFootprints
                 ? $"{wallBodyFootprintCount} visible wall body footprints"
                 : $"{wallBodyFootprintCount} wall body footprints hidden",

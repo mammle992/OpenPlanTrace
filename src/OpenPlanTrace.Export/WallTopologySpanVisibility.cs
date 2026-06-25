@@ -223,12 +223,18 @@ internal static class WallTopologySpanVisibility
                 span.SourceWall,
                 component,
                 assessment);
+        var trustedExteriorShellRepairSupportedWall =
+            WallPlacementReadinessEvaluator.IsTrustedExteriorShellRepairSupportedWall(
+                span.SourceWall,
+                component,
+                assessment);
         var trustedRoomBoundaryIsolatedFragment =
             WallPlacementReadinessEvaluator.IsTrustedRoomBoundaryIsolatedFragment(
                 span.SourceWall,
                 component,
                 assessment);
         if (!trustedExteriorShellContinuityFragment
+            && !trustedExteriorShellRepairSupportedWall
             && !trustedRoomBoundaryIsolatedFragment
             && !IsPlacementReadyStructuralSpan(component, assessment))
         {
@@ -246,7 +252,8 @@ internal static class WallTopologySpanVisibility
             return false;
         }
 
-        if (context.TopologyImportBlockedWallIds.Contains(span.WallId))
+        if (context.TopologyImportBlockedWallIds.Contains(span.WallId)
+            && !trustedExteriorShellRepairSupportedWall)
         {
             return false;
         }
@@ -521,9 +528,6 @@ internal static class WallTopologySpanVisibility
     {
         context.ComponentByWallId.TryGetValue(wall.Id, out var component);
         context.WallEvidenceAssessments.TryGetValue(wall.Id, out var assessment);
-        var topologyImportBlocked = context.TopologyImportBlockedWallIds.Contains(wall.Id);
-        var trustedTopologyImportBlockedFallback = topologyImportBlocked
-            && IsTrustedSourceBackedFallbackDespiteTopologyImportBlock(wall, component, assessment);
         var trustedUnsafeExteriorCleanProjectionFallback =
             IsTrustedExteriorSourceBackedFallbackForUnsafeCleanProjection(wall, context);
         var trustedExteriorShellRepairSupportedWall =
@@ -531,6 +535,10 @@ internal static class WallTopologySpanVisibility
                 wall,
                 component,
                 assessment);
+        var topologyImportBlocked = context.TopologyImportBlockedWallIds.Contains(wall.Id);
+        var trustedTopologyImportBlockedFallback = topologyImportBlocked
+            && (trustedExteriorShellRepairSupportedWall
+                || IsTrustedSourceBackedFallbackDespiteTopologyImportBlock(wall, component, assessment));
         var hasTrustedMainStructuralExteriorWallBody =
             WallPlacementReadinessEvaluator.IsTrustedMainStructuralExteriorWallBody(
                 wall,

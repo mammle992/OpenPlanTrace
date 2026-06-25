@@ -2085,6 +2085,7 @@ public sealed class ExportTests
     public void SvgRenderer_PlacementGraphQaProfileDrawsExportedWallGraphOnly()
     {
         var result = CreateInlineCollinearPlacementGraphResult();
+        var pageSummary = Assert.Single(PlanPlacementExport.From(result).Summary.PageSummaries);
 
         var svg = PlanOverlaySvgRenderer.RenderPage(
             result,
@@ -2096,6 +2097,8 @@ public sealed class ExportTests
         Assert.Contains("id=\"placement-wall-graph-nodes\"", svg);
         Assert.Contains("placement wall graph edge", svg);
         Assert.Contains("Exported placement wall graph only", svg);
+        Assert.Contains($"{pageSummary.PlacementReadyWallCount} placement-ready walls", svg);
+        Assert.Contains($"{pageSummary.PlacementOmittedWallCount} omitted wall candidates total", svg);
         Assert.DoesNotContain("id=\"wall-topology-spans\"", svg);
         Assert.DoesNotContain("id=\"wall-body-footprints\"", svg);
         Assert.DoesNotContain("id=\"walls\"", svg);
@@ -6926,6 +6929,564 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementWallGraphExport_AlignsSharedNodeEdgeCoordinates()
+    {
+        var nodes = new[]
+        {
+            SyntheticNode("shared-node-left", 80, 100, WallNodeKind.Endpoint),
+            SyntheticNode("shared-node-junction", 160, 100, WallNodeKind.TJunction),
+            SyntheticNode("shared-node-bottom", 160.8, 180, WallNodeKind.Endpoint)
+        };
+        var edges = new[]
+        {
+            new WallEdge(
+                "shared-node-edge-horizontal",
+                1,
+                nodes[0].Id,
+                nodes[1].Id,
+                "shared-node-wall-horizontal",
+                Confidence.High),
+            new WallEdge(
+                "shared-node-edge-vertical",
+                1,
+                nodes[1].Id,
+                nodes[2].Id,
+                "shared-node-wall-vertical",
+                Confidence.High)
+        };
+        var graph = new WallGraph(nodes, edges, Array.Empty<WallGraphComponent>());
+        var spans = new[]
+        {
+            new WallGraphTopologySpan(
+                edges[0].Id,
+                1,
+                edges[0].WallId,
+                edges[0].FromNodeId,
+                edges[0].ToNodeId,
+                new PlanLineSegment(new PlanPoint(80, 100), new PlanPoint(160, 100)),
+                new PlanRect(78, 98, 84, 4),
+                80,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                4,
+                Confidence.High,
+                ["shared-node-wall-horizontal"],
+                [edges[0].Id],
+                ["synthetic fuzzy shared node horizontal span"],
+                null),
+            new WallGraphTopologySpan(
+                edges[1].Id,
+                1,
+                edges[1].WallId,
+                edges[1].FromNodeId,
+                edges[1].ToNodeId,
+                new PlanLineSegment(new PlanPoint(160.8, 100.6), new PlanPoint(160.8, 180)),
+                new PlanRect(158.8, 98.6, 4, 83.4),
+                79.4,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                4,
+                Confidence.High,
+                ["shared-node-wall-vertical"],
+                [edges[1].Id],
+                ["synthetic fuzzy shared node vertical span"],
+                null)
+        };
+
+        var export = PlacementWallGraphExport.From(
+            graph,
+            spans,
+            PlanCalibration.Empty,
+            new Dictionary<string, PrimitiveSourceExport>(StringComparer.Ordinal),
+            new Dictionary<string, WallGraphComponent>(StringComparer.Ordinal),
+            new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal));
+
+        var horizontal = Assert.Single(export.Edges, edge => edge.Id == "shared-node-edge-horizontal");
+        var vertical = Assert.Single(export.Edges, edge => edge.Id == "shared-node-edge-vertical");
+        var junction = Assert.Single(export.Nodes, node => node.Id == "shared-node-junction");
+
+        Assert.Equal(160.8, horizontal.CenterLine!.End.X, precision: 3);
+        Assert.Equal(100, horizontal.CenterLine.End.Y, precision: 3);
+        Assert.Equal(160.8, vertical.CenterLine!.Start.X, precision: 3);
+        Assert.Equal(100, vertical.CenterLine.Start.Y, precision: 3);
+        Assert.Equal(horizontal.CenterLine.End.X, vertical.CenterLine.Start.X, precision: 3);
+        Assert.Equal(horizontal.CenterLine.End.Y, vertical.CenterLine.Start.Y, precision: 3);
+        Assert.Equal(160.8, junction.Position.X, precision: 3);
+        Assert.Equal(100, junction.Position.Y, precision: 3);
+        Assert.Contains(
+            export.Evidence,
+            item => item.Contains("aligned 2 endpoint coordinate", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            horizontal.Evidence.Concat(vertical.Evidence),
+            item => item.Contains("node-coordinate alignment", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void PlacementWallGraphExport_RegularizesNearAxisSingletonEdges()
+    {
+        var nodes = new[]
+        {
+            SyntheticNode("regularize-node-a", 80, 100, WallNodeKind.Endpoint),
+            SyntheticNode("regularize-node-b", 240, 102, WallNodeKind.Endpoint)
+        };
+        var edge = new WallEdge(
+            "regularize-edge",
+            1,
+            nodes[0].Id,
+            nodes[1].Id,
+            "regularize-wall",
+            Confidence.High);
+        var span = new WallGraphTopologySpan(
+            edge.Id,
+            1,
+            edge.WallId,
+            edge.FromNodeId,
+            edge.ToNodeId,
+            new PlanLineSegment(new PlanPoint(80, 100), new PlanPoint(240, 102)),
+            new PlanRect(78, 98, 164, 6),
+            160.012,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            4,
+            Confidence.High,
+            ["regularize-wall"],
+            [edge.Id],
+            ["synthetic near-horizontal singleton edge"],
+            null);
+
+        var export = PlacementWallGraphExport.From(
+            new WallGraph(nodes, [edge], Array.Empty<WallGraphComponent>()),
+            [span],
+            PlanCalibration.Empty,
+            new Dictionary<string, PrimitiveSourceExport>(StringComparer.Ordinal),
+            new Dictionary<string, WallGraphComponent>(StringComparer.Ordinal),
+            new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal));
+
+        var graphEdge = Assert.Single(export.Edges);
+
+        Assert.Equal(101, graphEdge.CenterLine!.Start.Y, precision: 3);
+        Assert.Equal(101, graphEdge.CenterLine.End.Y, precision: 3);
+        Assert.Equal(160, graphEdge.DrawingLength, precision: 3);
+        Assert.Contains(
+            export.Evidence,
+            item => item.Contains("regularized 1 near-axis edge", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            graphEdge.Evidence,
+            item => item.Contains("axis regularization", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void PlacementWallGraphExport_SnapsSharedBranchNodeOntoHostWallWithoutSplittingHostRun()
+    {
+        var nodes = new[]
+        {
+            SyntheticNode("shared-host-node-left", 80, 100, WallNodeKind.Endpoint),
+            SyntheticNode("shared-host-node-right", 240, 100, WallNodeKind.Endpoint),
+            SyntheticNode("shared-host-node-top", 160, 60, WallNodeKind.Endpoint),
+            SyntheticNode("shared-host-node-junction", 160.2, 101.8, WallNodeKind.Junction),
+            SyntheticNode("shared-host-node-bottom", 160.4, 160, WallNodeKind.Endpoint)
+        };
+        var edges = new[]
+        {
+            new WallEdge(
+                "shared-host-edge-host",
+                1,
+                nodes[0].Id,
+                nodes[1].Id,
+                "shared-host-wall-host",
+                Confidence.High),
+            new WallEdge(
+                "shared-host-edge-upper",
+                1,
+                nodes[2].Id,
+                nodes[3].Id,
+                "shared-host-wall-upper",
+                Confidence.High),
+            new WallEdge(
+                "shared-host-edge-lower",
+                1,
+                nodes[3].Id,
+                nodes[4].Id,
+                "shared-host-wall-lower",
+                Confidence.High)
+        };
+        var spans = new[]
+        {
+            new WallGraphTopologySpan(
+                edges[0].Id,
+                1,
+                edges[0].WallId,
+                edges[0].FromNodeId,
+                edges[0].ToNodeId,
+                new PlanLineSegment(new PlanPoint(80, 100), new PlanPoint(240, 100)),
+                new PlanRect(78, 98, 164, 4),
+                160,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                4,
+                Confidence.High,
+                ["shared-host-wall-host"],
+                [edges[0].Id],
+                ["wall type exterior: synthetic host shell wall"],
+                null),
+            new WallGraphTopologySpan(
+                edges[1].Id,
+                1,
+                edges[1].WallId,
+                edges[1].FromNodeId,
+                edges[1].ToNodeId,
+                new PlanLineSegment(new PlanPoint(160, 60), new PlanPoint(160, 101.8)),
+                new PlanRect(158, 58, 4, 45.8),
+                41.8,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                4,
+                Confidence.High,
+                ["shared-host-wall-upper"],
+                [edges[1].Id],
+                ["synthetic upper branch near host wall"],
+                null),
+            new WallGraphTopologySpan(
+                edges[2].Id,
+                1,
+                edges[2].WallId,
+                edges[2].FromNodeId,
+                edges[2].ToNodeId,
+                new PlanLineSegment(new PlanPoint(160.4, 101.8), new PlanPoint(160.4, 160)),
+                new PlanRect(158.4, 99.8, 4, 62.2),
+                58.2,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                4,
+                Confidence.High,
+                ["shared-host-wall-lower"],
+                [edges[2].Id],
+                ["synthetic lower branch near host wall"],
+                null)
+        };
+
+        var export = PlacementWallGraphExport.From(
+            new WallGraph(nodes, edges, Array.Empty<WallGraphComponent>()),
+            spans,
+            PlanCalibration.Empty,
+            new Dictionary<string, PrimitiveSourceExport>(StringComparer.Ordinal),
+            new Dictionary<string, WallGraphComponent>(StringComparer.Ordinal),
+            new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal));
+
+        var host = Assert.Single(export.Edges, edge => edge.Id == "shared-host-edge-host");
+        var upper = Assert.Single(export.Edges, edge => edge.Id == "shared-host-edge-upper");
+        var lower = Assert.Single(export.Edges, edge => edge.Id == "shared-host-edge-lower");
+        var junction = Assert.Single(export.Nodes, node => node.Id == "shared-host-node-junction");
+        var upperLine = upper.CenterLine!;
+        var lowerLine = lower.CenterLine!;
+
+        Assert.Equal(160, host.DrawingLength, precision: 3);
+        Assert.Equal(100, upperLine.End.Y, precision: 3);
+        Assert.Equal(upperLine.End.X, lowerLine.Start.X, precision: 3);
+        Assert.Equal(upperLine.End.Y, lowerLine.Start.Y, precision: 3);
+        Assert.InRange(upperLine.End.X, 160, 160.4);
+        Assert.Equal("Crossing", junction.Kind);
+        Assert.Contains(
+            export.Evidence,
+            item => item.Contains("snapped 1 shared node", StringComparison.OrdinalIgnoreCase)
+                && item.Contains("2 endpoint coordinate", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            upper.Evidence.Concat(lower.Evidence),
+            item => item.Contains("shared-node host snap", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void PlacementWallGraphExport_FinalCompactionMergesRunsAfterEndpointAlignment()
+    {
+        var nodes = new[]
+        {
+            SyntheticNode("final-compact-node-left", 80, 100, WallNodeKind.Endpoint),
+            SyntheticNode("final-compact-node-mid", 160, 102.3, WallNodeKind.Inline),
+            SyntheticNode("final-compact-node-right", 240, 104.6, WallNodeKind.Endpoint)
+        };
+        var edges = new[]
+        {
+            new WallEdge(
+                "final-compact-edge-a",
+                1,
+                nodes[0].Id,
+                nodes[1].Id,
+                "final-compact-wall",
+                Confidence.High),
+            new WallEdge(
+                "final-compact-edge-b",
+                1,
+                nodes[1].Id,
+                nodes[2].Id,
+                "final-compact-wall",
+                Confidence.High)
+        };
+        var spans = new[]
+        {
+            new WallGraphTopologySpan(
+                edges[0].Id,
+                1,
+                edges[0].WallId,
+                edges[0].FromNodeId,
+                edges[0].ToNodeId,
+                new PlanLineSegment(new PlanPoint(80, 100), new PlanPoint(160, 100)),
+                new PlanRect(77, 97, 86, 6),
+                80,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                6,
+                Confidence.High,
+                ["final-compact-wall"],
+                [edges[0].Id],
+                ["synthetic wall piece before final endpoint alignment"],
+                null),
+            new WallGraphTopologySpan(
+                edges[1].Id,
+                1,
+                edges[1].WallId,
+                edges[1].FromNodeId,
+                edges[1].ToNodeId,
+                new PlanLineSegment(new PlanPoint(160, 104.6), new PlanPoint(240, 104.6)),
+                new PlanRect(157, 101.6, 86, 6),
+                80,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                6,
+                Confidence.High,
+                ["final-compact-wall"],
+                [edges[1].Id],
+                ["synthetic wall piece before final endpoint alignment"],
+                null)
+        };
+
+        var export = PlacementWallGraphExport.From(
+            new WallGraph(nodes, edges, Array.Empty<WallGraphComponent>()),
+            spans,
+            PlanCalibration.Empty,
+            new Dictionary<string, PrimitiveSourceExport>(StringComparer.Ordinal),
+            new Dictionary<string, WallGraphComponent>(StringComparer.Ordinal),
+            new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal));
+
+        var edge = Assert.Single(export.Edges);
+        var nodeIds = export.Nodes.Select(node => node.Id).ToArray();
+
+        Assert.Equal("final-compact-node-left", edge.FromNodeId);
+        Assert.Equal("final-compact-node-right", edge.ToNodeId);
+        Assert.Equal(160, edge.DrawingLength, precision: 3);
+        Assert.DoesNotContain("final-compact-node-mid", nodeIds);
+        Assert.Contains(
+            export.Evidence,
+            item => item.Contains("final-compacted", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            edge.Evidence,
+            item => item.Contains("inline run merged 2 collinear edge", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void PlacementWallGraphExport_MergesTrustedExteriorShellRunsAcrossFuzzyAxes()
+    {
+        var nodes = new[]
+        {
+            SyntheticNode("fuzzy-shell-node-left", 80, 100, WallNodeKind.Endpoint),
+            SyntheticNode("fuzzy-shell-node-mid-a", 160, 100, WallNodeKind.Endpoint),
+            SyntheticNode("fuzzy-shell-node-mid-b", 162, 106, WallNodeKind.Endpoint),
+            SyntheticNode("fuzzy-shell-node-right", 240, 106, WallNodeKind.Endpoint)
+        };
+        var edges = new[]
+        {
+            new WallEdge(
+                "fuzzy-shell-edge-a",
+                1,
+                nodes[0].Id,
+                nodes[1].Id,
+                "fuzzy-shell-wall",
+                Confidence.High),
+            new WallEdge(
+                "fuzzy-shell-edge-b",
+                1,
+                nodes[2].Id,
+                nodes[3].Id,
+                "fuzzy-shell-wall",
+                Confidence.High)
+        };
+        var spans = new[]
+        {
+            TrustedExteriorShellSpan(
+                edges[0],
+                new PlanLineSegment(new PlanPoint(80, 100), new PlanPoint(160, 100)),
+                ["wall type exterior: synthetic trusted shell wall"]),
+            TrustedExteriorShellSpan(
+                edges[1],
+                new PlanLineSegment(new PlanPoint(162, 106), new PlanPoint(240, 106)),
+                ["wall type exterior: synthetic trusted shell wall"])
+        };
+
+        var export = PlacementWallGraphExport.From(
+            new WallGraph(nodes, edges, Array.Empty<WallGraphComponent>()),
+            spans,
+            PlanCalibration.Empty,
+            new Dictionary<string, PrimitiveSourceExport>(StringComparer.Ordinal),
+            new Dictionary<string, WallGraphComponent>(StringComparer.Ordinal),
+            new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal));
+
+        var edge = Assert.Single(export.Edges);
+        var nodeIds = export.Nodes.Select(node => node.Id).ToArray();
+
+        Assert.Equal("fuzzy-shell-node-left", edge.FromNodeId);
+        Assert.Equal("fuzzy-shell-node-right", edge.ToNodeId);
+        Assert.Equal(160, edge.DrawingLength, precision: 3);
+        Assert.InRange(edge.CenterLine!.Start.Y, 102.8, 103.2);
+        Assert.Equal(edge.CenterLine.Start.Y, edge.CenterLine.End.Y, precision: 3);
+        Assert.DoesNotContain("fuzzy-shell-node-mid-a", nodeIds);
+        Assert.DoesNotContain("fuzzy-shell-node-mid-b", nodeIds);
+        Assert.Contains(
+            edge.Evidence,
+            item => item.Contains("inline run merged 2 collinear edge", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void PlacementWallGraphExport_SnapsMergedRunToDominantHostAxis()
+    {
+        var nodes = new[]
+        {
+            SyntheticNode("dominant-axis-node-left", 80, 100, WallNodeKind.Endpoint),
+            SyntheticNode("dominant-axis-node-host-end", 200, 100, WallNodeKind.Inline),
+            SyntheticNode("dominant-axis-node-fragment-start", 200, 104.5, WallNodeKind.Inline),
+            SyntheticNode("dominant-axis-node-right", 240, 104.5, WallNodeKind.Endpoint)
+        };
+        var edges = new[]
+        {
+            new WallEdge(
+                "dominant-axis-edge-host",
+                1,
+                nodes[0].Id,
+                nodes[1].Id,
+                "dominant-axis-wall-host",
+                Confidence.High),
+            new WallEdge(
+                "dominant-axis-edge-fragment",
+                1,
+                nodes[2].Id,
+                nodes[3].Id,
+                "dominant-axis-wall-fragment",
+                Confidence.High)
+        };
+        var spans = new[]
+        {
+            TrustedExteriorShellSpan(
+                edges[0],
+                new PlanLineSegment(new PlanPoint(80, 100), new PlanPoint(200, 100)),
+                ["wall type exterior: synthetic dominant host wall"]),
+            TrustedExteriorShellSpan(
+                edges[1],
+                new PlanLineSegment(new PlanPoint(200, 104.5), new PlanPoint(240, 104.5)),
+                ["wall type exterior: synthetic offset wall fragment"])
+        };
+
+        var export = PlacementWallGraphExport.From(
+            new WallGraph(nodes, edges, Array.Empty<WallGraphComponent>()),
+            spans,
+            PlanCalibration.Empty,
+            new Dictionary<string, PrimitiveSourceExport>(StringComparer.Ordinal),
+            new Dictionary<string, WallGraphComponent>(StringComparer.Ordinal),
+            new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal));
+
+        var edge = Assert.Single(export.Edges);
+        var nodeIds = export.Nodes.Select(node => node.Id).ToArray();
+
+        Assert.Equal("dominant-axis-node-left", edge.FromNodeId);
+        Assert.Equal("dominant-axis-node-right", edge.ToNodeId);
+        Assert.Equal(160, edge.DrawingLength, precision: 3);
+        Assert.Equal(100, edge.CenterLine!.Start.Y, precision: 3);
+        Assert.Equal(100, edge.CenterLine.End.Y, precision: 3);
+        Assert.DoesNotContain("dominant-axis-node-host-end", nodeIds);
+        Assert.DoesNotContain("dominant-axis-node-fragment-start", nodeIds);
+        Assert.Contains(
+            edge.Evidence,
+            evidence => evidence.Contains("dominant host span", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void PlacementWallGraphExport_BridgesTrustedExteriorShellGraphGaps()
+    {
+        var export = CreateSeparatedPlacementGraphGapExport(
+            includeExteriorEvidence: true,
+            componentKind: WallGraphComponentKind.MainStructural);
+
+        var edge = Assert.Single(export.Edges);
+        var nodeIds = export.Nodes.Select(node => node.Id).ToArray();
+
+        Assert.Equal("gap-node-a", edge.FromNodeId);
+        Assert.Equal("gap-node-d", edge.ToNodeId);
+        Assert.Equal(240, edge.DrawingLength, precision: 3);
+        Assert.DoesNotContain("gap-node-b", nodeIds);
+        Assert.DoesNotContain("gap-node-c", nodeIds);
+        Assert.Contains(
+            edge.Evidence,
+            evidence => evidence.Contains("inline run merged 2 collinear edge", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void PlacementWallGraphExport_KeepsUntrustedInteriorGraphGapsSeparate()
+    {
+        var export = CreateSeparatedPlacementGraphGapExport(
+            includeExteriorEvidence: false,
+            componentKind: WallGraphComponentKind.MainStructural);
+
+        Assert.Equal(2, export.Edges.Count);
+        Assert.Contains(export.Nodes, node => node.Id == "gap-node-b");
+        Assert.Contains(export.Nodes, node => node.Id == "gap-node-c");
+    }
+
+    [Fact]
     public void PlacementExporter_MergesSourceBackedIsolatedContinuationIntoStructuralRun()
     {
         var result = CreateSourceBackedStructuralContinuationPlacementGraphResult();
@@ -6950,6 +7511,48 @@ public sealed class ExportTests
         Assert.Contains(
             graphEdge.GetProperty("evidence").EnumerateArray(),
             evidence => evidence.GetString()?.Contains("removed 1 inline node", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
+    public void PlacementWallGraphExport_MergesTrustedSourceBackedFallbackWithoutComponentKind()
+    {
+        var spans = new[]
+        {
+            TrustedSourceBackedFallbackSpan(
+                "source-backed-fallback-a",
+                "source-backed-wall-a",
+                "source-backed-node-left",
+                "source-backed-node-middle",
+                new PlanLineSegment(new PlanPoint(320, 550), new PlanPoint(430, 550))),
+            TrustedSourceBackedFallbackSpan(
+                "source-backed-fallback-b",
+                "source-backed-wall-b",
+                "source-backed-node-middle",
+                "source-backed-node-right",
+                new PlanLineSegment(new PlanPoint(430, 550), new PlanPoint(505, 550)))
+        };
+
+        var export = PlacementWallGraphExport.From(
+            new WallGraph(Array.Empty<WallNode>(), Array.Empty<WallEdge>(), Array.Empty<WallGraphComponent>()),
+            spans,
+            PlanCalibration.Empty,
+            new Dictionary<string, PrimitiveSourceExport>(StringComparer.Ordinal),
+            new Dictionary<string, WallGraphComponent>(StringComparer.Ordinal),
+            new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal));
+
+        var edge = Assert.Single(export.Edges);
+        var nodeIds = export.Nodes.Select(node => node.Id).ToArray();
+
+        Assert.Equal("source-backed-node-left", edge.FromNodeId);
+        Assert.Equal("source-backed-node-right", edge.ToNodeId);
+        Assert.Equal(185, edge.DrawingLength, precision: 3);
+        Assert.DoesNotContain("source-backed-node-middle", nodeIds);
+        Assert.Contains(
+            edge.Evidence,
+            evidence => evidence.Contains("absorbed source-backed isolated continuation", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            edge.Evidence,
+            evidence => evidence.Contains("removed 1 inline node", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -7029,6 +7632,126 @@ public sealed class ExportTests
         Assert.Equal(wall.Id, graphEdge.GetProperty("wallId").GetString());
         Assert.False(graphEdge.GetProperty("excludedFromStructuralTopology").GetBoolean());
         Assert.Equal(160, graphEdge.GetProperty("drawingLength").GetDouble(), precision: 3);
+    }
+
+    [Fact]
+    public void PlacementExporter_IncludesTrustedExteriorShellRepairWallDespiteTopologyBlockedRepair()
+    {
+        var result = CreateSameWallOpeningGapPlacementGraphResult();
+        var wall = result.Walls[0] with
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Exterior,
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(new PlanPoint(80, 96), new PlanPoint(240, 96)),
+                new PlanLineSegment(new PlanPoint(80, 104), new PlanPoint(240, 104)),
+                FaceSeparation: 8,
+                OverlapRatio: 0.99,
+                Score: 0.91,
+                FirstFaceFragmentCount: 28,
+                SecondFaceFragmentCount: 32,
+                FirstFaceSourcePrimitiveIds: ["trusted-shell-repair-face-a"],
+                SecondFaceSourcePrimitiveIds: ["trusted-shell-repair-face-b"]),
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "filled wall-solid primitive",
+                "wall evidence: filled closed vector wall body",
+                "wall evidence: exterior shell repair support global-room-envelope-edge from indoor room and trusted wall envelope",
+                "wall evidence: exterior shell repair promoted wall after global shell continuity scan",
+                "wall type refined exterior: global exterior-shell repair matched a trusted shell extension"
+            ]
+        };
+        var assessment = new WallEvidenceWallAssessment(
+            wall.Id,
+            wall.PageNumber,
+            wall.Bounds,
+            WallEvidenceCategory.MediumWallBody,
+            Confidence.High,
+            PlacementReady: false,
+            RequiresReview: true,
+            RejectedAsNoise: false,
+            wall.SourcePrimitiveIds,
+            wall.Evidence)
+        {
+            Decision = WallEvidenceDecision.Review,
+            ScoreBreakdown = new WallEvidenceScoreBreakdown(
+                0.72,
+                0,
+                0.72,
+                0.5,
+                0,
+                0.2,
+                0.2,
+                0,
+                0,
+                new[] { "strong parallel-face wall pair", "global-room-envelope-edge repair support" },
+                new[] { "not placement-ready without review" })
+        };
+        var blockingRepair = new WallGraphRepairCandidate(
+            "trusted-shell-repair-blocked-gap",
+            1,
+            WallGraphRepairCandidateKind.EndpointToWall,
+            WallGraphRepairAction.SnapEndpointToWall,
+            WallGraphRepairSeverity.High,
+            WallGraphRepairImportImpact.TopologyImportBlocked,
+            WallGraphRepairApplicability.ManualCorrectionRecommended,
+            "same-wall-opening-gap-node-b",
+            new PlanPoint(120, 100),
+            new PlanPoint(120, 118),
+            null,
+            "synthetic-nearby-host-wall",
+            GapDistance: 18,
+            SafeSnapDistance: 9,
+            ReviewDistanceLimit: 18,
+            ExcessDistanceBeyondSafeSnap: 9,
+            new PlanLineSegment(new PlanPoint(120, 100), new PlanPoint(120, 118)),
+            new PlanRect(118, 98, 4, 22),
+            [wall.Id, "synthetic-nearby-host-wall"],
+            wall.SourcePrimitiveIds,
+            Confidence.High,
+            RequiresReview: true,
+            ["synthetic topology-blocked repair near trusted global shell repair wall"]);
+        result = result with
+        {
+            Walls = [wall],
+            WallGraph = new WallGraph(
+                result.WallGraph.Nodes,
+                result.WallGraph.Edges,
+                result.WallGraph.Components,
+                [blockingRepair]),
+            WallEvidenceMap = new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                [assessment],
+                1,
+                0)
+        };
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var root = document.RootElement;
+        var exportedWall = Assert.Single(root.GetProperty("walls").EnumerateArray());
+        var graphEdge = Assert.Single(root
+            .GetProperty("wallGraph")
+            .GetProperty("edges")
+            .EnumerateArray());
+        var exportedRepair = Assert.Single(root.GetProperty("wallGraphRepairCandidates").EnumerateArray());
+
+        Assert.Equal("trusted-shell-repair-blocked-gap", exportedRepair.GetProperty("id").GetString());
+        Assert.Equal("TopologyImportBlocked", exportedRepair.GetProperty("importImpact").GetString());
+        Assert.Equal(JsonValueKind.Null, exportedWall.GetProperty("placementOmission").ValueKind);
+        Assert.True(exportedWall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.True(exportedWall.GetProperty("reliability").GetProperty("requiresReview").GetBoolean());
+        Assert.False(exportedWall.GetProperty("excludedFromStructuralTopology").GetBoolean());
+        Assert.DoesNotContain(
+            "trusted-shell-repair-blocked-gap",
+            JsonStrings(exportedWall.GetProperty("wallGraphRepairCandidateIds")));
+        Assert.False(graphEdge.GetProperty("excludedFromStructuralTopology").GetBoolean());
+        Assert.Contains(
+            graphEdge.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("exterior shell repair support", StringComparison.OrdinalIgnoreCase) == true);
     }
 
     [Fact]
@@ -7519,6 +8242,84 @@ public sealed class ExportTests
 
         return await new OpenPlanTraceScanner().ScanAsync(document);
     }
+
+    private static PlacementWallGraphExport CreateSeparatedPlacementGraphGapExport(
+        bool includeExteriorEvidence,
+        WallGraphComponentKind componentKind)
+    {
+        var nodes = new[]
+        {
+            SyntheticNode("gap-node-a", 20, 100, WallNodeKind.Endpoint),
+            SyntheticNode("gap-node-b", 120, 100, WallNodeKind.Endpoint),
+            SyntheticNode("gap-node-c", 180, 100, WallNodeKind.Endpoint),
+            SyntheticNode("gap-node-d", 260, 100, WallNodeKind.Endpoint)
+        };
+        var edges = new[]
+        {
+            new WallEdge("gap-edge-a", 1, "gap-node-a", "gap-node-b", "gap-wall-a", Confidence.High),
+            new WallEdge("gap-edge-b", 1, "gap-node-c", "gap-node-d", "gap-wall-b", Confidence.High)
+        };
+        var component = new WallGraphComponent(
+            "gap-component",
+            1,
+            componentKind,
+            new PlanRect(16, 96, 248, 8),
+            edges.Select(edge => edge.WallId).ToArray(),
+            nodes.Select(node => node.Id).ToArray(),
+            edges.Select(edge => edge.Id).ToArray(),
+            ["gap-wall-source-a", "gap-wall-source-b"],
+            180,
+            Confidence.High,
+            ["synthetic separated placement graph wall run"]);
+        var evidence = includeExteriorEvidence
+            ? new[] { "wall type exterior: synthetic trusted exterior shell run" }
+            : new[] { "synthetic interior structural run" };
+        var spans = new[]
+        {
+            SeparatedPlacementGraphGapSpan(edges[0], new PlanLineSegment(new PlanPoint(20, 100), new PlanPoint(120, 100)), evidence),
+            SeparatedPlacementGraphGapSpan(edges[1], new PlanLineSegment(new PlanPoint(180, 100), new PlanPoint(260, 100)), evidence)
+        };
+        var componentLookup = component.WallIds.ToDictionary(
+            wallId => wallId,
+            _ => component,
+            StringComparer.Ordinal);
+
+        return PlacementWallGraphExport.From(
+            new WallGraph(nodes, edges, [component]),
+            spans,
+            PlanCalibration.Empty,
+            new Dictionary<string, PrimitiveSourceExport>(StringComparer.Ordinal),
+            componentLookup,
+            new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal));
+    }
+
+    private static WallGraphTopologySpan SeparatedPlacementGraphGapSpan(
+        WallEdge edge,
+        PlanLineSegment centerLine,
+        IReadOnlyList<string> evidence) =>
+        new(
+            edge.Id,
+            edge.PageNumber,
+            edge.WallId,
+            edge.FromNodeId,
+            edge.ToNodeId,
+            centerLine,
+            centerLine.Bounds.Inflate(2),
+            centerLine.Length,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            4,
+            Confidence.High,
+            [$"{edge.Id}-source"],
+            [edge.Id],
+            evidence,
+            null);
 
     private static PlanScanResult CreateDenseMinorRoutingDetailResult()
     {
@@ -11394,6 +12195,74 @@ public sealed class ExportTests
             SourcePrimitiveIds = [id],
             Evidence = ["synthetic wall"]
         };
+
+    private static WallGraphTopologySpan TrustedSourceBackedFallbackSpan(
+        string id,
+        string wallId,
+        string fromNodeId,
+        string toNodeId,
+        PlanLineSegment centerLine)
+    {
+        var bounds = centerLine.Bounds.Inflate(2);
+        return new WallGraphTopologySpan(
+            id,
+            1,
+            wallId,
+            fromNodeId,
+            toNodeId,
+            centerLine,
+            bounds,
+            centerLine.Length,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            4,
+            Confidence.High,
+            [wallId],
+            [id],
+            [
+                "source-backed clean placement fallback: wall graph did not provide enough clean topology coverage",
+                "source-backed fallback accepted because global exterior-shell repair confirmed the exterior wall run",
+                "wall evidence: inferred exterior shell wall from indoor room boundary with outside on opposite side"
+            ],
+            null);
+    }
+
+    private static WallGraphTopologySpan TrustedExteriorShellSpan(
+        WallEdge edge,
+        PlanLineSegment centerLine,
+        IReadOnlyList<string> evidence)
+    {
+        var bounds = centerLine.Bounds.Inflate(4);
+        return new WallGraphTopologySpan(
+            edge.Id,
+            1,
+            edge.WallId,
+            edge.FromNodeId,
+            edge.ToNodeId,
+            centerLine,
+            bounds,
+            centerLine.Length,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            8,
+            Confidence.High,
+            [edge.WallId],
+            [edge.Id],
+            evidence,
+            null);
+    }
 
     private static OpeningCandidate AnchoredOpening(
         string id,
