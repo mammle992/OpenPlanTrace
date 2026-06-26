@@ -3254,7 +3254,8 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
 
     private static int InferExteriorShellGapWalls(ScanContext context)
     {
-        var indoorRooms = ReliableIndoorRoomsForExteriorShellInference(context.Rooms).ToArray();
+        var rooms = context.Rooms.ToArray();
+        var indoorRooms = ReliableIndoorRoomsForExteriorShellInference(rooms).ToArray();
         if (indoorRooms.Length == 0)
         {
             return 0;
@@ -3291,7 +3292,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             return 0;
         }
 
-        foreach (var edge in ReliableIndoorExteriorBoundaryEdgesForInference(indoorRooms, sampleOffset, minimumLength))
+        foreach (var edge in ReliableIndoorExteriorBoundaryEdgesForInference(rooms, indoorRooms, sampleOffset, minimumLength))
         {
             if (!eligiblePages.Contains(edge.PageNumber))
             {
@@ -3857,6 +3858,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             && HasReliableRoomBoundaryEvidence(room));
 
     private static IEnumerable<ExteriorShellInferenceEdge> ReliableIndoorExteriorBoundaryEdgesForInference(
+        IReadOnlyList<RoomRegion> rooms,
         IReadOnlyList<RoomRegion> indoorRooms,
         double sampleOffset,
         double minimumLength)
@@ -3888,7 +3890,13 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
                     continue;
                 }
 
-                var outsideSide = OutsideSideName(orientation, firstInsideThisRoom ? 1 : -1);
+                var outsideDirection = firstInsideThisRoom ? 1 : -1;
+                if (OutsideSideTouchesOutdoorRoom(rooms, room.PageNumber, line, orientation, outsideDirection, sampleOffset))
+                {
+                    continue;
+                }
+
+                var outsideSide = OutsideSideName(orientation, outsideDirection);
                 yield return new ExteriorShellInferenceEdge(
                     room.Id,
                     room.PageNumber,
@@ -3900,6 +3908,36 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
                     outsideSide);
             }
         }
+    }
+
+    private static bool OutsideSideTouchesOutdoorRoom(
+        IReadOnlyList<RoomRegion> rooms,
+        int pageNumber,
+        PlanLineSegment line,
+        AxisOrientation orientation,
+        int outsideDirection,
+        double sampleOffset)
+    {
+        var outdoorRooms = rooms
+            .Where(room => room.PageNumber == pageNumber
+                && room.UseKind == RoomUseKind.Outdoor
+                && !room.Bounds.IsEmpty)
+            .ToArray();
+        if (outdoorRooms.Length == 0)
+        {
+            return false;
+        }
+
+        foreach (var parameter in new[] { 0.2, 0.35, 0.5, 0.65, 0.8 })
+        {
+            var sample = OffsetPoint(line.PointAt(parameter), orientation, outsideDirection * sampleOffset);
+            if (PointInsideAnyRoom(outdoorRooms, sample))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool IsExteriorShellInferenceCovered(

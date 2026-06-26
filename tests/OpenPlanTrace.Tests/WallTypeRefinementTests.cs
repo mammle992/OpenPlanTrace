@@ -3510,6 +3510,57 @@ public sealed class WallTypeRefinementTests
     }
 
     [Fact]
+    public async Task WallTypeRefinement_DoesNotInferExteriorShellGapAcrossCoveredOutdoorRoom()
+    {
+        var leftShell = ExteriorShellWall("wall-shell-left", 100, 100, 100, 180);
+        var rightShell = ExteriorShellWall("wall-shell-right", 196, 100, 196, 180);
+        var bottomShell = ExteriorShellWall("wall-shell-bottom", 100, 180, 196, 180);
+        var context = CreateContext("covered-outdoor-exterior-shell-gap-blocked");
+        context.Walls.Add(leftShell);
+        context.Walls.Add(rightShell);
+        context.Walls.Add(bottomShell);
+        context.Rooms.Add(RepairRoom(
+            "room-with-covered-entry-neighbor",
+            new PlanRect(100, 100, 96, 80),
+            new[]
+            {
+                new PlanPoint(100, 100),
+                new PlanPoint(196, 100),
+                new PlanPoint(196, 180),
+                new PlanPoint(100, 180)
+            }));
+        context.Rooms.Add(Room(
+            "room-covered-entry",
+            RoomUseKind.Outdoor,
+            new PlanRect(100, 40, 96, 60),
+            new[]
+            {
+                new PlanPoint(100, 40),
+                new PlanPoint(196, 40),
+                new PlanPoint(196, 100),
+                new PlanPoint(100, 100)
+            }));
+        context.WallGraph = GraphFor(leftShell, rightShell, bottomShell);
+        context.WallEvidenceMap = EvidenceMapFor(
+            new[] { leftShell, rightShell, bottomShell },
+            WallEvidenceCategory.StrongWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            wall => wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.DoesNotContain(
+            context.Walls,
+            wall => wall.Id.Contains("wall-exterior-shell-inferred", StringComparison.Ordinal));
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "walls.architectural_type_refined"
+                && diagnostic.Properties["exteriorShellGapInferredWallCount"] == "0");
+    }
+
+    [Fact]
     public async Task WallTypeRefinement_DoesNotInferLongExteriorShellFromRoomRectangle()
     {
         var leftShell = ExteriorShellWall("wall-shell-left", 100, 100, 100, 180);
