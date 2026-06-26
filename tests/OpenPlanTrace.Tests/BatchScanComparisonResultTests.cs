@@ -153,6 +153,34 @@ public sealed class BatchScanComparisonResultTests
         Assert.Contains("## Next Actions", markdown);
     }
 
+    [Fact]
+    public void BatchScanMarkdownReport_UsesPlacementImportReadinessCounts()
+    {
+        var placementReadiness = new PlacementImportReadinessExport(
+            "Blocked",
+            0.698,
+            ReadyForGeometryImport: false,
+            ReadyForMetricImport: false,
+            ReadyForRoutingImport: false,
+            RequiresReview: true,
+            BlockingIssueCodes: ["placement.import.low_coordinate_ready_ratio"],
+            ReviewIssueCodes: ["placement.wall_evidence.requires_review"],
+            RecommendedActions: ["Review placement walls."],
+            Evidence:
+            [
+                "structural import coordinate readiness ratio 0.585 (69/118 structural import entities)",
+                "structural import metric readiness ratio 0.585 (69/118 structural import entities)"
+            ]);
+        var run = CreateRun(
+            "candidate",
+            CreateItem(importReadiness: BatchImportReadinessSummary.From(placementReadiness)));
+
+        var markdown = BatchScanMarkdownReport.Create(run);
+
+        Assert.Contains("Blocked 0.698 G:N M:N R:N coord 0.585 (69/118) metric 0.585 (69/118)", markdown);
+        Assert.DoesNotContain("112/161", markdown);
+    }
+
     private static BatchScanRunResult CreateRun(
         string outputDirectoryName,
         params BatchScanItemResult[] items) =>
@@ -176,7 +204,8 @@ public sealed class BatchScanComparisonResultTests
         string? visualSnapshotPath = null,
         string? geoJsonPath = null,
         string? placementJsonPath = null,
-        string? overlayDirectory = null) =>
+        string? overlayDirectory = null,
+        BatchImportReadinessSummary? importReadiness = null) =>
         new(
             ItemNumber: 1,
             InputPath: @"C:\plans\light.pdf",
@@ -238,7 +267,7 @@ public sealed class BatchScanComparisonResultTests
                     ["wall_evidence_review_required"] = 7,
                     ["fragmented_short_parallel_pair_review_required"] = 3
                 }),
-            ImportReadiness: new BatchImportReadinessSummary(
+            ImportReadiness: importReadiness ?? new BatchImportReadinessSummary(
                 Grade: "Blocked",
                 Score: 0.7,
                 ReadyForGeometryImport: false,

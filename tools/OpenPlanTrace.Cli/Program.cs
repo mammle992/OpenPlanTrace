@@ -648,6 +648,7 @@ internal static class OpenPlanTraceCli
                         item.InputPath,
                         scannerOptions: scannerOptions)
                     .ConfigureAwait(false);
+                var placement = PlanPlacementExport.From(scan);
 
                 await using (var jsonStream = File.Create(scanJsonPath))
                 {
@@ -671,7 +672,7 @@ internal static class OpenPlanTraceCli
                 await using (var placementStream = File.Create(placementJsonPath))
                 {
                     await PlanPlacementJsonExporter.WriteAsync(
-                            scan,
+                            placement,
                             placementStream,
                             new PlanPlacementJsonExportOptions { WriteIndented = parsed.PrettyJson })
                         .ConfigureAwait(false);
@@ -735,6 +736,7 @@ internal static class OpenPlanTraceCli
                     overlayDirectory,
                     visualSnapshotPath,
                     snapshot,
+                    placement,
                     stopwatch.Elapsed,
                     attempt);
             }
@@ -2386,7 +2388,8 @@ internal static class OpenPlanTraceCli
             or "opening_consumed_wall_remainder"
             or "opening_linked_isolated_fragment_suppressed"
             or "repeated_short_detail_review_required"
-            or "structural_topology_excluded");
+            or "structural_topology_excluded"
+            or "tiny_door_adjacent_topology_suppressed");
     }
 
     private static IEnumerable<string> PlacementReadyWalls(JsonElement[] walls) =>
@@ -13042,6 +13045,7 @@ internal sealed record BatchScanItemResult(
         string? overlayDirectory,
         string visualSnapshotPath,
         PlanOverlaySnapshot visualSnapshot,
+        PlanPlacementExport placement,
         TimeSpan duration,
         int attemptCount) =>
         new(
@@ -13061,7 +13065,7 @@ internal sealed record BatchScanItemResult(
             Path.GetFullPath(visualSnapshotPath),
             BatchVisualSnapshotSummary.From(visualSnapshot),
             BatchWallPlacementSummary.From(visualSnapshot),
-            BatchImportReadinessSummary.From(PlanImportReadiness.FromScanResult(scan)),
+            BatchImportReadinessSummary.From(placement.Summary.ImportReadiness),
             scan.Diagnostics.ErrorCount > 0 ? "Scan completed with diagnostic errors." : null,
             null);
 
@@ -13187,6 +13191,30 @@ internal sealed record BatchImportReadinessSummary(
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     public static BatchImportReadinessSummary From(PlanImportReadiness readiness)
+    {
+        ArgumentNullException.ThrowIfNull(readiness);
+
+        var coordinate = ReadRatio(readiness.Evidence, CoordinateRatioPattern);
+        var metric = ReadRatio(readiness.Evidence, MetricRatioPattern);
+        return new BatchImportReadinessSummary(
+            readiness.Grade,
+            readiness.Score,
+            readiness.ReadyForGeometryImport,
+            readiness.ReadyForMetricImport,
+            readiness.ReadyForRoutingImport,
+            readiness.RequiresReview,
+            coordinate.Ratio,
+            coordinate.ReadyEntityCount,
+            coordinate.TrackedEntityCount,
+            metric.Ratio,
+            metric.ReadyEntityCount,
+            metric.TrackedEntityCount,
+            readiness.BlockingIssueCodes,
+            readiness.ReviewIssueCodes,
+            readiness.Evidence);
+    }
+
+    public static BatchImportReadinessSummary From(PlacementImportReadinessExport readiness)
     {
         ArgumentNullException.ThrowIfNull(readiness);
 

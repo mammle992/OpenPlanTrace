@@ -16,6 +16,15 @@ public static class PlanPlacementJsonExporter
         PlanPlacementJsonExportOptions? options = null)
     {
         var export = PlanPlacementExport.From(result);
+        return Serialize(export, options);
+    }
+
+    public static string Serialize(
+        PlanPlacementExport export,
+        PlanPlacementJsonExportOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(export);
+
         return JsonSerializer.Serialize(export, CreateJsonOptions(options));
     }
 
@@ -26,6 +35,22 @@ public static class PlanPlacementJsonExporter
         CancellationToken cancellationToken = default)
     {
         var export = PlanPlacementExport.From(result);
+        await WriteAsync(
+                export,
+                stream,
+                options,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public static async ValueTask WriteAsync(
+        PlanPlacementExport export,
+        Stream stream,
+        PlanPlacementJsonExportOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(export);
+
         await JsonSerializer.SerializeAsync(
                 stream,
                 export,
@@ -628,7 +653,8 @@ public sealed record PlacementSummaryExport(
             or "opening_consumed_wall_remainder"
             or "opening_linked_isolated_fragment_suppressed"
             or "repeated_short_detail_review_required"
-            or "structural_topology_excluded");
+            or "structural_topology_excluded"
+            or "tiny_door_adjacent_topology_suppressed");
     }
 
     internal static int CountSourceBackedFallbackWalls(IEnumerable<PlacementWallExport> walls) =>
@@ -3427,7 +3453,8 @@ public sealed record PlacementWallGraphExport(
     private const double MaxInlinePlacementGraphMergeGapDrawingUnits = 12.0;
     private const double MaxInlinePlacementGraphStructuralMergeGapDrawingUnits = 36.0;
     private const double MaxInlinePlacementGraphSameWallGapDrawingUnits = 48.0;
-    private const double MaxInlinePlacementGraphExteriorShellMergeGapDrawingUnits = 72.0;
+    private const double MaxInlinePlacementGraphOpeningCutoutGapDrawingUnits = 96.0;
+    private const double MaxInlinePlacementGraphExteriorShellMergeGapDrawingUnits = 144.0;
     private const double MaxInlinePlacementGraphMergeThicknessDeltaDrawingUnits = 4.0;
     private const double MinOverlappingStructuralPlacementGraphMergeLengthDrawingUnits = 12.0;
     private const double MinOverlappingStructuralPlacementGraphMergeOverlapRatio = 0.2;
@@ -3437,10 +3464,15 @@ public sealed record PlacementWallGraphExport(
     private const double MinContainedPlacementGraphEdgeOverlapRatio = 0.985;
     private const double MinNearContainedPlacementGraphEdgeOverlapRatio = 0.95;
     private const double MaxNearContainedPlacementGraphEdgeOverhangDrawingUnits = 4.0;
+    private const double MinStackedPlacementGraphDuplicateOverlapRatio = 0.80;
+    private const double MinStackedPlacementGraphDuplicateHostLengthRatio = 1.25;
+    private const double MaxStackedPlacementGraphDuplicateOverhangDrawingUnits = 14.0;
     private const double MinPlacementEndpointOnWallSplitFraction = 0.025;
     private const double MinPlacementEndpointOnWallSplitDistanceDrawingUnits = 2.0;
     private const double MinPlacementEndpointOnWallCandidateLengthDrawingUnits = 6.0;
     private const double MaxTinyEndpointOnHostStubLengthDrawingUnits = 6.0;
+    private const double MaxRedundantEndpointOnHostFragmentLengthDrawingUnits = 24.0;
+    private const double MinRedundantEndpointOnHostFragmentHostLengthRatio = 3.0;
     private const double MaxPlacementEndpointOnWallAbsorptionDistanceDrawingUnits = 2.5;
     private const double MaxFinalPlacementEndpointOnWallAbsorptionDistanceDrawingUnits = 1.0;
     private const double MaxPlacementNodeCoordinateAlignmentDistanceDrawingUnits = 2.5;
@@ -3491,6 +3523,7 @@ public sealed record PlacementWallGraphExport(
                 wallEvidenceAssessments))
             .ToArray();
         var edges = CollapseCleanPlacementGraphEdges(rawEdges.Concat(appendedTopologyEdges).ToArray());
+        edges = SuppressContainedPlacementGraphEdges(edges, out var preInlineSuppressedContainedEdgeCount);
         edges = CollapseInlineCollinearPlacementGraphEdges(edges);
         var suppressedRawEdgeCount = edges.Count(edge => edge.CenterLine is null);
         edges = edges
@@ -3563,23 +3596,56 @@ public sealed record PlacementWallGraphExport(
         edges = postPairResidualNodeCoordinateAlignment.Edges;
         var postPairResidualNodeNormalization = NormalizePlacementGraphNodeReferencesFromGeometry(edges);
         edges = postPairResidualNodeNormalization.Edges;
+        var redundantEndpointOnHostFragmentSuppression = SuppressRedundantEndpointOnHostPlacementGraphFragments(edges);
+        edges = redundantEndpointOnHostFragmentSuppression.Edges;
+        var postRedundantEndpointOnHostFragmentCompactionPreEdgeCount = edges.Length;
+        edges = CollapseInlineCollinearPlacementGraphEdges(edges);
+        var postRedundantEndpointOnHostFragmentCollapsedEdgeCount =
+            Math.Max(0, postRedundantEndpointOnHostFragmentCompactionPreEdgeCount - edges.Length);
+        edges = SuppressContainedPlacementGraphEdges(
+            edges,
+            out var postRedundantEndpointOnHostFragmentSuppressedContainedEdgeCount);
+        var postRedundantEndpointOnHostFragmentNodeCoordinateAlignment = AlignPlacementGraphEdgesToCanonicalNodePositions(edges);
+        edges = postRedundantEndpointOnHostFragmentNodeCoordinateAlignment.Edges;
+        var postRedundantEndpointOnHostFragmentNodeNormalization = NormalizePlacementGraphNodeReferencesFromGeometry(edges);
+        edges = postRedundantEndpointOnHostFragmentNodeNormalization.Edges;
+        var postRedundantResidualEndpointSnap = SnapResidualPlacementGraphEndpointsOntoHostEdges(edges);
+        edges = postRedundantResidualEndpointSnap.Edges;
+        var postRedundantResidualAxisRegularization = RegularizeAxisAlignedPlacementGraphEdges(edges);
+        edges = postRedundantResidualAxisRegularization.Edges;
+        var postRedundantResidualCompactionPreEdgeCount = edges.Length;
+        edges = CollapseInlineCollinearPlacementGraphEdges(edges);
+        var postRedundantResidualCollapsedEdgeCount =
+            Math.Max(0, postRedundantResidualCompactionPreEdgeCount - edges.Length);
+        edges = SuppressContainedPlacementGraphEdges(
+            edges,
+            out var postRedundantResidualSuppressedContainedEdgeCount);
+        var postRedundantResidualNodeCoordinateAlignment = AlignPlacementGraphEdgesToCanonicalNodePositions(edges);
+        edges = postRedundantResidualNodeCoordinateAlignment.Edges;
+        var postRedundantResidualNodeNormalization = NormalizePlacementGraphNodeReferencesFromGeometry(edges);
+        edges = postRedundantResidualNodeNormalization.Edges;
         var residualEndpointOnHostSummary = SummarizeResidualPlacementGraphEndpointOnHostEdges(edges);
         var finalCompactedEdgeCount = Math.Max(0, finalCompactionPreEdgeCount - finalPostCompactionEdgeCount);
         var alignedEndpointCount = preNormalizationNodeCoordinateAlignment.AlignedEndpointCount
             + postAbsorptionPreNormalizationNodeCoordinateAlignment.AlignedEndpointCount
             + postNormalizationNodeCoordinateAlignment.AlignedEndpointCount
             + postFinalEndpointAbsorptionNodeCoordinateAlignment.AlignedEndpointCount
-            + postPairResidualNodeCoordinateAlignment.AlignedEndpointCount;
+            + postPairResidualNodeCoordinateAlignment.AlignedEndpointCount
+            + postRedundantEndpointOnHostFragmentNodeCoordinateAlignment.AlignedEndpointCount
+            + postRedundantResidualNodeCoordinateAlignment.AlignedEndpointCount;
         var alignedNodeCount = preNormalizationNodeCoordinateAlignment.AlignedNodeCount
             + postAbsorptionPreNormalizationNodeCoordinateAlignment.AlignedNodeCount
             + postNormalizationNodeCoordinateAlignment.AlignedNodeCount
             + postFinalEndpointAbsorptionNodeCoordinateAlignment.AlignedNodeCount
-            + postPairResidualNodeCoordinateAlignment.AlignedNodeCount;
+            + postPairResidualNodeCoordinateAlignment.AlignedNodeCount
+            + postRedundantEndpointOnHostFragmentNodeCoordinateAlignment.AlignedNodeCount
+            + postRedundantResidualNodeCoordinateAlignment.AlignedNodeCount;
         var regularizedAxisEdgeCount = initialAxisRegularization.RegularizedEdgeCount
             + postSharedNodeHostSnapAxisRegularization.RegularizedEdgeCount
             + finalAxisRegularization.RegularizedEdgeCount
             + postResidualSnapAxisRegularization.RegularizedEdgeCount
-            + postPairResidualSnapAxisRegularization.RegularizedEdgeCount;
+            + postPairResidualSnapAxisRegularization.RegularizedEdgeCount
+            + postRedundantResidualAxisRegularization.RegularizedEdgeCount;
         var postAbsorptionCompactedEdgeCount = Math.Max(0, postAbsorptionEdgeCount - edges.Length);
         var nodes = BuildPlacementWallGraphNodes(graph, edges, calibration);
         var components = graph.Components
@@ -3595,6 +3661,7 @@ public sealed record PlacementWallGraphExport(
             $"placement wall graph appended {appendedTopologyEdges.Length} recovered/source-backed clean topology edge(s)",
             $"placement wall graph suppressed {suppressedRawEdgeCount} raw non-placement edge(s) without clean geometry",
             $"placement wall graph suppressed {suppressedNonImportableEdgeCount} non-importable edge(s) blocked by wall placement omission/exclusion gates",
+            $"placement wall graph suppressed {preInlineSuppressedContainedEdgeCount} pre-inline stacked/contained duplicate edge(s)",
             $"placement wall graph suppressed {suppressedContainedEdgeCount} contained duplicate clean edge(s)",
             $"placement wall graph split {nodeNormalization.SplitNodeReferenceCount} reused node reference(s) whose clean endpoint coordinates no longer coincide",
             $"placement wall graph absorbed {endpointAbsorption.AbsorbedEndpointCount} endpoint node(s) onto host wall edge(s) and split {endpointAbsorption.SplitHostEdgeCount} host edge(s) at true junctions",
@@ -3617,6 +3684,12 @@ public sealed record PlacementWallGraphExport(
             $"placement wall graph post-pair snapped {postPairResidualEndpointSnap.SnappedEndpointCount} residual endpoint(s) onto host wall runs",
             $"placement wall graph post-pair compacted {postPairResidualSnapCollapsedEdgeCount} aligned wall fragment(s) and suppressed {postPairResidualSnapSuppressedContainedEdgeCount} contained duplicate edge(s)",
             $"placement wall graph split {postPairResidualNodeNormalization.SplitNodeReferenceCount} reused node reference(s) after post-pair residual cleanup",
+            $"placement wall graph suppressed {redundantEndpointOnHostFragmentSuppression.SuppressedFragmentCount} redundant endpoint-on-host fragment(s) after residual cleanup",
+            $"placement wall graph post-redundant cleanup compacted {postRedundantEndpointOnHostFragmentCollapsedEdgeCount} aligned wall fragment(s) and suppressed {postRedundantEndpointOnHostFragmentSuppressedContainedEdgeCount} contained duplicate edge(s)",
+            $"placement wall graph split {postRedundantEndpointOnHostFragmentNodeNormalization.SplitNodeReferenceCount} reused node reference(s) after redundant endpoint-on-host cleanup",
+            $"placement wall graph post-redundant snapped {postRedundantResidualEndpointSnap.SnappedEndpointCount} residual endpoint(s) onto host wall runs",
+            $"placement wall graph post-redundant residual compacted {postRedundantResidualCollapsedEdgeCount} aligned wall fragment(s) and suppressed {postRedundantResidualSuppressedContainedEdgeCount} contained duplicate edge(s)",
+            $"placement wall graph split {postRedundantResidualNodeNormalization.SplitNodeReferenceCount} reused node reference(s) after final residual cleanup",
             "placement wall graph residual endpoint-on-host-wall candidates after cleanup: "
             + $"{residualEndpointOnHostSummary.CandidateEndpointCount} total, "
             + $"{residualEndpointOnHostSummary.CoincidentCandidateEndpointCount} coincident, "
@@ -3987,15 +4060,82 @@ public sealed record PlacementWallGraphExport(
             return true;
         }
 
-        if (candidateOverlapRatio < MinNearContainedPlacementGraphEdgeOverlapRatio
-            || !StructuralPlacementGraphKindsMatch(candidate.Edge, representative.Edge))
+        if (candidateOverlapRatio >= MinNearContainedPlacementGraphEdgeOverlapRatio
+            && StructuralPlacementGraphKindsMatch(candidate.Edge, representative.Edge))
+        {
+            var nearContainedOverhang = Math.Max(0, representative.Start - candidate.Start)
+                + Math.Max(0, candidate.End - representative.End);
+            return nearContainedOverhang <= NearContainedPlacementGraphEdgeOverhangTolerance(candidate, representative);
+        }
+
+        return IsStackedPlacementGraphDuplicateOverlapAcceptable(
+            candidate,
+            representative,
+            candidateOverlapRatio);
+    }
+
+    private static bool IsStackedPlacementGraphDuplicateOverlapAcceptable(
+        PlacementGraphMergeSpan candidate,
+        PlacementGraphMergeSpan representative,
+        double candidateOverlapRatio)
+    {
+        if (candidateOverlapRatio < MinStackedPlacementGraphDuplicateOverlapRatio
+            || representative.Length < Math.Max(
+                MinDominantPlacementGraphMergeAxisLengthDrawingUnits,
+                candidate.Length * MinStackedPlacementGraphDuplicateHostLengthRatio)
+            || HasPlacementGraphDetailOrSurfaceEvidence(representative.Edge))
         {
             return false;
         }
 
         var overhang = Math.Max(0, representative.Start - candidate.Start)
             + Math.Max(0, candidate.End - representative.End);
-        return overhang <= NearContainedPlacementGraphEdgeOverhangTolerance(candidate, representative);
+        if (overhang > StackedPlacementGraphDuplicateOverhangTolerance(candidate, representative))
+        {
+            return false;
+        }
+
+        if (!IsStructuralPlacementGraphMergeContinuation(representative.Edge)
+            && !representative.Edge.Evidence.Any(IsExteriorPlacementGraphEvidence))
+        {
+            return false;
+        }
+
+        if (HasStrongPlacementGraphBoundaryEvidence(candidate.Edge)
+            && !StructuralPlacementGraphKindsMatch(candidate.Edge, representative.Edge)
+            && !IsSameTrustedExteriorPlacementGraphDuplicate(candidate.Edge, representative.Edge))
+        {
+            return false;
+        }
+
+        return string.Equals(candidate.Edge.WallId, representative.Edge.WallId, StringComparison.Ordinal)
+            || StructuralPlacementGraphKindsMatch(candidate.Edge, representative.Edge)
+            || IsSameTrustedExteriorPlacementGraphDuplicate(candidate.Edge, representative.Edge)
+            || HasPlacementGraphDetailOrSurfaceEvidence(candidate.Edge)
+            || candidate.Edge.Evidence.Any(item =>
+                item.Contains("duplicate", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("residual", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("stacked", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("fragment", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsSameTrustedExteriorPlacementGraphDuplicate(
+        PlacementWallGraphEdgeExport candidate,
+        PlacementWallGraphEdgeExport representative) =>
+        IsTrustedExteriorShellPlacementGraphMergeContinuation(candidate)
+        && IsTrustedExteriorShellPlacementGraphMergeContinuation(representative);
+
+    private static double StackedPlacementGraphDuplicateOverhangTolerance(
+        PlacementGraphMergeSpan candidate,
+        PlacementGraphMergeSpan representative)
+    {
+        var thicknessTolerance = Math.Max(
+            candidate.Edge.ThicknessDrawingUnits,
+            representative.Edge.ThicknessDrawingUnits) * 2.0;
+        return Math.Clamp(
+            thicknessTolerance,
+            MaxNearContainedPlacementGraphEdgeOverhangDrawingUnits,
+            MaxStackedPlacementGraphDuplicateOverhangDrawingUnits);
     }
 
     private static double NearContainedPlacementGraphEdgeOverhangTolerance(
@@ -4224,6 +4364,11 @@ public sealed record PlacementWallGraphExport(
         IReadOnlyList<PlacementGraphMergeSpan> cluster,
         PlacementGraphMergeSpan span)
     {
+        if (IsOpeningCutoutSplitPlacementGraphRun(cluster, span))
+        {
+            return MaxInlinePlacementGraphOpeningCutoutGapDrawingUnits;
+        }
+
         if (IsSameSourceWallPlacementGraphRun(cluster, span))
         {
             return cluster.All(item => IsTrustedExteriorShellPlacementGraphMergeContinuation(item.Edge))
@@ -4260,6 +4405,27 @@ public sealed record PlacementWallGraphExport(
         PlacementGraphMergeSpan span) =>
         !string.IsNullOrWhiteSpace(span.Edge.WallId)
         && cluster.All(item => string.Equals(item.Edge.WallId, span.Edge.WallId, StringComparison.Ordinal));
+
+    private static bool IsOpeningCutoutSplitPlacementGraphRun(
+        IReadOnlyList<PlacementGraphMergeSpan> cluster,
+        PlacementGraphMergeSpan span) =>
+        IsSameSourceWallPlacementGraphRun(cluster, span)
+        && cluster.All(item => IsOpeningCutoutSplitPlacementGraphEdge(item.Edge))
+        && IsOpeningCutoutSplitPlacementGraphEdge(span.Edge);
+
+    private static bool IsOpeningCutoutSplitPlacementGraphRun(
+        IReadOnlyList<PlacementGraphMergeSpan> spans) =>
+        spans.Count > 1
+        && spans.All(span => IsOpeningCutoutSplitPlacementGraphEdge(span.Edge))
+        && spans
+            .Select(span => span.Edge.WallId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .Count() == 1;
+
+    private static bool IsOpeningCutoutSplitPlacementGraphEdge(PlacementWallGraphEdgeExport edge) =>
+        edge.Evidence.Any(item =>
+            item.Contains("split around anchored door/opening cutouts", StringComparison.OrdinalIgnoreCase));
 
     private static bool IsTrustedExteriorShellPlacementGraphRun(
         IReadOnlyList<PlacementGraphMergeSpan> cluster,
@@ -4318,6 +4484,12 @@ public sealed record PlacementWallGraphExport(
                 : Array.Empty<string>())
             .Concat(ordered.Any(span => IsTrustedSourceBackedIsolatedPlacementContinuation(span.Edge))
                 ? new[] { "placement wall graph inline run absorbed source-backed isolated continuation into structural run" }
+                : Array.Empty<string>())
+            .Concat(IsOpeningCutoutSplitPlacementGraphRun(ordered)
+                ? new[]
+                {
+                    "placement wall graph inline run bridged anchored opening cutout gap; opening exports preserve the actual cutout"
+                }
                 : Array.Empty<string>())
             .Concat(axisDecision.Evidence)
             .Distinct(StringComparer.Ordinal)
@@ -4478,6 +4650,7 @@ public sealed record PlacementWallGraphExport(
             .ThenBy(span => Math.Abs(span.Axis - axis))
             .ThenBy(span => span.Edge.Id, StringComparer.Ordinal)
             .First();
+        axis = PreferDominantPlacementGraphLeaderAxis(members, leader, axis);
         var memberIndexes = members
             .Select(span => span.Index)
             .ToHashSet();
@@ -4488,6 +4661,35 @@ public sealed record PlacementWallGraphExport(
             leader,
             members,
             memberIndexes);
+    }
+
+    private static double PreferDominantPlacementGraphLeaderAxis(
+        IReadOnlyList<PlacementGraphMergeSpan> members,
+        PlacementGraphMergeSpan leader,
+        double weightedAxis)
+    {
+        if (members.Count <= 1
+            || leader.Length < MinDominantPlacementGraphMergeAxisLengthDrawingUnits
+            || !IsStructuralPlacementGraphMergeContinuation(leader.Edge)
+            || HasPlacementGraphDetailOrSurfaceEvidence(leader.Edge))
+        {
+            return weightedAxis;
+        }
+
+        var totalLength = members.Sum(span => Math.Max(span.Length, 0.001));
+        var leaderCoverage = leader.Length / Math.Max(totalLength, 0.001);
+        var nextLength = members
+            .Where(span => span.Index != leader.Index)
+            .Select(span => span.Length)
+            .DefaultIfEmpty(0)
+            .Max();
+        var leaderLengthRatio = nextLength <= 0.001 ? double.PositiveInfinity : leader.Length / nextLength;
+        if (leaderCoverage < 0.55 || leaderLengthRatio < 1.5)
+        {
+            return weightedAxis;
+        }
+
+        return leader.Axis;
     }
 
     private static double PlacementGraphDominantAxisBandTolerance(IReadOnlyList<PlacementGraphMergeSpan> spans)
@@ -5129,6 +5331,252 @@ public sealed record PlacementWallGraphExport(
         }
 
         return false;
+    }
+
+    private static PlacementGraphRedundantEndpointOnHostFragmentSuppressionResult SuppressRedundantEndpointOnHostPlacementGraphFragments(
+        IReadOnlyList<PlacementWallGraphEdgeExport> edges)
+    {
+        if (edges.Count <= 1)
+        {
+            return new PlacementGraphRedundantEndpointOnHostFragmentSuppressionResult(edges.ToArray(), 0);
+        }
+
+        var observations = BuildPlacementGraphEndpointObservations(edges);
+        if (observations.Count == 0)
+        {
+            return new PlacementGraphRedundantEndpointOnHostFragmentSuppressionResult(edges.ToArray(), 0);
+        }
+
+        var spans = edges
+            .Select((edge, index) => TryCreatePlacementGraphMergeSpan(index, edge))
+            .Where(span => span is not null)
+            .Select(span => span!)
+            .ToArray();
+        if (spans.Length <= 1)
+        {
+            return new PlacementGraphRedundantEndpointOnHostFragmentSuppressionResult(edges.ToArray(), 0);
+        }
+
+        var observationsByEdgeIndex = observations
+            .GroupBy(observation => observation.EdgeIndex)
+            .ToDictionary(group => group.Key, group => group.ToArray());
+        var endpointUseCount = observations
+            .GroupBy(observation => observation.OriginalNodeId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+        var suppressedIndexes = new HashSet<int>();
+        var suppressionsByHostIndex = new Dictionary<int, List<PlacementGraphRedundantEndpointOnHostFragmentSuppression>>();
+
+        foreach (var candidateSpan in spans
+            .OrderBy(span => span.Length)
+            .ThenBy(span => span.Edge.Id, StringComparer.Ordinal))
+        {
+            if (suppressedIndexes.Contains(candidateSpan.Index)
+                || !observationsByEdgeIndex.TryGetValue(candidateSpan.Index, out var candidateEndpoints)
+                || TryCreateRedundantEndpointOnHostFragmentSuppression(
+                    candidateSpan,
+                    candidateEndpoints,
+                    spans,
+                    endpointUseCount,
+                    suppressedIndexes) is not { } suppression)
+            {
+                continue;
+            }
+
+            suppressedIndexes.Add(candidateSpan.Index);
+            if (!suppressionsByHostIndex.TryGetValue(suppression.HostSpan.Index, out var hostSuppressions))
+            {
+                hostSuppressions = new List<PlacementGraphRedundantEndpointOnHostFragmentSuppression>();
+                suppressionsByHostIndex[suppression.HostSpan.Index] = hostSuppressions;
+            }
+
+            hostSuppressions.Add(suppression);
+        }
+
+        if (suppressedIndexes.Count == 0)
+        {
+            return new PlacementGraphRedundantEndpointOnHostFragmentSuppressionResult(edges.ToArray(), 0);
+        }
+
+        return new PlacementGraphRedundantEndpointOnHostFragmentSuppressionResult(
+            edges
+                .Select((edge, index) => suppressionsByHostIndex.TryGetValue(index, out var hostSuppressions)
+                    ? AddRedundantEndpointOnHostFragmentSuppressionEvidence(edge, hostSuppressions)
+                    : edge)
+                .Where((_, index) => !suppressedIndexes.Contains(index))
+                .OrderBy(edge => edge.PageNumber)
+                .ThenBy(edge => edge.Bounds?.Y ?? double.MaxValue)
+                .ThenBy(edge => edge.Bounds?.X ?? double.MaxValue)
+                .ThenBy(edge => edge.Id, StringComparer.Ordinal)
+                .ToArray(),
+            suppressedIndexes.Count);
+    }
+
+    private static PlacementGraphRedundantEndpointOnHostFragmentSuppression? TryCreateRedundantEndpointOnHostFragmentSuppression(
+        PlacementGraphMergeSpan candidateSpan,
+        IReadOnlyList<PlacementGraphEndpointObservation> candidateEndpoints,
+        IReadOnlyList<PlacementGraphMergeSpan> hostSpans,
+        IReadOnlyDictionary<string, int> endpointUseCount,
+        IReadOnlySet<int> suppressedIndexes)
+    {
+        if (!CanSuppressRedundantEndpointOnHostFragment(candidateSpan))
+        {
+            return null;
+        }
+
+        PlacementGraphRedundantEndpointOnHostFragmentSuppression? best = null;
+        foreach (var endpoint in candidateEndpoints)
+        {
+            var oppositeEndpoint = candidateEndpoints.FirstOrDefault(item => item.IsStart != endpoint.IsStart);
+            if (oppositeEndpoint is null
+                || endpointUseCount.GetValueOrDefault(oppositeEndpoint.OriginalNodeId) > 1)
+            {
+                continue;
+            }
+
+            foreach (var hostSpan in hostSpans)
+            {
+                if (!CanHostRedundantEndpointOnHostFragment(candidateSpan, hostSpan, suppressedIndexes))
+                {
+                    continue;
+                }
+
+                var coordinate = hostSpan.Orientation == PlacementGraphEdgeOrientation.Horizontal
+                    ? endpoint.Position.X
+                    : endpoint.Position.Y;
+                if (coordinate <= hostSpan.Start + MinPlacementEndpointOnWallSplitDistanceDrawingUnits
+                    || coordinate >= hostSpan.End - MinPlacementEndpointOnWallSplitDistanceDrawingUnits)
+                {
+                    continue;
+                }
+
+                var hostPoint = PointOnPlacementGraphSpan(hostSpan, coordinate);
+                var distance = endpoint.Position.DistanceTo(hostPoint);
+                if (distance > RedundantEndpointOnHostFragmentTolerance(candidateSpan, hostSpan))
+                {
+                    continue;
+                }
+
+                var candidate = new PlacementGraphRedundantEndpointOnHostFragmentSuppression(
+                    candidateSpan,
+                    hostSpan,
+                    endpoint,
+                    distance);
+                if (best is null
+                    || candidate.Distance < best.Distance
+                    || (Math.Abs(candidate.Distance - best.Distance) <= 0.001
+                        && candidate.HostSpan.Length > best.HostSpan.Length))
+                {
+                    best = candidate;
+                }
+            }
+        }
+
+        return best;
+    }
+
+    private static bool CanSuppressRedundantEndpointOnHostFragment(PlacementGraphMergeSpan candidateSpan)
+    {
+        if (candidateSpan.Length <= 0
+            || candidateSpan.Length > MaxRedundantEndpointOnHostFragmentLengthDrawingUnits
+            || candidateSpan.Edge.ExcludedFromStructuralTopology
+            || IsTrustedExteriorShellPlacementGraphMergeContinuation(candidateSpan.Edge)
+            || candidateSpan.Edge.Evidence.Any(IsExteriorPlacementGraphEvidence)
+            || HasStrongPlacementGraphBoundaryEvidence(candidateSpan.Edge))
+        {
+            return false;
+        }
+
+        return candidateSpan.Edge.Id.Contains("opening-piece", StringComparison.OrdinalIgnoreCase)
+            || HasPlacementGraphDetailOrSurfaceEvidence(candidateSpan.Edge)
+            || candidateSpan.Edge.Evidence.Any(item =>
+                item.Contains("opening", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("only one trusted structural endpoint", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("isolated fragment", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("one endpoint", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("dangling", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool HasStrongPlacementGraphBoundaryEvidence(PlacementWallGraphEdgeExport edge) =>
+        edge.Evidence.Any(item =>
+            item.Contains("detected room evidence on both sides", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("shared by room adjacency", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("accepted paired wall body evidence", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("trusted two-sided", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("source-backed", StringComparison.OrdinalIgnoreCase));
+
+    private static bool CanHostRedundantEndpointOnHostFragment(
+        PlacementGraphMergeSpan candidateSpan,
+        PlacementGraphMergeSpan hostSpan,
+        IReadOnlySet<int> suppressedIndexes)
+    {
+        if (hostSpan.Index == candidateSpan.Index
+            || suppressedIndexes.Contains(hostSpan.Index)
+            || hostSpan.Edge.PageNumber != candidateSpan.Edge.PageNumber
+            || hostSpan.Edge.CenterLine is null
+            || hostSpan.Edge.ExcludedFromStructuralTopology
+            || hostSpan.Length < Math.Max(
+                MinDominantPlacementGraphMergeAxisLengthDrawingUnits,
+                candidateSpan.Length * MinRedundantEndpointOnHostFragmentHostLengthRatio)
+            || HasPlacementGraphDetailOrSurfaceEvidence(hostSpan.Edge))
+        {
+            return false;
+        }
+
+        return IsStructuralPlacementGraphMergeContinuation(hostSpan.Edge)
+            || hostSpan.Edge.Evidence.Any(IsExteriorPlacementGraphEvidence);
+    }
+
+    private static double RedundantEndpointOnHostFragmentTolerance(
+        PlacementGraphMergeSpan candidateSpan,
+        PlacementGraphMergeSpan hostSpan)
+    {
+        var maxThickness = Math.Max(
+            candidateSpan.Edge.ThicknessDrawingUnits,
+            hostSpan.Edge.ThicknessDrawingUnits);
+        return Math.Clamp(
+            maxThickness / 2.0,
+            MaxCoincidentPlacementNodeDistanceDrawingUnits,
+            MaxPlacementEndpointOnWallAbsorptionDistanceDrawingUnits);
+    }
+
+    private static PlacementWallGraphEdgeExport AddRedundantEndpointOnHostFragmentSuppressionEvidence(
+        PlacementWallGraphEdgeExport hostEdge,
+        IReadOnlyList<PlacementGraphRedundantEndpointOnHostFragmentSuppression> suppressions)
+    {
+        var ordered = suppressions
+            .OrderBy(suppression => suppression.Distance)
+            .ThenBy(suppression => suppression.CandidateSpan.Edge.Id, StringComparer.Ordinal)
+            .ToArray();
+        var evidence = hostEdge.Evidence
+            .Concat(ordered.Select(suppression =>
+                "placement wall graph redundant endpoint-on-host cleanup: "
+                + $"suppressed {suppression.CandidateSpan.Edge.Id} into host {hostEdge.Id}; "
+                + $"endpoint offset {suppression.Distance:0.###} drawing units"))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        return hostEdge with
+        {
+            Confidence = Math.Min(
+                hostEdge.Confidence,
+                ordered.Select(suppression => suppression.CandidateSpan.Edge.Confidence).DefaultIfEmpty(hostEdge.Confidence).Min()),
+            SourcePrimitiveIds = hostEdge.SourcePrimitiveIds
+                .Concat(ordered.SelectMany(suppression => suppression.CandidateSpan.Edge.SourcePrimitiveIds))
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray(),
+            SourceLayers = hostEdge.SourceLayers
+                .Concat(ordered.SelectMany(suppression => suppression.CandidateSpan.Edge.SourceLayers))
+                .Where(layer => !string.IsNullOrWhiteSpace(layer))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
+            SourceWallGraphEdgeIds = hostEdge.SourceWallGraphEdgeIds
+                .Concat(ordered.SelectMany(suppression => suppression.CandidateSpan.Edge.SourceWallGraphEdgeIds))
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray(),
+            Evidence = evidence
+        };
     }
 
     private static PlacementGraphEndpointOnHostResidualSummary SummarizeResidualPlacementGraphEndpointOnHostEdges(
@@ -6117,7 +6565,7 @@ public sealed record PlacementWallGraphExport(
                 endpointSpan.Edge.ThicknessDrawingUnits,
                 hostSpan.Edge.ThicknessDrawingUnits);
             return Math.Clamp(
-                perpendicularMaxThickness * 0.75,
+                perpendicularMaxThickness,
                 MaxPlacementEndpointOnWallAbsorptionDistanceDrawingUnits,
                 MaxPlacementSharedNodeHostSnapDistanceDrawingUnits);
         }
@@ -6839,6 +7287,16 @@ public sealed record PlacementWallGraphExport(
     private sealed record PlacementGraphTinyEndpointOnHostStubSuppressionResult(
         PlacementWallGraphEdgeExport[] Edges,
         int SuppressedStubCount);
+
+    private sealed record PlacementGraphRedundantEndpointOnHostFragmentSuppressionResult(
+        PlacementWallGraphEdgeExport[] Edges,
+        int SuppressedFragmentCount);
+
+    private sealed record PlacementGraphRedundantEndpointOnHostFragmentSuppression(
+        PlacementGraphMergeSpan CandidateSpan,
+        PlacementGraphMergeSpan HostSpan,
+        PlacementGraphEndpointObservation Endpoint,
+        double Distance);
 
     private sealed record PlacementGraphResidualEndpointSnapResult(
         PlacementWallGraphEdgeExport[] Edges,

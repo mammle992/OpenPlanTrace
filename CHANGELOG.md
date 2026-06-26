@@ -8,6 +8,36 @@ fix counter. When `DEF` reaches `030`, the next major work cycle moves to the
 next `BC` track and resets to `000`. Individual JSON contracts keep their own
 schema versions.
 
+## [0.06.014] - 2026-06-26
+
+- Improved dominant wall-axis alignment.
+- Improved batch placement-readiness reporting.
+- Small improvement to wall graph alignment tests.
+
+## [0.06.013] - 2026-06-26
+
+- Improved wall placement alignment cleanup.
+- Improved stacked wall-fragment node suppression.
+- Small improvement to exterior wall gap rejoining tests.
+
+## [0.06.012] - 2026-06-26
+
+- Improved tiny door-sliver import readiness handling.
+- Improved placement validator consistency for suppressed wall noise.
+- Small improvement to readiness summary tests.
+
+## [0.06.011] - 2026-06-26
+
+- Improved opening-split wall graph spine cleanup.
+- Improved placement graph node compaction around wall cutouts.
+- Small improvement to opening wall graph tests.
+
+## [0.06.010] - 2026-06-26
+
+- Improved redundant endpoint-on-host wall cleanup.
+- Improved placement graph source traceability during cleanup.
+- Small improvement to wall graph cleanup tests.
+
 ## [0.06.009] - 2026-06-26
 
 - Improved source-backed exterior corner snapping.
