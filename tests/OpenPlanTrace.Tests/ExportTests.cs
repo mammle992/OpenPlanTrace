@@ -2053,6 +2053,64 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlanOverlayWallGraphResidualSummary_SummarizesStructuredPlacementCandidatesByPage()
+    {
+        var candidates = new[]
+        {
+            new PlacementWallGraphResidualEndpointOnHostCandidateExport(
+                "candidate-page-1",
+                1,
+                "endpoint-edge-1",
+                "host-edge-1",
+                "endpoint-wall-1",
+                "host-wall-1",
+                "endpoint-node-1",
+                "End",
+                "Perpendicular",
+                new PointExport(10, 12),
+                new PointExport(10, 10),
+                null,
+                null,
+                2,
+                null,
+                new LineExport(new PointExport(10, 12), new PointExport(10, 10)),
+                null,
+                "Info",
+                "Review candidate.",
+                ["test structured residual"]),
+            new PlacementWallGraphResidualEndpointOnHostCandidateExport(
+                "candidate-page-2",
+                2,
+                "endpoint-edge-2",
+                "host-edge-2",
+                "endpoint-wall-2",
+                "host-wall-2",
+                "endpoint-node-2",
+                "Start",
+                "SameAxis",
+                new PointExport(20, 20),
+                new PointExport(20.5, 20),
+                null,
+                null,
+                0.5,
+                null,
+                new LineExport(new PointExport(20, 20), new PointExport(20.5, 20)),
+                null,
+                "Warning",
+                "Review candidate.",
+                ["test structured residual"])
+        };
+
+        var summary = PlanOverlayWallGraphResidualSummary.FromCandidates(candidates, pageNumber: 1);
+
+        Assert.Equal(1, summary.CandidateEndpointCount);
+        Assert.Equal(0, summary.CoincidentCandidateEndpointCount);
+        Assert.Equal(0, summary.SameAxisCandidateEndpointCount);
+        Assert.Equal(1, summary.PerpendicularCandidateEndpointCount);
+        Assert.Equal(2, summary.MaxDistance, precision: 3);
+    }
+
+    [Fact]
     public void VisualSnapshotExporter_CarriesWallGraphResidualEndpointSummary()
     {
         var result = CreateEndpointOnHostPlacementGraphResult();
@@ -6934,40 +6992,35 @@ public sealed class ExportTests
             new PlanPlacementJsonExportOptions { WriteIndented = false }));
         var wallGraph = document.RootElement.GetProperty("wallGraph");
         var graphEdges = wallGraph.GetProperty("edges").EnumerateArray().ToArray();
-        var hostPieces = graphEdges
+        var host = Assert.Single(graphEdges
             .Where(item => JsonStrings(item.GetProperty("sourceWallGraphEdgeIds"))
-                .Contains("endpoint-on-host-edge-host"))
-            .ToArray();
+                .Contains("endpoint-on-host-edge-host")));
         var branch = Assert.Single(graphEdges.Where(item => JsonStrings(item.GetProperty("sourceWallGraphEdgeIds"))
             .Contains("endpoint-on-host-edge-branch")));
         var junctionNode = Assert.Single(wallGraph.GetProperty("nodes").EnumerateArray(), node =>
             node.GetProperty("id").GetString() == "endpoint-on-host-node-junction");
 
-        Assert.Equal(2, hostPieces.Length);
-        Assert.Equal(3, graphEdges.Length);
-        Assert.Equal(
-            160,
-            hostPieces.Sum(piece => piece.GetProperty("drawingLength").GetDouble()),
-            precision: 3);
-        Assert.Contains(hostPieces, piece => piece.GetProperty("toNodeId").GetString() == "endpoint-on-host-node-junction");
-        Assert.Contains(hostPieces, piece => piece.GetProperty("fromNodeId").GetString() == "endpoint-on-host-node-junction");
+        Assert.Equal(2, graphEdges.Length);
+        Assert.Equal(160, host.GetProperty("drawingLength").GetDouble(), precision: 3);
+        Assert.Equal("endpoint-on-host-node-left", host.GetProperty("fromNodeId").GetString());
+        Assert.Equal("endpoint-on-host-node-right", host.GetProperty("toNodeId").GetString());
         Assert.Equal("endpoint-on-host-node-top", branch.GetProperty("fromNodeId").GetString());
         Assert.Equal("endpoint-on-host-node-junction", branch.GetProperty("toNodeId").GetString());
         Assert.Equal("TJunction", junctionNode.GetProperty("kind").GetString());
         Assert.Equal(3, junctionNode.GetProperty("degree").GetInt32());
         Assert.Contains(
             junctionNode.GetProperty("evidence").EnumerateArray(),
-            item => item.GetString()?.Contains("clean topology endpoint observations: 3", StringComparison.OrdinalIgnoreCase) == true);
+            item => item.GetString()?.Contains("attached to host wall edge", StringComparison.OrdinalIgnoreCase) == true);
         Assert.Contains(
             wallGraph.GetProperty("evidence").EnumerateArray(),
             item => item.GetString()?.Contains("absorbed 1 endpoint node", StringComparison.OrdinalIgnoreCase) == true);
         Assert.Contains(
             wallGraph.GetProperty("evidence").EnumerateArray(),
-            item => item.GetString()?.Contains("compacted 0 post-junction wall fragment", StringComparison.OrdinalIgnoreCase) == true);
+            item => item.GetString()?.Contains("compacted 1 post-junction wall fragment", StringComparison.OrdinalIgnoreCase) == true);
     }
 
     [Fact]
-    public void PlacementWallGraphExport_FinalCleanupSplitsNearEndCoincidentEndpointOnHostWall()
+    public void PlacementWallGraphExport_FinalCleanupKeepsNearEndHostWallLong()
     {
         var nodes = new[]
         {
@@ -7051,31 +7104,166 @@ public sealed class ExportTests
             new Dictionary<string, WallGraphComponent>(StringComparer.Ordinal),
             new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal));
 
-        var hostPieces = export.Edges
-            .Where(edge => edge.Id.StartsWith("near-end-host-edge:junction-piece:", StringComparison.Ordinal))
-            .OrderBy(edge => edge.CenterLine!.Start.X)
-            .ToArray();
+        var host = Assert.Single(export.Edges, edge => edge.SourceWallGraphEdgeIds.Contains("near-end-host-edge"));
         var branch = Assert.Single(export.Edges, edge => edge.Id == "near-end-branch-edge");
         var junction = Assert.Single(export.Nodes, node => node.Id == "near-end-branch-node-junction");
 
-        Assert.Equal(2, hostPieces.Length);
-        Assert.Equal(3, export.Edges.Count);
-        Assert.Equal(200, hostPieces.Sum(edge => edge.DrawingLength), precision: 3);
-        Assert.Equal("near-end-branch-node-junction", hostPieces[0].ToNodeId);
-        Assert.Equal("near-end-branch-node-junction", hostPieces[1].FromNodeId);
+        Assert.Equal(2, export.Edges.Count);
+        Assert.Equal(200, host.DrawingLength, precision: 3);
+        Assert.Equal("near-end-host-node-left", host.FromNodeId);
+        Assert.Equal("near-end-host-node-right", host.ToNodeId);
         Assert.Equal("near-end-branch-node-junction", branch.ToNodeId);
         Assert.Equal("TJunction", junction.Kind);
+        Assert.Contains(junction.Evidence, item => item.Contains("attached to host wall edge", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(
             export.Evidence,
             item => item.Contains("final-cleaned 1 coincident endpoint node", StringComparison.OrdinalIgnoreCase)
                 && item.Contains("split 1 host edge", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(
             export.Evidence,
+            item => item.Contains("rejoined 1 final host wall fragment", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            export.Evidence,
             item => item.Contains("residual endpoint-on-host-wall candidates after cleanup: 0 total", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
-    public void PlacementWallGraphExport_ReportsResidualEndpointOnHostWallDiagnostics()
+    public void PlacementWallGraphExport_RejoinsExteriorHostWallAcrossProtectedJunction()
+    {
+        var nodes = new[]
+        {
+            SyntheticNode("protected-exterior-node-left", 80, 100, WallNodeKind.Endpoint),
+            SyntheticNode("protected-exterior-node-junction", 160, 100, WallNodeKind.TJunction),
+            SyntheticNode("protected-exterior-node-right", 240, 100, WallNodeKind.Endpoint),
+            SyntheticNode("protected-exterior-node-top", 160, 60, WallNodeKind.Endpoint)
+        };
+        var edges = new[]
+        {
+            new WallEdge(
+                "protected-exterior-host-left-edge",
+                1,
+                nodes[0].Id,
+                nodes[1].Id,
+                "protected-exterior-host-left-wall",
+                Confidence.High),
+            new WallEdge(
+                "protected-exterior-host-right-edge",
+                1,
+                nodes[1].Id,
+                nodes[2].Id,
+                "protected-exterior-host-right-wall",
+                Confidence.High),
+            new WallEdge(
+                "protected-exterior-branch-edge",
+                1,
+                nodes[3].Id,
+                nodes[1].Id,
+                "protected-exterior-branch-wall",
+                Confidence.High)
+        };
+        var spans = new[]
+        {
+            new WallGraphTopologySpan(
+                edges[0].Id,
+                1,
+                edges[0].WallId,
+                edges[0].FromNodeId,
+                edges[0].ToNodeId,
+                new PlanLineSegment(new PlanPoint(80, 100), new PlanPoint(160, 100)),
+                new PlanRect(78, 98, 84, 4),
+                80,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                4,
+                Confidence.High,
+                ["protected-exterior-host-left-wall"],
+                [edges[0].Id],
+                ["wall type exterior: synthetic shell wall left piece"],
+                null),
+            new WallGraphTopologySpan(
+                edges[1].Id,
+                1,
+                edges[1].WallId,
+                edges[1].FromNodeId,
+                edges[1].ToNodeId,
+                new PlanLineSegment(new PlanPoint(160, 100), new PlanPoint(240, 100)),
+                new PlanRect(158, 98, 84, 4),
+                80,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                4,
+                Confidence.High,
+                ["protected-exterior-host-right-wall"],
+                [edges[1].Id],
+                ["wall type exterior: synthetic shell wall right piece"],
+                null),
+            new WallGraphTopologySpan(
+                edges[2].Id,
+                1,
+                edges[2].WallId,
+                edges[2].FromNodeId,
+                edges[2].ToNodeId,
+                new PlanLineSegment(new PlanPoint(160, 60), new PlanPoint(160, 100)),
+                new PlanRect(158, 58, 4, 44),
+                40,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                4,
+                Confidence.High,
+                ["protected-exterior-branch-wall"],
+                [edges[2].Id],
+                ["synthetic interior branch wall"],
+                null)
+        };
+
+        var export = PlacementWallGraphExport.From(
+            new WallGraph(nodes, edges, Array.Empty<WallGraphComponent>()),
+            spans,
+            PlanCalibration.Empty,
+            new Dictionary<string, PrimitiveSourceExport>(StringComparer.Ordinal),
+            new Dictionary<string, WallGraphComponent>(StringComparer.Ordinal),
+            new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal));
+
+        var host = Assert.Single(export.Edges, edge =>
+            edge.SourceWallGraphEdgeIds.Contains("protected-exterior-host-left-edge")
+            && edge.SourceWallGraphEdgeIds.Contains("protected-exterior-host-right-edge"));
+        var branch = Assert.Single(export.Edges, edge => edge.Id == "protected-exterior-branch-edge");
+        var junction = Assert.Single(export.Nodes, node => node.Id == "protected-exterior-node-junction");
+
+        Assert.Equal(2, export.Edges.Count);
+        Assert.Equal(160, host.DrawingLength, precision: 3);
+        Assert.Equal("protected-exterior-node-left", host.FromNodeId);
+        Assert.Equal("protected-exterior-node-right", host.ToNodeId);
+        Assert.Equal("protected-exterior-node-junction", branch.ToNodeId);
+        Assert.Equal("TJunction", junction.Kind);
+        Assert.Contains(
+            junction.Evidence,
+            item => item.Contains("attached to host wall edge", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            host.Evidence,
+            item => item.Contains("inline run merged 2 collinear edge", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void PlacementWallGraphExport_SnapsSmallResidualEndpointOntoHostWallWithoutSplitting()
     {
         var nodes = new[]
         {
@@ -7160,13 +7348,456 @@ public sealed class ExportTests
             new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal));
 
         Assert.Equal(2, export.Edges.Count);
+        Assert.Empty(export.ResidualEndpointOnHostCandidates);
+        var host = Assert.Single(export.Edges, edge => edge.Id == "residual-host-edge");
+        var branch = Assert.Single(export.Edges, edge => edge.Id == "residual-branch-edge");
+        var junction = Assert.Single(export.Nodes, node => node.Id == "residual-branch-node-near-host");
+
+        Assert.Equal(160, host.DrawingLength, precision: 3);
+        Assert.Equal(100, branch.CenterLine!.End.Y, precision: 3);
+        Assert.Equal("TJunction", junction.Kind);
+        Assert.Contains(
+            branch.Evidence,
+            item => item.Contains("final residual endpoint snap", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            export.Evidence,
+            item => item.Contains("snapped 1 small residual endpoint", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            export.Evidence,
+            item => item.Contains("residual endpoint-on-host-wall candidates after cleanup: 0 total", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void PlacementWallGraphExport_SnapsTrustedStructuralResidualEndpointOntoSourceBackedHost()
+    {
+        var nodes = new[]
+        {
+            SyntheticNode("trusted-residual-host-node-left", 80, 100, WallNodeKind.Endpoint),
+            SyntheticNode("trusted-residual-host-node-right", 240, 100, WallNodeKind.Endpoint),
+            SyntheticNode("trusted-residual-branch-node-top", 160, 60, WallNodeKind.Endpoint),
+            SyntheticNode("trusted-residual-branch-node-near-host", 160, 103.2, WallNodeKind.Endpoint)
+        };
+        var edges = new[]
+        {
+            new WallEdge(
+                "trusted-residual-host-edge",
+                1,
+                nodes[0].Id,
+                nodes[1].Id,
+                "trusted-residual-host-wall",
+                Confidence.High),
+            new WallEdge(
+                "trusted-residual-branch-edge",
+                1,
+                nodes[2].Id,
+                nodes[3].Id,
+                "trusted-residual-branch-wall",
+                Confidence.High)
+        };
+        var spans = new[]
+        {
+            new WallGraphTopologySpan(
+                edges[0].Id,
+                1,
+                edges[0].WallId,
+                edges[0].FromNodeId,
+                edges[0].ToNodeId,
+                new PlanLineSegment(new PlanPoint(80, 100), new PlanPoint(240, 100)),
+                new PlanRect(78, 96, 164, 8),
+                160,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                8,
+                Confidence.High,
+                ["trusted-residual-host-wall"],
+                [edges[0].Id],
+                [
+                    "source-backed clean placement fallback: wall graph did not provide enough clean topology coverage",
+                    "source-backed fallback accepted only because paired wall-face evidence is placement-ready",
+                    "source-backed fallback pair score 0.94, overlap 1, face separation 8 drawing units"
+                ],
+                null),
+            new WallGraphTopologySpan(
+                edges[1].Id,
+                1,
+                edges[1].WallId,
+                edges[1].FromNodeId,
+                edges[1].ToNodeId,
+                new PlanLineSegment(new PlanPoint(160, 60), new PlanPoint(160, 103.2)),
+                new PlanRect(158, 58, 4, 47.2),
+                43.2,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                4,
+                Confidence.High,
+                ["trusted-residual-branch-wall"],
+                [edges[1].Id],
+                ["synthetic main-structural branch wall"],
+                null)
+        };
+        var branchComponent = new WallGraphComponent(
+            "trusted-residual-main-component",
+            1,
+            WallGraphComponentKind.MainStructural,
+            new PlanRect(156, 58, 8, 48),
+            [edges[1].WallId],
+            [nodes[2].Id, nodes[3].Id],
+            [edges[1].Id],
+            ["trusted-residual-branch-wall"],
+            43.2,
+            Confidence.High,
+            ["synthetic trusted residual branch component"]);
+        var componentLookup = new Dictionary<string, WallGraphComponent>(StringComparer.Ordinal)
+        {
+            [edges[1].WallId] = branchComponent
+        };
+
+        var export = PlacementWallGraphExport.From(
+            new WallGraph(nodes, edges, [branchComponent]),
+            spans,
+            PlanCalibration.Empty,
+            new Dictionary<string, PrimitiveSourceExport>(StringComparer.Ordinal),
+            componentLookup,
+            new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal));
+
+        var branch = Assert.Single(export.Edges, edge => edge.Id == "trusted-residual-branch-edge");
+
+        Assert.Equal(2, export.Edges.Count);
+        Assert.Equal(100, branch.CenterLine!.End.Y, precision: 3);
+        Assert.Empty(export.ResidualEndpointOnHostCandidates);
+        Assert.Contains(
+            branch.Evidence,
+            item => item.Contains("final residual endpoint snap", StringComparison.OrdinalIgnoreCase)
+                && item.Contains("trusted-residual-host-edge", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            export.Evidence,
+            item => item.Contains("snapped 1 small residual endpoint", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void PlacementWallGraphExport_SnapsAndSuppressesSameAxisResidualDuplicate()
+    {
+        var nodes = new[]
+        {
+            SyntheticNode("same-axis-host-node-left", 80, 100, WallNodeKind.Endpoint),
+            SyntheticNode("same-axis-host-node-right", 240, 100, WallNodeKind.Endpoint),
+            SyntheticNode("same-axis-duplicate-node-left", 120, 102.6, WallNodeKind.Endpoint),
+            SyntheticNode("same-axis-duplicate-node-right", 184, 102.6, WallNodeKind.Endpoint)
+        };
+        var edges = new[]
+        {
+            new WallEdge(
+                "same-axis-host-edge",
+                1,
+                nodes[0].Id,
+                nodes[1].Id,
+                "same-axis-host-wall",
+                Confidence.High),
+            new WallEdge(
+                "same-axis-duplicate-edge",
+                1,
+                nodes[2].Id,
+                nodes[3].Id,
+                "same-axis-duplicate-wall",
+                Confidence.Medium)
+        };
+        var spans = new[]
+        {
+            new WallGraphTopologySpan(
+                edges[0].Id,
+                1,
+                edges[0].WallId,
+                edges[0].FromNodeId,
+                edges[0].ToNodeId,
+                new PlanLineSegment(new PlanPoint(80, 100), new PlanPoint(240, 100)),
+                new PlanRect(78, 98, 164, 4),
+                160,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                4,
+                Confidence.High,
+                ["same-axis-host-wall"],
+                [edges[0].Id],
+                ["wall type exterior: synthetic long host shell wall"],
+                null),
+            new WallGraphTopologySpan(
+                edges[1].Id,
+                1,
+                edges[1].WallId,
+                edges[1].FromNodeId,
+                edges[1].ToNodeId,
+                new PlanLineSegment(new PlanPoint(120, 102.6), new PlanPoint(184, 102.6)),
+                new PlanRect(118, 100.6, 68, 4),
+                64,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                4,
+                Confidence.Medium,
+                ["same-axis-duplicate-wall"],
+                [edges[1].Id],
+                ["synthetic same-axis residual duplicate linework"],
+                null)
+        };
+
+        var export = PlacementWallGraphExport.From(
+            new WallGraph(nodes, edges, Array.Empty<WallGraphComponent>()),
+            spans,
+            PlanCalibration.Empty,
+            new Dictionary<string, PrimitiveSourceExport>(StringComparer.Ordinal),
+            new Dictionary<string, WallGraphComponent>(StringComparer.Ordinal),
+            new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal));
+
+        var host = Assert.Single(export.Edges);
+
+        Assert.Equal("same-axis-host-edge", host.Id);
+        Assert.Equal(160, host.DrawingLength, precision: 3);
+        Assert.DoesNotContain(export.Nodes, node => node.Id.StartsWith("same-axis-duplicate-node", StringComparison.Ordinal));
+        Assert.Empty(export.ResidualEndpointOnHostCandidates);
+        Assert.Contains(
+            host.Evidence,
+            item => item.Contains("contained-edge suppression", StringComparison.OrdinalIgnoreCase)
+                && item.Contains("same-axis-duplicate-edge", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            export.Evidence,
+            item => item.Contains("snapped 2 small residual endpoint", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            export.Evidence,
+            item => item.Contains("suppressed 1 contained duplicate edge", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void PlacementWallGraphExport_SnapsNearbyPerpendicularEndpointsToSharedCorner()
+    {
+        var nodes = new[]
+        {
+            SyntheticNode("near-corner-horizontal-left", 80, 100, WallNodeKind.Endpoint),
+            SyntheticNode("near-corner-horizontal-end", 158.8, 100, WallNodeKind.Endpoint),
+            SyntheticNode("near-corner-vertical-start", 160.4, 101.3, WallNodeKind.Endpoint),
+            SyntheticNode("near-corner-vertical-bottom", 160.4, 180, WallNodeKind.Endpoint)
+        };
+        var edges = new[]
+        {
+            new WallEdge(
+                "near-corner-horizontal-edge",
+                1,
+                nodes[0].Id,
+                nodes[1].Id,
+                "near-corner-horizontal-wall",
+                Confidence.High),
+            new WallEdge(
+                "near-corner-vertical-edge",
+                1,
+                nodes[2].Id,
+                nodes[3].Id,
+                "near-corner-vertical-wall",
+                Confidence.High)
+        };
+        var spans = new[]
+        {
+            new WallGraphTopologySpan(
+                edges[0].Id,
+                1,
+                edges[0].WallId,
+                edges[0].FromNodeId,
+                edges[0].ToNodeId,
+                new PlanLineSegment(new PlanPoint(80, 100), new PlanPoint(158.8, 100)),
+                new PlanRect(78, 98, 82.8, 4),
+                78.8,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                4,
+                Confidence.High,
+                ["near-corner-horizontal-wall"],
+                [edges[0].Id],
+                ["wall type exterior: synthetic shell wall horizontal piece"],
+                null),
+            new WallGraphTopologySpan(
+                edges[1].Id,
+                1,
+                edges[1].WallId,
+                edges[1].FromNodeId,
+                edges[1].ToNodeId,
+                new PlanLineSegment(new PlanPoint(160.4, 101.3), new PlanPoint(160.4, 180)),
+                new PlanRect(158.4, 99.3, 4, 82.7),
+                78.7,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                4,
+                Confidence.High,
+                ["near-corner-vertical-wall"],
+                [edges[1].Id],
+                ["wall type exterior: synthetic shell wall vertical piece"],
+                null)
+        };
+
+        var export = PlacementWallGraphExport.From(
+            new WallGraph(nodes, edges, Array.Empty<WallGraphComponent>()),
+            spans,
+            PlanCalibration.Empty,
+            new Dictionary<string, PrimitiveSourceExport>(StringComparer.Ordinal),
+            new Dictionary<string, WallGraphComponent>(StringComparer.Ordinal),
+            new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal));
+
+        var horizontal = Assert.Single(export.Edges, edge => edge.Id == "near-corner-horizontal-edge");
+        var vertical = Assert.Single(export.Edges, edge => edge.Id == "near-corner-vertical-edge");
+
+        Assert.Equal(horizontal.ToNodeId, vertical.FromNodeId);
+        Assert.Equal(160.4, horizontal.CenterLine!.End.X, precision: 3);
+        Assert.Equal(100, horizontal.CenterLine.End.Y, precision: 3);
+        Assert.Equal(160.4, vertical.CenterLine!.Start.X, precision: 3);
+        Assert.Equal(100, vertical.CenterLine.Start.Y, precision: 3);
+        Assert.Equal(3, export.Nodes.Count);
+        Assert.Contains(
+            horizontal.Evidence.Concat(vertical.Evidence),
+            item => item.Contains("endpoint-pair snap", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            export.Evidence,
+            item => item.Contains("snapped 2 nearby endpoint coordinate", StringComparison.OrdinalIgnoreCase)
+                && item.Contains("1 structural endpoint pair", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void PlacementWallGraphExport_ReportsResidualEndpointOnHostWallDiagnostics()
+    {
+        var nodes = new[]
+        {
+            SyntheticNode("residual-host-node-left", 80, 100, WallNodeKind.Endpoint),
+            SyntheticNode("residual-host-node-right", 240, 100, WallNodeKind.Endpoint),
+            SyntheticNode("residual-branch-node-top", 160, 60, WallNodeKind.Endpoint),
+            SyntheticNode("residual-branch-node-near-host", 160, 103.2, WallNodeKind.Endpoint)
+        };
+        var edges = new[]
+        {
+            new WallEdge(
+                "residual-host-edge",
+                1,
+                nodes[0].Id,
+                nodes[1].Id,
+                "residual-host-wall",
+                Confidence.High),
+            new WallEdge(
+                "residual-branch-edge",
+                1,
+                nodes[2].Id,
+                nodes[3].Id,
+                "residual-branch-wall",
+                Confidence.High)
+        };
+        var spans = new[]
+        {
+            new WallGraphTopologySpan(
+                edges[0].Id,
+                1,
+                edges[0].WallId,
+                edges[0].FromNodeId,
+                edges[0].ToNodeId,
+                new PlanLineSegment(new PlanPoint(80, 100), new PlanPoint(240, 100)),
+                new PlanRect(78, 98, 164, 4),
+                160,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                4,
+                Confidence.High,
+                ["residual-host-wall"],
+                [edges[0].Id],
+                ["wall type exterior: synthetic long host shell wall"],
+                null),
+            new WallGraphTopologySpan(
+                edges[1].Id,
+                1,
+                edges[1].WallId,
+                edges[1].FromNodeId,
+                edges[1].ToNodeId,
+                new PlanLineSegment(new PlanPoint(160, 60), new PlanPoint(160, 103.2)),
+                new PlanRect(158, 58, 4, 47.2),
+                43.2,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                4,
+                Confidence.High,
+                ["residual-branch-wall"],
+                [edges[1].Id],
+                ["synthetic near-miss branch wall"],
+                null)
+        };
+
+        var export = PlacementWallGraphExport.From(
+            new WallGraph(nodes, edges, Array.Empty<WallGraphComponent>()),
+            spans,
+            PlanCalibration.Empty,
+            new Dictionary<string, PrimitiveSourceExport>(StringComparer.Ordinal),
+            new Dictionary<string, WallGraphComponent>(StringComparer.Ordinal),
+            new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal));
+
+        Assert.Equal(2, export.Edges.Count);
+        var candidate = Assert.Single(export.ResidualEndpointOnHostCandidates);
+        Assert.Equal("residual-branch-edge", candidate.EndpointEdgeId);
+        Assert.Equal("residual-host-edge", candidate.HostEdgeId);
+        Assert.Equal("residual-branch-node-near-host", candidate.EndpointNodeId);
+        Assert.Equal("End", candidate.EndpointRole);
+        Assert.Equal("Perpendicular", candidate.Relationship);
+        Assert.Equal(160, candidate.Endpoint.X, precision: 3);
+        Assert.Equal(103.2, candidate.Endpoint.Y, precision: 3);
+        Assert.Equal(160, candidate.HostPoint.X, precision: 3);
+        Assert.Equal(100, candidate.HostPoint.Y, precision: 3);
+        Assert.Equal(3.2, candidate.DistanceDrawingUnits, precision: 3);
+        Assert.Equal("Info", candidate.Severity);
+        Assert.Contains("Review", candidate.RecommendedAction, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(
             export.Evidence,
             item => item.Contains("residual endpoint-on-host-wall candidates after cleanup: 1 total", StringComparison.OrdinalIgnoreCase)
                 && item.Contains("0 coincident", StringComparison.OrdinalIgnoreCase)
                 && item.Contains("0 same-axis", StringComparison.OrdinalIgnoreCase)
                 && item.Contains("1 perpendicular", StringComparison.OrdinalIgnoreCase)
-                && item.Contains("max distance 2", StringComparison.OrdinalIgnoreCase));
+                && item.Contains("max distance 3", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -7432,7 +8063,7 @@ public sealed class ExportTests
     }
 
     [Fact]
-    public void PlacementWallGraphExport_SnapsSharedBranchNodeOntoHostWallAndSplitsHostRun()
+    public void PlacementWallGraphExport_SnapsSharedBranchNodeOntoHostWallAndKeepsHostRunLong()
     {
         var nodes = new[]
         {
@@ -7547,40 +8178,39 @@ public sealed class ExportTests
             new Dictionary<string, WallGraphComponent>(StringComparer.Ordinal),
             new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal));
 
-        var hostPieces = export.Edges
-            .Where(edge => edge.Id.StartsWith("shared-host-edge-host:junction-piece:", StringComparison.Ordinal))
-            .OrderBy(edge => edge.CenterLine!.Start.X)
-            .ToArray();
+        var host = Assert.Single(export.Edges, edge => edge.SourceWallGraphEdgeIds.Contains("shared-host-edge-host"));
         var upper = Assert.Single(export.Edges, edge => edge.Id == "shared-host-edge-upper");
         var lower = Assert.Single(export.Edges, edge => edge.Id == "shared-host-edge-lower");
         var junction = Assert.Single(export.Nodes, node => node.Id == "shared-host-node-junction");
-        Assert.Equal(2, hostPieces.Length);
+        Assert.Equal(3, export.Edges.Count);
 
         var upperLine = upper.CenterLine!;
         var lowerLine = lower.CenterLine!;
-        var leftHostLine = hostPieces[0].CenterLine!;
-        var rightHostLine = hostPieces[1].CenterLine!;
+        var hostLine = host.CenterLine!;
 
-        Assert.Equal(160, hostPieces.Sum(edge => edge.DrawingLength), precision: 3);
-        Assert.Equal("shared-host-node-left", hostPieces[0].FromNodeId);
-        Assert.Equal("shared-host-node-junction", hostPieces[0].ToNodeId);
-        Assert.Equal("shared-host-node-junction", hostPieces[1].FromNodeId);
-        Assert.Equal("shared-host-node-right", hostPieces[1].ToNodeId);
-        Assert.Equal(leftHostLine.End.X, rightHostLine.Start.X, precision: 3);
-        Assert.Equal(100, leftHostLine.End.Y, precision: 3);
-        Assert.Equal(100, rightHostLine.Start.Y, precision: 3);
+        Assert.Equal(160, host.DrawingLength, precision: 3);
+        Assert.Equal("shared-host-node-left", host.FromNodeId);
+        Assert.Equal("shared-host-node-right", host.ToNodeId);
+        Assert.Equal(80, hostLine.Start.X, precision: 3);
+        Assert.Equal(240, hostLine.End.X, precision: 3);
+        Assert.Equal(100, hostLine.Start.Y, precision: 3);
+        Assert.Equal(100, hostLine.End.Y, precision: 3);
         Assert.Equal(100, upperLine.End.Y, precision: 3);
         Assert.Equal(upperLine.End.X, lowerLine.Start.X, precision: 3);
         Assert.Equal(upperLine.End.Y, lowerLine.Start.Y, precision: 3);
         Assert.InRange(upperLine.End.X, 160, 160.4);
         Assert.Equal("Crossing", junction.Kind);
+        Assert.Contains(junction.Evidence, item => item.Contains("attached to host wall edge", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(
             export.Evidence,
             item => item.Contains("snapped 1 shared node", StringComparison.OrdinalIgnoreCase)
                 && item.Contains("2 endpoint coordinate", StringComparison.OrdinalIgnoreCase)
                 && item.Contains("split 1 host edge", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(
-            upper.Evidence.Concat(lower.Evidence).Concat(hostPieces.SelectMany(edge => edge.Evidence)),
+            export.Evidence,
+            item => item.Contains("final-compacted", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            upper.Evidence.Concat(lower.Evidence).Concat(host.Evidence),
             item => item.Contains("shared-node host snap", StringComparison.OrdinalIgnoreCase));
     }
 
@@ -7743,6 +8373,97 @@ public sealed class ExportTests
         Assert.Contains(
             edge.Evidence,
             item => item.Contains("inline run merged 2 collinear edge", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void PlacementWallGraphExport_SnapsMergedRunToDominantAxisBandAndDropsStackedNodes()
+    {
+        var nodes = new[]
+        {
+            SyntheticNode("axis-band-node-left", 80, 100, WallNodeKind.Endpoint),
+            SyntheticNode("axis-band-node-a", 140, 100, WallNodeKind.Inline),
+            SyntheticNode("axis-band-noise-node-a", 146, 103.8, WallNodeKind.Inline),
+            SyntheticNode("axis-band-noise-node-b", 154, 103.8, WallNodeKind.Inline),
+            SyntheticNode("axis-band-node-b", 160, 100.4, WallNodeKind.Inline),
+            SyntheticNode("axis-band-node-c", 220, 100.4, WallNodeKind.Inline),
+            SyntheticNode("axis-band-node-d", 224, 100.2, WallNodeKind.Inline),
+            SyntheticNode("axis-band-node-right", 280, 100.2, WallNodeKind.Endpoint)
+        };
+        var edges = new[]
+        {
+            new WallEdge(
+                "axis-band-edge-left",
+                1,
+                nodes[0].Id,
+                nodes[1].Id,
+                "axis-band-wall-left",
+                Confidence.High),
+            new WallEdge(
+                "axis-band-edge-stacked-noise",
+                1,
+                nodes[2].Id,
+                nodes[3].Id,
+                "axis-band-wall-stacked-noise",
+                Confidence.Medium),
+            new WallEdge(
+                "axis-band-edge-middle",
+                1,
+                nodes[4].Id,
+                nodes[5].Id,
+                "axis-band-wall-middle",
+                Confidence.High),
+            new WallEdge(
+                "axis-band-edge-right",
+                1,
+                nodes[6].Id,
+                nodes[7].Id,
+                "axis-band-wall-right",
+                Confidence.High)
+        };
+        var spans = new[]
+        {
+            TrustedExteriorShellSpan(
+                edges[0],
+                new PlanLineSegment(new PlanPoint(80, 100), new PlanPoint(140, 100)),
+                ["wall type exterior: synthetic trusted shell wall"]),
+            TrustedExteriorShellSpan(
+                edges[1],
+                new PlanLineSegment(new PlanPoint(146, 103.8), new PlanPoint(154, 103.8)),
+                ["wall type exterior: synthetic stacked short wall-detail fragment"]),
+            TrustedExteriorShellSpan(
+                edges[2],
+                new PlanLineSegment(new PlanPoint(160, 100.4), new PlanPoint(220, 100.4)),
+                ["wall type exterior: synthetic trusted shell wall"]),
+            TrustedExteriorShellSpan(
+                edges[3],
+                new PlanLineSegment(new PlanPoint(224, 100.2), new PlanPoint(280, 100.2)),
+                ["wall type exterior: synthetic trusted shell wall"])
+        };
+
+        var export = PlacementWallGraphExport.From(
+            new WallGraph(nodes, edges, Array.Empty<WallGraphComponent>()),
+            spans,
+            PlanCalibration.Empty,
+            new Dictionary<string, PrimitiveSourceExport>(StringComparer.Ordinal),
+            new Dictionary<string, WallGraphComponent>(StringComparer.Ordinal),
+            new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal));
+
+        var edge = Assert.Single(export.Edges);
+        var nodeIds = export.Nodes.Select(node => node.Id).ToArray();
+
+        Assert.Equal("axis-band-node-left", edge.FromNodeId);
+        Assert.Equal("axis-band-node-right", edge.ToNodeId);
+        Assert.Equal(200, edge.DrawingLength, precision: 3);
+        Assert.InRange(edge.CenterLine!.Start.Y, 100.1, 100.3);
+        Assert.Equal(edge.CenterLine.Start.Y, edge.CenterLine.End.Y, precision: 3);
+        Assert.DoesNotContain("axis-band-noise-node-a", nodeIds);
+        Assert.DoesNotContain("axis-band-noise-node-b", nodeIds);
+        Assert.DoesNotContain("axis-band-node-a", nodeIds);
+        Assert.DoesNotContain("axis-band-node-b", nodeIds);
+        Assert.Contains(
+            edge.Evidence,
+            item => item.Contains("dominant host span", StringComparison.OrdinalIgnoreCase)
+                && item.Contains("band coverage", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

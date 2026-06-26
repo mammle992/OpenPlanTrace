@@ -8,6 +8,37 @@ fix counter. When `DEF` reaches `030`, the next major work cycle moves to the
 next `BC` track and resets to `000`. Individual JSON contracts keep their own
 schema versions.
 
+## [0.06.004] - 2026-06-25
+
+- Improved dominant wall-axis band alignment.
+- Improved stacked wall-fragment node cleanup.
+- Small improvement to wall graph alignment tests.
+
+## [0.06.003] - 2026-06-25
+
+- Improved residual wall endpoint snapping.
+- Improved same-axis duplicate wall cleanup.
+- Small improvement to wall graph cleanup tests.
+
+## [0.06.002] - 2026-06-25
+
+- Improved exterior wall graph rejoining across junction nodes.
+- Improved nearby wall endpoint alignment.
+- Improved post-snap wall graph compaction.
+- Small improvement to wall graph cleanup tests.
+
+## [0.06.001] - 2026-06-25
+
+- Improved small residual wall endpoint snapping.
+- Improved host wall alignment without splitting long runs.
+- Small improvement to residual wall graph tests.
+
+## [0.06.000] - 2026-06-25
+
+- Improved long wall graph compaction after endpoint cleanup.
+- Improved structured residual endpoint alignment candidates.
+- Small improvement to placement graph junction tests.
+
 ## [0.05.030] - 2026-06-25
 
 - Improved tiny wall-stub cleanup.

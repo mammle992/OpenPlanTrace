@@ -34,6 +34,31 @@ public sealed record PlanOverlayWallGraphResidualSummary(
 {
     public static PlanOverlayWallGraphResidualSummary Empty { get; } = new(0, 0, 0, 0, 0);
 
+    public static PlanOverlayWallGraphResidualSummary FromCandidates(
+        IEnumerable<PlacementWallGraphResidualEndpointOnHostCandidateExport>? candidates,
+        int pageNumber)
+    {
+        if (candidates is null)
+        {
+            return Empty;
+        }
+
+        var pageCandidates = candidates
+            .Where(candidate => candidate.PageNumber == pageNumber)
+            .ToArray();
+        if (pageCandidates.Length == 0)
+        {
+            return Empty;
+        }
+
+        return new PlanOverlayWallGraphResidualSummary(
+            pageCandidates.Length,
+            pageCandidates.Count(candidate => candidate.DistanceDrawingUnits <= 1.0),
+            pageCandidates.Count(candidate => string.Equals(candidate.Relationship, "SameAxis", StringComparison.Ordinal)),
+            pageCandidates.Count(candidate => string.Equals(candidate.Relationship, "Perpendicular", StringComparison.Ordinal)),
+            PlanOverlaySnapshot.Round(pageCandidates.Max(candidate => candidate.DistanceDrawingUnits)));
+    }
+
     public static PlanOverlayWallGraphResidualSummary FromEvidence(IReadOnlyList<string>? evidence)
     {
         var line = evidence?.FirstOrDefault(item =>
@@ -229,7 +254,7 @@ internal static class WallPlacementOmissionSummary
             representedCount,
             suppressedCount,
             Math.Max(0, omissionCodes.Count - representedCount - suppressedCount),
-            ExtractResidualEndpointOnHostWallSummary(placementWallGraph),
+            ExtractResidualEndpointOnHostWallSummary(placementWallGraph, pageNumber),
             omissionCounts,
             topOmissions,
             TopOmittedWallExamples(omittedWalls, maxOmittedWallExamples));
@@ -248,8 +273,21 @@ internal static class WallPlacementOmissionSummary
     }
 
     private static PlanOverlayWallGraphResidualSummary ExtractResidualEndpointOnHostWallSummary(
-        PlacementWallGraphExport? placementWallGraph) =>
-        PlanOverlayWallGraphResidualSummary.FromEvidence(placementWallGraph?.Evidence);
+        PlacementWallGraphExport? placementWallGraph,
+        int pageNumber)
+    {
+        if (placementWallGraph is null)
+        {
+            return PlanOverlayWallGraphResidualSummary.Empty;
+        }
+
+        var summary = PlanOverlayWallGraphResidualSummary.FromCandidates(
+            placementWallGraph.ResidualEndpointOnHostCandidates,
+            pageNumber);
+        return summary.CandidateEndpointCount > 0
+            ? summary
+            : PlanOverlayWallGraphResidualSummary.FromEvidence(placementWallGraph.Evidence);
+    }
 
     private static bool IsRepresentedWall(string code) =>
         string.Equals(code, "duplicate_clean_topology_span", StringComparison.Ordinal)
