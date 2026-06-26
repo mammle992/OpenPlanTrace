@@ -197,6 +197,105 @@ public sealed class WallTypeRefinementTests
     }
 
     [Fact]
+    public async Task WallTypeRefinement_PromotesTrustedLongIsolatedExteriorShellToExterior()
+    {
+        var wall = new WallSegment(
+            "wall-trusted-isolated-exterior-shell",
+            1,
+            new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(330, 100)),
+            8,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Unknown,
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(new PlanPoint(100, 96), new PlanPoint(330, 96)),
+                new PlanLineSegment(new PlanPoint(100, 104), new PlanPoint(330, 104)),
+                FaceSeparation: 8,
+                OverlapRatio: 0.99,
+                Score: 0.93,
+                FirstFaceFragmentCount: 24,
+                SecondFaceFragmentCount: 28,
+                FirstFaceSourcePrimitiveIds: new[] { "trusted-isolated-exterior-a" },
+                SecondFaceSourcePrimitiveIds: new[] { "trusted-isolated-exterior-b" }),
+            Evidence = new[]
+            {
+                "parallel wall-face pair",
+                "filled wall-solid primitive",
+                "wall evidence: filled closed vector wall body",
+                "wall type exterior: near detected floorplan/wall envelope or local outer boundary"
+            }
+        };
+        var context = CreateContext("trusted-isolated-exterior-shell");
+        context.Walls.Add(wall);
+        context.WallGraph = IsolatedGraphFor(wall, excludedFromStructuralTopology: true);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.MediumWallBody,
+            placementReady: false,
+            requiresReview: true,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var refined = Assert.Single(context.Walls);
+        Assert.Equal(WallType.Exterior, refined.WallType);
+        Assert.Contains(
+            refined.Evidence,
+            item => item.Contains("trusted long isolated exterior shell wall body", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task WallTypeRefinement_KeepsWeakIsolatedExteriorLikeDetailUnknown()
+    {
+        var wall = new WallSegment(
+            "wall-weak-isolated-exterior-like-detail",
+            1,
+            new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(150, 100)),
+            8,
+            Confidence.Medium)
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Unknown,
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(new PlanPoint(100, 96), new PlanPoint(150, 96)),
+                new PlanLineSegment(new PlanPoint(100, 104), new PlanPoint(150, 104)),
+                FaceSeparation: 8,
+                OverlapRatio: 0.90,
+                Score: 0.74,
+                FirstFaceFragmentCount: 2,
+                SecondFaceFragmentCount: 2,
+                FirstFaceSourcePrimitiveIds: new[] { "weak-isolated-exterior-a" },
+                SecondFaceSourcePrimitiveIds: new[] { "weak-isolated-exterior-b" }),
+            Evidence = new[]
+            {
+                "parallel wall-face pair",
+                "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+                "surface/detail pattern"
+            }
+        };
+        var context = CreateContext("weak-isolated-exterior-like-detail");
+        context.Walls.Add(wall);
+        context.WallGraph = IsolatedGraphFor(wall, excludedFromStructuralTopology: true);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.SurfacePatternDetail,
+            placementReady: false,
+            requiresReview: true,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var refined = Assert.Single(context.Walls);
+        Assert.Equal(WallType.Unknown, refined.WallType);
+        Assert.DoesNotContain(
+            refined.Evidence,
+            item => item.Contains("trusted long isolated exterior shell wall body", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task WallTypeRefinement_PromotesTrustedRecoveredWallAwayFromPerimeterToInterior()
     {
         var wall = RecoveredWallBody("wall-recovered-away-from-perimeter", 180, 100, 180, 300);
@@ -3831,7 +3930,9 @@ public sealed class WallTypeRefinementTests
                 Array.Empty<string>())
             });
 
-    private static WallGraph IsolatedGraphFor(WallSegment wall) =>
+    private static WallGraph IsolatedGraphFor(
+        WallSegment wall,
+        bool excludedFromStructuralTopology = false) =>
         new(
             Array.Empty<WallNode>(),
             Array.Empty<WallEdge>(),
@@ -3848,7 +3949,8 @@ public sealed class WallTypeRefinementTests
                     wall.SourcePrimitiveIds,
                     wall.DrawingLength,
                     Confidence.Low,
-                    new[] { "isolated wall graph fragment with weak topology" })
+                    new[] { "isolated wall graph fragment with weak topology" },
+                    ExcludedFromStructuralTopology: excludedFromStructuralTopology)
             });
 
     private static WallGraph ObjectLikeGraphFor(WallSegment wall) =>

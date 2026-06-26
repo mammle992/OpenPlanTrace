@@ -15,6 +15,9 @@ internal static class WallTopologySpanVisibility
     private const double MaxCollinearExteriorRunBridgeGapDrawingUnits = 72.0;
     private const double MinCollinearExteriorRunBridgeLongNeighborLengthDrawingUnits = 48.0;
     private const double MaxCollinearExteriorRunBridgeGapToLongNeighborRatio = 0.45;
+    private const double MaxCollinearInteriorSourceRunBridgeGapDrawingUnits = 48.0;
+    private const double MinCollinearInteriorSourceRunBridgeLongNeighborLengthDrawingUnits = 48.0;
+    private const double MaxCollinearInteriorSourceRunBridgeGapToLongNeighborRatio = 0.45;
     private const double MinContinuousExteriorOpeningTopologyLengthDrawingUnits = 80.0;
     private const double MaxCleanEndpointSnapToOrthogonalWallDistanceDrawingUnits = 8.0;
     private const double MaxCleanEndpointSnapProjectionOverrunDrawingUnits = 8.0;
@@ -1717,12 +1720,17 @@ internal static class WallTopologySpanVisibility
         CleanRunInterval current,
         CleanRunInterval next)
     {
+        var longerInterval = Math.Max(current.LengthDrawingUnits, next.LengthDrawingUnits);
+        if (sourceWall.WallType == WallType.Interior)
+        {
+            return InteriorCleanRunJoinGapLimit(sourceWall, current, next, longerInterval);
+        }
+
         if (sourceWall.WallType != WallType.Exterior)
         {
             return MaxCleanRunJoinGapDrawingUnits;
         }
 
-        var longerInterval = Math.Max(current.LengthDrawingUnits, next.LengthDrawingUnits);
         if (longerInterval < MinCollinearExteriorRunBridgeLongNeighborLengthDrawingUnits
             || sourceWall.Confidence.Value < 0.70
             || sourceWall.FragmentEvidence?.RequiresGeometryReview == true)
@@ -1751,6 +1759,46 @@ internal static class WallTopologySpanVisibility
             longerInterval * MaxCollinearExteriorRunBridgeGapToLongNeighborRatio,
             MaxCleanRunJoinGapDrawingUnits,
             MaxCollinearExteriorRunBridgeGapDrawingUnits);
+    }
+
+    private static double InteriorCleanRunJoinGapLimit(
+        WallSegment sourceWall,
+        CleanRunInterval current,
+        CleanRunInterval next,
+        double longerInterval)
+    {
+        if (longerInterval < MinCollinearInteriorSourceRunBridgeLongNeighborLengthDrawingUnits
+            || sourceWall.Confidence.Value < 0.70
+            || sourceWall.FragmentEvidence?.RequiresGeometryReview == true)
+        {
+            return MaxCleanRunJoinGapDrawingUnits;
+        }
+
+        var evidence = sourceWall.Evidence
+            .Concat(current.Evidence)
+            .Concat(next.Evidence)
+            .ToArray();
+        if (ContainsAnyEvidence(
+                evidence,
+                "door leaf",
+                "door swing",
+                "door arc",
+                "fixture detail",
+                "object/fixture",
+                "repeated short detail",
+                "surface pattern",
+                "stair",
+                "railing",
+                "witness/extension",
+                "non-wall"))
+        {
+            return MaxCleanRunJoinGapDrawingUnits;
+        }
+
+        return Math.Clamp(
+            longerInterval * MaxCollinearInteriorSourceRunBridgeGapToLongNeighborRatio,
+            MaxCleanRunJoinGapDrawingUnits,
+            MaxCollinearInteriorSourceRunBridgeGapDrawingUnits);
     }
 
     private static IReadOnlyList<WallGraphTopologySpan> RegularizeCleanPlacementRuns(
@@ -3713,7 +3761,9 @@ internal static class WallTopologySpanVisibility
             if (gapDrawingUnits > MaxCleanRunJoinGapDrawingUnits)
             {
                 evidence.Add(
-                    $"clean placement exterior source-wall run bridge: merged clean intervals across gap {gapDrawingUnits:0.###} drawing units");
+                    SourceWall.WallType == WallType.Interior
+                        ? $"clean placement interior source-wall run bridge: merged clean intervals across gap {gapDrawingUnits:0.###} drawing units"
+                        : $"clean placement exterior source-wall run bridge: merged clean intervals across gap {gapDrawingUnits:0.###} drawing units");
             }
 
             return this with

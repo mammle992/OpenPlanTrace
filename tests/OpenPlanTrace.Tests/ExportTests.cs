@@ -850,9 +850,67 @@ public sealed class ExportTests
     }
 
     [Fact]
-    public void PlacementExporter_KeepsSameInteriorSourceWallCleanIntervalsAcrossSmallGapsSeparate()
+    public void PlacementExporter_BridgesSameInteriorSourceWallCleanIntervalsAcrossSmallGaps()
     {
         var result = CreateSameSourceWallGapPlacementRunResult(WallType.Interior);
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+
+        var wall = Assert.Single(document.RootElement.GetProperty("walls").EnumerateArray());
+        var span = Assert.Single(wall.GetProperty("topologySpans").EnumerateArray());
+
+        Assert.Equal(20, span.GetProperty("centerLine").GetProperty("start").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(260, span.GetProperty("centerLine").GetProperty("end").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(
+            new[] { "same-source-gap-edge-a", "same-source-gap-edge-b" },
+            JsonStrings(span.GetProperty("sourceWallGraphEdgeIds")));
+        Assert.Contains(
+            span.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("interior source-wall run bridge", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Equal(1, document.RootElement.GetProperty("summary").GetProperty("wallTopologySpanCount").GetInt32());
+
+        var graphEdge = Assert.Single(document.RootElement
+            .GetProperty("wallGraph")
+            .GetProperty("edges")
+            .EnumerateArray()
+            .Where(item =>
+            {
+                var sourceIds = JsonStrings(item.GetProperty("sourceWallGraphEdgeIds"));
+                return sourceIds.Contains("same-source-gap-edge-a")
+                    && sourceIds.Contains("same-source-gap-edge-b");
+            }));
+        var nodeIds = document.RootElement
+            .GetProperty("wallGraph")
+            .GetProperty("nodes")
+            .EnumerateArray()
+            .Select(node => node.GetProperty("id").GetString())
+            .ToArray();
+
+        Assert.Equal("same-source-gap-node-a1", graphEdge.GetProperty("fromNodeId").GetString());
+        Assert.Equal("same-source-gap-node-b2", graphEdge.GetProperty("toNodeId").GetString());
+        Assert.DoesNotContain("same-source-gap-node-a2", nodeIds);
+        Assert.DoesNotContain("same-source-gap-node-b1", nodeIds);
+    }
+
+    [Fact]
+    public void PlacementExporter_KeepsDoorLikeSameInteriorSourceWallCleanIntervalsSeparate()
+    {
+        var result = CreateSameSourceWallGapPlacementRunResult(WallType.Interior);
+        var sourceWall = result.Walls.Single();
+        result = result with
+        {
+            Walls =
+            [
+                sourceWall with
+                {
+                    Evidence = sourceWall.Evidence
+                        .Append("door swing evidence near same-source interior gap")
+                        .ToArray()
+                }
+            ]
+        };
 
         using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
             result,
@@ -870,7 +928,7 @@ public sealed class ExportTests
                 .ToArray());
         Assert.DoesNotContain(
             spans.SelectMany(span => span.GetProperty("evidence").EnumerateArray()),
-            evidence => evidence.GetString()?.Contains("exterior source-wall run bridge", StringComparison.OrdinalIgnoreCase) == true);
+            evidence => evidence.GetString()?.Contains("source-wall run bridge", StringComparison.OrdinalIgnoreCase) == true);
     }
 
     [Fact]

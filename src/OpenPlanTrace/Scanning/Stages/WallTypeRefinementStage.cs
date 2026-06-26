@@ -888,6 +888,16 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
                 $"wall type refined unknown: Wall Evidence V2 rejected candidate as {rejectedEvidence.Category}");
         }
 
+        if (WallPlacementReadinessEvaluator.IsTrustedLongIsolatedExteriorShellWallBody(
+                wall,
+                component,
+                assessment))
+        {
+            return new WallTypeRefinement(
+                WallType.Exterior,
+                "wall type refined exterior: trusted long isolated exterior shell wall body");
+        }
+
         if (IsNonStructuralWallComponent(component))
         {
             return new WallTypeRefinement(
