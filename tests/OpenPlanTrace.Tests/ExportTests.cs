@@ -1941,6 +1941,31 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void SvgRenderer_WallQaProfileHidesTrustedExceptionSpansFromCleanLayer()
+    {
+        var result = WithTrustedExteriorShellContinuityFragment(CreateDenseMinorRoutingDetailResult());
+
+        var svg = PlanOverlaySvgRenderer.RenderPage(
+            result,
+            1,
+            SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.WallQa));
+
+        Assert.Contains("data-profile=\"wall-qa\"", svg);
+        Assert.Contains("clean wall topology span detail-host:clean-run:1", svg);
+        Assert.DoesNotContain("clean wall topology span trusted-exterior-shell-fragment", svg);
+        Assert.DoesNotContain("class=\"wall-topology-span wall-topology-span-exterior wall-topology-span-excluded\"", svg);
+        Assert.Contains("hidden non-placement topology spans", svg);
+
+        var snapshot = PlanOverlaySnapshot.From(
+            result,
+            new Dictionary<int, string> { [1] = "overlays/page-1.svg" },
+            SvgOverlayRenderOptions.ForProfile(SvgOverlayRenderProfile.WallQa));
+        var page = Assert.Single(snapshot.Pages);
+        var visibleWallTopologyLayer = Assert.Single(page.Layers, layer => layer.Name == "wallTopologySpans");
+        Assert.Equal(1, visibleWallTopologyLayer.Count);
+    }
+
+    [Fact]
     public void SvgRenderer_WallQaReviewProfileDrawsCleanAndNonPlacementWallSpansWithSourceContext()
     {
         var result = WithEndpointToWallHostRepairCandidate(
@@ -14746,6 +14771,94 @@ public sealed class ExportTests
             ["synthetic accepted wall evidence"])
         {
             Decision = WallEvidenceDecision.Accept
+        };
+
+        return result with
+        {
+            Walls = result.Walls.Append(wall).ToArray(),
+            WallGraph = new WallGraph(
+                result.WallGraph.Nodes.Concat(new[] { fromNode, toNode }).ToArray(),
+                result.WallGraph.Edges.Append(edge).ToArray(),
+                result.WallGraph.Components.Append(component).ToArray(),
+                result.WallGraph.RepairCandidates),
+            WallEvidenceMap = new WallEvidenceMap(
+                result.WallEvidenceMap.Segments,
+                result.WallEvidenceMap.Bands,
+                result.WallEvidenceMap.WallAssessments.Append(assessment).ToArray(),
+                result.WallEvidenceMap.SourceCandidateWallCount,
+                result.WallEvidenceMap.RecoveredCandidateWallCount)
+        };
+    }
+
+    private static PlanScanResult WithTrustedExteriorShellContinuityFragment(PlanScanResult result)
+    {
+        var wall = SyntheticWall("trusted-exterior-shell-fragment", 340, 220, 460, 220) with
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Exterior,
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(new PlanPoint(340, 216), new PlanPoint(460, 216)),
+                new PlanLineSegment(new PlanPoint(340, 224), new PlanPoint(460, 224)),
+                FaceSeparation: 8,
+                OverlapRatio: 1,
+                Score: 0.9,
+                FirstFaceFragmentCount: 2,
+                SecondFaceFragmentCount: 2,
+                FirstFaceSourcePrimitiveIds: ["trusted-exterior-shell-face-a"],
+                SecondFaceSourcePrimitiveIds: ["trusted-exterior-shell-face-b"]),
+            Evidence =
+            [
+                "synthetic isolated exterior shell fragment",
+                $"wall evidence: {WallPlacementReadinessEvaluator.TrustedExteriorShellContinuityEvidence}"
+            ]
+        };
+        var fromNode = SyntheticNode("node-trusted-exterior-shell-fragment-a", 340, 220, WallNodeKind.Endpoint);
+        var toNode = SyntheticNode("node-trusted-exterior-shell-fragment-b", 460, 220, WallNodeKind.Endpoint);
+        var edge = new WallEdge(
+            "edge-trusted-exterior-shell-fragment",
+            1,
+            fromNode.Id,
+            toNode.Id,
+            wall.Id,
+            Confidence.High);
+        var component = new WallGraphComponent(
+            "component-trusted-exterior-shell-fragment",
+            1,
+            WallGraphComponentKind.IsolatedFragment,
+            wall.Bounds,
+            [wall.Id],
+            [fromNode.Id, toNode.Id],
+            [edge.Id],
+            wall.SourcePrimitiveIds,
+            wall.DrawingLength,
+            Confidence.High,
+            [$"synthetic {WallPlacementReadinessEvaluator.TrustedExteriorShellContinuityEvidence}"],
+            ExcludedFromStructuralTopology: false);
+        var assessment = new WallEvidenceWallAssessment(
+            wall.Id,
+            wall.PageNumber,
+            wall.Bounds,
+            WallEvidenceCategory.StrongWallBody,
+            Confidence.High,
+            PlacementReady: true,
+            RequiresReview: false,
+            RejectedAsNoise: false,
+            wall.SourcePrimitiveIds,
+            wall.Evidence)
+        {
+            Decision = WallEvidenceDecision.Accept,
+            ScoreBreakdown = new WallEvidenceScoreBreakdown(
+                PositiveScore: 0.9,
+                NegativeScore: 0,
+                DecisionScore: 0.9,
+                PairSupportScore: 0.9,
+                LayerSupportScore: 0.2,
+                StructuralSupportScore: 0.8,
+                RecoverySupportScore: 0.4,
+                NoisePenalty: 0,
+                FragmentReviewPenalty: 0,
+                PositiveEvidence: [$"wall evidence: {WallPlacementReadinessEvaluator.TrustedExteriorShellContinuityEvidence}"],
+                NegativeEvidence: Array.Empty<string>())
         };
 
         return result with

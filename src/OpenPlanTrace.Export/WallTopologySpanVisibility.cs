@@ -75,7 +75,12 @@ internal static class WallTopologySpanVisibility
             .Where(span => IsVisibleTopologySpan(span, context, options))
             .ToArray();
 
-        return BuildCleanPlacementTopologySpans(spans, result.Openings, context, result.Walls, pageNumber);
+        var cleanSpans = BuildCleanPlacementTopologySpans(spans, result.Openings, context, result.Walls, pageNumber);
+        return options.RequirePlacementReadyStructuralWallTopologySpans
+            ? cleanSpans
+                .Where(span => IsStrictPlacementReadyStructuralTopologySpan(span, context))
+                .ToArray()
+            : cleanSpans;
     }
 
     public static IReadOnlyList<WallGraphTopologySpan> BuildCleanPlacementTopologySpans(
@@ -213,6 +218,38 @@ internal static class WallTopologySpanVisibility
         }
 
         return assessment is null || assessment.PlacementReady;
+    }
+
+    private static bool IsStrictPlacementReadyStructuralTopologySpan(
+        WallGraphTopologySpan span,
+        WallTopologySpanVisibilityContext context)
+    {
+        context.ComponentByWallId.TryGetValue(span.WallId, out var component);
+        context.WallEvidenceAssessments.TryGetValue(span.WallId, out var assessment);
+        if (!IsPlacementReadyStructuralSpan(component, assessment))
+        {
+            return false;
+        }
+
+        if (context.TopologyImportBlockedWallIds.Contains(span.WallId))
+        {
+            return false;
+        }
+
+        if (span.SourceWall is null)
+        {
+            return true;
+        }
+
+        var reviewReasons = context.ReviewReasonsByWallId.TryGetValue(span.WallId, out var reasons)
+            ? reasons
+            : Array.Empty<string>();
+        return WallPlacementReadinessEvaluator.Evaluate(
+            span.SourceWall,
+            context.Calibration,
+            component,
+            assessment,
+            reviewReasons).ReadyForCoordinatePlacement;
     }
 
     private static bool IsVisibleTopologySpan(

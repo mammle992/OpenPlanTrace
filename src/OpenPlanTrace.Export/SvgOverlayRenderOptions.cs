@@ -67,6 +67,8 @@ public sealed record SvgOverlayRenderOptions
 
     public bool IncludeSourceContext { get; init; }
 
+    public bool RequirePlacementReadyStructuralWallTopologySpans { get; init; }
+
     public int MaxSourceContextPrimitives { get; init; } = 12000;
 
     public string BackgroundColor { get; init; } = "#ffffff";
@@ -143,7 +145,8 @@ public sealed record SvgOverlayRenderOptions
                 IncludeReviewOnlyWallTopologySpans = false,
                 IncludeWallGraphRepairs = false,
                 IncludeRoutingLayer = false,
-                IncludeSourceContext = true
+                IncludeSourceContext = true,
+                RequirePlacementReadyStructuralWallTopologySpans = true
             },
             SvgOverlayRenderProfile.WallQaReview => new SvgOverlayRenderOptions
             {
@@ -171,7 +174,8 @@ public sealed record SvgOverlayRenderOptions
                 IncludeSuppressedDetailWallTopologySpans = false,
                 IncludeWallGraphRepairs = false,
                 IncludeRoutingLayer = false,
-                IncludeSourceContext = true
+                IncludeSourceContext = true,
+                RequirePlacementReadyStructuralWallTopologySpans = true
             },
             SvgOverlayRenderProfile.WallQaFocus => new SvgOverlayRenderOptions
             {
@@ -199,6 +203,7 @@ public sealed record SvgOverlayRenderOptions
                 IncludeWallGraphRepairs = false,
                 IncludeRoutingLayer = false,
                 IncludeSourceContext = true,
+                RequirePlacementReadyStructuralWallTopologySpans = true,
                 CropToFloorplanContent = true
             },
             SvgOverlayRenderProfile.PlacementGraphQa => new SvgOverlayRenderOptions

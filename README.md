@@ -201,6 +201,8 @@ The viewer also includes an off-by-default `Raw detected walls` layer for audit-
 
 The `wall-qa`, `wall-qa-review`, and `wall-qa-focus` SVG profiles add a faint `sourceContext` linework layer when no PDF background image is embedded, so clean-wall screenshots remain visually comparable to the source plan without treating that context as detected output. For very large PDF primitive streams, source context is spatially prioritized around the visible wall/topology review area before the cap is applied, so the reference linework comes from the same plan neighborhood as the wall overlay instead of from unrelated first-in-file-order primitives. Use `wall-qa` or `wall-qa-focus` for wall correctness screenshots; use `wall-qa-review` when diagnosing missing walls because it separates clean placement spans from faint dashed amber review-only spans. Amber review spans are diagnostic omissions, not coordinates a downstream placement engine should import.
 
+The wall-QA profiles draw only placement-ready structural topology spans in the clean wall layer. Trusted exceptions, suppressed fragments, and review-only wall candidates stay out of the clean screenshot layer unless they are explicitly shown as diagnostics by a review profile.
+
 Opening-linked one-endpoint wall/detail fragments are suppressed from the
 `wall-qa-review` amber span layer and counted as hidden suppressed detail, while
 remaining available as placement issues and import-readiness review codes.
