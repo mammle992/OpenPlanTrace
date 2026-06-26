@@ -3658,6 +3658,122 @@ public sealed class WallTypeRefinementTests
     }
 
     [Fact]
+    public async Task WallTypeRefinement_TrimsSourceBackedExteriorShellBeforeCoveredOutdoorRoom()
+    {
+        var leftShell = ExteriorShellWall("wall-shell-left", 100, 100, 100, 180);
+        var rightShell = ExteriorShellWall("wall-shell-right", 420, 100, 420, 180);
+        var bottomShell = ExteriorShellWall("wall-shell-bottom", 100, 180, 420, 180);
+        var context = CreateContext(
+            "source-backed-exterior-shell-outdoor-trim",
+            new PlanPrimitive[]
+            {
+                new LinePrimitive(new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(420, 100)))
+                {
+                    SourceId = "source-shell-crossing-covered-entry",
+                    StrokeWidth = 0.05
+                }
+            });
+        context.Walls.Add(leftShell);
+        context.Walls.Add(rightShell);
+        context.Walls.Add(bottomShell);
+        context.Rooms.Add(RepairRoom(
+            "room-indoor",
+            new PlanRect(100, 100, 200, 80),
+            new[]
+            {
+                new PlanPoint(100, 100),
+                new PlanPoint(300, 100),
+                new PlanPoint(300, 180),
+                new PlanPoint(100, 180)
+            }));
+        context.Rooms.Add(Room(
+            "room-covered-entry",
+            RoomUseKind.Outdoor,
+            new PlanRect(300, 84, 120, 64),
+            new[]
+            {
+                new PlanPoint(300, 84),
+                new PlanPoint(420, 84),
+                new PlanPoint(420, 148),
+                new PlanPoint(300, 148)
+            }));
+        context.WallGraph = GraphFor(leftShell, rightShell, bottomShell);
+        context.WallEvidenceMap = EvidenceMapFor(
+            new[] { leftShell, rightShell, bottomShell },
+            WallEvidenceCategory.StrongWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            wall => wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var inferred = Assert.Single(
+            context.Walls,
+            wall => wall.Id.Contains("wall-exterior-shell-source-backed", StringComparison.Ordinal));
+        Assert.Equal(WallType.Exterior, inferred.WallType);
+        Assert.Equal(200, inferred.DrawingLength, precision: 3);
+        Assert.Equal(100, inferred.CenterLine.Start.X, precision: 3);
+        Assert.Equal(300, inferred.CenterLine.End.X, precision: 3);
+        Assert.Contains(
+            inferred.Evidence,
+            item => item.Contains("clipped around outdoor rooms room-covered-entry", StringComparison.OrdinalIgnoreCase));
+        var assessment = Assert.Single(
+            context.WallEvidenceMap.WallAssessments,
+            item => item.WallId == inferred.Id);
+        Assert.True(assessment.PlacementReady);
+        Assert.Contains(
+            assessment.Evidence,
+            item => item.Contains("clipped around outdoor rooms room-covered-entry", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task WallTypeRefinement_DoesNotRecoverSourceBackedExteriorShellInsideCoveredOutdoorRoom()
+    {
+        var leftShell = ExteriorShellWall("wall-shell-left", 100, 100, 100, 180);
+        var rightShell = ExteriorShellWall("wall-shell-right", 420, 100, 420, 180);
+        var bottomShell = ExteriorShellWall("wall-shell-bottom", 100, 180, 420, 180);
+        var context = CreateContext(
+            "source-backed-exterior-shell-outdoor-blocked",
+            new PlanPrimitive[]
+            {
+                new LinePrimitive(new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(420, 100)))
+                {
+                    SourceId = "source-shell-inside-covered-entry",
+                    StrokeWidth = 0.05
+                }
+            });
+        context.Walls.Add(leftShell);
+        context.Walls.Add(rightShell);
+        context.Walls.Add(bottomShell);
+        context.Rooms.Add(Room(
+            "room-covered-entry",
+            RoomUseKind.Outdoor,
+            new PlanRect(92, 84, 336, 64),
+            new[]
+            {
+                new PlanPoint(92, 84),
+                new PlanPoint(428, 84),
+                new PlanPoint(428, 148),
+                new PlanPoint(92, 148)
+            }));
+        context.WallGraph = GraphFor(leftShell, rightShell, bottomShell);
+        context.WallEvidenceMap = EvidenceMapFor(
+            new[] { leftShell, rightShell, bottomShell },
+            WallEvidenceCategory.StrongWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            wall => wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.DoesNotContain(
+            context.Walls,
+            wall => wall.Id.Contains("wall-exterior-shell-source-backed", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task WallTypeRefinement_InfersLongExteriorShellSpanWhenPartialCollinearShellExists()
     {
         var leftShell = ExteriorShellWall("wall-shell-left", 100, 100, 100, 180);

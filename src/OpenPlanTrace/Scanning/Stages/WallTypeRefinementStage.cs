@@ -3517,72 +3517,95 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
                     continue;
                 }
 
-                var sequence = sequenceByPage.TryGetValue(page.Number, out var existingSequence)
-                    ? existingSequence + 1
-                    : 1;
-                sequenceByPage[page.Number] = sequence;
-                pageCount++;
-
-                var id = $"page:{page.Number}:wall-exterior-shell-source-backed:{sequence:000}";
-                var evidence = new[]
+                foreach (var clippedCandidate in SplitSourceBackedExteriorShellClosureAroundOutdoorRooms(
+                             candidate,
+                             page.Number,
+                             context.Rooms,
+                             context.Options,
+                             minLength))
                 {
-                    "wall evidence: source-backed exterior shell closure recovered from long PDF line with shell anchors",
-                    $"wall evidence: source-backed shell closure length {candidate.Line.Length.ToString("0.###", CultureInfo.InvariantCulture)}, anchors {string.Join(",", anchorWallIds)}",
-                    $"wall evidence: source-backed shell closure primitive count {candidate.SourcePrimitiveIds.Count.ToString(CultureInfo.InvariantCulture)}"
+                    if (pageCount >= maxPerPage)
+                    {
+                        break;
+                    }
+
+                    if (IsSourceBackedExteriorShellClosureCovered(
+                            clippedCandidate.Line,
+                            page.Number,
+                            walls,
+                            context.Options))
+                    {
+                        continue;
+                    }
+
+                    var sequence = sequenceByPage.TryGetValue(page.Number, out var existingSequence)
+                        ? existingSequence + 1
+                        : 1;
+                    sequenceByPage[page.Number] = sequence;
+                    pageCount++;
+
+                    var id = $"page:{page.Number}:wall-exterior-shell-source-backed:{sequence:000}";
+                    var evidence = new[]
+                    {
+                        "wall evidence: source-backed exterior shell closure recovered from long PDF line with shell anchors",
+                        $"wall evidence: source-backed shell closure length {clippedCandidate.Line.Length.ToString("0.###", CultureInfo.InvariantCulture)}, anchors {string.Join(",", anchorWallIds)}",
+                        $"wall evidence: source-backed shell closure primitive count {clippedCandidate.SourcePrimitiveIds.Count.ToString(CultureInfo.InvariantCulture)}"
+                    }
+                    .Concat(clippedCandidate.Evidence)
+                    .Concat(anchorEvidence)
+                    .ToArray();
+                    var wall = new WallSegment(
+                        id,
+                        page.Number,
+                        clippedCandidate.Line,
+                        Math.Max(context.Options.DefaultWallThickness, 4.0),
+                        new Confidence(0.68))
+                    {
+                        DetectionKind = WallDetectionKind.SingleLine,
+                        WallType = WallType.Exterior,
+                        SourcePrimitiveIds = clippedCandidate.SourcePrimitiveIds,
+                        Evidence = evidence
+                    };
+                    var assessment = new WallEvidenceWallAssessment(
+                        wall.Id,
+                        wall.PageNumber,
+                        wall.Bounds,
+                        WallEvidenceCategory.RecoveredWallBody,
+                        wall.Confidence,
+                        PlacementReady: true,
+                        RequiresReview: false,
+                        RejectedAsNoise: false,
+                        clippedCandidate.SourcePrimitiveIds,
+                        evidence)
+                    {
+                        Decision = WallEvidenceDecision.Accept,
+                        ScoreBreakdown = new WallEvidenceScoreBreakdown(
+                            0.68,
+                            0,
+                            0.68,
+                            0,
+                            0,
+                            0.48,
+                            0.20,
+                            0,
+                            0,
+                            evidence,
+                            Array.Empty<string>())
+                    };
+
+                    inferredWalls.Add(wall);
+                    inferredAssessments.Add(assessment);
+                    inferredSegments.Add(new WallEvidenceSegment(
+                        $"wall-evidence-segment:{wall.Id}",
+                        wall.PageNumber,
+                        wall.CenterLine,
+                        wall.Bounds,
+                        assessment.Category,
+                        wall.Confidence,
+                        wall.Id,
+                        clippedCandidate.SourcePrimitiveIds,
+                        assessment.Evidence));
                 }
-                .Concat(anchorEvidence)
-                .ToArray();
-                var wall = new WallSegment(
-                    id,
-                    page.Number,
-                    candidate.Line,
-                    Math.Max(context.Options.DefaultWallThickness, 4.0),
-                    new Confidence(0.68))
-                {
-                    DetectionKind = WallDetectionKind.SingleLine,
-                    WallType = WallType.Exterior,
-                    SourcePrimitiveIds = candidate.SourcePrimitiveIds,
-                    Evidence = evidence
-                };
-                var assessment = new WallEvidenceWallAssessment(
-                    wall.Id,
-                    wall.PageNumber,
-                    wall.Bounds,
-                    WallEvidenceCategory.RecoveredWallBody,
-                    wall.Confidence,
-                    PlacementReady: true,
-                    RequiresReview: false,
-                    RejectedAsNoise: false,
-                    candidate.SourcePrimitiveIds,
-                    evidence)
-                {
-                    Decision = WallEvidenceDecision.Accept,
-                    ScoreBreakdown = new WallEvidenceScoreBreakdown(
-                        0.68,
-                        0,
-                        0.68,
-                        0,
-                        0,
-                        0.48,
-                        0.20,
-                        0,
-                        0,
-                        evidence,
-                        Array.Empty<string>())
-                };
-
-                inferredWalls.Add(wall);
-                inferredAssessments.Add(assessment);
-                inferredSegments.Add(new WallEvidenceSegment(
-                    $"wall-evidence-segment:{wall.Id}",
-                    wall.PageNumber,
-                    wall.CenterLine,
-                    wall.Bounds,
-                    assessment.Category,
-                    wall.Confidence,
-                    wall.Id,
-                    candidate.SourcePrimitiveIds,
-                    assessment.Evidence));
             }
         }
 
@@ -3617,7 +3640,8 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             start,
             end,
             AxisLine(orientation, coordinate, start, end),
-            new[] { primitiveLine.PrimitiveId });
+            new[] { primitiveLine.PrimitiveId },
+            Array.Empty<string>());
     }
 
     private static SourceBackedExteriorShellClosureCandidate MergeSourceBackedExteriorShellClosureCandidates(
@@ -3641,7 +3665,153 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
                 .SelectMany(candidate => candidate.SourcePrimitiveIds)
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(id => id, StringComparer.Ordinal)
+                .ToArray(),
+            ordered
+                .SelectMany(candidate => candidate.Evidence)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(item => item, StringComparer.Ordinal)
                 .ToArray());
+    }
+
+    private static IReadOnlyList<SourceBackedExteriorShellClosureCandidate> SplitSourceBackedExteriorShellClosureAroundOutdoorRooms(
+        SourceBackedExteriorShellClosureCandidate candidate,
+        int pageNumber,
+        IReadOnlyList<RoomRegion> rooms,
+        ScannerOptions options,
+        double minimumLength)
+    {
+        var outdoorBlocks = SourceBackedExteriorShellOutdoorRoomBlocks(
+                candidate,
+                pageNumber,
+                rooms,
+                options)
+            .OrderBy(block => block.Start)
+            .ThenBy(block => block.End)
+            .ToArray();
+        if (outdoorBlocks.Length == 0)
+        {
+            return new[] { candidate };
+        }
+
+        var mergeTolerance = Math.Max(1.0, options.WallSnapTolerance);
+        var mergedBlocks = new List<SourceBackedExteriorShellOutdoorRoomBlock>();
+        foreach (var block in outdoorBlocks)
+        {
+            if (mergedBlocks.Count == 0 || block.Start > mergedBlocks[^1].End + mergeTolerance)
+            {
+                mergedBlocks.Add(block);
+                continue;
+            }
+
+            var previous = mergedBlocks[^1];
+            mergedBlocks[^1] = previous with
+            {
+                End = Math.Max(previous.End, block.End),
+                RoomIds = previous.RoomIds
+                    .Concat(block.RoomIds)
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(id => id, StringComparer.Ordinal)
+                    .ToArray()
+            };
+        }
+
+        var retained = new List<SourceBackedExteriorShellClosureCandidate>();
+        var cursor = candidate.Start;
+        foreach (var block in mergedBlocks)
+        {
+            var blockStart = Math.Clamp(block.Start, candidate.Start, candidate.End);
+            var blockEnd = Math.Clamp(block.End, candidate.Start, candidate.End);
+            if (blockEnd <= cursor)
+            {
+                continue;
+            }
+
+            AddSourceBackedExteriorShellClosurePiece(candidate, cursor, blockStart, block.RoomIds, minimumLength, retained);
+            cursor = Math.Max(cursor, blockEnd);
+        }
+
+        var finalRoomIds = mergedBlocks
+            .SelectMany(block => block.RoomIds)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+        AddSourceBackedExteriorShellClosurePiece(candidate, cursor, candidate.End, finalRoomIds, minimumLength, retained);
+        return retained;
+    }
+
+    private static IEnumerable<SourceBackedExteriorShellOutdoorRoomBlock> SourceBackedExteriorShellOutdoorRoomBlocks(
+        SourceBackedExteriorShellClosureCandidate candidate,
+        int pageNumber,
+        IReadOnlyList<RoomRegion> rooms,
+        ScannerOptions options)
+    {
+        var coordinateTolerance = Math.Max(options.DefaultWallThickness, options.WallSnapTolerance * 2.0);
+        var minimumOverlap = Math.Max(18.0, options.MinWallLength * 0.75);
+        foreach (var room in rooms)
+        {
+            if (room.PageNumber != pageNumber
+                || room.UseKind != RoomUseKind.Outdoor
+                || room.Bounds.IsEmpty)
+            {
+                continue;
+            }
+
+            var coordinateMin = candidate.Orientation == AxisOrientation.Horizontal
+                ? room.Bounds.Top
+                : room.Bounds.Left;
+            var coordinateMax = candidate.Orientation == AxisOrientation.Horizontal
+                ? room.Bounds.Bottom
+                : room.Bounds.Right;
+            if (candidate.Coordinate < coordinateMin - coordinateTolerance
+                || candidate.Coordinate > coordinateMax + coordinateTolerance)
+            {
+                continue;
+            }
+
+            var overlapStart = candidate.Orientation == AxisOrientation.Horizontal
+                ? Math.Max(candidate.Start, room.Bounds.Left)
+                : Math.Max(candidate.Start, room.Bounds.Top);
+            var overlapEnd = candidate.Orientation == AxisOrientation.Horizontal
+                ? Math.Min(candidate.End, room.Bounds.Right)
+                : Math.Min(candidate.End, room.Bounds.Bottom);
+            if (overlapEnd - overlapStart < minimumOverlap)
+            {
+                continue;
+            }
+
+            yield return new SourceBackedExteriorShellOutdoorRoomBlock(
+                overlapStart,
+                overlapEnd,
+                new[] { room.Id });
+        }
+    }
+
+    private static void AddSourceBackedExteriorShellClosurePiece(
+        SourceBackedExteriorShellClosureCandidate candidate,
+        double start,
+        double end,
+        IReadOnlyList<string> outdoorRoomIds,
+        double minimumLength,
+        ICollection<SourceBackedExteriorShellClosureCandidate> retained)
+    {
+        if (end - start < minimumLength)
+        {
+            return;
+        }
+
+        retained.Add(candidate with
+        {
+            Start = start,
+            End = end,
+            Line = AxisLine(candidate.Orientation, candidate.Coordinate, start, end),
+            Evidence = candidate.Evidence
+                .Concat(new[]
+                {
+                    $"wall evidence: source-backed shell closure clipped around outdoor rooms {string.Join(",", outdoorRoomIds)}"
+                })
+                .Distinct(StringComparer.Ordinal)
+                .ToArray()
+        });
     }
 
     private static string SourceBackedExteriorShellClosureKey(
@@ -4855,7 +5025,13 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         double Start,
         double End,
         PlanLineSegment Line,
-        IReadOnlyList<string> SourcePrimitiveIds);
+        IReadOnlyList<string> SourcePrimitiveIds,
+        IReadOnlyList<string> Evidence);
+
+    private sealed record SourceBackedExteriorShellOutdoorRoomBlock(
+        double Start,
+        double End,
+        IReadOnlyList<string> RoomIds);
 
     private enum AxisOrientation
     {
