@@ -3473,6 +3473,7 @@ public sealed record PlacementWallGraphExport(
     private const double MaxTinyEndpointOnHostStubLengthDrawingUnits = 6.0;
     private const double MaxRedundantEndpointOnHostFragmentLengthDrawingUnits = 24.0;
     private const double MinRedundantEndpointOnHostFragmentHostLengthRatio = 3.0;
+    private const double MaxTinyOpeningBridgeOnHostLengthDrawingUnits = 16.0;
     private const double MaxPlacementEndpointOnWallAbsorptionDistanceDrawingUnits = 2.5;
     private const double MaxFinalPlacementEndpointOnWallAbsorptionDistanceDrawingUnits = 1.0;
     private const double MaxPlacementNodeCoordinateAlignmentDistanceDrawingUnits = 2.5;
@@ -3624,6 +3625,8 @@ public sealed record PlacementWallGraphExport(
         edges = postRedundantResidualNodeCoordinateAlignment.Edges;
         var postRedundantResidualNodeNormalization = NormalizePlacementGraphNodeReferencesFromGeometry(edges);
         edges = postRedundantResidualNodeNormalization.Edges;
+        var finalTinyOpeningBridgeSuppression = SuppressTinyOpeningBridgeEdgesOnHostWalls(edges);
+        edges = finalTinyOpeningBridgeSuppression.Edges;
         var residualEndpointOnHostSummary = SummarizeResidualPlacementGraphEndpointOnHostEdges(edges);
         var finalCompactedEdgeCount = Math.Max(0, finalCompactionPreEdgeCount - finalPostCompactionEdgeCount);
         var alignedEndpointCount = preNormalizationNodeCoordinateAlignment.AlignedEndpointCount
@@ -3690,6 +3693,7 @@ public sealed record PlacementWallGraphExport(
             $"placement wall graph post-redundant snapped {postRedundantResidualEndpointSnap.SnappedEndpointCount} residual endpoint(s) onto host wall runs",
             $"placement wall graph post-redundant residual compacted {postRedundantResidualCollapsedEdgeCount} aligned wall fragment(s) and suppressed {postRedundantResidualSuppressedContainedEdgeCount} contained duplicate edge(s)",
             $"placement wall graph split {postRedundantResidualNodeNormalization.SplitNodeReferenceCount} reused node reference(s) after final residual cleanup",
+            $"placement wall graph suppressed {finalTinyOpeningBridgeSuppression.SuppressedBridgeCount} tiny opening bridge edge(s) whose endpoints already land on host wall runs",
             "placement wall graph residual endpoint-on-host-wall candidates after cleanup: "
             + $"{residualEndpointOnHostSummary.CandidateEndpointCount} total, "
             + $"{residualEndpointOnHostSummary.CoincidentCandidateEndpointCount} coincident, "
@@ -5579,6 +5583,201 @@ public sealed record PlacementWallGraphExport(
         };
     }
 
+    private static PlacementGraphTinyOpeningBridgeSuppressionResult SuppressTinyOpeningBridgeEdgesOnHostWalls(
+        IReadOnlyList<PlacementWallGraphEdgeExport> edges)
+    {
+        if (edges.Count <= 1)
+        {
+            return new PlacementGraphTinyOpeningBridgeSuppressionResult(edges.ToArray(), 0);
+        }
+
+        var observations = BuildPlacementGraphEndpointObservations(edges);
+        if (observations.Count == 0)
+        {
+            return new PlacementGraphTinyOpeningBridgeSuppressionResult(edges.ToArray(), 0);
+        }
+
+        var nodeObservations = observations
+            .Where(observation => !string.IsNullOrWhiteSpace(observation.OriginalNodeId))
+            .GroupBy(observation => observation.OriginalNodeId, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(observation => observation.Position).ToList(),
+                StringComparer.Ordinal);
+        var nodeUseCount = observations
+            .Where(observation => !string.IsNullOrWhiteSpace(observation.OriginalNodeId))
+            .GroupBy(observation => observation.OriginalNodeId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+        var attachmentsByNodeId = BuildPlacementGraphInteriorNodeAttachments(edges, nodeObservations);
+        if (attachmentsByNodeId.Count == 0)
+        {
+            return new PlacementGraphTinyOpeningBridgeSuppressionResult(edges.ToArray(), 0);
+        }
+
+        var spans = edges
+            .Select((edge, index) => TryCreatePlacementGraphMergeSpan(index, edge))
+            .Where(span => span is not null)
+            .Select(span => span!)
+            .ToArray();
+        if (spans.Length <= 1)
+        {
+            return new PlacementGraphTinyOpeningBridgeSuppressionResult(edges.ToArray(), 0);
+        }
+
+        var edgeIndexById = edges
+            .Select((edge, index) => new { edge.Id, Index = index })
+            .GroupBy(item => item.Id, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First().Index, StringComparer.Ordinal);
+        var suppressedIndexes = new HashSet<int>();
+        var suppressionsByHostEdgeIndex = new Dictionary<int, List<PlacementGraphTinyOpeningBridgeSuppression>>();
+        foreach (var span in spans)
+        {
+            if (!CanSuppressTinyOpeningBridgeEdgeOnHostWalls(
+                    span,
+                    nodeUseCount,
+                    attachmentsByNodeId,
+                    out var hostAttachments))
+            {
+                continue;
+            }
+
+            suppressedIndexes.Add(span.Index);
+            foreach (var hostEdgeId in hostAttachments
+                         .Select(attachment => attachment.HostEdgeId)
+                         .Where(id => !string.IsNullOrWhiteSpace(id))
+                         .Distinct(StringComparer.Ordinal))
+            {
+                if (!edgeIndexById.TryGetValue(hostEdgeId, out var hostEdgeIndex)
+                    || hostEdgeIndex == span.Index)
+                {
+                    continue;
+                }
+
+                if (!suppressionsByHostEdgeIndex.TryGetValue(hostEdgeIndex, out var hostSuppressions))
+                {
+                    hostSuppressions = new List<PlacementGraphTinyOpeningBridgeSuppression>();
+                    suppressionsByHostEdgeIndex[hostEdgeIndex] = hostSuppressions;
+                }
+
+                hostSuppressions.Add(new PlacementGraphTinyOpeningBridgeSuppression(
+                    span.Edge,
+                    hostAttachments.Where(attachment => string.Equals(attachment.HostEdgeId, hostEdgeId, StringComparison.Ordinal)).ToArray()));
+            }
+        }
+
+        if (suppressedIndexes.Count == 0)
+        {
+            return new PlacementGraphTinyOpeningBridgeSuppressionResult(edges.ToArray(), 0);
+        }
+
+        return new PlacementGraphTinyOpeningBridgeSuppressionResult(
+            edges
+                .Select((edge, index) => suppressionsByHostEdgeIndex.TryGetValue(index, out var suppressions)
+                    ? AddTinyOpeningBridgeSuppressionEvidence(edge, suppressions)
+                    : edge)
+                .Where((_, index) => !suppressedIndexes.Contains(index))
+                .OrderBy(edge => edge.PageNumber)
+                .ThenBy(edge => edge.Bounds?.Y ?? double.MaxValue)
+                .ThenBy(edge => edge.Bounds?.X ?? double.MaxValue)
+                .ThenBy(edge => edge.Id, StringComparer.Ordinal)
+                .ToArray(),
+            suppressedIndexes.Count);
+    }
+
+    private static bool CanSuppressTinyOpeningBridgeEdgeOnHostWalls(
+        PlacementGraphMergeSpan span,
+        IReadOnlyDictionary<string, int> nodeUseCount,
+        IReadOnlyDictionary<string, IReadOnlyList<PlacementGraphInteriorNodeAttachment>> attachmentsByNodeId,
+        out IReadOnlyList<PlacementGraphInteriorNodeAttachment> hostAttachments)
+    {
+        hostAttachments = Array.Empty<PlacementGraphInteriorNodeAttachment>();
+        if (span.Length <= 0
+            || span.Length > MaxTinyOpeningBridgeOnHostLengthDrawingUnits
+            || span.Edge.ExcludedFromStructuralTopology
+            || IsTrustedExteriorShellPlacementGraphMergeContinuation(span.Edge)
+            || span.Edge.Evidence.Any(IsExteriorPlacementGraphEvidence)
+            || !HasTinyOpeningBridgeEvidence(span.Edge)
+            || nodeUseCount.GetValueOrDefault(span.StartNodeId) != 1
+            || nodeUseCount.GetValueOrDefault(span.EndNodeId) != 1)
+        {
+            return false;
+        }
+
+        if (!attachmentsByNodeId.TryGetValue(span.StartNodeId, out var startAttachments)
+            || !attachmentsByNodeId.TryGetValue(span.EndNodeId, out var endAttachments)
+            || startAttachments.Count == 0
+            || endAttachments.Count == 0)
+        {
+            return false;
+        }
+
+        var attachments = startAttachments
+            .Concat(endAttachments)
+            .Where(attachment => attachment.Distance <= MaxFinalPlacementEndpointOnWallAbsorptionDistanceDrawingUnits)
+            .ToArray();
+        if (attachments.Length < 2)
+        {
+            return false;
+        }
+
+        hostAttachments = attachments;
+        return true;
+    }
+
+    private static bool HasTinyOpeningBridgeEvidence(PlacementWallGraphEdgeExport edge) =>
+        edge.Id.Contains("opening-piece", StringComparison.OrdinalIgnoreCase)
+        || edge.Evidence.Any(item =>
+            item.Contains("split around anchored door/opening cutouts", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("anchored opening cutout", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("opening-piece", StringComparison.OrdinalIgnoreCase));
+
+    private static PlacementWallGraphEdgeExport AddTinyOpeningBridgeSuppressionEvidence(
+        PlacementWallGraphEdgeExport hostEdge,
+        IReadOnlyList<PlacementGraphTinyOpeningBridgeSuppression> suppressions)
+    {
+        var ordered = suppressions
+            .OrderBy(suppression => suppression.BridgeEdge.DrawingLength)
+            .ThenBy(suppression => suppression.BridgeEdge.Id, StringComparer.Ordinal)
+            .ToArray();
+        var evidence = hostEdge.Evidence
+            .Concat(ordered.Select(suppression =>
+            {
+                var maxOffset = suppression.Attachments
+                    .Select(attachment => attachment.Distance)
+                    .DefaultIfEmpty(0)
+                    .Max();
+                return "placement wall graph tiny opening bridge cleanup: "
+                    + $"suppressed {suppression.BridgeEdge.Id} into host {hostEdge.Id}; "
+                    + $"bridge length {suppression.BridgeEdge.DrawingLength:0.###}, "
+                    + $"max endpoint-host offset {maxOffset:0.###} drawing units";
+            }))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        return hostEdge with
+        {
+            Confidence = Math.Min(
+                hostEdge.Confidence,
+                ordered.Select(suppression => suppression.BridgeEdge.Confidence).DefaultIfEmpty(hostEdge.Confidence).Min()),
+            SourcePrimitiveIds = hostEdge.SourcePrimitiveIds
+                .Concat(ordered.SelectMany(suppression => suppression.BridgeEdge.SourcePrimitiveIds))
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray(),
+            SourceLayers = hostEdge.SourceLayers
+                .Concat(ordered.SelectMany(suppression => suppression.BridgeEdge.SourceLayers))
+                .Where(layer => !string.IsNullOrWhiteSpace(layer))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
+            SourceWallGraphEdgeIds = hostEdge.SourceWallGraphEdgeIds
+                .Concat(ordered.SelectMany(suppression => suppression.BridgeEdge.SourceWallGraphEdgeIds))
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray(),
+            Evidence = evidence
+        };
+    }
+
     private static PlacementGraphEndpointOnHostResidualSummary SummarizeResidualPlacementGraphEndpointOnHostEdges(
         IReadOnlyList<PlacementWallGraphEdgeExport> edges)
     {
@@ -7297,6 +7496,14 @@ public sealed record PlacementWallGraphExport(
         PlacementGraphMergeSpan HostSpan,
         PlacementGraphEndpointObservation Endpoint,
         double Distance);
+
+    private sealed record PlacementGraphTinyOpeningBridgeSuppressionResult(
+        PlacementWallGraphEdgeExport[] Edges,
+        int SuppressedBridgeCount);
+
+    private sealed record PlacementGraphTinyOpeningBridgeSuppression(
+        PlacementWallGraphEdgeExport BridgeEdge,
+        IReadOnlyList<PlacementGraphInteriorNodeAttachment> Attachments);
 
     private sealed record PlacementGraphResidualEndpointSnapResult(
         PlacementWallGraphEdgeExport[] Edges,

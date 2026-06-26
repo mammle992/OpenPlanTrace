@@ -9829,6 +9829,259 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementWallGraphExport_SuppressesTinyOpeningBridgeAlreadyRepresentedByHostWalls()
+    {
+        var nodes = new[]
+        {
+            SyntheticNode("tiny-bridge-left-host-top", 100, 80, WallNodeKind.Endpoint),
+            SyntheticNode("tiny-bridge-left-host-bottom", 100, 240, WallNodeKind.Endpoint),
+            SyntheticNode("tiny-bridge-right-host-top", 112, 80, WallNodeKind.Endpoint),
+            SyntheticNode("tiny-bridge-right-host-bottom", 112, 240, WallNodeKind.Endpoint),
+            SyntheticNode("tiny-bridge-node-left", 100, 160, WallNodeKind.Endpoint),
+            SyntheticNode("tiny-bridge-node-right", 112, 160, WallNodeKind.Endpoint)
+        };
+        var edges = new[]
+        {
+            new WallEdge(
+                "tiny-bridge-left-host-edge",
+                1,
+                nodes[0].Id,
+                nodes[1].Id,
+                "tiny-bridge-left-host-wall",
+                Confidence.High),
+            new WallEdge(
+                "tiny-bridge-right-host-edge",
+                1,
+                nodes[2].Id,
+                nodes[3].Id,
+                "tiny-bridge-right-host-wall",
+                Confidence.High),
+            new WallEdge(
+                "tiny-bridge-opening-piece-edge",
+                1,
+                nodes[4].Id,
+                nodes[5].Id,
+                "tiny-bridge-opening-piece-wall",
+                Confidence.Medium)
+        };
+        var spans = new[]
+        {
+            new WallGraphTopologySpan(
+                edges[0].Id,
+                1,
+                edges[0].WallId,
+                edges[0].FromNodeId,
+                edges[0].ToNodeId,
+                new PlanLineSegment(new PlanPoint(100, 80), new PlanPoint(100, 240)),
+                new PlanRect(97, 77, 6, 166),
+                160,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                6,
+                Confidence.High,
+                ["tiny-bridge-left-host-wall"],
+                [edges[0].Id],
+                ["synthetic long host wall"],
+                null),
+            new WallGraphTopologySpan(
+                edges[1].Id,
+                1,
+                edges[1].WallId,
+                edges[1].FromNodeId,
+                edges[1].ToNodeId,
+                new PlanLineSegment(new PlanPoint(112, 80), new PlanPoint(112, 240)),
+                new PlanRect(109, 77, 6, 166),
+                160,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                6,
+                Confidence.High,
+                ["tiny-bridge-right-host-wall"],
+                [edges[1].Id],
+                ["synthetic long host wall"],
+                null),
+            new WallGraphTopologySpan(
+                edges[2].Id,
+                1,
+                edges[2].WallId,
+                edges[2].FromNodeId,
+                edges[2].ToNodeId,
+                new PlanLineSegment(new PlanPoint(100, 160), new PlanPoint(112, 160)),
+                new PlanRect(98, 158, 16, 4),
+                12,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                4,
+                Confidence.Medium,
+                ["tiny-bridge-opening-piece-wall"],
+                [edges[2].Id],
+                ["clean placement topology span split around anchored door/opening cutouts"],
+                null)
+        };
+
+        var export = PlacementWallGraphExport.From(
+            new WallGraph(nodes, edges, Array.Empty<WallGraphComponent>()),
+            spans,
+            PlanCalibration.Empty,
+            new Dictionary<string, PrimitiveSourceExport>(StringComparer.Ordinal),
+            new Dictionary<string, WallGraphComponent>(StringComparer.Ordinal),
+            new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal));
+
+        Assert.Equal(2, export.Edges.Count);
+        Assert.DoesNotContain(export.Edges, edge => edge.Id == "tiny-bridge-opening-piece-edge");
+        Assert.DoesNotContain(export.Nodes, node => node.Id == "tiny-bridge-node-left");
+        Assert.DoesNotContain(export.Nodes, node => node.Id == "tiny-bridge-node-right");
+        Assert.Contains(
+            export.Evidence,
+            evidence => evidence.Contains("suppressed 1 tiny opening bridge edge", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            export.Edges.SelectMany(edge => edge.Evidence),
+            evidence => evidence.Contains("tiny opening bridge cleanup", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void PlacementWallGraphExport_KeepsShortHostToHostWallWithoutOpeningEvidence()
+    {
+        var nodes = new[]
+        {
+            SyntheticNode("short-real-left-host-top", 100, 80, WallNodeKind.Endpoint),
+            SyntheticNode("short-real-left-host-bottom", 100, 240, WallNodeKind.Endpoint),
+            SyntheticNode("short-real-right-host-top", 112, 80, WallNodeKind.Endpoint),
+            SyntheticNode("short-real-right-host-bottom", 112, 240, WallNodeKind.Endpoint),
+            SyntheticNode("short-real-node-left", 100, 160, WallNodeKind.Endpoint),
+            SyntheticNode("short-real-node-right", 112, 160, WallNodeKind.Endpoint)
+        };
+        var edges = new[]
+        {
+            new WallEdge(
+                "short-real-left-host-edge",
+                1,
+                nodes[0].Id,
+                nodes[1].Id,
+                "short-real-left-host-wall",
+                Confidence.High),
+            new WallEdge(
+                "short-real-right-host-edge",
+                1,
+                nodes[2].Id,
+                nodes[3].Id,
+                "short-real-right-host-wall",
+                Confidence.High),
+            new WallEdge(
+                "short-real-bridge-edge",
+                1,
+                nodes[4].Id,
+                nodes[5].Id,
+                "short-real-bridge-wall",
+                Confidence.High)
+        };
+        var spans = new[]
+        {
+            new WallGraphTopologySpan(
+                edges[0].Id,
+                1,
+                edges[0].WallId,
+                edges[0].FromNodeId,
+                edges[0].ToNodeId,
+                new PlanLineSegment(new PlanPoint(100, 80), new PlanPoint(100, 240)),
+                new PlanRect(97, 77, 6, 166),
+                160,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                6,
+                Confidence.High,
+                ["short-real-left-host-wall"],
+                [edges[0].Id],
+                ["synthetic long host wall"],
+                null),
+            new WallGraphTopologySpan(
+                edges[1].Id,
+                1,
+                edges[1].WallId,
+                edges[1].FromNodeId,
+                edges[1].ToNodeId,
+                new PlanLineSegment(new PlanPoint(112, 80), new PlanPoint(112, 240)),
+                new PlanRect(109, 77, 6, 166),
+                160,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                6,
+                Confidence.High,
+                ["short-real-right-host-wall"],
+                [edges[1].Id],
+                ["synthetic long host wall"],
+                null),
+            new WallGraphTopologySpan(
+                edges[2].Id,
+                1,
+                edges[2].WallId,
+                edges[2].FromNodeId,
+                edges[2].ToNodeId,
+                new PlanLineSegment(new PlanPoint(100, 160), new PlanPoint(112, 160)),
+                new PlanRect(98, 158, 16, 4),
+                12,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                4,
+                Confidence.High,
+                ["short-real-bridge-wall"],
+                [edges[2].Id],
+                ["synthetic short wall with explicit structural intent"],
+                null)
+        };
+
+        var export = PlacementWallGraphExport.From(
+            new WallGraph(nodes, edges, Array.Empty<WallGraphComponent>()),
+            spans,
+            PlanCalibration.Empty,
+            new Dictionary<string, PrimitiveSourceExport>(StringComparer.Ordinal),
+            new Dictionary<string, WallGraphComponent>(StringComparer.Ordinal),
+            new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal));
+
+        Assert.Equal(3, export.Edges.Count);
+        Assert.Contains(export.Edges, edge => edge.Id == "short-real-bridge-edge");
+        Assert.Contains(
+            export.Evidence,
+            evidence => evidence.Contains("suppressed 0 tiny opening bridge edge", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void PlacementExporter_IncludesTrustedMainStructuralExteriorReviewWallInPlacementGraph()
     {
         var result = CreateSameWallOpeningGapPlacementGraphResult();
