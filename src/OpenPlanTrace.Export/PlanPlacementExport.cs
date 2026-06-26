@@ -300,7 +300,8 @@ public sealed record PlanPlacementExport(
 
         var hasSourceBackedFallback = topologySpans.Any(WallTopologySpanVisibility.IsSourceBackedFallbackTopologySpan);
         var hasTrustedExteriorShellRepairTopology =
-            WallPlacementReadinessEvaluator.IsTrustedExteriorShellRepairSupportedWall(wall, component, assessment);
+            WallPlacementReadinessEvaluator.IsTrustedExteriorShellRepairSupportedWall(wall, component, assessment)
+            || WallPlacementReadinessEvaluator.IsTrustedMainStructuralExteriorWallBody(wall, component, assessment);
         if (!hasSourceBackedFallback && !hasTrustedExteriorShellRepairTopology)
         {
             return repairCandidates;
@@ -2467,6 +2468,10 @@ public sealed record PlacementWallExport(
         var excludedFromStructuralTopology =
             WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment)
             && !WallPlacementReadinessEvaluator.IsTrustedExteriorShellRepairSupportedWall(
+                wall,
+                component,
+                evidenceAssessment)
+            && !WallPlacementReadinessEvaluator.IsTrustedMainStructuralExteriorWallBody(
                 wall,
                 component,
                 evidenceAssessment)
@@ -7774,6 +7779,10 @@ public sealed record PlacementWallGraphEdgeExport(
                 topologySpan?.SourceWall,
                 component,
                 evidenceAssessment)
+            && !WallPlacementReadinessEvaluator.IsTrustedMainStructuralExteriorWallBody(
+                topologySpan?.SourceWall,
+                component,
+                evidenceAssessment)
             && !WallPlacementReadinessEvaluator.IsTrustedLongIsolatedExteriorShellWallBody(
                 topologySpan?.SourceWall,
                 component,
@@ -7820,6 +7829,10 @@ public sealed record PlacementWallGraphEdgeExport(
         var excludedFromStructuralTopology =
             WallStructuralTrust.IsExcludedFromStructuralTopology(component, evidenceAssessment)
             && !WallPlacementReadinessEvaluator.IsTrustedExteriorShellRepairSupportedWall(
+                topologySpan.SourceWall,
+                component,
+                evidenceAssessment)
+            && !WallPlacementReadinessEvaluator.IsTrustedMainStructuralExteriorWallBody(
                 topologySpan.SourceWall,
                 component,
                 evidenceAssessment)

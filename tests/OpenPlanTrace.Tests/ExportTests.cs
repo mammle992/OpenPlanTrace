@@ -10312,6 +10312,113 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementExporter_IncludesTrustedFilledSecondaryExteriorReviewWallInPlacementGraph()
+    {
+        var result = CreateSameWallOpeningGapPlacementGraphResult();
+        var wall = result.Walls[0] with
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Exterior,
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(new PlanPoint(80, 96), new PlanPoint(240, 96)),
+                new PlanLineSegment(new PlanPoint(80, 104), new PlanPoint(240, 104)),
+                FaceSeparation: 8,
+                OverlapRatio: 1,
+                Score: 0.954,
+                FirstFaceFragmentCount: 179,
+                SecondFaceFragmentCount: 40,
+                FirstFaceSourcePrimitiveIds: ["trusted-filled-secondary-exterior-face-a"],
+                SecondFaceSourcePrimitiveIds: ["trusted-filled-secondary-exterior-face-b"]),
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "filled wall-solid primitive",
+                "wall evidence: filled closed vector wall body",
+                "wall type exterior: near detected floorplan/wall envelope or local outer boundary"
+            ]
+        };
+        var nodes = result.WallGraph.Nodes.ToArray();
+        var edges = result.WallGraph.Edges.ToArray();
+        var component = new WallGraphComponent(
+            "trusted-filled-secondary-exterior-component",
+            1,
+            WallGraphComponentKind.SecondaryStructural,
+            new PlanRect(76, 94, 168, 12),
+            [wall.Id],
+            nodes.Select(node => node.Id).ToArray(),
+            edges.Select(edge => edge.Id).ToArray(),
+            wall.SourcePrimitiveIds,
+            wall.DrawingLength,
+            Confidence.High,
+            ["synthetic filled secondary exterior shell should still export"]);
+        var assessment = new WallEvidenceWallAssessment(
+            wall.Id,
+            wall.PageNumber,
+            wall.Bounds,
+            WallEvidenceCategory.MediumWallBody,
+            Confidence.High,
+            PlacementReady: false,
+            RequiresReview: true,
+            RejectedAsNoise: false,
+            wall.SourcePrimitiveIds,
+            wall.Evidence)
+        {
+            Decision = WallEvidenceDecision.Review,
+            ScoreBreakdown = new WallEvidenceScoreBreakdown(
+                0.7,
+                0,
+                0.7,
+                0.5,
+                0,
+                0.2,
+                0,
+                0,
+                0,
+                new[] { "strong parallel-face wall pair", "both endpoints supported by structural context" },
+                new[] { "not placement-ready without review" })
+        };
+        result = result with
+        {
+            Walls = [wall],
+            Calibration = new PlanCalibration(
+                PlanMeasurementUnit.DrawingUnit,
+                PlanMeasurementUnit.Millimeter,
+                ScaleRatio: null,
+                MillimetersPerDrawingUnit: 10,
+                Confidence.High,
+                Array.Empty<CalibrationEvidence>(),
+                Array.Empty<CalibrationScaleGroup>()),
+            WallGraph = new WallGraph(nodes, edges, [component]),
+            WallEvidenceMap = new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                [assessment],
+                1,
+                0)
+        };
+
+        using var placementDocument = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var exportedWall = Assert.Single(placementDocument.RootElement.GetProperty("walls").EnumerateArray());
+        var graphEdge = Assert.Single(placementDocument.RootElement
+            .GetProperty("wallGraph")
+            .GetProperty("edges")
+            .EnumerateArray());
+        Assert.True(exportedWall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.False(exportedWall.GetProperty("reliability").GetProperty("requiresReview").GetBoolean());
+        Assert.Equal(wall.Id, graphEdge.GetProperty("wallId").GetString());
+        Assert.False(graphEdge.GetProperty("excludedFromStructuralTopology").GetBoolean());
+
+        using var scanDocument = JsonDocument.Parse(PlanTraceJsonExporter.Serialize(result));
+        var scanWall = Assert.Single(scanDocument.RootElement.GetProperty("walls").EnumerateArray());
+        Assert.Equal("Ready", scanWall.GetProperty("placementStatus").GetString());
+        Assert.True(scanWall.GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.False(scanWall.GetProperty("requiresReview").GetBoolean());
+        Assert.Empty(scanWall.GetProperty("reviewReasons").EnumerateArray());
+    }
+
+    [Fact]
     public void PlacementExporter_IncludesTrustedExteriorShellRepairWallDespiteTopologyBlockedRepair()
     {
         var result = CreateSameWallOpeningGapPlacementGraphResult();

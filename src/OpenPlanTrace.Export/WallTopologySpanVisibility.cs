@@ -231,7 +231,13 @@ internal static class WallTopologySpanVisibility
                 span.SourceWall,
                 component,
                 assessment);
+        var hasTrustedMainStructuralExteriorWallBody =
+            WallPlacementReadinessEvaluator.IsTrustedMainStructuralExteriorWallBody(
+                span.SourceWall,
+                component,
+                assessment);
         if (!IsPlacementReadyStructuralSpan(component, assessment)
+            && !hasTrustedMainStructuralExteriorWallBody
             && !hasTrustedLongIsolatedExteriorShellWallBody)
         {
             return false;

@@ -33,6 +33,11 @@ public static class WallPlacementReadinessEvaluator
     private const double MinTrustedMainStructuralExteriorPairOverlapRatio = 0.95;
     private const int MaxTrustedMainStructuralExteriorPairFaceFragments = 96;
     private const int MaxTrustedMainStructuralExteriorPairTotalFaceFragments = 180;
+    private const double MinTrustedFilledSecondaryExteriorPairLengthDrawingUnits = 160.0;
+    private const double MinTrustedFilledSecondaryExteriorPairScore = 0.93;
+    private const double MinTrustedFilledSecondaryExteriorPairOverlapRatio = 0.98;
+    private const int MaxTrustedFilledSecondaryExteriorPairFaceFragments = 220;
+    private const int MaxTrustedFilledSecondaryExteriorPairTotalFaceFragments = 280;
     private const double MinTrustedLongIsolatedExteriorShellLengthDrawingUnits = 120.0;
     private const double MinTrustedLongIsolatedExteriorShellPairScore = 0.88;
     private const double MinTrustedLongIsolatedExteriorShellOverlapRatio = 0.95;
@@ -165,6 +170,7 @@ public static class WallPlacementReadinessEvaluator
             .Where(reason => !IsTrustedContextReviewReasonOverride(
                 reason,
                 trustedExteriorShellRepairSupportedWall,
+                trustedMainStructuralExteriorWallBody,
                 trustedLongIsolatedExteriorShellWallBody,
                 trustedTwoSidedFragmentMergedRoomBoundary,
                 trustedOneEndpointNoisyMainStructuralInterior,
@@ -1010,7 +1016,7 @@ public static class WallPlacementReadinessEvaluator
             || component is null
             || evidenceAssessment is null
             || component.ExcludedFromStructuralTopology
-            || component.Kind != WallGraphComponentKind.MainStructural
+            || component.Kind is not (WallGraphComponentKind.MainStructural or WallGraphComponentKind.SecondaryStructural)
             || evidenceAssessment.RejectedAsNoise
             || evidenceAssessment.Decision == WallEvidenceDecision.Reject
             || evidenceAssessment.Category is not (WallEvidenceCategory.StrongWallBody
@@ -1024,30 +1030,44 @@ public static class WallPlacementReadinessEvaluator
             return false;
         }
 
-        var maxFaceFragments = Math.Max(pair.FirstFaceFragmentCount, pair.SecondFaceFragmentCount);
-        var totalFaceFragments = pair.FirstFaceFragmentCount + pair.SecondFaceFragmentCount;
-        if (pair.Score < MinTrustedMainStructuralExteriorPairScore
-            || pair.OverlapRatio < MinTrustedMainStructuralExteriorPairOverlapRatio
-            || pair.FaceSeparation < MinTrustedExteriorShellContinuityFaceSeparationDrawingUnits
-            || pair.FaceSeparation > MaxTrustedExteriorShellContinuityFaceSeparationDrawingUnits
-            || maxFaceFragments > MaxTrustedMainStructuralExteriorPairFaceFragments
-            || totalFaceFragments > MaxTrustedMainStructuralExteriorPairTotalFaceFragments)
-        {
-            return false;
-        }
-
         var evidence = wall.Evidence
             .Concat(evidenceAssessment.Evidence)
             .Concat(evidenceAssessment.ScoreBreakdown.PositiveEvidence)
             .Concat(evidenceAssessment.ScoreBreakdown.NegativeEvidence)
             .Concat(component.Evidence)
             .ToArray();
+        var hasFilledWallBodyEvidence = EvidenceContainsAny(
+            evidence,
+            "filled wall-solid primitive",
+            "filled closed vector wall body");
         if (!EvidenceContainsAny(
                 evidence,
                 "parallel wall-face pair",
                 "strong parallel-face wall pair",
                 "filled wall-solid primitive",
                 "filled closed vector wall body"))
+        {
+            return false;
+        }
+
+        var maxFaceFragments = Math.Max(pair.FirstFaceFragmentCount, pair.SecondFaceFragmentCount);
+        var totalFaceFragments = pair.FirstFaceFragmentCount + pair.SecondFaceFragmentCount;
+        var trustedMainStructuralPair =
+            component.Kind == WallGraphComponentKind.MainStructural
+            && pair.Score >= MinTrustedMainStructuralExteriorPairScore
+            && pair.OverlapRatio >= MinTrustedMainStructuralExteriorPairOverlapRatio
+            && maxFaceFragments <= MaxTrustedMainStructuralExteriorPairFaceFragments
+            && totalFaceFragments <= MaxTrustedMainStructuralExteriorPairTotalFaceFragments;
+        var trustedFilledSecondaryPair =
+            hasFilledWallBodyEvidence
+            && wall.DrawingLength >= MinTrustedFilledSecondaryExteriorPairLengthDrawingUnits
+            && pair.Score >= MinTrustedFilledSecondaryExteriorPairScore
+            && pair.OverlapRatio >= MinTrustedFilledSecondaryExteriorPairOverlapRatio
+            && maxFaceFragments <= MaxTrustedFilledSecondaryExteriorPairFaceFragments
+            && totalFaceFragments <= MaxTrustedFilledSecondaryExteriorPairTotalFaceFragments;
+        if ((!trustedMainStructuralPair && !trustedFilledSecondaryPair)
+            || pair.FaceSeparation < MinTrustedExteriorShellContinuityFaceSeparationDrawingUnits
+            || pair.FaceSeparation > MaxTrustedExteriorShellContinuityFaceSeparationDrawingUnits)
         {
             return false;
         }
@@ -1337,12 +1357,15 @@ public static class WallPlacementReadinessEvaluator
     private static bool IsTrustedContextReviewReasonOverride(
         string reason,
         bool trustedExteriorShellRepairSupportedWall,
+        bool trustedMainStructuralExteriorWallBody,
         bool trustedLongIsolatedExteriorShellWallBody,
         bool trustedTwoSidedFragmentMergedRoomBoundary,
         bool trustedOneEndpointNoisyMainStructuralInterior,
         bool trustedLongOneEndpointFragmentMergedInterior)
     {
-        if ((trustedExteriorShellRepairSupportedWall || trustedLongIsolatedExteriorShellWallBody)
+        if ((trustedExteriorShellRepairSupportedWall
+                || trustedMainStructuralExteriorWallBody
+                || trustedLongIsolatedExteriorShellWallBody)
             && (reason.Contains("isolated wall graph fragment", StringComparison.OrdinalIgnoreCase)
                 || reason.Contains("isolated fragment", StringComparison.OrdinalIgnoreCase)
                 || reason.Contains("excluded from structural topology", StringComparison.OrdinalIgnoreCase)

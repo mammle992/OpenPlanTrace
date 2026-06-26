@@ -1570,6 +1570,11 @@ internal static class WallEvidenceExportHelpers
                 wall,
                 component,
                 evidenceAssessment);
+        var trustedMainStructuralExteriorWallBody =
+            WallPlacementReadinessEvaluator.IsTrustedMainStructuralExteriorWallBody(
+                wall,
+                component,
+                evidenceAssessment);
         var trustedLongIsolatedExteriorShellWallBody =
             WallPlacementReadinessEvaluator.IsTrustedLongIsolatedExteriorShellWallBody(
                 wall,
@@ -1588,6 +1593,7 @@ internal static class WallEvidenceExportHelpers
         var trustedIsolatedFragment =
             trustedExteriorShellContinuityFragment
             || trustedExteriorShellRepairSupportedWall
+            || trustedMainStructuralExteriorWallBody
             || trustedLongIsolatedExteriorShellWallBody
             || trustedRoomBoundaryIsolatedFragment;
         var trustedStructuralTopologyOverride =
@@ -1623,6 +1629,7 @@ internal static class WallEvidenceExportHelpers
                 || evidenceAssessment.Decision == WallEvidenceDecision.Review))
         {
             if (!trustedExteriorShellRepairSupportedWall
+                && !trustedMainStructuralExteriorWallBody
                 && !trustedLongIsolatedExteriorShellWallBody)
             {
                 reasons.Add("wall evidence requires review before exact coordinate placement");

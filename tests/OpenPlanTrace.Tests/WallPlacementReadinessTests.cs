@@ -1812,6 +1812,66 @@ public sealed class WallPlacementReadinessTests
         Assert.DoesNotContain("wall belongs to isolated wall graph fragment", readiness.Reasons);
     }
 
+    [Fact]
+    public void Evaluate_AllowsTrustedFilledSecondaryStructuralExteriorWallBodyWithFragmentedFaces()
+    {
+        var wall = Wall("wall:trusted-filled-secondary-exterior-shell", Confidence.High) with
+        {
+            WallType = WallType.Exterior,
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(new PlanPoint(100, 96), new PlanPoint(300, 96)),
+                new PlanLineSegment(new PlanPoint(100, 104), new PlanPoint(300, 104)),
+                FaceSeparation: 8,
+                OverlapRatio: 1,
+                Score: 0.954,
+                FirstFaceFragmentCount: 179,
+                SecondFaceFragmentCount: 40,
+                FirstFaceSourcePrimitiveIds: ["trusted-filled-secondary-face-a"],
+                SecondFaceSourcePrimitiveIds: ["trusted-filled-secondary-face-b"]),
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "filled wall-solid primitive",
+                "wall evidence: filled closed vector wall body",
+                "wall type exterior: near detected floorplan/wall envelope or local outer boundary"
+            ]
+        };
+        var component = Component(
+            WallGraphComponentKind.SecondaryStructural,
+            excludedFromStructuralTopology: false,
+            wall.Id);
+        var evidence = Evidence(wall, WallEvidenceCategory.MediumWallBody, placementReady: false) with
+        {
+            Evidence = wall.Evidence,
+            Decision = WallEvidenceDecision.Review,
+            ScoreBreakdown = new WallEvidenceScoreBreakdown(
+                0.7,
+                0,
+                0.7,
+                0.5,
+                0,
+                0.2,
+                0,
+                0,
+                0,
+                new[] { "strong parallel-face wall pair", "both endpoints supported by structural context" },
+                new[] { "not placement-ready without review" })
+        };
+
+        var readiness = WallPlacementReadinessEvaluator.Evaluate(
+            wall,
+            ReliableCalibration(),
+            component,
+            evidence,
+            ["wall evidence requires review before exact coordinate placement"]);
+
+        Assert.True(readiness.ReadyForCoordinatePlacement);
+        Assert.True(readiness.ReadyForMetricPlacement);
+        Assert.False(readiness.RequiresReview, string.Join("; ", readiness.Reasons));
+        Assert.False(readiness.CoordinatePlacementBlocked);
+    }
+
     private static WallSegment Wall(string id, Confidence confidence) =>
         new(
             id,
