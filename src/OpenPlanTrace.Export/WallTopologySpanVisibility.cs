@@ -3036,14 +3036,27 @@ internal static class WallTopologySpanVisibility
             return false;
         }
 
-        var evidence = sourceWall.Evidence
+        var wallEvidence = sourceWall.Evidence
             .Concat(span.Evidence)
-            .Concat(cutouts.SelectMany(cutout => cutout.Evidence))
             .ToArray();
-        return !ContainsAnyEvidence(
-            evidence,
+        if (ContainsAnyEvidence(
+            wallEvidence,
             "door leaf",
             "door swing",
+            "fixture detail",
+            "object/fixture",
+            "repeated short detail",
+            "surface pattern",
+            "wall-like linework near anchored opening"))
+        {
+            return false;
+        }
+
+        var cutoutEvidence = cutouts
+            .SelectMany(cutout => cutout.Evidence)
+            .ToArray();
+        return !ContainsAnyEvidence(
+            cutoutEvidence,
             "fixture detail",
             "object/fixture",
             "repeated short detail",

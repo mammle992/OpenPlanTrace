@@ -1623,6 +1623,38 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementExporter_KeepsExteriorTopologyContinuousAcrossDoorSwingCutoutEvidence()
+    {
+        var result = CreateOpeningCutoutPlacementReviewResult(wallType: WallType.Exterior);
+        var opening = result.Openings.Single();
+        result = result with
+        {
+            Openings =
+            [
+                opening with
+                {
+                    Evidence =
+                    [
+                        .. opening.Evidence,
+                        "door swing arc evidence belongs to the opening cutout"
+                    ]
+                }
+            ]
+        };
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var wall = Assert.Single(document.RootElement.GetProperty("walls").EnumerateArray());
+        var topologySpan = Assert.Single(wall.GetProperty("topologySpans").EnumerateArray());
+
+        Assert.Equal(80, topologySpan.GetProperty("centerLine").GetProperty("start").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(280, topologySpan.GetProperty("centerLine").GetProperty("end").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Single(wall.GetProperty("openingCutouts").EnumerateArray());
+        Assert.Equal(1, document.RootElement.GetProperty("summary").GetProperty("wallTopologySpanCount").GetInt32());
+    }
+
+    [Fact]
     public void PlacementExporter_SuppressesTinyOpeningAdjacentTopologyPieces()
     {
         var result = CreateOpeningCutoutPlacementReviewResult(startParameter: 0.05, endParameter: 0.30);
