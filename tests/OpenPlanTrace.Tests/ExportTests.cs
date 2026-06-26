@@ -9322,6 +9322,132 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementWallGraphExport_SnapsTrustedExteriorShellCornerPastNormalTolerance()
+    {
+        var nodes = new[]
+        {
+            SyntheticNode("trusted-corner-node-left", 80, 100, WallNodeKind.Endpoint),
+            SyntheticNode("trusted-corner-node-near", 240, 100, WallNodeKind.Endpoint),
+            SyntheticNode("trusted-corner-node-upper", 245.2, 105.2, WallNodeKind.Endpoint),
+            SyntheticNode("trusted-corner-node-lower", 245.2, 260, WallNodeKind.Endpoint)
+        };
+        var edges = new[]
+        {
+            new WallEdge(
+                "trusted-corner-horizontal-edge",
+                1,
+                nodes[0].Id,
+                nodes[1].Id,
+                "trusted-corner-horizontal-wall",
+                Confidence.High),
+            new WallEdge(
+                "trusted-corner-vertical-edge",
+                1,
+                nodes[2].Id,
+                nodes[3].Id,
+                "trusted-corner-vertical-wall",
+                Confidence.High)
+        };
+        var spans = new[]
+        {
+            TrustedExteriorShellSpan(
+                edges[0],
+                new PlanLineSegment(new PlanPoint(80, 100), new PlanPoint(240, 100)),
+                ["wall type exterior: synthetic trusted shell wall"]),
+            TrustedExteriorShellSpan(
+                edges[1],
+                new PlanLineSegment(new PlanPoint(245.2, 105.2), new PlanPoint(245.2, 260)),
+                ["wall type exterior: synthetic trusted shell wall"])
+        };
+
+        var export = PlacementWallGraphExport.From(
+            new WallGraph(nodes, edges, Array.Empty<WallGraphComponent>()),
+            spans,
+            PlanCalibration.Empty,
+            new Dictionary<string, PrimitiveSourceExport>(StringComparer.Ordinal),
+            new Dictionary<string, WallGraphComponent>(StringComparer.Ordinal),
+            new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal));
+
+        var horizontal = Assert.Single(export.Edges, edge => edge.Id == "trusted-corner-horizontal-edge");
+        var vertical = Assert.Single(export.Edges, edge => edge.Id == "trusted-corner-vertical-edge");
+
+        Assert.Equal(horizontal.ToNodeId, vertical.FromNodeId);
+        Assert.Equal(245.2, horizontal.CenterLine!.End.X, precision: 3);
+        Assert.Equal(100, vertical.CenterLine!.Start.Y, precision: 3);
+        Assert.Contains(
+            horizontal.Evidence,
+            item => item.Contains("endpoint-pair snap", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            vertical.Evidence,
+            item => item.Contains("endpoint-pair snap", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            export.Evidence,
+            item => item.Contains("snapped 2 nearby endpoint coordinate", StringComparison.OrdinalIgnoreCase)
+                && item.Contains("1 structural endpoint pair", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void PlacementWallGraphExport_DoesNotWideSnapInteriorEnvelopeTextAsExteriorCorner()
+    {
+        var nodes = new[]
+        {
+            SyntheticNode("interior-envelope-node-left", 80, 100, WallNodeKind.Endpoint),
+            SyntheticNode("interior-envelope-node-near", 240, 100, WallNodeKind.Endpoint),
+            SyntheticNode("interior-envelope-node-upper", 245.2, 105.2, WallNodeKind.Endpoint),
+            SyntheticNode("interior-envelope-node-lower", 245.2, 260, WallNodeKind.Endpoint)
+        };
+        var edges = new[]
+        {
+            new WallEdge(
+                "interior-envelope-horizontal-edge",
+                1,
+                nodes[0].Id,
+                nodes[1].Id,
+                "interior-envelope-horizontal-wall",
+                Confidence.High),
+            new WallEdge(
+                "interior-envelope-vertical-edge",
+                1,
+                nodes[2].Id,
+                nodes[3].Id,
+                "interior-envelope-vertical-wall",
+                Confidence.High)
+        };
+        var spans = new[]
+        {
+            TrustedExteriorShellSpan(
+                edges[0],
+                new PlanLineSegment(new PlanPoint(80, 100), new PlanPoint(240, 100)),
+                ["wall type exterior: synthetic trusted shell wall"]),
+            TrustedExteriorShellSpan(
+                edges[1],
+                new PlanLineSegment(new PlanPoint(245.2, 105.2), new PlanPoint(245.2, 260)),
+                ["wall type interior: supported wall evidence inside exterior envelope"])
+        };
+
+        var export = PlacementWallGraphExport.From(
+            new WallGraph(nodes, edges, Array.Empty<WallGraphComponent>()),
+            spans,
+            PlanCalibration.Empty,
+            new Dictionary<string, PrimitiveSourceExport>(StringComparer.Ordinal),
+            new Dictionary<string, WallGraphComponent>(StringComparer.Ordinal),
+            new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal));
+
+        var horizontal = Assert.Single(export.Edges, edge => edge.Id == "interior-envelope-horizontal-edge");
+        var vertical = Assert.Single(export.Edges, edge => edge.Id == "interior-envelope-vertical-edge");
+
+        Assert.NotEqual(horizontal.ToNodeId, vertical.FromNodeId);
+        Assert.Equal(240, horizontal.CenterLine!.End.X, precision: 3);
+        Assert.Equal(105.2, vertical.CenterLine!.Start.Y, precision: 3);
+        Assert.DoesNotContain(
+            horizontal.Evidence,
+            item => item.Contains("endpoint-pair snap", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(
+            vertical.Evidence,
+            item => item.Contains("endpoint-pair snap", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void PlacementWallGraphExport_MergesOverlappingStructuralRunsAcrossSmallAxisDrift()
     {
         var nodes = new[]

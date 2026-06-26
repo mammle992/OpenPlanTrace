@@ -3481,6 +3481,8 @@ public sealed record PlacementWallGraphExport(
     private const double MaxPlacementSharedNodeHostSnapDistanceDrawingUnits = 3.5;
     private const double MaxExteriorShellPlacementEndpointOnWallAbsorptionDistanceDrawingUnits = 4.5;
     private const double MaxExteriorShellPlacementSharedNodeHostSnapDistanceDrawingUnits = 5.0;
+    private const double MaxTrustedExteriorCornerEndpointPairSnapDistanceDrawingUnits = 8.0;
+    private const double MinTrustedExteriorCornerEndpointPairSnapLengthDrawingUnits = 120.0;
     private const double MinSameAxisResidualEndpointHostLengthRatio = 1.25;
     private const double MinSameAxisResidualEndpointHostOverlapRatio = 0.8;
     private const double MinDominantPlacementGraphMergeAxisLengthDrawingUnits = 24.0;
@@ -6053,7 +6055,7 @@ public sealed record PlacementWallGraphExport(
                 var point = PlacementGraphEndpointPairSnapPoint(firstSpan, secondSpan);
                 var firstDistance = first.Position.DistanceTo(point);
                 var secondDistance = second.Position.DistanceTo(point);
-                var tolerance = PlacementEndpointToEndpointSnapTolerance(firstSpan.Edge, secondSpan.Edge);
+                var tolerance = PlacementEndpointToEndpointSnapTolerance(firstSpan, secondSpan);
                 if (firstDistance > tolerance
                     || secondDistance > tolerance
                     || firstDistance + secondDistance <= 0.001)
@@ -6157,12 +6159,20 @@ public sealed record PlacementWallGraphExport(
             : new PlanPoint(first.Axis, second.Axis);
 
     private static double PlacementEndpointToEndpointSnapTolerance(
-        PlacementWallGraphEdgeExport first,
-        PlacementWallGraphEdgeExport second)
+        PlacementGraphMergeSpan first,
+        PlacementGraphMergeSpan second)
     {
-        var maxThickness = Math.Max(first.ThicknessDrawingUnits, second.ThicknessDrawingUnits);
-        var maxTolerance = IsTrustedExteriorShellPlacementGraphMergeContinuation(first)
-            || IsTrustedExteriorShellPlacementGraphMergeContinuation(second)
+        var maxThickness = Math.Max(first.Edge.ThicknessDrawingUnits, second.Edge.ThicknessDrawingUnits);
+        if (CanUseTrustedExteriorCornerEndpointPairSnap(first, second))
+        {
+            return Math.Clamp(
+                maxThickness * 1.5,
+                MaxExteriorShellPlacementEndpointOnWallAbsorptionDistanceDrawingUnits,
+                MaxTrustedExteriorCornerEndpointPairSnapDistanceDrawingUnits);
+        }
+
+        var maxTolerance = IsTrustedExteriorShellPlacementGraphMergeContinuation(first.Edge)
+            || IsTrustedExteriorShellPlacementGraphMergeContinuation(second.Edge)
                 ? MaxExteriorShellPlacementEndpointOnWallAbsorptionDistanceDrawingUnits
                 : MaxPlacementNodeCoordinateAlignmentDistanceDrawingUnits;
         return Math.Clamp(
@@ -6170,6 +6180,16 @@ public sealed record PlacementWallGraphExport(
             MaxCoincidentPlacementNodeDistanceDrawingUnits,
             maxTolerance);
     }
+
+    private static bool CanUseTrustedExteriorCornerEndpointPairSnap(
+        PlacementGraphMergeSpan first,
+        PlacementGraphMergeSpan second) =>
+        first.Length >= MinTrustedExteriorCornerEndpointPairSnapLengthDrawingUnits
+        && second.Length >= MinTrustedExteriorCornerEndpointPairSnapLengthDrawingUnits
+        && IsTrustedExteriorShellPlacementGraphMergeContinuation(first.Edge)
+        && IsTrustedExteriorShellPlacementGraphMergeContinuation(second.Edge)
+        && !HasPlacementGraphDetailOrSurfaceEvidence(first.Edge)
+        && !HasPlacementGraphDetailOrSurfaceEvidence(second.Edge);
 
     private static PlacementWallGraphResidualEndpointOnHostCandidateExport ToResidualEndpointOnHostCandidateExport(
         PlacementGraphEndpointOnHostResidual residual)
