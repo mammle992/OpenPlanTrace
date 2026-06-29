@@ -3495,6 +3495,7 @@ public sealed record PlacementWallGraphExport(
     private const double MinPlacementEndpointOnWallCandidateLengthDrawingUnits = 6.0;
     private const double MaxTinyEndpointOnHostStubLengthDrawingUnits = 6.0;
     private const double MaxRedundantEndpointOnHostFragmentLengthDrawingUnits = 24.0;
+    private const double MaxOpeningLikeRedundantEndpointOnHostFragmentLengthDrawingUnits = 36.0;
     private const double MinRedundantEndpointOnHostFragmentHostLengthRatio = 3.0;
     private const double MaxTinyOpeningBridgeOnHostLengthDrawingUnits = 16.0;
     private const double MaxPlacementEndpointOnWallAbsorptionDistanceDrawingUnits = 2.5;
@@ -5581,8 +5582,11 @@ public sealed record PlacementWallGraphExport(
 
     private static bool CanSuppressRedundantEndpointOnHostFragment(PlacementGraphMergeSpan candidateSpan)
     {
+        var openingLikeOrphanFragment = IsOpeningLikeOrphanEndpointOnHostFragment(candidateSpan.Edge);
         if (candidateSpan.Length <= 0
-            || candidateSpan.Length > MaxRedundantEndpointOnHostFragmentLengthDrawingUnits
+            || candidateSpan.Length > (openingLikeOrphanFragment
+                ? MaxOpeningLikeRedundantEndpointOnHostFragmentLengthDrawingUnits
+                : MaxRedundantEndpointOnHostFragmentLengthDrawingUnits)
             || candidateSpan.Edge.ExcludedFromStructuralTopology
             || IsTrustedExteriorShellPlacementGraphMergeContinuation(candidateSpan.Edge)
             || candidateSpan.Edge.Evidence.Any(IsExteriorPlacementGraphEvidence)
@@ -5591,15 +5595,18 @@ public sealed record PlacementWallGraphExport(
             return false;
         }
 
-        return candidateSpan.Edge.Id.Contains("opening-piece", StringComparison.OrdinalIgnoreCase)
-            || HasPlacementGraphDetailOrSurfaceEvidence(candidateSpan.Edge)
-            || candidateSpan.Edge.Evidence.Any(item =>
+        return openingLikeOrphanFragment
+            || HasPlacementGraphDetailOrSurfaceEvidence(candidateSpan.Edge);
+    }
+
+    private static bool IsOpeningLikeOrphanEndpointOnHostFragment(PlacementWallGraphEdgeExport edge) =>
+        edge.Id.Contains("opening-piece", StringComparison.OrdinalIgnoreCase)
+        || edge.Evidence.Any(item =>
                 item.Contains("opening", StringComparison.OrdinalIgnoreCase)
                 || item.Contains("only one trusted structural endpoint", StringComparison.OrdinalIgnoreCase)
                 || item.Contains("isolated fragment", StringComparison.OrdinalIgnoreCase)
                 || item.Contains("one endpoint", StringComparison.OrdinalIgnoreCase)
                 || item.Contains("dangling", StringComparison.OrdinalIgnoreCase));
-    }
 
     private static bool HasStrongPlacementGraphBoundaryEvidence(PlacementWallGraphEdgeExport edge) =>
         edge.Evidence.Any(item =>
