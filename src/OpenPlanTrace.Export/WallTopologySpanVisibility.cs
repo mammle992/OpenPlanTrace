@@ -18,6 +18,13 @@ internal static class WallTopologySpanVisibility
     private const double MaxCollinearInteriorSourceRunBridgeGapDrawingUnits = 48.0;
     private const double MinCollinearInteriorSourceRunBridgeLongNeighborLengthDrawingUnits = 48.0;
     private const double MaxCollinearInteriorSourceRunBridgeGapToLongNeighborRatio = 0.45;
+    private const double MaxCollinearInteriorRunBridgeAxisDistanceDrawingUnits = 2.5;
+    private const double MaxCollinearInteriorRunBridgeGapDrawingUnits = 36.0;
+    private const double MinCollinearInteriorRunBridgeLongNeighborLengthDrawingUnits = 48.0;
+    private const double MaxCollinearInteriorRunBridgeGapToLongNeighborRatio = 0.30;
+    private const double MinTrustedShortInteriorRunBridgeLengthDrawingUnits = 36.0;
+    private const double MaxTrustedShortInteriorRunBridgeGapDrawingUnits = 18.0;
+    private const double MinTrustedShortInteriorRunBridgePairScore = 0.90;
     private const double MinContinuousExteriorOpeningTopologyLengthDrawingUnits = 80.0;
     private const double MaxCleanEndpointSnapToOrthogonalWallDistanceDrawingUnits = 8.0;
     private const double MaxCleanEndpointSnapProjectionOverrunDrawingUnits = 8.0;
@@ -131,14 +138,18 @@ internal static class WallTopologySpanVisibility
 
     public static IReadOnlyList<WallGraphTopologySpan> BuildCleanPlacementTopologySpans(
         IReadOnlyList<WallGraphTopologySpan> spans) =>
-        FinalizeCleanPlacementSpans(RegularizeCleanPlacementRuns(MergeCleanTopologyRuns(spans)));
+        FinalizeCleanPlacementSpans(
+            RegularizeCleanPlacementRuns(MergeCleanTopologyRuns(spans)),
+            Array.Empty<OpeningCandidate>());
 
     private static IReadOnlyList<WallGraphTopologySpan> BuildCleanPlacementTopologySpans(
         IReadOnlyList<WallGraphTopologySpan> spans,
         IReadOnlyList<OpeningCandidate> openings)
     {
         var merged = MergeCleanTopologyRuns(spans);
-        return FinalizeCleanPlacementSpans(RegularizeCleanPlacementRuns(SplitCleanTopologyRunsAroundOpenings(merged, openings)));
+        return FinalizeCleanPlacementSpans(
+            RegularizeCleanPlacementRuns(SplitCleanTopologyRunsAroundOpenings(merged, openings)),
+            openings);
     }
 
     private static IReadOnlyList<WallGraphTopologySpan> BuildCleanPlacementTopologySpans(
@@ -151,7 +162,8 @@ internal static class WallTopologySpanVisibility
         var merged = MergeCleanTopologyRuns(spans);
         var graphCleanSpans = FinalizeCleanPlacementSpans(
             RegularizeCleanPlacementRuns(
-                SplitCleanTopologyRunsAroundOpenings(merged, openings)));
+                SplitCleanTopologyRunsAroundOpenings(merged, openings)),
+            openings);
         var sourceBackedFallbackSpans = BuildSourceBackedFallbackSpans(
             walls,
             graphCleanSpans,
@@ -177,7 +189,8 @@ internal static class WallTopologySpanVisibility
 
         return FinalizeCleanPlacementSpans(
             RegularizeCleanPlacementRuns(
-                SplitCleanTopologyRunsAroundOpenings(combined, openings)));
+                SplitCleanTopologyRunsAroundOpenings(combined, openings)),
+            openings);
     }
 
     public static IReadOnlyList<WallGraphTopologySpan> BuildCleanPlacementTopologySpans(
@@ -209,7 +222,9 @@ internal static class WallTopologySpanVisibility
             .ToArray();
 
         var projected = ProjectSpansToOrthogonalSourceAxes(spans);
-        return FinalizeCleanPlacementSpans(RegularizeCleanPlacementRuns(SplitCleanTopologyRunsAroundOpenings(projected, result.Openings)));
+        return FinalizeCleanPlacementSpans(
+            RegularizeCleanPlacementRuns(SplitCleanTopologyRunsAroundOpenings(projected, result.Openings)),
+            result.Openings);
     }
 
     public static IReadOnlyList<WallGraphTopologySpan> BuildHiddenNonPlacementTopologySpans(
@@ -432,6 +447,49 @@ internal static class WallTopologySpanVisibility
         || opening.AdjacentWallIds.Contains(wallId, StringComparer.Ordinal)
         || opening.Placement?.AnchorWallIds.Contains(wallId, StringComparer.Ordinal) == true
         || string.Equals(opening.Placement?.HostWallId, wallId, StringComparison.Ordinal);
+
+    private static IReadOnlySet<string> BuildOpeningLinkedWallIdSet(
+        IReadOnlyList<OpeningCandidate> openings)
+    {
+        if (openings.Count == 0)
+        {
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        var wallIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var opening in openings)
+        {
+            AddOpeningWallId(wallIds, opening.WallId);
+            foreach (var wallId in opening.HostWallIds)
+            {
+                AddOpeningWallId(wallIds, wallId);
+            }
+
+            foreach (var wallId in opening.AdjacentWallIds)
+            {
+                AddOpeningWallId(wallIds, wallId);
+            }
+
+            AddOpeningWallId(wallIds, opening.Placement?.HostWallId);
+            if (opening.Placement is not null)
+            {
+                foreach (var wallId in opening.Placement.AnchorWallIds)
+                {
+                    AddOpeningWallId(wallIds, wallId);
+                }
+            }
+        }
+
+        return wallIds;
+    }
+
+    private static void AddOpeningWallId(HashSet<string> wallIds, string? wallId)
+    {
+        if (!string.IsNullOrWhiteSpace(wallId))
+        {
+            wallIds.Add(wallId);
+        }
+    }
 
     private static WallTopologySpanVisibilityContext BuildContext(PlanScanResult result) =>
         new(
@@ -2608,15 +2666,19 @@ internal static class WallTopologySpanVisibility
     }
 
     private static IReadOnlyList<WallGraphTopologySpan> FinalizeCleanPlacementSpans(
-        IReadOnlyList<WallGraphTopologySpan> spans)
+        IReadOnlyList<WallGraphTopologySpan> spans,
+        IReadOnlyList<OpeningCandidate> openings)
     {
+        var openingLinkedWallIds = BuildOpeningLinkedWallIdSet(openings);
         var canonical = CanonicalizeExteriorParallelFaceSpans(spans);
         var dominantAxisSnapped = SnapExteriorFragmentsToDominantPlacementAxis(canonical);
         var overlapped = MergeOverlappingCollinearPlacementSpans(dominantAxisSnapped);
-        var bridged = BridgeCollinearExteriorPlacementRunGaps(overlapped);
+        var interiorBridged = BridgeCollinearInteriorPlacementRunGaps(overlapped, openingLinkedWallIds);
+        var bridged = BridgeCollinearExteriorPlacementRunGaps(interiorBridged);
         var endpointSnapped = SnapCleanPlacementSpanEndpointsToNearbyOrthogonalSpans(bridged);
         var resnapped = SnapExteriorFragmentsToDominantPlacementAxis(endpointSnapped);
-        var rebridged = BridgeCollinearExteriorPlacementRunGaps(resnapped);
+        var interiorRebridged = BridgeCollinearInteriorPlacementRunGaps(resnapped, openingLinkedWallIds);
+        var rebridged = BridgeCollinearExteriorPlacementRunGaps(interiorRebridged);
         return SuppressContainedDuplicatePlacementSpans(MergeOverlappingCollinearPlacementSpans(rebridged));
     }
 
@@ -3136,6 +3198,245 @@ internal static class WallTopologySpanVisibility
         return merged;
     }
 
+    private static IReadOnlyList<WallGraphTopologySpan> BridgeCollinearInteriorPlacementRunGaps(
+        IReadOnlyList<WallGraphTopologySpan> spans,
+        IReadOnlySet<string> openingLinkedWallIds)
+    {
+        if (spans.Count <= 1)
+        {
+            return spans;
+        }
+
+        var bridged = new List<WallGraphTopologySpan>();
+        var axisAlignedSpanIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var group in spans
+            .Where(IsAxisAlignedPlacementSpan)
+            .Where(span => span.SourceWall?.WallType == WallType.Interior)
+            .GroupBy(span => new PlacementRegularizationKey(
+                span.PageNumber,
+                WallType.Interior,
+                ResolveAxisOrientation(span.CenterLine))))
+        {
+            var ordered = group
+                .OrderBy(AxisCoordinate)
+                .ThenBy(span => AxisMin(span.CenterLine))
+                .ThenByDescending(span => span.DrawingLength)
+                .ThenBy(span => span.Id, StringComparer.Ordinal)
+                .ToArray();
+            var clusters = new List<List<WallGraphTopologySpan>>();
+            foreach (var span in ordered)
+            {
+                axisAlignedSpanIds.Add(span.Id);
+                var current = clusters.Count == 0 ? null : clusters[^1];
+                if (current is null
+                    || Math.Abs(AxisCoordinate(span) - WeightedAxisCoordinate(current))
+                        > MaxCollinearInteriorRunBridgeAxisDistanceDrawingUnits)
+                {
+                    clusters.Add([span]);
+                    continue;
+                }
+
+                current.Add(span);
+            }
+
+            foreach (var cluster in clusters)
+            {
+                bridged.AddRange(BridgeCollinearInteriorPlacementRunGapCluster(cluster, openingLinkedWallIds));
+            }
+        }
+
+        bridged.AddRange(spans.Where(span => !axisAlignedSpanIds.Contains(span.Id)));
+        return bridged
+            .OrderBy(span => span.PageNumber)
+            .ThenBy(span => span.Bounds.Y)
+            .ThenBy(span => span.Bounds.X)
+            .ThenBy(span => span.WallId, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<WallGraphTopologySpan> BridgeCollinearInteriorPlacementRunGapCluster(
+        IReadOnlyList<WallGraphTopologySpan> cluster,
+        IReadOnlySet<string> openingLinkedWallIds)
+    {
+        if (cluster.Count <= 1)
+        {
+            return cluster;
+        }
+
+        var bridged = new List<WallGraphTopologySpan>();
+        WallGraphTopologySpan? current = null;
+        foreach (var span in cluster
+            .OrderBy(span => AxisMin(span.CenterLine))
+            .ThenByDescending(span => span.DrawingLength)
+            .ThenBy(span => span.Id, StringComparer.Ordinal))
+        {
+            if (current is null)
+            {
+                current = span;
+                continue;
+            }
+
+            if (ShouldBridgeCollinearInteriorPlacementRunGap(current, span, openingLinkedWallIds, out var gap))
+            {
+                current = CreateBridgedCollinearInteriorPlacementSpan(current, span, gap);
+                continue;
+            }
+
+            bridged.Add(current);
+            current = span;
+        }
+
+        if (current is not null)
+        {
+            bridged.Add(current);
+        }
+
+        return bridged;
+    }
+
+    private static bool IsOpeningLinkedInteriorBridgeSpan(
+        WallGraphTopologySpan span,
+        IReadOnlySet<string> openingLinkedWallIds)
+    {
+        if (openingLinkedWallIds.Count == 0)
+        {
+            return false;
+        }
+
+        return openingLinkedWallIds.Contains(span.WallId)
+            || (span.SourceWall is not null && openingLinkedWallIds.Contains(span.SourceWall.Id));
+    }
+
+    private static bool ShouldBridgeCollinearInteriorPlacementRunGap(
+        WallGraphTopologySpan first,
+        WallGraphTopologySpan second,
+        IReadOnlySet<string> openingLinkedWallIds,
+        out double gap)
+    {
+        gap = AxisMin(second.CenterLine) - AxisMax(first.CenterLine);
+        if (first.WallId == second.WallId
+            || first.SourceWall?.WallType != WallType.Interior
+            || second.SourceWall?.WallType != WallType.Interior
+            || !IsTrustedInteriorPlacementRunBridgeSpan(first)
+            || !IsTrustedInteriorPlacementRunBridgeSpan(second)
+            || IsOpeningLinkedInteriorBridgeSpan(first, openingLinkedWallIds)
+            || IsOpeningLinkedInteriorBridgeSpan(second, openingLinkedWallIds)
+            || ResolveAxisOrientation(first.CenterLine) != ResolveAxisOrientation(second.CenterLine)
+            || Math.Abs(AxisCoordinate(first) - AxisCoordinate(second))
+                > MaxCollinearInteriorRunBridgeAxisDistanceDrawingUnits
+            || gap <= 0.001)
+        {
+            return false;
+        }
+
+        var longerLength = Math.Max(first.DrawingLength, second.DrawingLength);
+        if (longerLength < MinCollinearInteriorRunBridgeLongNeighborLengthDrawingUnits)
+        {
+            return gap <= MaxTrustedShortInteriorRunBridgeGapDrawingUnits
+                && IsTrustedShortInteriorPlacementRunBridgePair(first, second);
+        }
+
+        var adaptiveGapLimit = Math.Clamp(
+            longerLength * MaxCollinearInteriorRunBridgeGapToLongNeighborRatio,
+            MaxCleanRunJoinGapDrawingUnits,
+            MaxCollinearInteriorRunBridgeGapDrawingUnits);
+        return gap <= adaptiveGapLimit;
+    }
+
+    private static bool IsTrustedShortInteriorPlacementRunBridgePair(
+        WallGraphTopologySpan first,
+        WallGraphTopologySpan second)
+    {
+        if (first.DrawingLength < MinTrustedShortInteriorRunBridgeLengthDrawingUnits
+            || second.DrawingLength < MinTrustedShortInteriorRunBridgeLengthDrawingUnits)
+        {
+            return false;
+        }
+
+        return HasTrustedShortInteriorRunBridgePairEvidence(first)
+            && HasTrustedShortInteriorRunBridgePairEvidence(second);
+    }
+
+    private static bool HasTrustedShortInteriorRunBridgePairEvidence(WallGraphTopologySpan span) =>
+        span.SourceWall?.PairEvidence is { } pair
+        && pair.Score >= MinTrustedShortInteriorRunBridgePairScore
+        && pair.OverlapRatio >= 0.90
+        && Math.Max(pair.FirstFaceFragmentCount, pair.SecondFaceFragmentCount) <= 24
+        && pair.FirstFaceFragmentCount + pair.SecondFaceFragmentCount <= 48;
+
+    private static bool IsTrustedInteriorPlacementRunBridgeSpan(WallGraphTopologySpan span)
+    {
+        if (span.SourceWall is null
+            || span.SourceWall.Confidence.Value < 0.70
+            || span.Confidence.Value < 0.70
+            || span.SourceWall.FragmentEvidence?.RequiresGeometryReview == true)
+        {
+            return false;
+        }
+
+        var evidence = span.SourceWall.Evidence
+            .Concat(span.Evidence)
+            .ToArray();
+        if (span.SourceWall.DetectionKind == WallDetectionKind.ParallelLinePair)
+        {
+            if (span.SourceWall.PairEvidence is not { } pair
+                || pair.Score < 0.80
+                || pair.OverlapRatio < 0.90
+                || Math.Max(pair.FirstFaceFragmentCount, pair.SecondFaceFragmentCount) > 24
+                || pair.FirstFaceFragmentCount + pair.SecondFaceFragmentCount > 48)
+            {
+                return false;
+            }
+        }
+
+        if (ContainsAnyEvidence(
+                evidence,
+                "covered-area",
+                "covered entry",
+                "covered-entry",
+                "dimension",
+                "door leaf",
+                "door swing",
+                "fixture detail",
+                "glazing",
+                "object/fixture",
+                "opening-linked",
+                "overbygd",
+                "railing",
+                "repeated short detail",
+                "stair",
+                "surface pattern",
+                "surface/detail",
+                "terrace",
+                "trim/detail",
+                "wall-like linework near anchored opening",
+                "witness/extension",
+                "non-wall"))
+        {
+            return false;
+        }
+
+        return ContainsAnyEvidence(
+            evidence,
+            "detected room evidence on both sides",
+            "explicit room boundary support",
+            "geometric room boundary support",
+            "room-confirmed",
+            "shared by room adjacency boundary",
+            "synthetic trusted interior room-boundary bridge");
+    }
+
+    private static WallGraphTopologySpan CreateBridgedCollinearInteriorPlacementSpan(
+        WallGraphTopologySpan first,
+        WallGraphTopologySpan second,
+        double gap) =>
+        CreateMultiSourceBridgedCollinearPlacementSpan(
+            first,
+            second,
+            gap,
+            "clean placement interior run bridge: bridged trusted collinear interior room-boundary placement spans",
+            emitSingleSourceProjection: false);
+
     private static IReadOnlyList<WallGraphTopologySpan> BridgeCollinearExteriorPlacementRunGaps(
         IReadOnlyList<WallGraphTopologySpan> spans)
     {
@@ -3299,7 +3600,20 @@ internal static class WallTopologySpanVisibility
     private static WallGraphTopologySpan CreateBridgedCollinearExteriorPlacementSpan(
         WallGraphTopologySpan first,
         WallGraphTopologySpan second,
-        double gap)
+        double gap) =>
+        CreateMultiSourceBridgedCollinearPlacementSpan(
+            first,
+            second,
+            gap,
+            "clean placement exterior run bridge: bridged collinear exterior placement spans",
+            emitSingleSourceProjection: true);
+
+    private static WallGraphTopologySpan CreateMultiSourceBridgedCollinearPlacementSpan(
+        WallGraphTopologySpan first,
+        WallGraphTopologySpan second,
+        double gap,
+        string evidencePrefix,
+        bool emitSingleSourceProjection)
     {
         var orientation = ResolveAxisOrientation(first.CenterLine);
         var targetCoordinate = WeightedAxisCoordinate([first, second]);
@@ -3316,8 +3630,14 @@ internal static class WallTopologySpanVisibility
         var evidence = first.Evidence
             .Concat(second.Evidence)
             .Append(
-                "clean placement exterior run bridge: bridged collinear exterior placement spans "
-                + $"{first.Id} and {second.Id}; gap {gap:0.###}, axis shift {axisShift:0.###} drawing units")
+                $"{evidencePrefix} {first.Id} and {second.Id}; gap {gap:0.###}, "
+                + $"axis shift {axisShift:0.###} drawing units");
+        if (!emitSingleSourceProjection)
+        {
+            evidence = evidence.Append("clean placement multi-source bridge: source offsets are not emitted because span combines multiple source walls");
+        }
+
+        var evidenceArray = evidence
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 
@@ -3328,20 +3648,36 @@ internal static class WallTopologySpanVisibility
             CenterLine = line,
             Bounds = bounds,
             DrawingLength = line.Length,
-            SourceWallStartOffsetDrawingUnits = MinNullable(first.SourceWallStartOffsetDrawingUnits, second.SourceWallStartOffsetDrawingUnits),
-            SourceWallEndOffsetDrawingUnits = MaxNullable(first.SourceWallEndOffsetDrawingUnits, second.SourceWallEndOffsetDrawingUnits),
-            SourceWallProjectedLengthDrawingUnits = MaxNullable(first.SourceWallProjectedLengthDrawingUnits, second.SourceWallProjectedLengthDrawingUnits),
-            SourceWallStartParameter = MinNullable(first.SourceWallStartParameter, second.SourceWallStartParameter),
-            SourceWallEndParameter = MaxNullable(first.SourceWallEndParameter, second.SourceWallEndParameter),
-            SourceWallCenterParameter = AverageNullable(
-                MinNullable(first.SourceWallStartParameter, second.SourceWallStartParameter),
-                MaxNullable(first.SourceWallEndParameter, second.SourceWallEndParameter)),
-            SourceWallStartProjectionDistanceDrawingUnits = MaxNullable(
-                MaxNullable(first.SourceWallStartProjectionDistanceDrawingUnits, second.SourceWallStartProjectionDistanceDrawingUnits),
-                axisShift),
-            SourceWallEndProjectionDistanceDrawingUnits = MaxNullable(
-                MaxNullable(first.SourceWallEndProjectionDistanceDrawingUnits, second.SourceWallEndProjectionDistanceDrawingUnits),
-                axisShift),
+            SourceWallStartOffsetDrawingUnits = emitSingleSourceProjection
+                ? MinNullable(first.SourceWallStartOffsetDrawingUnits, second.SourceWallStartOffsetDrawingUnits)
+                : null,
+            SourceWallEndOffsetDrawingUnits = emitSingleSourceProjection
+                ? MaxNullable(first.SourceWallEndOffsetDrawingUnits, second.SourceWallEndOffsetDrawingUnits)
+                : null,
+            SourceWallProjectedLengthDrawingUnits = emitSingleSourceProjection
+                ? MaxNullable(first.SourceWallProjectedLengthDrawingUnits, second.SourceWallProjectedLengthDrawingUnits)
+                : null,
+            SourceWallStartParameter = emitSingleSourceProjection
+                ? MinNullable(first.SourceWallStartParameter, second.SourceWallStartParameter)
+                : null,
+            SourceWallEndParameter = emitSingleSourceProjection
+                ? MaxNullable(first.SourceWallEndParameter, second.SourceWallEndParameter)
+                : null,
+            SourceWallCenterParameter = emitSingleSourceProjection
+                ? AverageNullable(
+                    MinNullable(first.SourceWallStartParameter, second.SourceWallStartParameter),
+                    MaxNullable(first.SourceWallEndParameter, second.SourceWallEndParameter))
+                : null,
+            SourceWallStartProjectionDistanceDrawingUnits = emitSingleSourceProjection
+                ? MaxNullable(
+                    MaxNullable(first.SourceWallStartProjectionDistanceDrawingUnits, second.SourceWallStartProjectionDistanceDrawingUnits),
+                    axisShift)
+                : null,
+            SourceWallEndProjectionDistanceDrawingUnits = emitSingleSourceProjection
+                ? MaxNullable(
+                    MaxNullable(first.SourceWallEndProjectionDistanceDrawingUnits, second.SourceWallEndProjectionDistanceDrawingUnits),
+                    axisShift)
+                : null,
             Thickness = thickness,
             Confidence = new Confidence(Math.Min(first.Confidence.Value, second.Confidence.Value)),
             SourcePrimitiveIds = first.SourcePrimitiveIds
@@ -3352,7 +3688,7 @@ internal static class WallTopologySpanVisibility
                 .Concat(second.SourceWallGraphEdgeIds)
                 .Distinct(StringComparer.Ordinal)
                 .ToArray(),
-            Evidence = evidence
+            Evidence = evidenceArray
         };
     }
 

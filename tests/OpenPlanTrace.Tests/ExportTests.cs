@@ -930,6 +930,171 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementExporter_BridgesTrustedRoomBoundaryInteriorCleanPlacementRunsAcrossSmallGaps()
+    {
+        var result = CreateCollinearGapPlacementRunResult(WallType.Interior);
+        result = result with
+        {
+            Walls = result.Walls
+                .Select(wall => wall with
+                {
+                    Evidence = wall.Evidence
+                        .Append("wall type interior: supported wall evidence inside exterior envelope")
+                        .Append("wall type refined interior: detected room evidence on both sides")
+                        .Append("wall evidence: geometric room boundary support from reliable room-boundary alignment")
+                        .ToArray()
+                })
+                .ToArray()
+        };
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+
+        var spans = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .SelectMany(wall => wall.GetProperty("topologySpans").EnumerateArray())
+            .ToArray();
+
+        var span = Assert.Single(spans);
+        Assert.Equal(20, span.GetProperty("centerLine").GetProperty("start").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(260, span.GetProperty("centerLine").GetProperty("end").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(100, span.GetProperty("centerLine").GetProperty("start").GetProperty("y").GetDouble(), precision: 3);
+        Assert.Equal(100, span.GetProperty("centerLine").GetProperty("end").GetProperty("y").GetDouble(), precision: 3);
+        Assert.Equal(
+            new[] { "collinear-gap-edge-a", "collinear-gap-edge-b" },
+            JsonStrings(span.GetProperty("sourceWallGraphEdgeIds")));
+        Assert.Equal(JsonValueKind.Null, span.GetProperty("sourceWallStartOffsetDrawingUnits").ValueKind);
+        Assert.Equal(JsonValueKind.Null, span.GetProperty("sourceWallEndOffsetDrawingUnits").ValueKind);
+        Assert.Equal(JsonValueKind.Null, span.GetProperty("sourceWallProjectedLengthDrawingUnits").ValueKind);
+        Assert.Contains(
+            span.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("clean placement interior run bridge", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Contains(
+            span.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("multi-source bridge", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Equal(1, document.RootElement.GetProperty("summary").GetProperty("wallTopologySpanCount").GetInt32());
+    }
+
+    [Fact]
+    public void PlacementExporter_DoesNotBridgeTrustedInteriorCleanPlacementRunsThroughDoorOrDetailEvidence()
+    {
+        var result = CreateCollinearGapPlacementRunResult(WallType.Interior);
+        result = result with
+        {
+            Walls = result.Walls
+                .Select(wall => wall with
+                {
+                    Evidence = wall.Evidence
+                        .Append("wall type refined interior: detected room evidence on both sides")
+                        .Append(wall.Id == "collinear-gap-wall-b"
+                            ? "door swing evidence near collinear interior gap"
+                            : "wall evidence: geometric room boundary support from reliable room-boundary alignment")
+                        .ToArray()
+                })
+                .ToArray()
+        };
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+
+        var spans = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .SelectMany(wall => wall.GetProperty("topologySpans").EnumerateArray())
+            .ToArray();
+
+        Assert.Equal(2, spans.Length);
+        Assert.DoesNotContain(
+            spans.SelectMany(span => span.GetProperty("evidence").EnumerateArray()),
+            evidence => evidence.GetString()?.Contains("clean placement interior run bridge", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
+    public void PlacementExporter_BridgesTrustedShortRoomBoundaryInteriorCleanPlacementRuns()
+    {
+        var result = CreateShortTrustedInteriorGapPlacementRunResult(pairScore: 0.94);
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+
+        var span = Assert.Single(document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .SelectMany(wall => wall.GetProperty("topologySpans").EnumerateArray()));
+
+        Assert.Equal(20, span.GetProperty("centerLine").GetProperty("start").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(114, span.GetProperty("centerLine").GetProperty("end").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(JsonValueKind.Null, span.GetProperty("sourceWallStartOffsetDrawingUnits").ValueKind);
+        Assert.Equal(JsonValueKind.Null, span.GetProperty("sourceWallProjectedLengthDrawingUnits").ValueKind);
+        Assert.Contains(
+            span.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("clean placement interior run bridge", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Contains(
+            span.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("multi-source bridge", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
+    public void PlacementExporter_DoesNotBridgeShortInteriorRunsWithWeakPairEvidence()
+    {
+        var result = CreateShortTrustedInteriorGapPlacementRunResult(pairScore: 0.72);
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+
+        var spans = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .SelectMany(wall => wall.GetProperty("topologySpans").EnumerateArray())
+            .ToArray();
+
+        Assert.Equal(2, spans.Length);
+        Assert.DoesNotContain(
+            spans.SelectMany(span => span.GetProperty("evidence").EnumerateArray()),
+            evidence => evidence.GetString()?.Contains("clean placement interior run bridge", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
+    public void PlacementExporter_DoesNotBridgeTrustedInteriorRunsLinkedToOpening()
+    {
+        var result = CreateShortTrustedInteriorGapPlacementRunResult(pairScore: 0.94);
+        var openingHost = result.Walls.Single(wall => wall.Id == "short-interior-gap-wall-b");
+        result = result with
+        {
+            Openings =
+            [
+                AnchoredOpening(
+                    "short-interior-gap-window",
+                    openingHost,
+                    OpeningType.Window,
+                    OpeningOperation.Fixed,
+                    0.15,
+                    0.85)
+            ]
+        };
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+
+        var spans = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .SelectMany(wall => wall.GetProperty("topologySpans").EnumerateArray())
+            .ToArray();
+
+        Assert.Equal(2, spans.Length);
+        Assert.DoesNotContain(
+            spans.SelectMany(span => span.GetProperty("evidence").EnumerateArray()),
+            evidence => evidence.GetString()?.Contains("clean placement interior run bridge", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
     public void PlacementExporter_BridgesSameExteriorSourceWallCleanIntervalsAcrossSmallGaps()
     {
         var result = CreateSameSourceWallGapPlacementRunResult(WallType.Exterior);
@@ -13314,6 +13479,150 @@ public sealed class ExportTests
                 assessments,
                 walls.Length,
             0)
+        };
+    }
+
+    private static PlanScanResult CreateShortTrustedInteriorGapPlacementRunResult(double pairScore)
+    {
+        var walls = new[]
+        {
+            SyntheticPairedInteriorRoomBoundaryWall("short-interior-gap-wall-a", 20, 100, 60, 100, pairScore),
+            SyntheticPairedInteriorRoomBoundaryWall("short-interior-gap-wall-b", 77, 100, 114, 100, pairScore)
+        };
+        var nodes = new[]
+        {
+            SyntheticNode("short-interior-gap-node-a1", 20, 100, WallNodeKind.Endpoint),
+            SyntheticNode("short-interior-gap-node-a2", 60, 100, WallNodeKind.Endpoint),
+            SyntheticNode("short-interior-gap-node-b1", 77, 100, WallNodeKind.Endpoint),
+            SyntheticNode("short-interior-gap-node-b2", 114, 100, WallNodeKind.Endpoint)
+        };
+        var edges = new[]
+        {
+            new WallEdge("short-interior-gap-edge-a", 1, "short-interior-gap-node-a1", "short-interior-gap-node-a2", walls[0].Id, Confidence.High),
+            new WallEdge("short-interior-gap-edge-b", 1, "short-interior-gap-node-b1", "short-interior-gap-node-b2", walls[1].Id, Confidence.High)
+        };
+        var component = new WallGraphComponent(
+            "short-interior-gap-component",
+            1,
+            WallGraphComponentKind.MainStructural,
+            new PlanRect(16, 96, 100, 8),
+            walls.Select(wall => wall.Id).ToArray(),
+            nodes.Select(node => node.Id).ToArray(),
+            edges.Select(edge => edge.Id).ToArray(),
+            walls.SelectMany(wall => wall.SourcePrimitiveIds).ToArray(),
+            walls.Sum(wall => wall.DrawingLength),
+            Confidence.High,
+            ["synthetic trusted short interior room-boundary bridge component"]);
+        var assessments = walls
+            .Select(wall => new WallEvidenceWallAssessment(
+                wall.Id,
+                wall.PageNumber,
+                wall.Bounds,
+                WallEvidenceCategory.StrongWallBody,
+                Confidence.High,
+                PlacementReady: true,
+                RequiresReview: false,
+                RejectedAsNoise: false,
+                wall.SourcePrimitiveIds,
+                wall.Evidence)
+            {
+                Decision = WallEvidenceDecision.Accept
+            })
+            .ToArray();
+        var now = DateTimeOffset.UtcNow;
+
+        return new PlanScanResult(
+            new PlanDocument(
+                "short-interior-gap-placement-run",
+                [
+                    new PlanPage(
+                        1,
+                        new PlanSize(180, 160),
+                        walls.Select(wall => WallLine(
+                                wall.Id,
+                                wall.CenterLine.Start,
+                                wall.CenterLine.End))
+                            .Cast<PlanPrimitive>()
+                            .ToArray())
+                ])
+            {
+                Metadata = new PlanMetadata
+                {
+                    SourceName = "short-interior-gap-placement-run.pdf",
+                    SourcePath = @"C:\plans\short-interior-gap-placement-run.pdf",
+                    Properties = new Dictionary<string, string>
+                    {
+                        ["format"] = "pdf",
+                        ["loader"] = "synthetic",
+                        ["sourceKind"] = PlanSourceKind.Pdf.ToString(),
+                        ["effectiveSourceKind"] = PlanSourceKind.Pdf.ToString()
+                    }
+                }
+            },
+            PlanLayerAnalysis.Empty,
+            PlanCalibration.Empty,
+            MeasurementConsistencyReport.Empty,
+            Array.Empty<TitleBlockAnalysis>(),
+            Array.Empty<DimensionAnnotation>(),
+            Array.Empty<PlanAnnotationBlock>(),
+            Array.Empty<GridAxis>(),
+            Array.Empty<GridBaySpacing>(),
+            Array.Empty<SheetRegion>(),
+            Array.Empty<SurfacePatternCandidate>(),
+            walls,
+            new WallGraph(nodes, edges, [component]),
+            Array.Empty<RoomRegion>(),
+            RoomAdjacencyGraph.Empty,
+            Array.Empty<OpeningCandidate>(),
+            Array.Empty<ObjectCandidate>(),
+            Array.Empty<ObjectCandidateGroup>(),
+            Array.Empty<ObjectAggregate>(),
+            new PipelineDiagnostics(
+                now,
+                now,
+                Array.Empty<PipelineStageReport>(),
+                Array.Empty<PlanDiagnostic>()))
+        {
+            WallEvidenceMap = new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                assessments,
+                walls.Length,
+                0)
+        };
+    }
+
+    private static WallSegment SyntheticPairedInteriorRoomBoundaryWall(
+        string id,
+        double x1,
+        double y1,
+        double x2,
+        double y2,
+        double pairScore)
+    {
+        var faceSeparation = 4.0;
+        return SyntheticWall(id, x1, y1, x2, y2) with
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Interior,
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(new PlanPoint(x1, y1 - faceSeparation / 2.0), new PlanPoint(x2, y2 - faceSeparation / 2.0)),
+                new PlanLineSegment(new PlanPoint(x1, y1 + faceSeparation / 2.0), new PlanPoint(x2, y2 + faceSeparation / 2.0)),
+                FaceSeparation: faceSeparation,
+                OverlapRatio: 1,
+                Score: pairScore,
+                FirstFaceFragmentCount: 1,
+                SecondFaceFragmentCount: 1,
+                FirstFaceSourcePrimitiveIds: [$"{id}:face-a"],
+                SecondFaceSourcePrimitiveIds: [$"{id}:face-b"]),
+            Evidence =
+            [
+                "parallel wall-face pair",
+                $"pair score {pairScore.ToString(CultureInfo.InvariantCulture)}",
+                "wall type interior: supported wall evidence inside exterior envelope",
+                "wall type refined interior: detected room evidence on both sides",
+                "wall evidence: geometric room boundary support from reliable room-boundary alignment"
+            ]
         };
     }
 
