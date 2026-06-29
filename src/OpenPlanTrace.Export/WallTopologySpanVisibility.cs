@@ -66,6 +66,11 @@ internal static class WallTopologySpanVisibility
     private const double MinTrustedInteriorUnsafeCleanProjectionOverlapRatio = 0.95;
     private const int MaxTrustedInteriorUnsafeCleanProjectionFaceFragments = 96;
     private const int MaxTrustedInteriorUnsafeCleanProjectionTotalFaceFragments = 180;
+    private const double MinTrustedFilledExteriorUnsafeCleanProjectionLengthDrawingUnits = 72.0;
+    private const double MinTrustedFilledExteriorUnsafeCleanProjectionPairScore = 0.80;
+    private const double MinTrustedFilledExteriorUnsafeCleanProjectionOverlapRatio = 0.95;
+    private const int MaxTrustedFilledExteriorUnsafeCleanProjectionFaceFragments = 72;
+    private const int MaxTrustedFilledExteriorUnsafeCleanProjectionTotalFaceFragments = 120;
     private const int MaxSourceBackedFallbackFaceFragmentCount = 48;
     private const int MaxLongSourceBackedFallbackFaceFragmentCount = 72;
     private const int MaxTopologySupportedSourceBackedFallbackFaceFragmentCount = 96;
@@ -950,7 +955,7 @@ internal static class WallTopologySpanVisibility
             || wall.WallType != WallType.Exterior
             || wall.DetectionKind != WallDetectionKind.ParallelLinePair
             || wall.PairEvidence is not { } pair
-            || pair.Score < 0.84
+            || pair.Score < MinTrustedFilledExteriorUnsafeCleanProjectionPairScore
             || pair.OverlapRatio < 0.88
             || pair.FaceSeparation < MinSourceBackedFallbackFaceSeparationDrawingUnits
             || pair.FaceSeparation > MaxSourceBackedFallbackFaceSeparationDrawingUnits
@@ -990,7 +995,7 @@ internal static class WallTopologySpanVisibility
             return false;
         }
 
-        return component.Kind == WallGraphComponentKind.MainStructural
+        var hasExteriorSupport = component.Kind == WallGraphComponentKind.MainStructural
             || ContainsAnyEvidence(
                 evidence,
                 "exterior shell",
@@ -999,6 +1004,27 @@ internal static class WallTopologySpanVisibility
                 "local outer boundary",
                 "near detected floorplan",
                 "wall type exterior");
+        if (!hasExteriorSupport)
+        {
+            return false;
+        }
+
+        if (pair.Score >= 0.84)
+        {
+            return true;
+        }
+
+        var hasFilledWallBody =
+            ContainsEvidence(evidence, "filled wall-solid primitive")
+            && ContainsEvidence(evidence, "filled closed vector wall body");
+        var maxFaceFragmentCount = Math.Max(pair.FirstFaceFragmentCount, pair.SecondFaceFragmentCount);
+        var totalFaceFragmentCount = pair.FirstFaceFragmentCount + pair.SecondFaceFragmentCount;
+        return wall.DrawingLength >= MinTrustedFilledExteriorUnsafeCleanProjectionLengthDrawingUnits
+            && assessment.Category == WallEvidenceCategory.StrongWallBody
+            && pair.OverlapRatio >= MinTrustedFilledExteriorUnsafeCleanProjectionOverlapRatio
+            && maxFaceFragmentCount <= MaxTrustedFilledExteriorUnsafeCleanProjectionFaceFragments
+            && totalFaceFragmentCount <= MaxTrustedFilledExteriorUnsafeCleanProjectionTotalFaceFragments
+            && hasFilledWallBody;
     }
 
     private static bool IsTrustedInteriorSourceBackedFallbackForUnsafeCleanProjection(
