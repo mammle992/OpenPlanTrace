@@ -4786,6 +4786,59 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementExporter_RecoversShortRecoveredRoomBoundaryWhenGraphSpanIsMissing()
+    {
+        var result = CreateShortRecoveredRoomBoundaryFallbackResult();
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var wall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == "short-recovered-room-boundary");
+
+        var topologySpan = Assert.Single(wall.GetProperty("topologySpans").EnumerateArray());
+
+        Assert.Contains("source-backed-fallback", topologySpan.GetProperty("id").GetString(), StringComparison.Ordinal);
+        Assert.Equal(JsonValueKind.Null, wall.GetProperty("placementOmission").ValueKind);
+        Assert.True(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.Contains(
+            topologySpan.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("short recovered wall has two-ended structural support", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Equal(18, topologySpan.GetProperty("drawingLength").GetDouble(), precision: 3);
+
+        var summary = document.RootElement.GetProperty("summary");
+        Assert.Equal(1, summary.GetProperty("placementReadyWallCount").GetInt32());
+        Assert.Equal(0, summary.GetProperty("placementOmittedWallCount").GetInt32());
+        Assert.Equal(1, summary.GetProperty("sourceBackedFallbackWallCount").GetInt32());
+        Assert.Equal(1, summary.GetProperty("sourceBackedFallbackTopologySpanCount").GetInt32());
+    }
+
+    [Fact]
+    public void PlacementExporter_DoesNotRecoverShortRecoveredRoomBoundaryWhenDimensionLike()
+    {
+        var result = CreateShortRecoveredRoomBoundaryFallbackResult(
+            ["layer evidence: contains dimension-like text"]);
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var wall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == "short-recovered-room-boundary");
+
+        Assert.Empty(wall.GetProperty("topologySpans").EnumerateArray());
+        Assert.Equal(
+            "no_clean_topology_spans",
+            wall.GetProperty("placementOmission").GetProperty("code").GetString());
+        Assert.False(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+    }
+
+    [Fact]
     public void PlacementExporter_RecoversInferredExteriorShellWhenSourceLineSupportIsStrong()
     {
         var result = CreateInferredExteriorShellFallbackResult();
@@ -13259,6 +13312,83 @@ public sealed class ExportTests
                 assessments,
                 walls.Count,
                 0)
+        };
+    }
+
+    private static PlanScanResult CreateShortRecoveredRoomBoundaryFallbackResult(
+        IReadOnlyList<string>? extraEvidence = null)
+    {
+        var evidence = new[]
+            {
+                "recovered by wall evidence map as short supported wall segment",
+                "structural endpoint support count 2",
+                "short recovery used two-ended structural support",
+                "source layer category Unknown",
+                "recovery score 0.78",
+                "wall evidence: short recovered unlayered/unknown wall segment requires review before exact placement",
+                "wall evidence: room-confirmed wall body promoted to placement-ready after room adjacency refinement",
+                "wall type refined interior: detected room evidence on both sides",
+                "wall evidence: room references 0, shared adjacency False, two-sided room evidence True, topology-supported endpoints 1"
+            }
+            .Concat(extraEvidence ?? Array.Empty<string>())
+            .ToArray();
+        var result = CreateSourceBackedFallbackWallResult(
+            wallLength: 18,
+            wallType: WallType.Interior,
+            category: WallEvidenceCategory.RecoveredWallBody,
+            evidence: evidence);
+        var sourceWall = result.Walls.Single(item => item.Id == "source-backed-fallback-wall");
+        var recoveredWall = sourceWall with
+        {
+            Id = "short-recovered-room-boundary",
+            DetectionKind = WallDetectionKind.SingleLine,
+            PairEvidence = null,
+            Confidence = new Confidence(0.78),
+            SourcePrimitiveIds = ["short-recovered-room-boundary-source"],
+            Evidence = evidence
+        };
+        var assessment = new WallEvidenceWallAssessment(
+            recoveredWall.Id,
+            recoveredWall.PageNumber,
+            recoveredWall.Bounds,
+            WallEvidenceCategory.RecoveredWallBody,
+            new Confidence(0.78),
+            PlacementReady: true,
+            RequiresReview: false,
+            RejectedAsNoise: false,
+            recoveredWall.SourcePrimitiveIds,
+            evidence)
+        {
+            Decision = WallEvidenceDecision.Accept,
+            ScoreBreakdown = new WallEvidenceScoreBreakdown(
+                PositiveScore: 0.65,
+                NegativeScore: 0,
+                DecisionScore: 0.65,
+                PairSupportScore: 0.35,
+                LayerSupportScore: 0,
+                StructuralSupportScore: 0.10,
+                RecoverySupportScore: 0.20,
+                NoisePenalty: 0,
+                FragmentReviewPenalty: 0,
+                PositiveEvidence:
+                [
+                    "recovered parallel-face wall band",
+                    "one endpoint supported by structural context",
+                    "missing-wall recovery evidence"
+                ],
+                NegativeEvidence: ["not placement-ready without review"])
+        };
+
+        return result with
+        {
+            Walls = [recoveredWall],
+            WallGraph = WallGraph.Empty,
+            WallEvidenceMap = new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                [assessment],
+                SourceCandidateWallCount: 1,
+                RecoveredCandidateWallCount: 1)
         };
     }
 
