@@ -92,6 +92,12 @@ internal static class WallTopologySpanVisibility
     private const int MaxTrustedLongSecondaryFragmentFallbackFragmentCount = 12;
     private const double MaxTrustedLongSecondaryFragmentFallbackGapRatio = 0.05;
     private const double MaxTrustedLongSecondaryFragmentFallbackTotalHealedGapDrawingUnits = 8.0;
+    private const double MinTrustedFilledSecondaryPairFallbackLengthDrawingUnits = 54.0;
+    private const double MinTrustedFilledSecondaryPairFallbackConfidence = 0.86;
+    private const double MinTrustedFilledSecondaryPairFallbackPairScore = 0.92;
+    private const double MinTrustedFilledSecondaryPairFallbackOverlapRatio = 0.98;
+    private const int MaxTrustedFilledSecondaryPairFallbackFaceFragmentCount = 8;
+    private const int MaxTrustedFilledSecondaryPairFallbackTotalFaceFragmentCount = 12;
     private const double MinRoomSupportedShortPairFallbackWallLengthDrawingUnits = 24.0;
     private const double MaxRoomSupportedShortPairFallbackWallLengthDrawingUnits = 64.0;
     private const double MinRoomSupportedShortPairFallbackPairScore = 0.88;
@@ -662,6 +668,8 @@ internal static class WallTopologySpanVisibility
             IsTrustedRoomBoundaryShortExteriorSourceBackedFallbackWallBody(wall, component, assessment);
         var hasTrustedShortRecoveredRoomBoundary =
             IsTrustedShortRecoveredRoomBoundaryFallback(wall, component, assessment);
+        var hasTrustedFilledSecondaryStructuralPair =
+            IsTrustedFilledSecondaryStructuralPairFallback(wall, component, assessment);
 
         if ((wall.CenterLine.Length < MinSourceBackedFallbackWallLengthDrawingUnits
                 && !hasTrustedRoomSupportedShortPairPromotion
@@ -671,7 +679,8 @@ internal static class WallTopologySpanVisibility
                 && !hasTrustedInferredExteriorShellFallback
                 && !hasTrustedShortExteriorWallBody
                 && !hasTrustedRoomBoundaryShortExteriorWallBody
-                && !hasTrustedShortRecoveredRoomBoundary)
+                && !hasTrustedShortRecoveredRoomBoundary
+                && !hasTrustedFilledSecondaryStructuralPair)
             || (wall.WallType == WallType.Unknown && !hasTrustedLongIsolatedExteriorShellWallBody)
             || (wall.FragmentEvidence?.RequiresGeometryReview == true
                 && !trustedUnsafeExteriorCleanProjectionFallback
@@ -754,6 +763,7 @@ internal static class WallTopologySpanVisibility
                 && !hasTrustedOneEndpointNoisyMainStructuralInterior
                 && !hasTrustedLongOneEndpointFragmentMergedInterior
                 && !hasTrustedLongSecondaryStructuralFragment
+                && !hasTrustedFilledSecondaryStructuralPair
                 && !hasTrustedMainStructuralExteriorWallBody
                 && !hasTrustedLongIsolatedExteriorShellWallBody
                 && !hasTrustedGeometricRoomBoundaryPairPromotion
@@ -771,6 +781,7 @@ internal static class WallTopologySpanVisibility
                 && !hasTrustedInferredSharedRoomBoundary
                 && !hasTrustedLongOneEndpointFragmentMergedInterior
                 && !hasTrustedLongSecondaryStructuralFragment
+                && !hasTrustedFilledSecondaryStructuralPair
                 && !hasTrustedMainStructuralExteriorWallBody
                 && !hasTrustedLongIsolatedExteriorShellWallBody
                 && !hasTrustedGeometricRoomBoundaryPairPromotion
@@ -788,6 +799,7 @@ internal static class WallTopologySpanVisibility
                 && !hasTrustedInferredSharedRoomBoundary
                 && !hasTrustedLongOneEndpointFragmentMergedInterior
                 && !hasTrustedLongSecondaryStructuralFragment
+                && !hasTrustedFilledSecondaryStructuralPair
                 && !hasTrustedMainStructuralExteriorWallBody
                 && !hasTrustedLongIsolatedExteriorShellWallBody
                 && !hasTrustedGeometricRoomBoundaryPairPromotion
@@ -813,6 +825,7 @@ internal static class WallTopologySpanVisibility
                 && !hasTrustedTwoSidedFragmentMergedRoomBoundary
                 && !hasTrustedLongOneEndpointFragmentMergedInterior
                 && !hasTrustedLongSecondaryStructuralFragment
+                && !hasTrustedFilledSecondaryStructuralPair
                 && !hasTrustedMainStructuralExteriorWallBody
                 && !hasTrustedLongIsolatedExteriorShellWallBody
                 && !hasTrustedGeometricRoomBoundaryPairPromotion
@@ -843,6 +856,7 @@ internal static class WallTopologySpanVisibility
             && !hasTrustedLongIsolatedExteriorShellWallBody
             && !trustedUnsafeInteriorCleanProjectionFallback
             && !hasTrustedLongSecondaryStructuralFragment
+            && !hasTrustedFilledSecondaryStructuralPair
             && !trustedExteriorShellRepairSupportedWall
             && !hasTrustedSourceBackedExteriorShellClosure
             && !hasTrustedInferredExteriorShellFallback
@@ -867,6 +881,7 @@ internal static class WallTopologySpanVisibility
             || hasTrustedOneEndpointNoisyMainStructuralInterior
             || hasTrustedLongOneEndpointFragmentMergedInterior
             || hasTrustedLongSecondaryStructuralFragment
+            || hasTrustedFilledSecondaryStructuralPair
             || hasTrustedMainStructuralExteriorWallBody
             || hasTrustedLongIsolatedExteriorShellWallBody
             || hasTrustedGeometricRoomBoundaryPairPromotion
@@ -1886,6 +1901,78 @@ internal static class WallTopologySpanVisibility
             "repeated short detail");
     }
 
+    private static bool IsTrustedFilledSecondaryStructuralPairFallback(
+        WallSegment wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? assessment)
+    {
+        if (assessment is null
+            || component?.Kind != WallGraphComponentKind.SecondaryStructural
+            || component.ExcludedFromStructuralTopology
+            || wall.WallType != WallType.Interior
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.DrawingLength < MinTrustedFilledSecondaryPairFallbackLengthDrawingUnits
+            || wall.Confidence.Value < MinTrustedFilledSecondaryPairFallbackConfidence
+            || assessment.Confidence.Value < MinTrustedFilledSecondaryPairFallbackConfidence
+            || assessment.Category != WallEvidenceCategory.StrongWallBody
+            || !assessment.PlacementReady
+            || assessment.RequiresReview
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject
+            || wall.PairEvidence is not { } pair
+            || pair.Score < MinTrustedFilledSecondaryPairFallbackPairScore
+            || pair.OverlapRatio < MinTrustedFilledSecondaryPairFallbackOverlapRatio
+            || pair.FaceSeparation < MinSourceBackedFallbackFaceSeparationDrawingUnits
+            || pair.FaceSeparation > MaxSourceBackedFallbackFaceSeparationDrawingUnits
+            || Math.Max(pair.FirstFaceFragmentCount, pair.SecondFaceFragmentCount) > MaxTrustedFilledSecondaryPairFallbackFaceFragmentCount
+            || pair.FirstFaceFragmentCount + pair.SecondFaceFragmentCount > MaxTrustedFilledSecondaryPairFallbackTotalFaceFragmentCount)
+        {
+            return false;
+        }
+
+        var evidence = wall.Evidence
+            .Concat(assessment.Evidence)
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(assessment.ScoreBreakdown.NegativeEvidence)
+            .Concat(component.Evidence)
+            .ToArray();
+
+        if (!ContainsEvidence(evidence, "filled wall-solid primitive")
+            || !ContainsEvidence(evidence, "filled closed vector wall body")
+            || !ContainsEvidence(evidence, "parallel wall-face pair")
+            || !ContainsEvidence(evidence, "supported wall evidence inside exterior envelope"))
+        {
+            return false;
+        }
+
+        return !ContainsAnyEvidence(
+            evidence,
+            "outdoor covered-area boundary",
+            "unpaired outdoor covered-area boundary",
+            "covered-area boundary",
+            "covered entry",
+            "covered-entry",
+            "overbygd",
+            "terrace",
+            "canopy",
+            "railing",
+            "stair",
+            "surface pattern",
+            "surface/detail",
+            "object/fixture",
+            "fixture detail",
+            "door leaf",
+            "door swing",
+            "opening-linked wall fragment",
+            "glazing",
+            "trim/detail",
+            "detail linework",
+            "repeated short detail",
+            "dimension-like",
+            "layer (unlayered) classified Dimension",
+            "demoted from placement-ready");
+    }
+
     private static bool HasTrustedSourceBackedFallbackPairEvidence(
         WallSegment wall,
         WallGraphComponent? component,
@@ -1945,6 +2032,20 @@ internal static class WallTopologySpanVisibility
         }
 
         var evidence = wall.Evidence.Concat(assessment.Evidence).ToArray();
+        if (component?.Kind == WallGraphComponentKind.SecondaryStructural
+            && wall.WallType == WallType.Interior
+            && ContainsAnyEvidence(
+                evidence,
+                "dimension-like",
+                "layer (unlayered) classified Dimension",
+                "dense local detail",
+                "stair-like linework",
+                "demoted from placement-ready",
+                "unsupported severe fragmented-face evidence"))
+        {
+            return false;
+        }
+
         return ContainsEvidence(evidence, "parallel wall-face pair")
             || ContainsEvidence(evidence, "strong double-edge wall body")
             || ContainsEvidence(evidence, "pair score");
@@ -2002,6 +2103,11 @@ internal static class WallTopologySpanVisibility
                 assessment);
         var trustedLongSecondaryStructuralFragment =
             IsTrustedLongSecondaryStructuralFragmentFallback(
+                wall,
+                component,
+                assessment);
+        var trustedFilledSecondaryStructuralPair =
+            IsTrustedFilledSecondaryStructuralPairFallback(
                 wall,
                 component,
                 assessment);
@@ -2083,6 +2189,10 @@ internal static class WallTopologySpanVisibility
         else if (trustedRoomBoundaryShortExteriorWallBody)
         {
             evidence.Add("source-backed fallback accepted because short exterior wall-solid body has trusted geometric room-boundary support");
+        }
+        else if (trustedFilledSecondaryStructuralPair)
+        {
+            evidence.Add("source-backed fallback accepted because filled secondary structural wall body is strong, placement-ready, and inside the exterior envelope");
         }
         else if (trustedInferredSharedRoomBoundary)
         {
@@ -3132,6 +3242,8 @@ internal static class WallTopologySpanVisibility
             || second.SourceWall?.WallType != WallType.Exterior
             || IsSourceBackedFallbackSpan(first)
             || IsSourceBackedFallbackSpan(second)
+            || HasCollinearExteriorBridgeBlockedEvidence(first)
+            || HasCollinearExteriorBridgeBlockedEvidence(second)
             || ResolveAxisOrientation(first.CenterLine) != ResolveAxisOrientation(second.CenterLine)
             || Math.Abs(AxisCoordinate(first) - AxisCoordinate(second))
                 > MaxCollinearExteriorRunBridgeAxisDistanceDrawingUnits
@@ -3151,6 +3263,37 @@ internal static class WallTopologySpanVisibility
             MaxCleanRunJoinGapDrawingUnits,
             MaxCollinearExteriorRunBridgeGapDrawingUnits);
         return gap <= adaptiveGapLimit;
+    }
+
+    private static bool HasCollinearExteriorBridgeBlockedEvidence(WallGraphTopologySpan span)
+    {
+        var evidence = (span.SourceWall?.Evidence ?? Array.Empty<string>())
+            .Concat(span.Evidence)
+            .ToArray();
+
+        return ContainsAnyEvidence(
+            evidence,
+            "covered-area",
+            "covered entry",
+            "covered-entry",
+            "dimension",
+            "door leaf",
+            "door swing",
+            "fixture detail",
+            "glazing",
+            "object/fixture",
+            "opening detail",
+            "overbygd",
+            "railing",
+            "repeated short detail",
+            "stair",
+            "surface pattern",
+            "surface/detail",
+            "terrace detail",
+            "trim/detail",
+            "wall-like linework near anchored opening",
+            "witness/extension",
+            "non-wall");
     }
 
     private static WallGraphTopologySpan CreateBridgedCollinearExteriorPlacementSpan(
