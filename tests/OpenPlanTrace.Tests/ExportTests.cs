@@ -6406,6 +6406,31 @@ public sealed class ExportTests
             summary.GetProperty("wallPlacementOmissionCounts")
                 .GetProperty("secondary_without_room_boundary_support")
                 .GetInt32());
+
+        var secondaryIssues = document.RootElement.GetProperty("issues").EnumerateArray()
+            .Where(item => item.GetProperty("code").GetString()
+                == "placement.review.secondary_structural_wall_without_room_boundary")
+            .ToArray();
+        Assert.Equal(2, secondaryIssues.Length);
+        var issue = secondaryIssues.Single(item => item.GetProperty("itemId").GetString() == "unsupported-secondary-a");
+        Assert.Equal("Warning", issue.GetProperty("severity").GetString());
+        Assert.Equal(
+            "secondary_without_room_boundary_support",
+            issue.GetProperty("properties").GetProperty("placementOmissionCode").GetString());
+        Assert.Equal(
+            "SecondaryStructuralReview",
+            issue.GetProperty("properties").GetProperty("placementOmissionCategory").GetString());
+        Assert.Equal(
+            "likely_missing_wall_candidate",
+            issue.GetProperty("properties").GetProperty("reviewPriority").GetString());
+        Assert.Equal("True", issue.GetProperty("properties").GetProperty("likelyMissingWallCandidate").GetString());
+        Assert.Contains(
+            issue.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("possible missing wall", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.DoesNotContain(
+            document.RootElement.GetProperty("issues").EnumerateArray(),
+            item => item.GetProperty("code").GetString() == "placement.review.wall_evidence_requires_review"
+                && item.GetProperty("itemId").GetString() == "unsupported-secondary-a");
     }
 
     [Fact]

@@ -916,6 +916,8 @@ public sealed record PlacementImportReadinessExport(
                 ? "placement.wall_fragment.one_endpoint_fragments_require_review"
             : string.Equals(code, "placement.review.fragment_geometry", StringComparison.Ordinal)
                 ? "placement.wall_fragment.geometry_requires_review"
+            : string.Equals(code, "placement.review.secondary_structural_wall_without_room_boundary", StringComparison.Ordinal)
+                ? "placement.wall_secondary.room_boundary_support_requires_review"
             : code;
 
     private static bool ShouldKeepPlacementIssueInformationalForReadiness(string code) =>
@@ -8449,7 +8451,8 @@ public sealed record PlacementIssueExport(
         "opening_detail_fragment_review_required",
         "one_endpoint_fragment_review_required",
         "fragmented_short_parallel_pair_review_required",
-        "fragment_geometry_review"
+        "fragment_geometry_review",
+        "secondary_without_room_boundary_support"
     ];
 
     public static IEnumerable<PlacementIssueExport> From(
@@ -8909,6 +8912,64 @@ public sealed record PlacementIssueExport(
                 properties);
         }
 
+        foreach (var wall in (placementWallsById?.Values ?? Array.Empty<PlacementWallExport>())
+                     .Where(wall => string.Equals(
+                         wall.PlacementOmission?.Code,
+                         "secondary_without_room_boundary_support",
+                         StringComparison.Ordinal))
+                     .OrderByDescending(IsLikelyMissingSecondaryStructuralWallCandidate)
+                     .ThenByDescending(wall => wall.DrawingLength)
+                     .ThenBy(wall => wall.PageNumber)
+                     .ThenBy(wall => wall.Id, StringComparer.Ordinal))
+        {
+            var likelyMissingWallCandidate = IsLikelyMissingSecondaryStructuralWallCandidate(wall);
+            var properties = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["detector"] = "placementWallReliability",
+                ["wallId"] = wall.Id,
+                ["wallType"] = wall.WallType,
+                ["detectionKind"] = wall.DetectionKind,
+                ["wallComponentId"] = wall.WallComponentId ?? string.Empty,
+                ["wallComponentKind"] = wall.WallComponentKind ?? string.Empty,
+                ["placementOmissionCode"] = wall.PlacementOmission?.Code ?? string.Empty,
+                ["placementOmissionCategory"] = wall.PlacementOmission?.Category ?? string.Empty,
+                ["drawingLength"] = wall.DrawingLength.ToString("0.###", CultureInfo.InvariantCulture),
+                ["lengthMeters"] = wall.LengthMeters?.ToString("0.###", CultureInfo.InvariantCulture) ?? string.Empty,
+                ["confidence"] = wall.Confidence.ToString("0.###", CultureInfo.InvariantCulture),
+                ["readyForCoordinatePlacement"] = wall.Reliability.ReadyForCoordinatePlacement.ToString(CultureInfo.InvariantCulture),
+                ["requiresReview"] = wall.Reliability.RequiresReview.ToString(CultureInfo.InvariantCulture),
+                ["likelyMissingWallCandidate"] = likelyMissingWallCandidate.ToString(CultureInfo.InvariantCulture),
+                ["reviewPriority"] = likelyMissingWallCandidate
+                    ? "likely_missing_wall_candidate"
+                    : "secondary_structural_review"
+            };
+
+            yield return new PlacementIssueExport(
+                "placement.review.secondary_structural_wall_without_room_boundary",
+                DiagnosticSeverity.Warning.ToString(),
+                likelyMissingWallCandidate
+                    ? "Secondary structural wall candidate may be a missing real wall, but lacks detected room-boundary support."
+                    : "Secondary structural wall candidate lacks detected room-boundary support before coordinate placement.",
+                wall.PageNumber,
+                new[] { wall.PageNumber },
+                wall.Id,
+                wall.Bounds,
+                wall.BoundsMillimeters,
+                ClampRatio(wall.Confidence),
+                "Review this candidate against the source plan; promote or correct it only when it is a real room, exterior, or structural boundary.",
+                wall.SourcePrimitiveIds,
+                wall.SourceLayers,
+                BuildIssueEvidence(
+                    (wall.PlacementOmission?.Evidence ?? Array.Empty<string>())
+                        .Concat(wall.Reliability.Reasons)
+                        .Concat(wall.Evidence)
+                        .Concat(likelyMissingWallCandidate
+                            ? new[] { "Candidate is long/high-confidence enough to review as a possible missing wall." }
+                            : Array.Empty<string>())
+                        .DefaultIfEmpty("Secondary structural wall candidate is not coordinate-ready.")),
+                properties);
+        }
+
         foreach (var entry in ScanReviewQueueSummary.QueuedWallEvidenceReviews(result.WallEvidenceMap)
                      .Where(assessment => !wallIdsWithDedicatedReviewIssues.Contains(assessment.WallId))
                      .Select((assessment, index) => new { Assessment = assessment, Index = index }))
@@ -9317,6 +9378,12 @@ public sealed record PlacementIssueExport(
         && assessment.Evidence.Any(evidence =>
             evidence.Contains("strong double-edge wall body", StringComparison.OrdinalIgnoreCase)
             || evidence.Contains("parallel wall-face pair", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsLikelyMissingSecondaryStructuralWallCandidate(PlacementWallExport wall) =>
+        wall.DrawingLength >= 72
+        && wall.Confidence >= 0.75
+        && string.Equals(wall.WallComponentKind, WallGraphComponentKind.SecondaryStructural.ToString(), StringComparison.Ordinal)
+        && !wall.ExcludedFromStructuralTopology;
 
     private static string RecommendedActionForQualityIssue(string code) =>
         code switch
