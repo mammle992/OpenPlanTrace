@@ -1194,6 +1194,29 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementExporter_DoesNotLetSyntheticExteriorShellHideInteriorRoomBoundary()
+    {
+        var result = RenameSyntheticWall(
+            WithContainedWallAsRecoveredGeometricRoomBoundaryPair(
+                CreateContainedDuplicatePlacementRunResult(wallType: WallType.Exterior)),
+            "duplicate-long-wall",
+            "page:1:wall-exterior-shell-inferred:001");
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var interiorWall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(wall => wall.GetProperty("id").GetString() == "duplicate-contained-wall");
+        var topologySpan = Assert.Single(interiorWall.GetProperty("topologySpans").EnumerateArray());
+
+        Assert.Contains("duplicate-contained-wall", topologySpan.GetProperty("id").GetString(), StringComparison.Ordinal);
+        Assert.Equal(JsonValueKind.Null, interiorWall.GetProperty("placementOmission").ValueKind);
+        Assert.True(interiorWall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+    }
+
+    [Fact]
     public void ScanJsonExporter_LabelsContainedDuplicateWallAsRepresentedByCleanTopology()
     {
         var result = CreateContainedDuplicatePlacementRunResult();

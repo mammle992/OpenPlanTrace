@@ -67,6 +67,7 @@ internal static class WallCleanTopologyRepresentationMatcher
             .Where(span => span.PageNumber == wall.PageNumber)
             .Where(span => !string.Equals(span.WallId, wall.Id, StringComparison.Ordinal))
             .Where(span => ResolveOrientation(span.CenterLine) == ResolveOrientation(wall.CenterLine))
+            .Where(span => !IsSyntheticExteriorShellMaskingTrustedInteriorWall(wall, component, evidenceAssessment, span))
             .Select(span => new WallCleanTopologyRepresentation(
                 span,
                 OverlapRatio(wall, span),
@@ -85,6 +86,53 @@ internal static class WallCleanTopologyRepresentationMatcher
             .Take(maxResults)
             .ToArray();
     }
+
+    private static bool IsSyntheticExteriorShellMaskingTrustedInteriorWall(
+        WallSegment wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? evidenceAssessment,
+        WallGraphTopologySpan span)
+    {
+        if (wall.WallType != WallType.Interior
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.PairEvidence is not { Score: >= 0.80, OverlapRatio: >= 0.90 }
+            || span.SourceWall?.WallType != WallType.Exterior
+            || !IsSyntheticExteriorShellSpan(span)
+            || component?.ExcludedFromStructuralTopology == true
+            || component?.Kind == WallGraphComponentKind.ObjectLikeIsland
+            || evidenceAssessment is null
+            || !evidenceAssessment.PlacementReady
+            || evidenceAssessment.RequiresReview
+            || evidenceAssessment.RejectedAsNoise
+            || evidenceAssessment.Decision == WallEvidenceDecision.Reject)
+        {
+            return false;
+        }
+
+        return !ContainsAnyEvidence(
+            wall,
+            component,
+            evidenceAssessment,
+            "covered-area",
+            "covered entry",
+            "covered-entry",
+            "door leaf",
+            "door swing",
+            "fixture detail",
+            "object/fixture",
+            "overbygd",
+            "railing",
+            "repeated short detail",
+            "stair",
+            "surface pattern",
+            "terrace");
+    }
+
+    private static bool IsSyntheticExteriorShellSpan(WallGraphTopologySpan span) =>
+        span.WallId.Contains("wall-exterior-shell-inferred:", StringComparison.Ordinal)
+        || span.WallId.Contains("wall-exterior-shell-source-backed:", StringComparison.Ordinal)
+        || span.SourceWall?.Id.Contains("wall-exterior-shell-inferred:", StringComparison.Ordinal) == true
+        || span.SourceWall?.Id.Contains("wall-exterior-shell-source-backed:", StringComparison.Ordinal) == true;
 
     private static double OverlapRatioThreshold(
         WallSegment wall,

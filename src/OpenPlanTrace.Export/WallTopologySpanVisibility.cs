@@ -2881,6 +2881,11 @@ internal static class WallTopologySpanVisibility
             if (IsContainedDuplicateOverlapAcceptable(candidate, kept, overlapRatio, axisDistance)
                 || isTinyContainedSameType)
             {
+                if (IsSyntheticExteriorShellMaskingTrustedInteriorPlacementSpan(candidate, kept))
+                {
+                    continue;
+                }
+
                 if (isTinyContainedSameType)
                 {
                     return true;
@@ -2910,6 +2915,46 @@ internal static class WallTopologySpanVisibility
 
         return false;
     }
+
+    private static bool IsSyntheticExteriorShellMaskingTrustedInteriorPlacementSpan(
+        WallGraphTopologySpan candidate,
+        WallGraphTopologySpan kept)
+    {
+        if (candidate.SourceWall?.WallType != WallType.Interior
+            || candidate.SourceWall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || candidate.SourceWall.PairEvidence is not { Score: >= 0.80, OverlapRatio: >= 0.90 }
+            || kept.SourceWall?.WallType != WallType.Exterior
+            || candidate.DrawingLength < MinRoomSupportedShortPairFallbackWallLengthDrawingUnits
+            || !IsSyntheticExteriorShellPlacementSpan(kept))
+        {
+            return false;
+        }
+
+        var evidence = (candidate.SourceWall?.Evidence ?? Array.Empty<string>())
+            .Concat(candidate.Evidence)
+            .ToArray();
+        return !ContainsAnyEvidence(
+            evidence,
+            "covered-area",
+            "covered entry",
+            "covered-entry",
+            "door leaf",
+            "door swing",
+            "fixture detail",
+            "object/fixture",
+            "overbygd",
+            "railing",
+            "repeated short detail",
+            "stair",
+            "surface pattern",
+            "terrace");
+    }
+
+    private static bool IsSyntheticExteriorShellPlacementSpan(WallGraphTopologySpan span) =>
+        span.WallId.Contains("wall-exterior-shell-inferred:", StringComparison.Ordinal)
+        || span.WallId.Contains("wall-exterior-shell-source-backed:", StringComparison.Ordinal)
+        || span.SourceWall?.Id.Contains("wall-exterior-shell-inferred:", StringComparison.Ordinal) == true
+        || span.SourceWall?.Id.Contains("wall-exterior-shell-source-backed:", StringComparison.Ordinal) == true;
 
     private static bool CouldBeTinyContainedSameTypePlacementSpan(
         WallGraphTopologySpan candidate,
