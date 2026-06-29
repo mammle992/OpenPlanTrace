@@ -1122,6 +1122,51 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementExporter_SuppressesTinyContainedInteriorSpanWithWiderAxisDrift()
+    {
+        var result = CreateContainedDuplicatePlacementRunResult(
+            new PlanLineSegment(new PlanPoint(145, 106), new PlanPoint(151, 106)),
+            containedWallDetectionKind: WallDetectionKind.ParallelLinePair);
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var wallGraph = document.RootElement.GetProperty("wallGraph");
+        var edge = Assert.Single(wallGraph.GetProperty("edges").EnumerateArray());
+        var duplicateWall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(wall => wall.GetProperty("id").GetString() == "duplicate-contained-wall");
+
+        Assert.Equal("duplicate-long-wall:clean-run:1", edge.GetProperty("id").GetString());
+        Assert.Equal(2, wallGraph.GetProperty("nodes").GetArrayLength());
+        Assert.Empty(duplicateWall.GetProperty("topologySpans").EnumerateArray());
+        Assert.Equal(
+            "duplicate_clean_topology_span",
+            duplicateWall.GetProperty("placementOmission").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public void PlacementExporter_KeepsNonTinyContainedInteriorSpanWithWiderAxisDrift()
+    {
+        var result = CreateContainedDuplicatePlacementRunResult(
+            new PlanLineSegment(new PlanPoint(145, 106), new PlanPoint(163, 106)),
+            containedWallDetectionKind: WallDetectionKind.ParallelLinePair);
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var wallGraph = document.RootElement.GetProperty("wallGraph");
+        var duplicateWall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(wall => wall.GetProperty("id").GetString() == "duplicate-contained-wall");
+
+        Assert.Equal(2, wallGraph.GetProperty("edges").GetArrayLength());
+        Assert.NotEmpty(duplicateWall.GetProperty("topologySpans").EnumerateArray());
+    }
+
+    [Fact]
     public void PlacementExporter_RepresentsMixedTypeNearContainedWallByLongerCleanTopology()
     {
         var result = CreateContainedDuplicatePlacementRunResult(

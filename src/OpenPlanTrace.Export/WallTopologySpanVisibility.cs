@@ -30,6 +30,10 @@ internal static class WallTopologySpanVisibility
     private const double MaxContainedSourceBackedFallbackAxisDistanceDrawingUnits = 6.0;
     private const double MaxContainedSourceBackedFallbackLengthRatio = 0.55;
     private const double MinContainedSourceBackedFallbackOverlapRatio = 0.985;
+    private const double MaxTinyContainedSameTypeAxisDistanceDrawingUnits = 8.0;
+    private const double MaxTinyContainedSameTypeLengthDrawingUnits = 8.0;
+    private const double MaxTinyContainedSameTypeLengthRatio = 0.20;
+    private const double MinTinyContainedSameTypeOverlapRatio = 0.985;
     private const double MinExteriorFacePairAxisDistanceDrawingUnits = 2.0;
     private const double MaxExteriorFacePairAxisDistanceDrawingUnits = 18.0;
     private const double MinExteriorFacePairOverlapRatio = 0.88;
@@ -2763,8 +2767,9 @@ internal static class WallTopologySpanVisibility
         {
             var maxAxisDistance = ContainedDuplicateAxisDistance(candidate, kept);
             var axisDistance = Math.Abs(AxisCoordinate(candidate) - AxisCoordinate(kept));
+            var couldBeTinyContainedSameType = CouldBeTinyContainedSameTypePlacementSpan(candidate, kept, axisDistance);
             if (ResolveAxisOrientation(kept.CenterLine) != candidateOrientation
-                || axisDistance > maxAxisDistance)
+                || (axisDistance > maxAxisDistance && !couldBeTinyContainedSameType))
             {
                 continue;
             }
@@ -2776,8 +2781,15 @@ internal static class WallTopologySpanVisibility
             }
 
             var overlapRatio = overlap / Math.Max(candidate.DrawingLength, 0.001);
-            if (IsContainedDuplicateOverlapAcceptable(candidate, kept, overlapRatio, axisDistance))
+            var isTinyContainedSameType = IsTinyContainedSameTypePlacementSpan(candidate, kept, overlapRatio, axisDistance);
+            if (IsContainedDuplicateOverlapAcceptable(candidate, kept, overlapRatio, axisDistance)
+                || isTinyContainedSameType)
             {
+                if (isTinyContainedSameType)
+                {
+                    return true;
+                }
+
                 if (candidate.SourceWall?.WallType == WallType.Exterior
                     && kept.SourceWall?.WallType == WallType.Exterior
                     && !candidateIsSourceBackedFallback
@@ -2802,6 +2814,30 @@ internal static class WallTopologySpanVisibility
 
         return false;
     }
+
+    private static bool CouldBeTinyContainedSameTypePlacementSpan(
+        WallGraphTopologySpan candidate,
+        WallGraphTopologySpan kept,
+        double axisDistance)
+    {
+        var candidateWallType = candidate.SourceWall?.WallType ?? WallType.Unknown;
+        var keptWallType = kept.SourceWall?.WallType ?? WallType.Unknown;
+        return candidateWallType != WallType.Unknown
+            && candidateWallType == keptWallType
+            && candidate.DrawingLength <= MaxTinyContainedSameTypeLengthDrawingUnits
+            && candidate.DrawingLength <= kept.DrawingLength * MaxTinyContainedSameTypeLengthRatio
+            && axisDistance <= MaxTinyContainedSameTypeAxisDistanceDrawingUnits;
+    }
+
+    private static bool IsTinyContainedSameTypePlacementSpan(
+        WallGraphTopologySpan candidate,
+        WallGraphTopologySpan kept,
+        double overlapRatio,
+        double axisDistance) =>
+        CouldBeTinyContainedSameTypePlacementSpan(candidate, kept, axisDistance)
+        && overlapRatio >= MinTinyContainedSameTypeOverlapRatio
+        && AxisMin(candidate.CenterLine) >= AxisMin(kept.CenterLine) - MaxContainedDuplicateAxisDistanceDrawingUnits
+        && AxisMax(candidate.CenterLine) <= AxisMax(kept.CenterLine) + MaxContainedDuplicateAxisDistanceDrawingUnits;
 
     private static bool IsContainedExteriorFragmentRepresentedByLongSpan(
         WallGraphTopologySpan candidate,
