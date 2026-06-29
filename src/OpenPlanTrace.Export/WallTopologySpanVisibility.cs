@@ -24,6 +24,9 @@ internal static class WallTopologySpanVisibility
     private const double MinContainedDuplicateOverlapRatio = 0.92;
     private const double MinNearContainedDuplicateOverlapRatio = 0.95;
     private const double MaxNearContainedDuplicateOverhangDrawingUnits = 4.0;
+    private const double MaxContainedExteriorFragmentAxisDistanceDrawingUnits = 6.0;
+    private const double MaxContainedExteriorFragmentLengthRatio = 0.55;
+    private const double MinContainedExteriorFragmentOverlapRatio = 0.985;
     private const double MinExteriorFacePairAxisDistanceDrawingUnits = 2.0;
     private const double MaxExteriorFacePairAxisDistanceDrawingUnits = 18.0;
     private const double MinExteriorFacePairOverlapRatio = 0.88;
@@ -2777,6 +2780,7 @@ internal static class WallTopologySpanVisibility
                     && !candidateIsSourceBackedFallback
                     && !IsSourceBackedFallbackSpan(kept)
                     && !IsSameLineContainedExteriorDuplicate(candidate, kept)
+                    && !IsContainedExteriorFragmentRepresentedByLongSpan(candidate, kept, overlapRatio, axisDistance)
                     && !HasComparableExteriorFaceExtent(candidate, kept))
                 {
                     continue;
@@ -2794,6 +2798,26 @@ internal static class WallTopologySpanVisibility
         }
 
         return false;
+    }
+
+    private static bool IsContainedExteriorFragmentRepresentedByLongSpan(
+        WallGraphTopologySpan candidate,
+        WallGraphTopologySpan kept,
+        double overlapRatio,
+        double axisDistance)
+    {
+        if (axisDistance > MaxContainedExteriorFragmentAxisDistanceDrawingUnits
+            || overlapRatio < MinContainedExteriorFragmentOverlapRatio
+            || candidate.DrawingLength <= 0.001
+            || kept.DrawingLength <= 0.001
+            || candidate.DrawingLength > kept.DrawingLength * MaxContainedExteriorFragmentLengthRatio)
+        {
+            return false;
+        }
+
+        var overhang = Math.Max(0, AxisMin(kept.CenterLine) - AxisMin(candidate.CenterLine))
+            + Math.Max(0, AxisMax(candidate.CenterLine) - AxisMax(kept.CenterLine));
+        return overhang <= NearContainedDuplicateOverhangTolerance(candidate, kept);
     }
 
     private static bool IsContainedDuplicateOverlapAcceptable(
@@ -3327,8 +3351,7 @@ internal static class WallTopologySpanVisibility
         foreach (var opening in openings)
         {
             if (!ShouldSplitTopologyForOpening(opening)
-                || !OpeningDirectlyReferencesWall(wall, opening)
-                    && OpeningUsesWeakRecoveredHostReference(opening))
+                || !OpeningDirectlyReferencesWall(wall, opening))
             {
                 continue;
             }
@@ -3356,18 +3379,6 @@ internal static class WallTopologySpanVisibility
         || opening.HostWallIds.Contains(wall.Id, StringComparer.Ordinal)
         || string.Equals(opening.Placement?.HostWallId, wall.Id, StringComparison.Ordinal)
         || opening.Placement?.AnchorWallIds.Contains(wall.Id, StringComparer.Ordinal) == true;
-
-    private static bool OpeningUsesWeakRecoveredHostReference(OpeningCandidate opening)
-    {
-        var hostIds = opening.HostWallIds
-            .Append(opening.WallId ?? string.Empty)
-            .Append(opening.Placement?.HostWallId ?? string.Empty)
-            .Concat(opening.Placement?.AnchorWallIds ?? Array.Empty<string>());
-
-        return hostIds.Any(id =>
-            id.Contains("wall-evidence-recovered-short", StringComparison.OrdinalIgnoreCase)
-            || id.Contains("recovered-short", StringComparison.OrdinalIgnoreCase));
-    }
 
     private static IReadOnlyList<PlacementWallOpeningCutoutExport> MergeTopologyOpeningCutouts(
         IReadOnlyList<PlacementWallOpeningCutoutExport> cutouts)

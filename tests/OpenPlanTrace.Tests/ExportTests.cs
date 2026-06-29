@@ -1031,6 +1031,34 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementExporter_SuppressesShortContainedExteriorFragmentsWithModerateAxisDrift()
+    {
+        var result = CreateContainedDuplicatePlacementRunResult(
+            new PlanLineSegment(new PlanPoint(145, 104.8), new PlanPoint(235, 104.8)),
+            wallType: WallType.Exterior);
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var wallGraph = document.RootElement.GetProperty("wallGraph");
+        var edge = Assert.Single(wallGraph.GetProperty("edges").EnumerateArray());
+        var duplicateWall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(wall => wall.GetProperty("id").GetString() == "duplicate-contained-wall");
+
+        Assert.Equal("duplicate-long-wall:clean-run:1", edge.GetProperty("id").GetString());
+        Assert.Equal(2, wallGraph.GetProperty("nodes").GetArrayLength());
+        Assert.Empty(duplicateWall.GetProperty("topologySpans").EnumerateArray());
+        Assert.Equal(
+            "duplicate_clean_topology_span",
+            duplicateWall.GetProperty("placementOmission").GetProperty("code").GetString());
+        Assert.Contains(
+            wallGraph.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("contained duplicate clean edge", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
     public void PlacementExporter_RepresentsMixedTypeNearContainedWallByLongerCleanTopology()
     {
         var result = CreateContainedDuplicatePlacementRunResult(
@@ -1457,9 +1485,9 @@ public sealed class ExportTests
         Assert.Contains(
             span.GetProperty("evidence").EnumerateArray(),
             item => item.GetString()?.Contains("centered between close parallel exterior face spans", StringComparison.OrdinalIgnoreCase) == true);
-        Assert.Contains(spans, item =>
+        Assert.DoesNotContain(spans, item =>
             item.GetProperty("id").GetString() == "parallel-face-partial-fragment:clean-run:1");
-        Assert.Equal(2, document.RootElement.GetProperty("summary").GetProperty("wallTopologySpanCount").GetInt32());
+        Assert.Equal(1, document.RootElement.GetProperty("summary").GetProperty("wallTopologySpanCount").GetInt32());
     }
 
     [Fact]
@@ -1553,6 +1581,40 @@ public sealed class ExportTests
         var wall = Assert.Single(document.RootElement.GetProperty("walls").EnumerateArray());
         var topologySpan = Assert.Single(wall.GetProperty("topologySpans").EnumerateArray());
 
+        Assert.Equal(80, topologySpan.GetProperty("centerLine").GetProperty("start").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(280, topologySpan.GetProperty("centerLine").GetProperty("end").GetProperty("x").GetDouble(), precision: 3);
+        Assert.DoesNotContain(
+            topologySpan.GetProperty("evidence").EnumerateArray(),
+            item => item.GetString()?.Contains("split around anchored door/opening cutouts", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Equal(1, document.RootElement.GetProperty("summary").GetProperty("wallTopologySpanCount").GetInt32());
+    }
+
+    [Fact]
+    public void PlacementExporter_DoesNotSplitCleanTopologyForNearbyOpeningHostedByDifferentWall()
+    {
+        var result = CreateOpeningCutoutPlacementReviewResult(wallType: WallType.Exterior);
+        var opening = result.Openings.Single();
+        var placement = opening.Placement!;
+        const string otherWallId = "page:1:wall:nearby-opening-host";
+        var nearbyOpening = opening with
+        {
+            WallId = otherWallId,
+            HostWallIds = [otherWallId],
+            Placement = placement with
+            {
+                HostWallId = otherWallId,
+                AnchorWallIds = [otherWallId]
+            }
+        };
+        result = result with { Openings = [nearbyOpening] };
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var wall = Assert.Single(document.RootElement.GetProperty("walls").EnumerateArray());
+        var topologySpan = Assert.Single(wall.GetProperty("topologySpans").EnumerateArray());
+
+        Assert.Empty(wall.GetProperty("openingCutouts").EnumerateArray());
         Assert.Equal(80, topologySpan.GetProperty("centerLine").GetProperty("start").GetProperty("x").GetDouble(), precision: 3);
         Assert.Equal(280, topologySpan.GetProperty("centerLine").GetProperty("end").GetProperty("x").GetDouble(), precision: 3);
         Assert.DoesNotContain(
