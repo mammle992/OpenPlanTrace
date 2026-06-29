@@ -61,6 +61,11 @@ internal static class WallTopologySpanVisibility
     private const double MinUnsafeCleanTopologyProjectionDriftDrawingUnits = 12.0;
     private const double MaxUnsafeCleanTopologyProjectionDriftThicknessRatio = 3.0;
     private const double MinUnsafeCleanTopologyLengthOverrunRatio = 0.10;
+    private const double MinTrustedInteriorUnsafeCleanProjectionLengthDrawingUnits = 72.0;
+    private const double MinTrustedInteriorUnsafeCleanProjectionPairScore = 0.80;
+    private const double MinTrustedInteriorUnsafeCleanProjectionOverlapRatio = 0.95;
+    private const int MaxTrustedInteriorUnsafeCleanProjectionFaceFragments = 96;
+    private const int MaxTrustedInteriorUnsafeCleanProjectionTotalFaceFragments = 180;
     private const int MaxSourceBackedFallbackFaceFragmentCount = 48;
     private const int MaxLongSourceBackedFallbackFaceFragmentCount = 72;
     private const int MaxTopologySupportedSourceBackedFallbackFaceFragmentCount = 96;
@@ -558,7 +563,8 @@ internal static class WallTopologySpanVisibility
 
             var unsafeCleanProjectionSpanCount = UnsafeCleanPlacementProjectionSpanCount(wall, cleanSpans);
             var canRecoverUnsafeCleanProjection = unsafeCleanProjectionSpanCount > 0
-                && IsTrustedExteriorSourceBackedFallbackForUnsafeCleanProjection(wall, context);
+                && (IsTrustedExteriorSourceBackedFallbackForUnsafeCleanProjection(wall, context)
+                    || IsTrustedInteriorSourceBackedFallbackForUnsafeCleanProjection(wall, context));
             var coverageRatio = CleanPlacementCoverageRatio(
                 wall,
                 cleanSpans,
@@ -596,6 +602,8 @@ internal static class WallTopologySpanVisibility
         context.WallEvidenceAssessments.TryGetValue(wall.Id, out var assessment);
         var trustedUnsafeExteriorCleanProjectionFallback =
             IsTrustedExteriorSourceBackedFallbackForUnsafeCleanProjection(wall, context);
+        var trustedUnsafeInteriorCleanProjectionFallback =
+            IsTrustedInteriorSourceBackedFallbackForUnsafeCleanProjection(wall, context);
         var trustedExteriorShellRepairSupportedWall =
             WallPlacementReadinessEvaluator.IsTrustedExteriorShellRepairSupportedWall(
                 wall,
@@ -633,6 +641,7 @@ internal static class WallTopologySpanVisibility
             || (wall.WallType == WallType.Unknown && !hasTrustedLongIsolatedExteriorShellWallBody)
             || (wall.FragmentEvidence?.RequiresGeometryReview == true
                 && !trustedUnsafeExteriorCleanProjectionFallback
+                && !trustedUnsafeInteriorCleanProjectionFallback
                 && !trustedExteriorShellRepairSupportedWall)
             || ResolveDominantOrthogonalOrientation(wall.CenterLine) == PlacementRunOrientation.Unknown
             || (topologyImportBlocked && !trustedTopologyImportBlockedFallback))
@@ -709,6 +718,7 @@ internal static class WallTopologySpanVisibility
                 && !hasTrustedLongIsolatedExteriorShellWallBody
                 && !hasTrustedGeometricRoomBoundaryPairPromotion
                 && !hasTrustedRoomReferencedPlacementReadyPair
+                && !trustedUnsafeInteriorCleanProjectionFallback
                 && !trustedExteriorShellRepairSupportedWall
                 && !hasTrustedSourceBackedExteriorShellClosure
                 && !hasTrustedShortExteriorWallBody)
@@ -721,6 +731,7 @@ internal static class WallTopologySpanVisibility
                 && !hasTrustedLongIsolatedExteriorShellWallBody
                 && !hasTrustedGeometricRoomBoundaryPairPromotion
                 && !hasTrustedRoomReferencedPlacementReadyPair
+                && !trustedUnsafeInteriorCleanProjectionFallback
                 && !trustedExteriorShellRepairSupportedWall
                 && !hasTrustedSourceBackedExteriorShellClosure
                 && !hasTrustedShortExteriorWallBody
@@ -733,6 +744,7 @@ internal static class WallTopologySpanVisibility
                 && !hasTrustedLongIsolatedExteriorShellWallBody
                 && !hasTrustedGeometricRoomBoundaryPairPromotion
                 && !hasTrustedRoomReferencedPlacementReadyPair
+                && !trustedUnsafeInteriorCleanProjectionFallback
                 && !trustedExteriorShellRepairSupportedWall
                 && !hasTrustedSourceBackedExteriorShellClosure
                 && !hasTrustedShortExteriorWallBody
@@ -753,6 +765,7 @@ internal static class WallTopologySpanVisibility
                 && !hasTrustedLongIsolatedExteriorShellWallBody
                 && !hasTrustedGeometricRoomBoundaryPairPromotion
                 && !hasTrustedRoomReferencedPlacementReadyPair
+                && !trustedUnsafeInteriorCleanProjectionFallback
                 && !trustedExteriorShellRepairSupportedWall
                 && !hasTrustedSourceBackedExteriorShellClosure
                 && !hasTrustedShortExteriorWallBody))
@@ -773,6 +786,7 @@ internal static class WallTopologySpanVisibility
             && !trustedUnsafeExteriorCleanProjectionFallback
             && !hasTrustedMainStructuralExteriorWallBody
             && !hasTrustedLongIsolatedExteriorShellWallBody
+            && !trustedUnsafeInteriorCleanProjectionFallback
             && !trustedExteriorShellRepairSupportedWall
             && !hasTrustedSourceBackedExteriorShellClosure
             && !hasTrustedShortExteriorWallBody)
@@ -781,6 +795,7 @@ internal static class WallTopologySpanVisibility
         }
 
         return trustedUnsafeExteriorCleanProjectionFallback
+            || trustedUnsafeInteriorCleanProjectionFallback
             || trustedExteriorShellRepairSupportedWall
             || HasTrustedSourceBackedFallbackPairEvidence(wall, component, assessment)
             || hasTrustedFragmentMergedPromotion
@@ -984,6 +999,83 @@ internal static class WallTopologySpanVisibility
                 "local outer boundary",
                 "near detected floorplan",
                 "wall type exterior");
+    }
+
+    private static bool IsTrustedInteriorSourceBackedFallbackForUnsafeCleanProjection(
+        WallSegment wall,
+        WallTopologySpanVisibilityContext context)
+    {
+        context.ComponentByWallId.TryGetValue(wall.Id, out var component);
+        context.WallEvidenceAssessments.TryGetValue(wall.Id, out var assessment);
+        if (assessment is null
+            || component is null
+            || component.ExcludedFromStructuralTopology
+            || component.Kind is not (WallGraphComponentKind.MainStructural or WallGraphComponentKind.SecondaryStructural)
+            || wall.WallType != WallType.Interior
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.DrawingLength < MinTrustedInteriorUnsafeCleanProjectionLengthDrawingUnits
+            || wall.PairEvidence is not { } pair
+            || pair.Score < MinTrustedInteriorUnsafeCleanProjectionPairScore
+            || pair.OverlapRatio < MinTrustedInteriorUnsafeCleanProjectionOverlapRatio
+            || pair.FaceSeparation < MinSourceBackedFallbackFaceSeparationDrawingUnits
+            || pair.FaceSeparation > MaxSourceBackedFallbackFaceSeparationDrawingUnits
+            || Math.Max(pair.FirstFaceFragmentCount, pair.SecondFaceFragmentCount) > MaxTrustedInteriorUnsafeCleanProjectionFaceFragments
+            || pair.FirstFaceFragmentCount + pair.SecondFaceFragmentCount > MaxTrustedInteriorUnsafeCleanProjectionTotalFaceFragments
+            || !assessment.PlacementReady
+            || assessment.RequiresReview
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject
+            || assessment.Category is not (WallEvidenceCategory.StrongWallBody
+                or WallEvidenceCategory.MediumWallBody
+                or WallEvidenceCategory.RecoveredWallBody))
+        {
+            return false;
+        }
+
+        var evidence = wall.Evidence
+            .Concat(assessment.Evidence)
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(assessment.ScoreBreakdown.NegativeEvidence)
+            .Concat(component.Evidence)
+            .ToArray();
+        var hasSolidWallBodyEvidence =
+            ContainsEvidence(evidence, "filled wall-solid primitive")
+            || ContainsEvidence(evidence, "filled closed vector wall body")
+            || ContainsEvidence(evidence, "strong double-edge wall body");
+        var hasRoomBoundarySupport =
+            ContainsEvidence(evidence, "geometric room boundary support")
+            || ContainsEvidence(evidence, "explicit room boundary support")
+            || ContainsEvidence(evidence, "detected room evidence on both sides")
+            || ContainsEvidence(evidence, "shared by room adjacency boundary");
+        if (!hasSolidWallBodyEvidence
+            || !hasRoomBoundarySupport
+            || !ContainsEvidence(evidence, "supported wall evidence inside exterior envelope"))
+        {
+            return false;
+        }
+
+        return !ContainsAnyEvidence(
+            evidence,
+            "outdoor covered-area boundary",
+            "unpaired outdoor covered-area boundary",
+            "covered-area boundary",
+            "covered entry",
+            "covered-entry",
+            "overbygd",
+            "terrace",
+            "railing",
+            "surface pattern",
+            "object/fixture",
+            "fixture detail",
+            "repeated short detail",
+            "review as detail/object",
+            "door swing",
+            "door leaf",
+            "door arc",
+            "stair",
+            "not trusted",
+            "without shell support",
+            "alone is not trusted");
     }
 
     private static bool IsTrustedRoomReferencedPlacementReadyPairFallback(
@@ -1459,6 +1551,8 @@ internal static class WallTopologySpanVisibility
                 wall,
                 component,
                 assessment);
+        var trustedUnsafeInteriorCleanProjectionFallback =
+            IsTrustedInteriorSourceBackedFallbackForUnsafeCleanProjection(wall, context);
         var trustedInferredSharedRoomBoundary =
             IsTrustedInferredSharedRoomBoundaryFallback(
                 wall,
@@ -1545,7 +1639,9 @@ internal static class WallTopologySpanVisibility
         if (unsafeCleanProjectionSpanCount > 0)
         {
             evidence.Add(
-                "source-backed fallback accepted because existing clean topology projected away from trusted exterior shell; "
+                (trustedUnsafeInteriorCleanProjectionFallback
+                    ? "source-backed fallback accepted because existing clean topology projected away from trusted interior room boundary; "
+                    : "source-backed fallback accepted because existing clean topology projected away from trusted exterior shell; ")
                 + $"unsafe clean span count {unsafeCleanProjectionSpanCount}");
         }
 
@@ -1649,7 +1745,7 @@ internal static class WallTopologySpanVisibility
 
     private static bool IsUnsafeCleanProjectionSourceBackedFallbackSpan(WallGraphTopologySpan span) =>
         IsSourceBackedFallbackSpan(span)
-        && ContainsEvidence(span.Evidence, "existing clean topology projected away from trusted exterior shell");
+        && ContainsEvidence(span.Evidence, "existing clean topology projected away from trusted");
 
     private static bool IsUnsafeCleanPlacementProjection(
         WallSegment wall,
