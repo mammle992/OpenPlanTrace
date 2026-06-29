@@ -37,6 +37,9 @@ internal static class WallTopologySpanVisibility
     private const double MaxContainedSourceBackedFallbackAxisDistanceDrawingUnits = 6.0;
     private const double MaxContainedSourceBackedFallbackLengthRatio = 0.55;
     private const double MinContainedSourceBackedFallbackOverlapRatio = 0.985;
+    private const double MaxRedundantLongSourceBackedExteriorFallbackAxisDistanceDrawingUnits = 9.0;
+    private const double MaxRedundantLongSourceBackedExteriorFallbackLengthRatio = 0.92;
+    private const double MinRedundantLongSourceBackedExteriorFallbackOverlapRatio = 0.985;
     private const double MaxTinyContainedSameTypeAxisDistanceDrawingUnits = 8.0;
     private const double MaxTinyContainedSameTypeLengthDrawingUnits = 8.0;
     private const double MaxTinyContainedSameTypeLengthRatio = 0.20;
@@ -4266,10 +4269,63 @@ internal static class WallTopologySpanVisibility
             return true;
         }
 
+        if (IsRedundantLongSourceBackedExteriorFallback(candidate, kept, overlapRatio, axisDistance))
+        {
+            return true;
+        }
+
         return axisDistance <= MaxContainedSourceBackedFallbackAxisDistanceDrawingUnits
             && overlapRatio >= MinContainedSourceBackedFallbackOverlapRatio
             && candidate.DrawingLength <= kept.DrawingLength * MaxContainedSourceBackedFallbackLengthRatio
             && ContainsEvidence(candidate.Evidence, "source-backed fallback accepted");
+    }
+
+    private static bool IsRedundantLongSourceBackedExteriorFallback(
+        WallGraphTopologySpan candidate,
+        WallGraphTopologySpan kept,
+        double overlapRatio,
+        double axisDistance)
+    {
+        if (candidate.SourceWall?.WallType != WallType.Exterior
+            || kept.SourceWall?.WallType != WallType.Exterior
+            || candidate.DrawingLength < MinCollinearExteriorRunBridgeLongNeighborLengthDrawingUnits
+            || candidate.DrawingLength > kept.DrawingLength * MaxRedundantLongSourceBackedExteriorFallbackLengthRatio
+            || axisDistance > MaxRedundantLongSourceBackedExteriorFallbackAxisDistanceDrawingUnits
+            || overlapRatio < MinRedundantLongSourceBackedExteriorFallbackOverlapRatio)
+        {
+            return false;
+        }
+
+        var candidateEvidence = candidate.Evidence
+            .Concat(candidate.SourceWall.Evidence)
+            .ToArray();
+        if (!ContainsEvidence(candidateEvidence, "source-backed fallback accepted")
+            || ContainsAnyEvidence(
+                candidateEvidence,
+                "blocked graph repair",
+                "covered-area",
+                "covered entry",
+                "covered-entry",
+                "door leaf",
+                "door swing",
+                "fixture detail",
+                "object/fixture",
+                "overbygd",
+                "railing",
+                "repeated short detail",
+                "surface pattern",
+                "terrace"))
+        {
+            return false;
+        }
+
+        return ContainsAnyEvidence(
+            kept.Evidence.Concat(kept.SourceWall.Evidence).ToArray(),
+            "clean placement run merged",
+            "source-backed fallback accepted",
+            "wall type exterior",
+            "filled wall-solid primitive",
+            "strong double-edge wall body");
     }
 
     private static bool HasComparableExteriorFaceExtent(

@@ -6662,6 +6662,54 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementExporter_RepresentsLongOverlappingExteriorSourceBackedFallbackWithCleanExteriorSpan()
+    {
+        var result = CreateSourceBackedFallbackWallResult(
+            includeNearbyGraphSpan: true,
+            wallLength: 150,
+            wallType: WallType.Exterior,
+            nearbyGraphWallType: WallType.Exterior,
+            nearbyGraphAxisOffset: 7.5,
+            nearbyGraphStartX: 70,
+            nearbyGraphEndX: 235,
+            evidence:
+            [
+                "parallel wall-face pair",
+                "wall evidence: strong double-edge wall body",
+                "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+                "pair score 0.93"
+            ]);
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+
+        var fallbackWall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == "source-backed-fallback-wall");
+
+        Assert.Empty(fallbackWall.GetProperty("topologySpans").EnumerateArray());
+        Assert.Equal(
+            "duplicate_clean_topology_span",
+            fallbackWall.GetProperty("placementOmission").GetProperty("code").GetString());
+        Assert.Contains(
+            fallbackWall.GetProperty("placementOmission").GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("nearby-graph-wall", StringComparison.OrdinalIgnoreCase) == true);
+
+        var graphWall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == "nearby-graph-wall");
+        Assert.Single(graphWall.GetProperty("topologySpans").EnumerateArray());
+        var summary = document.RootElement.GetProperty("summary");
+        Assert.Equal(0, summary.GetProperty("sourceBackedFallbackWallCount").GetInt32());
+        Assert.Equal(0, summary.GetProperty("sourceBackedFallbackTopologySpanCount").GetInt32());
+        Assert.Equal(1, summary.GetProperty("representedWallCount").GetInt32());
+    }
+
+    [Fact]
     public void PlacementExporter_RepresentsNearCoveredExteriorWallByTrustedSourceBackedShell()
     {
         var result = CreateSourceBackedExteriorHostWithNearCoveredDuplicateWallResult();
@@ -14052,6 +14100,9 @@ public sealed class ExportTests
         IReadOnlyList<string>? evidence = null,
         bool includeRoomReference = false,
         WallType? nearbyGraphWallType = null,
+        double nearbyGraphAxisOffset = 1,
+        double? nearbyGraphStartX = null,
+        double? nearbyGraphEndX = null,
         bool placementReady = true,
         bool requiresReview = false)
     {
@@ -14083,16 +14134,27 @@ public sealed class ExportTests
         var edges = new List<WallEdge>();
         if (includeNearbyGraphSpan)
         {
-            var nearbyWall = SyntheticWall("nearby-graph-wall", 60, 121, 220, 121) with
+            var nearbyStartX = nearbyGraphStartX ?? 60;
+            var nearbyEndX = nearbyGraphEndX ?? 220;
+            var nearbyAxisY = 120 + nearbyGraphAxisOffset;
+            var nearbyType = nearbyGraphWallType ?? WallType.Interior;
+            var nearbyWall = SyntheticWall("nearby-graph-wall", nearbyStartX, nearbyAxisY, nearbyEndX, nearbyAxisY) with
             {
                 DetectionKind = WallDetectionKind.ParallelLinePair,
-                WallType = nearbyGraphWallType ?? WallType.Interior,
+                WallType = nearbyType,
                 SourcePrimitiveIds = ["nearby-graph-wall-source"],
-                Evidence = ["synthetic nearby graph span from different source geometry"]
+                Evidence =
+                [
+                    "synthetic nearby graph span from different source geometry",
+                    "wall evidence: strong double-edge wall body",
+                    nearbyType == WallType.Exterior
+                        ? "wall type exterior: near detected floorplan/wall envelope or local outer boundary"
+                        : "wall type interior: supported wall evidence inside exterior envelope"
+                ]
             };
             walls.Add(nearbyWall);
-            nodes.Add(SyntheticNode("nearby-graph-node-a", 60, 121, WallNodeKind.Endpoint));
-            nodes.Add(SyntheticNode("nearby-graph-node-b", 220, 121, WallNodeKind.Endpoint));
+            nodes.Add(SyntheticNode("nearby-graph-node-a", nearbyStartX, nearbyAxisY, WallNodeKind.Endpoint));
+            nodes.Add(SyntheticNode("nearby-graph-node-b", nearbyEndX, nearbyAxisY, WallNodeKind.Endpoint));
             edges.Add(new WallEdge(
                 "nearby-graph-edge",
                 1,
