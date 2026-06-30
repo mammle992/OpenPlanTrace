@@ -59,6 +59,13 @@ internal static class WallTopologySpanVisibility
     private const double MaxDominantExteriorFragmentAxisSnapGapDrawingUnits = 18.0;
     private const double MaxDominantExteriorFragmentLengthRatio = 0.65;
     private const double MaxDominantExteriorFragmentLengthDrawingUnits = 120.0;
+    private const double MinRepresentedBodyAxisRecenterPairScore = 0.80;
+    private const double MinRepresentedBodyAxisRecenterPairOverlapRatio = 0.88;
+    private const double MinRepresentedBodyAxisRecenterSpanOverlapRatio = 0.88;
+    private const double MinRepresentedBodyAxisRecenterLengthDrawingUnits = 36.0;
+    private const double MinRepresentedBodyAxisRecenterAxisShiftDrawingUnits = 0.75;
+    private const double MaxRepresentedBodyAxisRecenterAxisDistanceDrawingUnits = 24.0;
+    private const double MaxRepresentedBodyAxisRecenterCandidateLengthRatio = 1.75;
     private const double MaxDominantAxisSkewRatio = 0.04;
     private const double MaxDominantAxisSkewDrawingUnits = 8.0;
     private const double MinSourceBackedFallbackWallLengthDrawingUnits = 48.0;
@@ -167,6 +174,10 @@ internal static class WallTopologySpanVisibility
             RegularizeCleanPlacementRuns(
                 SplitCleanTopologyRunsAroundOpenings(merged, openings)),
             openings);
+        graphCleanSpans = RecenterRepresentedCleanPlacementSpansToPairedBodyAxes(
+            graphCleanSpans,
+            walls,
+            context);
         var sourceBackedFallbackSpans = BuildSourceBackedFallbackSpans(
             walls,
             graphCleanSpans,
@@ -191,8 +202,11 @@ internal static class WallTopologySpanVisibility
         }
 
         return FinalizeCleanPlacementSpans(
-            RegularizeCleanPlacementRuns(
-                SplitCleanTopologyRunsAroundOpenings(combined, openings)),
+            RecenterRepresentedCleanPlacementSpansToPairedBodyAxes(
+                RegularizeCleanPlacementRuns(
+                    SplitCleanTopologyRunsAroundOpenings(combined, openings)),
+                walls,
+                context),
             openings);
     }
 
@@ -661,7 +675,12 @@ internal static class WallTopologySpanVisibility
                 wall,
                 cleanSpans,
                 ignoreUnsafeCleanPlacementProjection: canRecoverUnsafeCleanProjection);
-            if ((coverageRatio >= MaxSourceBackedFallbackExistingCoverageRatio && !canRecoverUnsafeCleanProjection)
+            var representedByExistingCleanSpan = IsWallRepresentedByExistingCleanPlacementSpan(
+                wall,
+                cleanSpans,
+                context);
+            if (((coverageRatio >= MaxSourceBackedFallbackExistingCoverageRatio || representedByExistingCleanSpan)
+                    && !canRecoverUnsafeCleanProjection)
                 || !ShouldBuildSourceBackedFallbackSpan(wall, context))
             {
                 continue;
@@ -2381,6 +2400,43 @@ internal static class WallTopologySpanVisibility
         return Math.Clamp(covered, 0, 1);
     }
 
+    private static bool IsWallRepresentedByExistingCleanPlacementSpan(
+        WallSegment wall,
+        IReadOnlyList<WallGraphTopologySpan> cleanSpans,
+        WallTopologySpanVisibilityContext context)
+    {
+        if (cleanSpans.Count == 0
+            || cleanSpans.Any(span => string.Equals(span.WallId, wall.Id, StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        context.ComponentByWallId.TryGetValue(wall.Id, out var component);
+        context.WallEvidenceAssessments.TryGetValue(wall.Id, out var assessment);
+        var reviewReasons = context.ReviewReasonsByWallId.TryGetValue(wall.Id, out var reasons)
+            ? reasons
+            : Array.Empty<string>();
+        var readiness = WallPlacementReadinessEvaluator.Evaluate(
+            wall,
+            context.Calibration,
+            component,
+            assessment,
+            reviewReasons);
+
+        var representation = WallCleanTopologyRepresentationMatcher.FindBest(
+            wall,
+            component,
+            assessment,
+            readiness.ReadyForCoordinatePlacement,
+            Array.Empty<WallGraphTopologySpan>(),
+            cleanSpans,
+            component?.ExcludedFromStructuralTopology == true);
+        return representation is not null
+            && representation.Span.Evidence.Any(evidence =>
+                evidence.Contains("clean placement body-axis recenter", StringComparison.OrdinalIgnoreCase)
+                && evidence.Contains($"from {wall.Id}", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static int UnsafeCleanPlacementProjectionSpanCount(
         WallSegment wall,
         IReadOnlyList<WallGraphTopologySpan> cleanSpans) =>
@@ -2683,6 +2739,251 @@ internal static class WallTopologySpanVisibility
         var interiorRebridged = BridgeCollinearInteriorPlacementRunGaps(resnapped, openingLinkedWallIds);
         var rebridged = BridgeCollinearExteriorPlacementRunGaps(interiorRebridged);
         return SuppressContainedDuplicatePlacementSpans(MergeOverlappingCollinearPlacementSpans(rebridged));
+    }
+
+    private static IReadOnlyList<WallGraphTopologySpan> RecenterRepresentedCleanPlacementSpansToPairedBodyAxes(
+        IReadOnlyList<WallGraphTopologySpan> spans,
+        IReadOnlyList<WallSegment> walls,
+        WallTopologySpanVisibilityContext context)
+    {
+        if (spans.Count == 0 || walls.Count == 0)
+        {
+            return spans;
+        }
+
+        var candidateWalls = walls
+            .Where(wall => IsPairedBodyAxisRecenterCandidate(wall, context))
+            .ToArray();
+        if (candidateWalls.Length == 0)
+        {
+            return spans;
+        }
+
+        var replacements = new Dictionary<string, WallGraphTopologySpan>(StringComparer.Ordinal);
+        foreach (var span in spans.Where(CanRecenterCleanSpanToPairedBodyAxis))
+        {
+            if (!TryFindPairedBodyAxisRecenterHost(span, candidateWalls, out var host)
+                || !TryBuildRecenteredBodyAxisLine(span, host.Wall, out var line))
+            {
+                continue;
+            }
+
+            var evidence =
+                "clean placement body-axis recenter: aligned represented clean span to paired wall body midpoint "
+                + $"from {host.Wall.Id}; axis shift {host.AxisShift:0.###}, overlap ratio {host.OverlapRatio:0.###}";
+            replacements[span.Id] = RebuildPlacementSpanLine(
+                span,
+                line,
+                [evidence],
+                host.AxisShift);
+        }
+
+        if (replacements.Count == 0)
+        {
+            return spans;
+        }
+
+        return spans
+            .Select(span => replacements.TryGetValue(span.Id, out var replacement) ? replacement : span)
+            .ToArray();
+    }
+
+    private static bool CanRecenterCleanSpanToPairedBodyAxis(WallGraphTopologySpan span)
+    {
+        if (span.DrawingLength < MinRepresentedBodyAxisRecenterLengthDrawingUnits
+            || span.SourceWall is null
+            || IsSourceBackedFallbackSpan(span)
+            || ResolveAxisOrientation(span.CenterLine) == PlacementRunOrientation.Unknown)
+        {
+            return false;
+        }
+
+        return !HasRepresentedBodyAxisRecenterBlockedEvidence(
+            span.SourceWall,
+            null,
+            null,
+            span.Evidence);
+    }
+
+    private static bool IsPairedBodyAxisRecenterCandidate(
+        WallSegment wall,
+        WallTopologySpanVisibilityContext context)
+    {
+        if (wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.PairEvidence is not { } pair
+            || wall.CenterLine.Length < MinRepresentedBodyAxisRecenterLengthDrawingUnits
+            || wall.WallType == WallType.Unknown
+            || ResolveAxisOrientation(wall.CenterLine) == PlacementRunOrientation.Unknown
+            || pair.Score < MinRepresentedBodyAxisRecenterPairScore
+            || pair.OverlapRatio < MinRepresentedBodyAxisRecenterPairOverlapRatio
+            || pair.FaceSeparation <= 0
+            || pair.FaceSeparation > MaxRepresentedBodyAxisRecenterAxisDistanceDrawingUnits)
+        {
+            return false;
+        }
+
+        context.ComponentByWallId.TryGetValue(wall.Id, out var component);
+        context.WallEvidenceAssessments.TryGetValue(wall.Id, out var assessment);
+        if (component?.Kind == WallGraphComponentKind.ObjectLikeIsland
+            || component?.ExcludedFromStructuralTopology == true
+            || assessment?.RejectedAsNoise == true
+            || assessment?.Decision == WallEvidenceDecision.Reject
+            || HasRepresentedBodyAxisRecenterBlockedEvidence(wall, component, assessment, Array.Empty<string>()))
+        {
+            return false;
+        }
+
+        var reviewReasons = context.ReviewReasonsByWallId.TryGetValue(wall.Id, out var reasons)
+            ? reasons
+            : Array.Empty<string>();
+        var readiness = WallPlacementReadinessEvaluator.Evaluate(
+            wall,
+            context.Calibration,
+            component,
+            assessment,
+            reviewReasons);
+        return readiness.ReadyForCoordinatePlacement
+            || assessment is { PlacementReady: true, RequiresReview: false, Decision: WallEvidenceDecision.Accept };
+    }
+
+    private static bool TryFindPairedBodyAxisRecenterHost(
+        WallGraphTopologySpan span,
+        IReadOnlyList<WallSegment> candidateWalls,
+        out PairedBodyAxisRecenterHost host)
+    {
+        host = default;
+        PairedBodyAxisRecenterHost? best = null;
+        foreach (var wall in candidateWalls)
+        {
+            if (wall.PageNumber != span.PageNumber
+                || span.SourceWall?.PairEvidence is not null
+                    && !string.Equals(wall.Id, span.WallId, StringComparison.Ordinal)
+                || span.SourceWall is { WallType: not WallType.Unknown } sourceWall
+                    && wall.WallType != sourceWall.WallType
+                || ResolveAxisOrientation(wall.CenterLine) != ResolveAxisOrientation(span.CenterLine)
+                || !TryBuildRecenteredBodyAxisLine(span, wall, out var axisLine))
+            {
+                continue;
+            }
+
+            var overlap = AxisOverlapLength(span.CenterLine, axisLine);
+            var spanOverlapRatio = overlap / Math.Max(span.DrawingLength, 0.001);
+            if (spanOverlapRatio < MinRepresentedBodyAxisRecenterSpanOverlapRatio)
+            {
+                continue;
+            }
+
+            var candidateLengthRatio = Math.Max(wall.CenterLine.Length, span.DrawingLength)
+                / Math.Max(Math.Min(wall.CenterLine.Length, span.DrawingLength), 0.001);
+            if (candidateLengthRatio > MaxRepresentedBodyAxisRecenterCandidateLengthRatio
+                && overlap / Math.Max(wall.CenterLine.Length, 0.001) < MinRepresentedBodyAxisRecenterSpanOverlapRatio)
+            {
+                continue;
+            }
+
+            var axisShift = Math.Abs(AxisCoordinate(span.CenterLine) - AxisCoordinate(axisLine));
+            var axisLimit = RepresentedBodyAxisRecenterAxisLimit(span, wall);
+            if (axisShift < MinRepresentedBodyAxisRecenterAxisShiftDrawingUnits
+                || axisShift > axisLimit)
+            {
+                continue;
+            }
+
+            var score = axisShift
+                + ((1 - spanOverlapRatio) * 24.0)
+                + (Math.Abs(wall.CenterLine.Length - span.DrawingLength) * 0.01);
+            var next = new PairedBodyAxisRecenterHost(
+                wall,
+                axisShift,
+                spanOverlapRatio,
+                score);
+            if (best is null
+                || next.Score < best.Value.Score
+                || (Math.Abs(next.Score - best.Value.Score) <= 0.001
+                    && next.Wall.CenterLine.Length > best.Value.Wall.CenterLine.Length))
+            {
+                best = next;
+            }
+        }
+
+        if (best is null)
+        {
+            return false;
+        }
+
+        host = best.Value;
+        return true;
+    }
+
+    private static bool TryBuildRecenteredBodyAxisLine(
+        WallGraphTopologySpan span,
+        WallSegment hostWall,
+        out PlanLineSegment line)
+    {
+        line = default;
+        if (hostWall.CenterLine.Length <= 0.001
+            || ResolveAxisOrientation(hostWall.CenterLine) != ResolveAxisOrientation(span.CenterLine))
+        {
+            return false;
+        }
+
+        var startParameter = hostWall.CenterLine.ProjectParameter(span.CenterLine.Start);
+        var endParameter = hostWall.CenterLine.ProjectParameter(span.CenterLine.End);
+        var placementAxis = WallBodyFootprintBuilder.BuildPlacementAxis(
+            hostWall,
+            startParameter,
+            endParameter);
+        if (!placementAxis.UsesPairedFaceEvidence || placementAxis.CenterLine.Length <= 0.001)
+        {
+            return false;
+        }
+
+        line = placementAxis.CenterLine;
+        return true;
+    }
+
+    private static double RepresentedBodyAxisRecenterAxisLimit(
+        WallGraphTopologySpan span,
+        WallSegment wall)
+    {
+        var pairFaceSeparation = wall.PairEvidence?.FaceSeparation ?? 0;
+        return Math.Min(
+            MaxRepresentedBodyAxisRecenterAxisDistanceDrawingUnits,
+            Math.Max(Math.Max(span.Thickness, wall.Thickness), pairFaceSeparation) + 2.0);
+    }
+
+    private static bool HasRepresentedBodyAxisRecenterBlockedEvidence(
+        WallSegment wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? assessment,
+        IReadOnlyList<string> spanEvidence)
+    {
+        var allEvidence = wall.Evidence
+            .Concat(wall.FragmentEvidence?.Evidence ?? Array.Empty<string>())
+            .Concat(component?.Evidence ?? Array.Empty<string>())
+            .Concat(assessment?.Evidence ?? Array.Empty<string>())
+            .Concat(spanEvidence)
+            .ToArray();
+        return ContainsAnyEvidence(
+            allEvidence,
+            "covered-area",
+            "covered entry",
+            "covered-entry",
+            "dimension",
+            "door leaf",
+            "door swing",
+            "fixture detail",
+            "object/fixture",
+            "opening detail",
+            "outdoor",
+            "overbygd",
+            "railing",
+            "repeated short detail",
+            "stair",
+            "surface pattern",
+            "terrace detail",
+            "witness/extension",
+            "non-wall");
     }
 
     private static IReadOnlyList<WallGraphTopologySpan> SnapExteriorFragmentsToDominantPlacementAxis(
@@ -5094,6 +5395,11 @@ internal static class WallTopologySpanVisibility
             ? (span.CenterLine.Start.Y + span.CenterLine.End.Y) / 2.0
             : (span.CenterLine.Start.X + span.CenterLine.End.X) / 2.0;
 
+    private static double AxisCoordinate(PlanLineSegment line) =>
+        ResolveAxisOrientation(line) == PlacementRunOrientation.Horizontal
+            ? (line.Start.Y + line.End.Y) / 2.0
+            : (line.Start.X + line.End.X) / 2.0;
+
     private static double AxisMin(PlanLineSegment line) =>
         ResolveAxisOrientation(line) == PlacementRunOrientation.Horizontal
             ? Math.Min(line.Start.X, line.End.X)
@@ -5103,6 +5409,19 @@ internal static class WallTopologySpanVisibility
         ResolveAxisOrientation(line) == PlacementRunOrientation.Horizontal
             ? Math.Max(line.Start.X, line.End.X)
             : Math.Max(line.Start.Y, line.End.Y);
+
+    private static double AxisOverlapLength(PlanLineSegment first, PlanLineSegment second)
+    {
+        if (ResolveAxisOrientation(first) == PlacementRunOrientation.Unknown
+            || ResolveAxisOrientation(first) != ResolveAxisOrientation(second))
+        {
+            return 0;
+        }
+
+        return Math.Max(
+            0,
+            Math.Min(AxisMax(first), AxisMax(second)) - Math.Max(AxisMin(first), AxisMin(second)));
+    }
 
     private static double WeightedAxisCoordinate(IReadOnlyList<WallGraphTopologySpan> spans)
     {
@@ -5213,6 +5532,12 @@ internal static class WallTopologySpanVisibility
         WallGraphTopologySpan Span,
         double AxisDistance,
         double IntervalGap,
+        double OverlapRatio,
+        double Score);
+
+    private readonly record struct PairedBodyAxisRecenterHost(
+        WallSegment Wall,
+        double AxisShift,
         double OverlapRatio,
         double Score);
 
