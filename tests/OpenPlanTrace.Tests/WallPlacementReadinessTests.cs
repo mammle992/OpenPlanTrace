@@ -1694,6 +1694,81 @@ public sealed class WallPlacementReadinessTests
     }
 
     [Fact]
+    public void Evaluate_AllowsDenseGraphPromotedLongOneEndpointSecondaryFragment()
+    {
+        var wall = Wall("wall:dense-graph-promoted-one-end-fragment", Confidence.High) with
+        {
+            WallType = WallType.Interior,
+            DetectionKind = WallDetectionKind.FragmentMerged,
+            SourcePrimitiveIds = Enumerable.Range(1, 101)
+                .Select(index => $"dense-fragment-source-{index}")
+                .ToArray(),
+            FragmentEvidence = new WallFragmentEvidence(
+                FragmentCount: 99,
+                TotalHealedGap: 0,
+                MaxHealedGap: 0,
+                DuplicatePrimitiveCount: 2,
+                GapRatio: 0,
+                RequiresGeometryReview: false,
+                Evidence: Array.Empty<string>()),
+            Evidence =
+            [
+                "merged collinear wall fragments",
+                "run merged 99 fragments",
+                "layer evidence: contains dimension-like text",
+                "wall type interior: supported wall evidence inside exterior envelope",
+                "one endpoint supported by structural context",
+                "wall evidence: unlayered fragment-merged wall candidate has only one trusted structural endpoint (99 fragments, gap ratio 0); keep for topology but block exact placement until reviewed",
+                "wall evidence: promoted to placement-ready by secondary structural graph component page:1:wall-component:12",
+                "wall evidence: long interior fragment has one trusted structural endpoint and is near the main wall body",
+                "wall evidence: demoted from placement-ready because short or fragmented dimension-like single-line candidate has no explicit room-boundary support; length 109.421, room refs 0, side room hits 0, component SecondaryStructural"
+            ]
+        };
+        var component = Component(
+            WallGraphComponentKind.SecondaryStructural,
+            excludedFromStructuralTopology: false,
+            wall.Id);
+        var evidence = Evidence(wall, WallEvidenceCategory.MediumWallBody, placementReady: false) with
+        {
+            Evidence = wall.Evidence,
+            Decision = WallEvidenceDecision.Review,
+            ScoreBreakdown = new WallEvidenceScoreBreakdown(
+                0.5,
+                0,
+                0.5,
+                0.22,
+                0,
+                0.16,
+                0.12,
+                0,
+                0,
+                new[] { "medium wall-body geometry", "one endpoint supported by structural context", "secondary structural interior fragment continuity" },
+                Array.Empty<string>())
+        };
+
+        var readiness = WallPlacementReadinessEvaluator.Evaluate(
+            wall,
+            ReliableCalibration(),
+            component,
+            evidence,
+            [
+                WallPlacementContextGuards.SecondaryStructuralWithoutRoomBoundarySupportReason,
+                WallPlacementContextGuards.FragmentMergedInteriorWithoutRoomBoundarySupportReason
+            ]);
+
+        Assert.True(readiness.ReadyForCoordinatePlacement);
+        Assert.True(readiness.ReadyForMetricPlacement);
+        Assert.False(readiness.RequiresReview, string.Join("; ", readiness.Reasons));
+        Assert.False(readiness.CoordinatePlacementBlocked);
+        Assert.DoesNotContain(
+            WallPlacementContextGuards.SecondaryStructuralWithoutRoomBoundarySupportReason,
+            readiness.Reasons);
+        Assert.DoesNotContain(
+            WallPlacementContextGuards.FragmentMergedInteriorWithoutRoomBoundarySupportReason,
+            readiness.Reasons);
+    }
+
+    [Fact]
     public void Evaluate_AllowsDenseTwoSidedRoomFragmentWithOneSupportedEndpoint()
     {
         var wall = Wall("wall:dense-two-sided-room-fragment", Confidence.High) with

@@ -599,6 +599,103 @@ public sealed class WallGraphTopologyTests
     }
 
     [Fact]
+    public async Task WallGraphStage_PromotesContinuousDenseInteriorFragmentComponentWithGraphContext()
+    {
+        var mainWalls = new[]
+        {
+            DetectedWall("main-top", new PlanPoint(80, 240), new PlanPoint(260, 240)) with { WallType = WallType.Exterior },
+            DetectedWall("main-right", new PlanPoint(260, 240), new PlanPoint(260, 360)) with { WallType = WallType.Exterior },
+            DetectedWall("main-bottom", new PlanPoint(260, 360), new PlanPoint(80, 360)) with { WallType = WallType.Exterior },
+            DetectedWall("main-left", new PlanPoint(80, 360), new PlanPoint(80, 240)) with { WallType = WallType.Exterior }
+        };
+        var denseFragment = DenseContinuousFragmentWall(
+            "wall-dense-continuous-fragment",
+            new PlanPoint(450, 90),
+            new PlanPoint(450, 230),
+            includeInteriorSupport: true);
+        var context = new ScanContext(
+            Document("wall-dense-continuous-fragment-recovery"),
+            new ScannerOptions());
+        context.Walls.AddRange(mainWalls.Append(denseFragment));
+        context.WallEvidenceMap = new WallEvidenceMap(
+            Array.Empty<WallEvidenceSegment>(),
+            Array.Empty<WallEvidenceBand>(),
+            mainWalls
+                .Select(wall => Assessment(wall, WallEvidenceDecision.Accept, WallEvidenceCategory.StrongWallBody, Confidence.High))
+                .Append(DenseContinuousFragmentReviewAssessment(denseFragment, includeInteriorSupport: true))
+                .ToArray());
+
+        await new WallTopologyPreparationStage().ExecuteAsync(context, CancellationToken.None);
+        await new WallGraphStage().ExecuteAsync(context, CancellationToken.None);
+
+        var fragmentComponent = Assert.Single(
+            context.WallGraph.Components,
+            component => component.WallIds.Contains(denseFragment.Id));
+        var retainedReview = Assert.Single(context.WallEvidenceMap.WallAssessments, assessment => assessment.WallId == denseFragment.Id);
+        var retainedWall = Assert.Single(context.Walls, wall => wall.Id == denseFragment.Id);
+
+        Assert.Equal(WallGraphComponentKind.SecondaryStructural, fragmentComponent.Kind);
+        Assert.False(fragmentComponent.ExcludedFromStructuralTopology);
+        Assert.Contains(fragmentComponent.Evidence, item => item.Contains("long continuous fragment recovered", StringComparison.OrdinalIgnoreCase));
+        Assert.True(retainedReview.PlacementReady);
+        Assert.False(retainedReview.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Accept, retainedReview.Decision);
+        Assert.Contains(
+            retainedReview.Evidence,
+            item => item.Contains("promoted to placement-ready by secondary structural graph component", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            retainedWall.Evidence,
+            item => item.Contains("long interior fragment promoted to placement-ready", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "wall_evidence.secondary_interior_fragments_promoted");
+    }
+
+    [Fact]
+    public async Task WallGraphStage_KeepsDenseFragmentWithoutInteriorSupportReviewOnly()
+    {
+        var mainWalls = new[]
+        {
+            DetectedWall("main-top", new PlanPoint(100, 80), new PlanPoint(520, 80)) with { WallType = WallType.Exterior },
+            DetectedWall("main-right", new PlanPoint(520, 80), new PlanPoint(520, 320)) with { WallType = WallType.Exterior },
+            DetectedWall("main-bottom", new PlanPoint(520, 320), new PlanPoint(100, 320)) with { WallType = WallType.Exterior },
+            DetectedWall("main-left", new PlanPoint(100, 320), new PlanPoint(100, 80)) with { WallType = WallType.Exterior }
+        };
+        var denseFragment = DenseContinuousFragmentWall(
+            "wall-dense-unsupported-fragment",
+            new PlanPoint(330, 105),
+            new PlanPoint(330, 245),
+            includeInteriorSupport: false);
+        var context = new ScanContext(
+            Document("wall-dense-unsupported-fragment-review"),
+            new ScannerOptions());
+        context.Walls.AddRange(mainWalls.Append(denseFragment));
+        context.WallEvidenceMap = new WallEvidenceMap(
+            Array.Empty<WallEvidenceSegment>(),
+            Array.Empty<WallEvidenceBand>(),
+            mainWalls
+                .Select(wall => Assessment(wall, WallEvidenceDecision.Accept, WallEvidenceCategory.StrongWallBody, Confidence.High))
+                .Append(DenseContinuousFragmentReviewAssessment(denseFragment, includeInteriorSupport: false))
+                .ToArray());
+
+        await new WallTopologyPreparationStage().ExecuteAsync(context, CancellationToken.None);
+        await new WallGraphStage().ExecuteAsync(context, CancellationToken.None);
+
+        var fragmentComponent = Assert.Single(
+            context.WallGraph.Components,
+            component => component.WallIds.Contains(denseFragment.Id));
+        var assessment = Assert.Single(context.WallEvidenceMap.WallAssessments, item => item.WallId == denseFragment.Id);
+
+        Assert.Equal(WallGraphComponentKind.IsolatedFragment, fragmentComponent.Kind);
+        Assert.False(assessment.PlacementReady);
+        Assert.True(assessment.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Review, assessment.Decision);
+        Assert.DoesNotContain(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "wall_evidence.secondary_interior_fragments_promoted");
+    }
+
+    [Fact]
     public async Task WallGraphStage_KeepsShortInteriorFragmentComponentReviewOnly()
     {
         var mainWalls = new[]
@@ -2519,6 +2616,54 @@ public sealed class WallGraphTopologyTests
                 new[] { "not placement-ready without graph recovery" })
         };
 
+    private static WallEvidenceWallAssessment DenseContinuousFragmentReviewAssessment(
+        WallSegment wall,
+        bool includeInteriorSupport)
+    {
+        var evidence = new List<string>
+        {
+            "merged collinear wall fragments",
+            "run merged 99 fragments",
+            "run collapsed 2 duplicate primitives",
+            "layer (unlayered) classified Dimension (0.24)"
+        };
+        if (includeInteriorSupport)
+        {
+            evidence.Add("wall type interior: supported wall evidence inside exterior envelope");
+        }
+
+        evidence.Add("wall evidence: unlayered fragment-merged wall candidate has only one trusted structural endpoint (99 fragments, gap ratio 0); keep for topology but block exact placement until reviewed");
+
+        return new WallEvidenceWallAssessment(
+            wall.Id,
+            wall.PageNumber,
+            wall.Bounds,
+            WallEvidenceCategory.MediumWallBody,
+            new Confidence(0.88),
+            PlacementReady: false,
+            RequiresReview: true,
+            RejectedAsNoise: false,
+            wall.SourcePrimitiveIds,
+            evidence)
+        {
+            Decision = WallEvidenceDecision.Review,
+            ScoreBreakdown = new WallEvidenceScoreBreakdown(
+                0.62,
+                0,
+                0.62,
+                0,
+                0,
+                includeInteriorSupport ? 0.20 : 0.04,
+                0.10,
+                0,
+                0.08,
+                includeInteriorSupport
+                    ? new[] { "fragment-merged wall body", "one trusted structural endpoint", "supported wall evidence inside exterior envelope" }
+                    : new[] { "fragment-merged wall body", "one trusted structural endpoint" },
+                new[] { "not placement-ready without graph recovery" })
+        };
+    }
+
     private static WallSegment DetectedWall(string id, PlanPoint start, PlanPoint end) =>
         new(
             id,
@@ -2560,6 +2705,44 @@ public sealed class WallGraphTopologyTests
                 new[] { "fragment-merged test wall" }),
             Evidence = new[] { "merged collinear wall fragments", "test detected wall" }
         };
+
+    private static WallSegment DenseContinuousFragmentWall(
+        string id,
+        PlanPoint start,
+        PlanPoint end,
+        bool includeInteriorSupport)
+    {
+        var evidence = new List<string>
+        {
+            "merged collinear wall fragments",
+            "run merged 99 fragments",
+            "run collapsed 2 duplicate primitives",
+            "layer (unlayered) classified Dimension (0.24)"
+        };
+        if (includeInteriorSupport)
+        {
+            evidence.Add("wall type interior: supported wall evidence inside exterior envelope");
+        }
+
+        return DetectedWall(id, start, end) with
+        {
+            DetectionKind = WallDetectionKind.FragmentMerged,
+            WallType = WallType.Unknown,
+            Confidence = new Confidence(0.88),
+            SourcePrimitiveIds = Enumerable.Range(1, 101)
+                .Select(index => $"{id}:fragment-{index.ToString("000", System.Globalization.CultureInfo.InvariantCulture)}")
+                .ToArray(),
+            FragmentEvidence = new WallFragmentEvidence(
+                99,
+                0,
+                0,
+                2,
+                0,
+                RequiresGeometryReview: false,
+                new[] { "fragment geometry: 99 fragment(s)", "fragment geometry healed gap ratio 0" }),
+            Evidence = evidence
+        };
+    }
 
     private static WallSegment CleanFragmentWall(string id, PlanPoint start, PlanPoint end) =>
         DetectedWall(id, start, end) with

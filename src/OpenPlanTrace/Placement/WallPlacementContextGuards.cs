@@ -39,6 +39,9 @@ public static class WallPlacementContextGuards
     private const double MinTrustedLongOneEndpointFragmentMergedInteriorAssessmentConfidence = 0.82;
     private const int MaxTrustedLongOneEndpointFragmentMergedInteriorFragments = 12;
     private const int MaxTrustedLongOneEndpointFragmentMergedInteriorDuplicatePrimitives = 8;
+    private const int MinTrustedDenseLongOneEndpointFragmentMergedInteriorFragments = 24;
+    private const int MaxTrustedDenseLongOneEndpointFragmentMergedInteriorFragments = 180;
+    private const int MaxTrustedDenseLongOneEndpointFragmentMergedInteriorDuplicatePrimitives = 8;
     private const double MinTrustedDenseTwoSidedRoomFragmentMergedInteriorLengthDrawingUnits = 96.0;
     private const double MinTrustedDenseTwoSidedRoomFragmentMergedInteriorConfidence = 0.82;
     private const int MaxTrustedDenseTwoSidedRoomFragmentMergedInteriorFragments = 80;
@@ -267,30 +270,48 @@ public static class WallPlacementContextGuards
             return false;
         }
 
+        var uniqueSourcePrimitiveCount = Math.Max(0, wall.SourcePrimitiveIds.Count - fragmentEvidence.DuplicatePrimitiveCount);
+        var fragmentCount = Math.Max(fragmentEvidence.FragmentCount, uniqueSourcePrimitiveCount);
+        var evidence = extraEvidence is null
+            ? WallEvidenceFor(wall, assessment).ToArray()
+            : WallEvidenceFor(wall, assessment).Concat(extraEvidence).ToArray();
+        var trustedDenseGraphFragment =
+            component.Kind == WallGraphComponentKind.SecondaryStructural
+            && fragmentCount is >= MinTrustedDenseLongOneEndpointFragmentMergedInteriorFragments
+                and <= MaxTrustedDenseLongOneEndpointFragmentMergedInteriorFragments
+            && fragmentEvidence.DuplicatePrimitiveCount <= MaxTrustedDenseLongOneEndpointFragmentMergedInteriorDuplicatePrimitives
+            && fragmentEvidence.GapRatio <= 0.001
+            && fragmentEvidence.TotalHealedGap <= 0.001
+            && fragmentEvidence.MaxHealedGap <= 0.001
+            && EvidenceContains(evidence, "promoted to placement-ready by secondary structural graph component")
+            && EvidenceContains(evidence, "secondary structural interior fragment continuity");
+        var trustedCompactGraphFragment =
+            fragmentCount is >= 2 and <= MaxTrustedLongOneEndpointFragmentMergedInteriorFragments
+            && fragmentEvidence.DuplicatePrimitiveCount <= MaxTrustedLongOneEndpointFragmentMergedInteriorDuplicatePrimitives
+            && fragmentEvidence.GapRatio <= 0.001
+            && fragmentEvidence.TotalHealedGap <= 0.001;
+        if (!trustedCompactGraphFragment && !trustedDenseGraphFragment)
+        {
+            return false;
+        }
+
         var reviewOnlyMainStructuralFragment =
             component.Kind == WallGraphComponentKind.MainStructural
             && !assessment.PlacementReady
             && assessment.RequiresReview
             && assessment.Decision == WallEvidenceDecision.Review;
+        var reviewOnlySecondaryDenseFragment =
+            trustedDenseGraphFragment
+            && !assessment.PlacementReady
+            && assessment.RequiresReview
+            && assessment.Decision == WallEvidenceDecision.Review;
         if ((!assessment.PlacementReady || assessment.RequiresReview)
-            && !reviewOnlyMainStructuralFragment)
+            && !reviewOnlyMainStructuralFragment
+            && !reviewOnlySecondaryDenseFragment)
         {
             return false;
         }
 
-        var uniqueSourcePrimitiveCount = Math.Max(0, wall.SourcePrimitiveIds.Count - fragmentEvidence.DuplicatePrimitiveCount);
-        var fragmentCount = Math.Max(fragmentEvidence.FragmentCount, uniqueSourcePrimitiveCount);
-        if (fragmentCount is < 2 or > MaxTrustedLongOneEndpointFragmentMergedInteriorFragments
-            || fragmentEvidence.DuplicatePrimitiveCount > MaxTrustedLongOneEndpointFragmentMergedInteriorDuplicatePrimitives
-            || fragmentEvidence.GapRatio > 0.001
-            || fragmentEvidence.TotalHealedGap > 0.001)
-        {
-            return false;
-        }
-
-        var evidence = extraEvidence is null
-            ? WallEvidenceFor(wall, assessment).ToArray()
-            : WallEvidenceFor(wall, assessment).Concat(extraEvidence).ToArray();
         if (!EvidenceContains(evidence, "supported wall evidence inside exterior envelope")
             || (!EvidenceContains(evidence, "one endpoint supported by structural context")
                 && !EvidenceContains(evidence, "both endpoints supported by structural context"))

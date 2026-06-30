@@ -8,6 +8,9 @@ internal sealed class WallGraphStage : IPipelineStage
     private const int MaxSecondaryInteriorFragmentPromotionFragments = 12;
     private const int MaxSecondaryInteriorFragmentPromotionDuplicatePrimitives = 8;
     private const double MaxSecondaryInteriorFragmentPromotionGapRatio = 0.08;
+    private const int MinContinuousDenseInteriorFragmentPromotionFragments = 24;
+    private const int MaxContinuousDenseInteriorFragmentPromotionFragments = 180;
+    private const int MaxContinuousDenseInteriorFragmentDuplicatePrimitives = 8;
     private const string ObjectLikeRoomBoundaryProtectionEvidence =
         "wall evidence: protected from object-like graph reclassification because a long clean fragment wall is confirmed by room-boundary support";
 
@@ -2258,10 +2261,17 @@ internal sealed class WallGraphStage : IPipelineStage
             return false;
         }
 
-        if (wall.WallType != WallType.Interior
-            || wall.DetectionKind != WallDetectionKind.FragmentMerged
+        if (wall.DetectionKind != WallDetectionKind.FragmentMerged
             || wall.DrawingLength <= RecoverableInteriorFragmentLength(options)
-            || !HasSafeSecondaryInteriorFragmentGeometry(wall, options))
+            || !HasSecondaryInteriorFragmentEvidence(wall, assessment))
+        {
+            return false;
+        }
+
+        var hasSafeSmallFragmentGeometry = wall.WallType == WallType.Interior
+            && HasSafeSecondaryInteriorFragmentGeometry(wall, options);
+        var hasTrustedDenseFragmentGeometry = HasTrustedContinuousDenseInteriorFragmentGeometry(wall, assessment, options);
+        if (!hasSafeSmallFragmentGeometry && !hasTrustedDenseFragmentGeometry)
         {
             return false;
         }
@@ -2295,6 +2305,65 @@ internal sealed class WallGraphStage : IPipelineStage
             && fragmentEvidence.DuplicatePrimitiveCount <= MaxSecondaryInteriorFragmentPromotionDuplicatePrimitives
             && fragmentEvidence.GapRatio <= MaxSecondaryInteriorFragmentPromotionGapRatio
             && fragmentEvidence.TotalHealedGap <= maxHealedGap;
+    }
+
+    private static bool HasTrustedContinuousDenseInteriorFragmentGeometry(
+        WallSegment wall,
+        WallEvidenceWallAssessment assessment,
+        ScannerOptions options)
+    {
+        if (wall.DetectionKind != WallDetectionKind.FragmentMerged
+            || wall.PairEvidence is not null
+            || wall.FragmentEvidence is not { RequiresGeometryReview: false } fragmentEvidence
+            || wall.DrawingLength <= RecoverableInteriorFragmentLength(options)
+            || wall.Confidence.Value < 0.78
+            || assessment.Confidence.Value < 0.78)
+        {
+            return false;
+        }
+
+        var uniqueSourcePrimitiveCount = Math.Max(0, wall.SourcePrimitiveIds.Count - fragmentEvidence.DuplicatePrimitiveCount);
+        var fragmentCount = Math.Max(fragmentEvidence.FragmentCount, uniqueSourcePrimitiveCount);
+        if (fragmentCount is < MinContinuousDenseInteriorFragmentPromotionFragments or > MaxContinuousDenseInteriorFragmentPromotionFragments
+            || fragmentEvidence.DuplicatePrimitiveCount > MaxContinuousDenseInteriorFragmentDuplicatePrimitives
+            || fragmentEvidence.GapRatio > 0.001
+            || fragmentEvidence.TotalHealedGap > 0.001
+            || fragmentEvidence.MaxHealedGap > 0.001)
+        {
+            return false;
+        }
+
+        var evidence = wall.Evidence
+            .Concat(assessment.Evidence)
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(assessment.ScoreBreakdown.NegativeEvidence)
+            .ToArray();
+        if (!evidence.Any(item => item.Contains("merged collinear wall fragments", StringComparison.OrdinalIgnoreCase))
+            || !evidence.Any(item => item.Contains("supported wall evidence inside exterior envelope", StringComparison.OrdinalIgnoreCase))
+            || !evidence.Any(item => item.Contains("only one trusted structural endpoint", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        return !evidence.Any(IsHardRiskReviewWallEvidence)
+            && !evidence.Any(IsSecondaryInteriorFragmentPromotionBlockedEvidence);
+    }
+
+    private static bool HasSecondaryInteriorFragmentEvidence(
+        WallSegment wall,
+        WallEvidenceWallAssessment assessment)
+    {
+        if (wall.WallType == WallType.Interior)
+        {
+            return true;
+        }
+
+        return wall.Evidence
+            .Concat(assessment.Evidence)
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Any(item =>
+                item.Contains("wall type interior", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("supported wall evidence inside exterior envelope", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool IsSecondaryInteriorFragmentPromotionBlockedEvidence(string evidence)
@@ -2726,7 +2795,7 @@ internal sealed class WallGraphStage : IPipelineStage
             return WallGraphComponentKind.ObjectLikeIsland;
         }
 
-        if (LooksLikeRecoverableInteriorFragment(component, mainComponent, context.Options))
+        if (LooksLikeRecoverableInteriorFragment(component, mainComponent, mainBounds, context))
         {
             return WallGraphComponentKind.SecondaryStructural;
         }
@@ -3174,8 +3243,10 @@ internal sealed class WallGraphStage : IPipelineStage
     private static bool LooksLikeRecoverableInteriorFragment(
         RawWallGraphComponent component,
         RawWallGraphComponent? mainComponent,
-        ScannerOptions options)
+        PlanRect mainBounds,
+        ScanContext context)
     {
+        var options = context.Options;
         if (mainComponent is null
             || ReferenceEquals(component, mainComponent)
             || component.Bounds.IsEmpty
@@ -3183,7 +3254,6 @@ internal sealed class WallGraphStage : IPipelineStage
             || component.WallIds.Count != 1
             || component.EdgeIds.Count == 0
             || component.FragmentMergedWallCount != 1
-            || component.InteriorWallCount != 1
             || component.ExteriorWallCount > 0
             || component.DiagonalWallCount > 0
             || component.ShortWallCount > 0
@@ -3195,7 +3265,37 @@ internal sealed class WallGraphStage : IPipelineStage
         var structuralNeighborhood = mainComponent.Bounds.Inflate(Math.Max(
             UnresolvedEndpointGapReviewTolerance(options) * 1.5,
             options.DefaultWallThickness * 8.0));
-        return structuralNeighborhood.Intersects(component.Bounds);
+        if (component.InteriorWallCount == 1 && structuralNeighborhood.Intersects(component.Bounds))
+        {
+            return true;
+        }
+
+        var wallId = component.WallIds[0];
+        var wall = context.Walls.FirstOrDefault(item => string.Equals(item.Id, wallId, StringComparison.Ordinal));
+        var assessment = context.WallEvidenceMap.WallAssessments
+            .LastOrDefault(item => string.Equals(item.WallId, wallId, StringComparison.Ordinal));
+        return wall is not null
+            && assessment is not null
+            && IsInsideMainFloorplanNeighborhood(component, mainBounds, options)
+            && HasSecondaryInteriorFragmentEvidence(wall, assessment)
+            && HasTrustedContinuousDenseInteriorFragmentGeometry(wall, assessment, options);
+    }
+
+    private static bool IsInsideMainFloorplanNeighborhood(
+        RawWallGraphComponent component,
+        PlanRect mainBounds,
+        ScannerOptions options)
+    {
+        if (mainBounds.IsEmpty || component.Bounds.IsEmpty)
+        {
+            return false;
+        }
+
+        var tolerance = Math.Max(options.WallSnapTolerance * 2.0, options.DefaultWallThickness * 4.0);
+        var searchBounds = mainBounds.Inflate(tolerance);
+        return searchBounds.Contains(component.Bounds)
+            || searchBounds.Contains(component.Bounds.Center, tolerance)
+            || searchBounds.Intersects(component.Bounds, tolerance);
     }
 
     private static double RecoverableInteriorFragmentLength(ScannerOptions options) =>
@@ -3249,6 +3349,10 @@ internal sealed class WallGraphStage : IPipelineStage
         else if (component.WallIds.Count == 1 && component.FragmentMergedWallCount == 1 && component.InteriorWallCount == 1)
         {
             evidence.Add("long interior fragment recovered as secondary structural wall context");
+        }
+        else if (component.WallIds.Count == 1 && component.FragmentMergedWallCount == 1)
+        {
+            evidence.Add("long continuous fragment recovered as secondary structural wall context");
         }
         else if (mainComponent is not null)
         {

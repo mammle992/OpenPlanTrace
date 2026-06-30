@@ -1544,6 +1544,14 @@ public static class WallPlacementReadinessEvaluator
             return true;
         }
 
+        if (trustedLongOneEndpointFragmentMergedInterior
+            && reason.Contains(
+                WallPlacementContextGuards.SecondaryStructuralWithoutRoomBoundarySupportReason,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
         if (trustedDenseTwoSidedRoomFragmentMergedInterior
             && reason.Contains(
                 WallPlacementContextGuards.FragmentMergedInteriorWithoutRoomBoundarySupportReason,
