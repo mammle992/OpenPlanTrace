@@ -98,6 +98,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         var roomBoundaryRepairPlacementPromoted = 0;
         var roomBoundaryRepairInteriorRefined = 0;
         var roomBoundaryRepairRejectedRecovered = 0;
+        var trustedLongExteriorShellPlacementPromoted = 0;
         var exteriorShellRepairPlacementPromoted = 0;
         var exteriorShellRepairRejectedRecovered = 0;
         var sharedRoomBoundaryGapInferred = 0;
@@ -308,6 +309,24 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
                 fragmentedExteriorShellContinuityRetained++;
                 evidenceUpdated++;
                 assessment = retainedAssessment;
+            }
+
+            if (assessment is not null
+                && TryPromoteTrustedLongExteriorShellWallEvidence(
+                    updatedWall,
+                    assessment,
+                    component,
+                    out var longShellPromotedAssessment,
+                    out var longShellPromotionEvidence))
+            {
+                updatedAssessmentsByWallId[wall.Id] = longShellPromotedAssessment;
+                updatedWall = updatedWall with
+                {
+                    Evidence = AppendEvidence(updatedWall.Evidence, longShellPromotionEvidence)
+                };
+                trustedLongExteriorShellPlacementPromoted++;
+                evidenceUpdated++;
+                assessment = longShellPromotedAssessment;
             }
 
             if (assessment is not null
@@ -624,6 +643,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             roomBoundaryRepairInteriorRefined,
             roomBoundaryRepairRejectedRecovered,
             exteriorShellRepairSupport.CandidateWallCount,
+            trustedLongExteriorShellPlacementPromoted,
             exteriorShellRepairPlacementPromoted,
             exteriorShellRepairRejectedRecovered,
             sharedRoomBoundaryGapInferred,
@@ -1236,6 +1256,59 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             && (item.Contains("exterior shell", StringComparison.OrdinalIgnoreCase)
                 || item.Contains("wall-like layer", StringComparison.OrdinalIgnoreCase)
                 || item.Contains("trusted benchmark", StringComparison.OrdinalIgnoreCase)));
+
+    private static bool TryPromoteTrustedLongExteriorShellWallEvidence(
+        WallSegment wall,
+        WallEvidenceWallAssessment assessment,
+        WallGraphComponent? component,
+        out WallEvidenceWallAssessment promotedAssessment,
+        out IReadOnlyList<string> promotionEvidence)
+    {
+        promotedAssessment = assessment;
+        promotionEvidence = Array.Empty<string>();
+
+        if (assessment.PlacementReady
+            && !assessment.RequiresReview
+            && assessment.Decision == WallEvidenceDecision.Accept)
+        {
+            return false;
+        }
+
+        var trustedMainStructuralExterior =
+            WallPlacementReadinessEvaluator.IsTrustedMainStructuralExteriorWallBody(
+                wall,
+                component,
+                assessment);
+        var trustedLongIsolatedExterior =
+            WallPlacementReadinessEvaluator.IsTrustedLongIsolatedExteriorShellWallBody(
+                wall,
+                component,
+                assessment);
+        if (!trustedMainStructuralExterior && !trustedLongIsolatedExterior)
+        {
+            return false;
+        }
+
+        promotionEvidence =
+        [
+            trustedMainStructuralExterior
+                ? "wall evidence: trusted long main exterior shell promoted to placement-ready after wall-body review"
+                : "wall evidence: trusted long isolated exterior shell promoted to placement-ready after shell-continuity review"
+        ];
+        promotedAssessment = assessment with
+        {
+            Category = assessment.Category == WallEvidenceCategory.StrongWallBody
+                ? assessment.Category
+                : WallEvidenceCategory.MediumWallBody,
+            Confidence = new Confidence(Math.Max(assessment.Confidence.Value, Math.Min(0.94, wall.Confidence.Value + 0.02))),
+            PlacementReady = true,
+            RequiresReview = false,
+            RejectedAsNoise = false,
+            Decision = WallEvidenceDecision.Accept,
+            Evidence = AppendEvidence(assessment.Evidence, promotionEvidence)
+        };
+        return true;
+    }
 
     private static bool TryPromoteRoomConfirmedWallEvidence(
         WallSegment wall,
@@ -5033,6 +5106,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         int roomBoundaryRepairInteriorRefined,
         int roomBoundaryRepairRejectedRecovered,
         int exteriorShellRepairCandidateWallCount,
+        int trustedLongExteriorShellPlacementPromoted,
         int exteriorShellRepairPlacementPromoted,
         int exteriorShellRepairRejectedRecovered,
         int sharedRoomBoundaryGapInferred,
@@ -5077,6 +5151,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
                 ["roomBoundaryRepairInteriorRefinedWallCount"] = roomBoundaryRepairInteriorRefined.ToString(),
                 ["roomBoundaryRepairRejectedRecoveredWallCount"] = roomBoundaryRepairRejectedRecovered.ToString(),
                 ["exteriorShellRepairCandidateWallCount"] = exteriorShellRepairCandidateWallCount.ToString(),
+                ["trustedLongExteriorShellPlacementPromotedWallCount"] = trustedLongExteriorShellPlacementPromoted.ToString(),
                 ["exteriorShellRepairPlacementPromotedWallCount"] = exteriorShellRepairPlacementPromoted.ToString(),
                 ["exteriorShellRepairRejectedRecoveredWallCount"] = exteriorShellRepairRejectedRecovered.ToString(),
                 ["sharedRoomBoundaryGapInferredWallCount"] = sharedRoomBoundaryGapInferred.ToString(),

@@ -244,6 +244,76 @@ public sealed class WallTypeRefinementTests
         Assert.Contains(
             refined.Evidence,
             item => item.Contains("trusted long isolated exterior shell wall body", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            refined.Evidence,
+            item => item.Contains("trusted long isolated exterior shell promoted", StringComparison.OrdinalIgnoreCase));
+
+        var promoted = Assert.Single(context.WallEvidenceMap.WallAssessments);
+        Assert.True(promoted.PlacementReady);
+        Assert.False(promoted.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Accept, promoted.Decision);
+        Assert.Contains(
+            promoted.Evidence,
+            item => item.Contains("trusted long isolated exterior shell promoted", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task WallTypeRefinement_PromotesLongDimensionLikeExteriorShell()
+    {
+        var wall = new WallSegment(
+            "wall-long-dimension-like-exterior-shell",
+            1,
+            new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(398, 100)),
+            16.9,
+            new Confidence(0.77))
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Exterior,
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(new PlanPoint(100, 92), new PlanPoint(398, 92)),
+                new PlanLineSegment(new PlanPoint(100, 108.9), new PlanPoint(398, 108.9)),
+                FaceSeparation: 16.9,
+                OverlapRatio: 1.0,
+                Score: 0.874,
+                FirstFaceFragmentCount: 43,
+                SecondFaceFragmentCount: 42,
+                FirstFaceSourcePrimitiveIds: new[] { "dimension-like-exterior-a" },
+                SecondFaceSourcePrimitiveIds: new[] { "dimension-like-exterior-b" }),
+            Evidence = new[]
+            {
+                "parallel wall-face pair",
+                "pair score 0.874",
+                "overlap ratio 1",
+                "first face merged 43 fragments",
+                "second face merged 42 fragments",
+                "layer (unlayered) classified Dimension (0.24)",
+                "layer evidence: contains dimension-like text",
+                "wall type exterior: near detected floorplan/wall envelope or local outer boundary"
+            }
+        };
+        var context = CreateContext("long-dimension-like-exterior-shell");
+        context.Walls.Add(wall);
+        context.WallGraph = IsolatedGraphFor(wall);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.MediumWallBody,
+            placementReady: false,
+            requiresReview: true,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var refined = Assert.Single(context.Walls);
+        Assert.Equal(WallType.Exterior, refined.WallType);
+        Assert.Contains(
+            refined.Evidence,
+            item => item.Contains("trusted long isolated exterior shell promoted", StringComparison.OrdinalIgnoreCase));
+
+        var promoted = Assert.Single(context.WallEvidenceMap.WallAssessments);
+        Assert.True(promoted.PlacementReady);
+        Assert.False(promoted.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Accept, promoted.Decision);
     }
 
     [Fact]
@@ -293,6 +363,63 @@ public sealed class WallTypeRefinementTests
         Assert.DoesNotContain(
             refined.Evidence,
             item => item.Contains("trusted long isolated exterior shell wall body", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task WallTypeRefinement_DoesNotPromoteLongCoveredAreaBoundaryAsExteriorShell()
+    {
+        var wall = new WallSegment(
+            "wall-long-covered-area-boundary",
+            1,
+            new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(330, 100)),
+            8,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Unknown,
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(new PlanPoint(100, 96), new PlanPoint(330, 96)),
+                new PlanLineSegment(new PlanPoint(100, 104), new PlanPoint(330, 104)),
+                FaceSeparation: 8,
+                OverlapRatio: 0.99,
+                Score: 0.93,
+                FirstFaceFragmentCount: 24,
+                SecondFaceFragmentCount: 28,
+                FirstFaceSourcePrimitiveIds: new[] { "covered-area-boundary-a" },
+                SecondFaceSourcePrimitiveIds: new[] { "covered-area-boundary-b" }),
+            Evidence = new[]
+            {
+                "parallel wall-face pair",
+                "filled wall-solid primitive",
+                "wall evidence: filled closed vector wall body",
+                "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+                "wall type refined unknown: outdoor covered-area boundary",
+                "overbygd"
+            }
+        };
+        var context = CreateContext("long-covered-area-boundary");
+        context.Walls.Add(wall);
+        context.WallGraph = IsolatedGraphFor(wall, excludedFromStructuralTopology: true);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.MediumWallBody,
+            placementReady: false,
+            requiresReview: true,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var refined = Assert.Single(context.Walls);
+        Assert.Equal(WallType.Unknown, refined.WallType);
+        Assert.DoesNotContain(
+            refined.Evidence,
+            item => item.Contains("trusted long isolated exterior shell promoted", StringComparison.OrdinalIgnoreCase));
+
+        var retained = Assert.Single(context.WallEvidenceMap.WallAssessments);
+        Assert.False(retained.PlacementReady);
+        Assert.True(retained.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Review, retained.Decision);
     }
 
     [Fact]

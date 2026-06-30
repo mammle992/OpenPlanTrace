@@ -39,7 +39,7 @@ public static class WallPlacementReadinessEvaluator
     private const int MaxTrustedFilledSecondaryExteriorPairFaceFragments = 220;
     private const int MaxTrustedFilledSecondaryExteriorPairTotalFaceFragments = 280;
     private const double MinTrustedLongIsolatedExteriorShellLengthDrawingUnits = 120.0;
-    private const double MinTrustedLongIsolatedExteriorShellPairScore = 0.88;
+    private const double MinTrustedLongIsolatedExteriorShellPairScore = 0.86;
     private const double MinTrustedLongIsolatedExteriorShellOverlapRatio = 0.95;
     private const int MaxTrustedLongIsolatedExteriorShellFaceFragments = 96;
     private const int MaxTrustedLongIsolatedExteriorShellTotalFaceFragments = 180;
@@ -1105,7 +1105,6 @@ public static class WallPlacementReadinessEvaluator
             || component is null
             || evidenceAssessment is null
             || component.Kind != WallGraphComponentKind.IsolatedFragment
-            || !component.ExcludedFromStructuralTopology
             || evidenceAssessment.RejectedAsNoise
             || evidenceAssessment.Decision == WallEvidenceDecision.Reject
             || evidenceAssessment.Category is not (WallEvidenceCategory.StrongWallBody
