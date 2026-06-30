@@ -2036,6 +2036,149 @@ public sealed class WallTypeRefinementTests
     }
 
     [Fact]
+    public async Task WallTypeRefinement_KeepsFilledDimensionLikeDenseLocalWallWithSideRoomAndEndpointEvidence()
+    {
+        var wall = ShortUnlayeredInteriorWall("wall-filled-dimension-like-side-room-supported", 100, 100, 164, 100) with
+        {
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "face separation 2,065 drawing units",
+                "pair score 0,909",
+                "overlap ratio 1",
+                "first face merged 28 fragments",
+                "second face merged 86 fragments",
+                "first face collapsed 2 duplicate or near-duplicate wall line primitive(s)",
+                "second face collapsed 5 duplicate or near-duplicate wall line primitive(s)",
+                "layer (unlayered) classified Dimension (0,24)",
+                "layer evidence: contains dimension-like text",
+                "filled wall-solid primitive",
+                "wall evidence: filled closed vector wall body",
+                "filled wall-solid bounds 43,57 x 1,39 drawing units",
+                "wall type interior: supported wall evidence inside exterior envelope",
+                "wall evidence: strong double-edge wall body"
+            ]
+        };
+        var context = CreateContext("filled-dimension-like-dense-local-side-room-protection");
+        var neighbors = AxisDenseDetailNeighborWalls().ToArray();
+        context.Walls.Add(wall);
+        context.Walls.AddRange(neighbors);
+        context.Rooms.Add(Room(
+            "room-above-filled-side-supported",
+            RoomUseKind.Office,
+            new PlanRect(90, 70, 86, 25),
+            new[]
+            {
+                new PlanPoint(90, 70),
+                new PlanPoint(176, 70),
+                new PlanPoint(176, 95),
+                new PlanPoint(90, 95)
+            }));
+        context.Rooms.Add(Room(
+            "room-below-filled-side-supported",
+            RoomUseKind.Office,
+            new PlanRect(90, 105, 86, 25),
+            new[]
+            {
+                new PlanPoint(90, 105),
+                new PlanPoint(176, 105),
+                new PlanPoint(176, 130),
+                new PlanPoint(90, 130)
+            }));
+        context.WallGraph = SupportedFragmentEndpointGraphFor(wall, WallGraphComponentKind.SecondaryStructural);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.StrongWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var retained = Assert.Single(context.WallEvidenceMap.WallAssessments);
+        Assert.True(retained.PlacementReady);
+        Assert.False(retained.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Accept, retained.Decision);
+        Assert.DoesNotContain(
+            retained.Evidence,
+            item => item.Contains("dense local detail/stair-like linework", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "walls.architectural_type_refined"
+                && diagnostic.Properties["denseLocalDetailPlacementDemotedWallCount"] == "0");
+    }
+
+    [Fact]
+    public async Task WallTypeRefinement_DemotesFragmentedDimensionLikeDenseSideRoomWallWithoutFilledBodyEvidence()
+    {
+        var wall = ShortUnlayeredInteriorWall("wall-fragmented-dimension-like-side-room-no-filled-body", 100, 100, 164, 100) with
+        {
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "face separation 2,065 drawing units",
+                "pair score 0,909",
+                "overlap ratio 1",
+                "first face merged 28 fragments",
+                "second face merged 86 fragments",
+                "first face collapsed 2 duplicate or near-duplicate wall line primitive(s)",
+                "second face collapsed 5 duplicate or near-duplicate wall line primitive(s)",
+                "layer (unlayered) classified Dimension (0,24)",
+                "layer evidence: contains dimension-like text",
+                "wall type interior: supported wall evidence inside exterior envelope",
+                "wall evidence: strong double-edge wall body"
+            ]
+        };
+        var context = CreateContext("fragmented-dimension-like-dense-side-room-no-filled-body-demotion");
+        var neighbors = AxisDenseDetailNeighborWalls().ToArray();
+        context.Walls.Add(wall);
+        context.Walls.AddRange(neighbors);
+        context.Rooms.Add(Room(
+            "room-above-fragmented-side-supported",
+            RoomUseKind.Office,
+            new PlanRect(90, 70, 86, 25),
+            new[]
+            {
+                new PlanPoint(90, 70),
+                new PlanPoint(176, 70),
+                new PlanPoint(176, 95),
+                new PlanPoint(90, 95)
+            }));
+        context.Rooms.Add(Room(
+            "room-below-fragmented-side-supported",
+            RoomUseKind.Office,
+            new PlanRect(90, 105, 86, 25),
+            new[]
+            {
+                new PlanPoint(90, 105),
+                new PlanPoint(176, 105),
+                new PlanPoint(176, 130),
+                new PlanPoint(90, 130)
+            }));
+        context.WallGraph = SupportedFragmentEndpointGraphFor(wall, WallGraphComponentKind.SecondaryStructural);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.StrongWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var demoted = Assert.Single(context.WallEvidenceMap.WallAssessments);
+        Assert.Equal(WallEvidenceCategory.MediumWallBody, demoted.Category);
+        Assert.False(demoted.PlacementReady);
+        Assert.True(demoted.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Review, demoted.Decision);
+        Assert.Contains(
+            demoted.Evidence,
+            item => item.Contains("dense local detail/stair-like linework", StringComparison.OrdinalIgnoreCase)
+                && item.Contains("dimension-like weak layer True", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task WallTypeRefinement_DemotesVeryShortDimensionLikeDenseSecondaryWallDespiteSideRoomEvidence()
     {
         var wall = ShortUnlayeredInteriorWall("wall-short-dimension-like-side-room-detail", 100, 100, 126, 100) with
@@ -2237,6 +2380,87 @@ public sealed class WallTypeRefinementTests
             context.Diagnostics.Build().Messages,
             diagnostic => diagnostic.Code == "walls.architectural_type_refined"
                 && diagnostic.Properties["denseLocalDetailPlacementDemotedWallCount"] == "0");
+    }
+
+    [Fact]
+    public async Task WallTypeRefinement_KeepsFragmentMergedDimensionLikeDenseWallWithGeometricRoomBoundaryAndSupportedEndpoints()
+    {
+        var wall = FragmentMergedDimensionLikeInteriorWall("wall-fragment-dimension-like-geometric-room-boundary", 100, 100, 164, 100);
+        var context = CreateContext("fragment-dimension-like-geometric-room-boundary-protection");
+        var neighbors = AxisDenseDetailNeighborWalls().ToArray();
+        context.Walls.Add(wall);
+        context.Walls.AddRange(neighbors);
+        context.Rooms.Add(Room(
+            "room-fragment-geometric-supported",
+            RoomUseKind.Office,
+            new PlanRect(90, 100, 82, 42),
+            new[]
+            {
+                new PlanPoint(90, 100),
+                new PlanPoint(172, 100),
+                new PlanPoint(172, 142),
+                new PlanPoint(90, 142)
+            },
+            new[] { wall.Id, "synthetic-room-edge" }));
+        context.WallGraph = SupportedFragmentEndpointGraphFor(wall, WallGraphComponentKind.SecondaryStructural);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.StrongWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var retained = Assert.Single(context.WallEvidenceMap.WallAssessments);
+        Assert.True(retained.PlacementReady);
+        Assert.False(retained.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Accept, retained.Decision);
+        Assert.DoesNotContain(
+            retained.Evidence,
+            item => item.Contains("dense local detail/stair-like linework", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            retained.Evidence,
+            item => item.Contains("geometric room boundary support", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "walls.architectural_type_refined"
+                && diagnostic.Properties["denseLocalDetailPlacementDemotedWallCount"] == "0");
+    }
+
+    [Fact]
+    public async Task WallTypeRefinement_DemotesFragmentMergedDimensionLikeDenseWallWithoutGeometricRoomBoundary()
+    {
+        var wall = FragmentMergedDimensionLikeInteriorWall("wall-fragment-dimension-like-no-room-boundary", 100, 100, 164, 100);
+        var context = CreateContext("fragment-dimension-like-dense-no-room-boundary-demotion");
+        var neighbors = AxisDenseDetailNeighborWalls().ToArray();
+        context.Walls.Add(wall);
+        context.Walls.AddRange(neighbors);
+        context.WallGraph = SupportedFragmentEndpointGraphFor(wall, WallGraphComponentKind.SecondaryStructural);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.StrongWallBody,
+            placementReady: true,
+            requiresReview: false,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var demoted = Assert.Single(context.WallEvidenceMap.WallAssessments);
+        Assert.Equal(WallEvidenceCategory.MediumWallBody, demoted.Category);
+        Assert.False(demoted.PlacementReady);
+        Assert.True(demoted.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Review, demoted.Decision);
+        Assert.Contains(
+            demoted.Evidence,
+            item => item.Contains("dense local detail/stair-like linework", StringComparison.OrdinalIgnoreCase)
+                && item.Contains("dimension-like weak layer True", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "walls.architectural_type_refined"
+                && diagnostic.Properties["denseLocalDetailPlacementDemotedWallCount"] == "1");
     }
 
     [Fact]
@@ -3915,6 +4139,54 @@ public sealed class WallTypeRefinementTests
             ]
         };
 
+    private static WallSegment FragmentMergedDimensionLikeInteriorWall(
+        string id,
+        double x1,
+        double y1,
+        double x2,
+        double y2,
+        int fragmentCount = 38,
+        int duplicatePrimitiveCount = 9) =>
+        new(
+            id,
+            1,
+            new PlanLineSegment(new PlanPoint(x1, y1), new PlanPoint(x2, y2)),
+            4,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.FragmentMerged,
+            WallType = WallType.Interior,
+            SourcePrimitiveIds = Enumerable.Range(0, fragmentCount)
+                .Select(index => $"{id}:source:{index}")
+                .ToArray(),
+            FragmentEvidence = new WallFragmentEvidence(
+                fragmentCount,
+                0,
+                0,
+                duplicatePrimitiveCount,
+                0,
+                RequiresGeometryReview: false,
+                Evidence:
+                [
+                    $"fragment geometry: {fragmentCount} fragment(s)",
+                    "fragment geometry healed gap ratio 0",
+                    $"fragment geometry collapsed {duplicatePrimitiveCount} duplicate primitive(s)"
+                ]),
+            Evidence =
+            [
+                "merged collinear wall fragments",
+                $"run merged {fragmentCount} fragments",
+                $"run collapsed {duplicatePrimitiveCount} duplicate or near-duplicate wall line primitive(s)",
+                "layer (unlayered) classified Dimension (0,24)",
+                "layer evidence: contains dimension-like text",
+                $"fragment geometry: {fragmentCount} fragment(s)",
+                "fragment geometry healed gap ratio 0",
+                $"fragment geometry collapsed {duplicatePrimitiveCount} duplicate primitive(s)",
+                "wall type interior: supported wall evidence inside exterior envelope",
+                "wall evidence: medium wall body from wall-like layer, length, or structural context"
+            ]
+        };
+
     private static WallSegment NonOrthogonalDimensionLikeInteriorWall(string id, double x1, double y1, double x2, double y2) =>
         new(
             id,
@@ -4295,6 +4567,76 @@ public sealed class WallTypeRefinementTests
                     Confidence.High,
                     Array.Empty<string>())
             });
+
+    private static WallGraph SupportedFragmentEndpointGraphFor(
+        WallSegment wall,
+        WallGraphComponentKind componentKind = WallGraphComponentKind.MainStructural)
+    {
+        var midPoint = wall.CenterLine.PointAt(0.5);
+        return new WallGraph(
+            new[]
+            {
+                new WallNode(
+                    "node-start",
+                    wall.PageNumber,
+                    wall.CenterLine.Start,
+                    WallNodeKind.Corner,
+                    2,
+                    Array.Empty<string>(),
+                    Confidence.High,
+                    Array.Empty<string>()),
+                new WallNode(
+                    "node-mid",
+                    wall.PageNumber,
+                    midPoint,
+                    WallNodeKind.TJunction,
+                    3,
+                    Array.Empty<string>(),
+                    Confidence.High,
+                    Array.Empty<string>()),
+                new WallNode(
+                    "node-end",
+                    wall.PageNumber,
+                    wall.CenterLine.End,
+                    WallNodeKind.Corner,
+                    2,
+                    Array.Empty<string>(),
+                    Confidence.High,
+                    Array.Empty<string>())
+            },
+            new[]
+            {
+                new WallEdge(
+                    "edge-wall-a",
+                    wall.PageNumber,
+                    "node-start",
+                    "node-mid",
+                    wall.Id,
+                    Confidence.High),
+                new WallEdge(
+                    "edge-wall-b",
+                    wall.PageNumber,
+                    "node-mid",
+                    "node-end",
+                    wall.Id,
+                    Confidence.High)
+            },
+            new[]
+            {
+                new WallGraphComponent(
+                    "component-main",
+                    wall.PageNumber,
+                    componentKind,
+                    wall.Bounds,
+                    new[] { wall.Id },
+                    new[] { "node-start", "node-mid", "node-end" },
+                    new[] { "edge-wall-a", "edge-wall-b" },
+                    wall.SourcePrimitiveIds,
+                    wall.DrawingLength,
+                    Confidence.High,
+                    Array.Empty<string>())
+            });
+    }
 
     private static WallGraph OneSupportedEndpointGraphFor(
         WallSegment wall,

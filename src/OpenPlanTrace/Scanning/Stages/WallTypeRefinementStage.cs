@@ -15,6 +15,15 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
     private const int MaxMainStructuralOneEndpointDenseRoomBoundaryTotalFaceFragments = 20;
     private const int MaxTrustedDimensionLikeDenseRoomBoundaryFaceFragments = 32;
     private const int MaxTrustedDimensionLikeDenseRoomBoundaryTotalFaceFragments = 48;
+    private const double MinTrustedFragmentMergedDenseRoomBoundaryLength = 48.0;
+    private const double MaxTrustedFragmentMergedDenseRoomBoundaryLength = 90.0;
+    private const int MinTrustedFragmentMergedDenseRoomBoundaryEndpoints = 3;
+    private const int MaxTrustedFragmentMergedDenseRoomBoundaryDuplicateFragments = 12;
+    private const double MinTrustedFilledDenseSideRoomWallLength = 44.0;
+    private const double MaxTrustedFilledDenseSideRoomWallLength = 90.0;
+    private const int MinTrustedFilledDenseSideRoomHits = 4;
+    private const int MinTrustedFilledDenseSideRoomEndpoints = 3;
+    private const double MinTrustedFilledDenseSideRoomPairScore = 0.88;
 
     public string Name => StageName;
 
@@ -2091,10 +2100,35 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
     {
         if (offAxisNearbyCount > 1
             || wall.WallType != WallType.Interior
-            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
             || component is null
             || component.ExcludedFromStructuralTopology
-            || component.Kind is WallGraphComponentKind.ObjectLikeIsland or WallGraphComponentKind.IsolatedFragment
+            || component.Kind is WallGraphComponentKind.ObjectLikeIsland or WallGraphComponentKind.IsolatedFragment)
+        {
+            return false;
+        }
+
+        if (IsTrustedFragmentMergedDenseRoomBoundaryWall(
+                wall,
+                component,
+                evidence,
+                roomReferenceCount,
+                supportedTopologyEndpointCount,
+                hasGeometricRoomBoundarySupport))
+        {
+            return true;
+        }
+
+        if (IsTrustedFilledDenseSideRoomWall(
+                wall,
+                component,
+                evidence,
+                sideEvidence,
+                supportedTopologyEndpointCount))
+        {
+            return true;
+        }
+
+        if (wall.DetectionKind != WallDetectionKind.ParallelLinePair
             || !TryReadPairScore(evidence, out var pairScore)
             || !TryReadFaceFragmentCounts(evidence, out var faceFragments)
             || faceFragments.MaxFaceFragmentCount > MaxTrustedDimensionLikeDenseRoomBoundaryFaceFragments
@@ -2150,6 +2184,87 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             || item.Contains("covered entry", StringComparison.OrdinalIgnoreCase)
             || item.Contains("covered-entry", StringComparison.OrdinalIgnoreCase)
             || item.Contains("overbygd", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsTrustedFilledDenseSideRoomWall(
+        WallSegment wall,
+        WallGraphComponent component,
+        IReadOnlyList<string> evidence,
+        RoomSideEvidence sideEvidence,
+        int supportedTopologyEndpointCount)
+    {
+        if (wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.WallType != WallType.Interior
+            || wall.DrawingLength < MinTrustedFilledDenseSideRoomWallLength
+            || wall.DrawingLength > MaxTrustedFilledDenseSideRoomWallLength
+            || supportedTopologyEndpointCount < MinTrustedFilledDenseSideRoomEndpoints
+            || sideEvidence.PositiveRoomHits + sideEvidence.NegativeRoomHits < MinTrustedFilledDenseSideRoomHits
+            || component.Kind is not (WallGraphComponentKind.MainStructural or WallGraphComponentKind.SecondaryStructural)
+            || !TryReadPairScore(evidence, out var pairScore)
+            || pairScore < MinTrustedFilledDenseSideRoomPairScore)
+        {
+            return false;
+        }
+
+        var pairOverlap = wall.PairEvidence?.OverlapRatio
+            ?? (TryReadPairOverlapRatio(evidence, out var parsedOverlapRatio) ? parsedOverlapRatio : 0);
+        if (pairOverlap < 0.98)
+        {
+            return false;
+        }
+
+        var hasFilledWallBody = evidence.Any(item => item.Contains("filled wall-solid primitive", StringComparison.OrdinalIgnoreCase))
+            && evidence.Any(item => item.Contains("filled closed vector wall body", StringComparison.OrdinalIgnoreCase));
+        return hasFilledWallBody
+            && evidence.Any(item => item.Contains("supported wall evidence inside exterior envelope", StringComparison.OrdinalIgnoreCase))
+            && !evidence.Any(item =>
+                item.Contains("surface pattern", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("object/fixture", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("fixture detail", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("repeated short detail", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("door/opening", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("stair", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("railing", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("covered entry", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("covered-entry", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("overbygd", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsTrustedFragmentMergedDenseRoomBoundaryWall(
+        WallSegment wall,
+        WallGraphComponent component,
+        IReadOnlyList<string> evidence,
+        int roomReferenceCount,
+        int supportedTopologyEndpointCount,
+        bool hasGeometricRoomBoundarySupport)
+    {
+        if (wall.DetectionKind != WallDetectionKind.FragmentMerged
+            || wall.FragmentEvidence is not { RequiresGeometryReview: false } fragmentEvidence
+            || !hasGeometricRoomBoundarySupport
+            || roomReferenceCount < 1
+            || supportedTopologyEndpointCount < MinTrustedFragmentMergedDenseRoomBoundaryEndpoints
+            || wall.DrawingLength < MinTrustedFragmentMergedDenseRoomBoundaryLength
+            || wall.DrawingLength > MaxTrustedFragmentMergedDenseRoomBoundaryLength
+            || fragmentEvidence.GapRatio > 0.001
+            || fragmentEvidence.TotalHealedGap > 0.001
+            || fragmentEvidence.DuplicatePrimitiveCount > MaxTrustedFragmentMergedDenseRoomBoundaryDuplicateFragments
+            || component.Kind is not (WallGraphComponentKind.MainStructural or WallGraphComponentKind.SecondaryStructural))
+        {
+            return false;
+        }
+
+        return evidence.Any(item => item.Contains("supported wall evidence inside exterior envelope", StringComparison.OrdinalIgnoreCase))
+            && !evidence.Any(item =>
+                item.Contains("surface pattern", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("object/fixture", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("fixture detail", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("repeated short detail", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("door/opening", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("stair", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("railing", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("covered entry", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("covered-entry", StringComparison.OrdinalIgnoreCase)
+                || item.Contains("overbygd", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool TryDemoteNonOrthogonalDimensionLikePlacementReadyWallEvidence(
