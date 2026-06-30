@@ -1845,6 +1845,97 @@ public sealed class WallTypeRefinementTests
     }
 
     [Fact]
+    public async Task WallTypeRefinement_PromotesShortGeometricTwoSidedFragmentMergedRoomBoundary()
+    {
+        var wall = new WallSegment(
+            "wall-short-geometric-fragment-room-boundary",
+            1,
+            new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(162, 100)),
+            6,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.FragmentMerged,
+            WallType = WallType.Interior,
+            SourcePrimitiveIds = Enumerable.Range(1, 10).Select(index => $"fragment-{index}").ToArray(),
+            FragmentEvidence = new WallFragmentEvidence(
+                FragmentCount: 5,
+                TotalHealedGap: 0.062,
+                MaxHealedGap: 0.062,
+                DuplicatePrimitiveCount: 5,
+                GapRatio: 0.001,
+                RequiresGeometryReview: false,
+                Evidence: Array.Empty<string>()),
+            Evidence = new[]
+            {
+                "merged collinear wall fragments",
+                "run merged 5 fragments",
+                "fragment geometry: 5 fragment(s)",
+                "fragment geometry healed gap ratio 0.001",
+                "wall type interior: supported wall evidence inside exterior envelope",
+                "wall type refined interior: detected room evidence on both sides",
+                "wall evidence: unlayered fragment-merged wall candidate has only one trusted structural endpoint (5 fragments, gap ratio 0.001); keep for topology but block exact placement until reviewed",
+                "wall evidence: geometric room boundary support from reliable room-boundary alignment"
+            }
+        };
+        var context = CreateContext("short-geometric-fragment-room-boundary-promotion");
+        context.Walls.Add(wall);
+        context.Rooms.Add(Room(
+            "room-above",
+            RoomUseKind.Office,
+            new PlanRect(100, 40, 62, 60),
+            new[]
+            {
+                new PlanPoint(100, 40),
+                new PlanPoint(162, 40),
+                new PlanPoint(162, 100),
+                new PlanPoint(100, 100)
+            }) with
+            {
+                Evidence = new[] { "semantic room boundary inferred from nearby walls synthetic-above" }
+            });
+        context.Rooms.Add(Room(
+            "room-below",
+            RoomUseKind.Office,
+            new PlanRect(100, 100, 62, 60),
+            new[]
+            {
+                new PlanPoint(100, 100),
+                new PlanPoint(162, 100),
+                new PlanPoint(162, 160),
+                new PlanPoint(100, 160)
+            }) with
+            {
+                Evidence = new[] { "semantic room boundary inferred from nearby walls synthetic-below" }
+            });
+        context.WallGraph = GraphFor(wall);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.MediumWallBody,
+            placementReady: false,
+            requiresReview: true,
+            rejectedAsNoise: false,
+            new[]
+            {
+                "merged collinear wall fragments",
+                "wall evidence: geometric room boundary support from reliable room-boundary alignment",
+                "wall evidence: unlayered fragment-merged wall candidate has only one trusted structural endpoint (5 fragments, gap ratio 0.001); keep for topology but block exact placement until reviewed"
+            });
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var promoted = Assert.Single(context.WallEvidenceMap.WallAssessments);
+        Assert.True(promoted.PlacementReady);
+        Assert.False(promoted.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Accept, promoted.Decision);
+        Assert.Contains(
+            promoted.Evidence,
+            item => item.Contains("clean fragment-merged interior room boundary promoted", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            promoted.Evidence,
+            item => item.Contains("geometric room boundary support", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task WallTypeRefinement_DoesNotPromoteNoisyShortStructuralReturnWithLargeHealedGap()
     {
         var wall = new WallSegment(

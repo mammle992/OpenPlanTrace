@@ -112,6 +112,9 @@ internal static class WallTopologySpanVisibility
     private const int MaxTrustedLongSecondaryFragmentFallbackFragmentCount = 12;
     private const double MaxTrustedLongSecondaryFragmentFallbackGapRatio = 0.05;
     private const double MaxTrustedLongSecondaryFragmentFallbackTotalHealedGapDrawingUnits = 8.0;
+    private const double MinTrustedShortGeometricFragmentFallbackLengthDrawingUnits = 60.0;
+    private const int MaxTrustedShortGeometricFragmentFallbackFragmentCount = 8;
+    private const int MaxTrustedShortGeometricFragmentFallbackDuplicateFragments = 8;
     private const double MinTrustedFilledSecondaryPairFallbackLengthDrawingUnits = 54.0;
     private const double MinTrustedFilledSecondaryPairFallbackConfidence = 0.86;
     private const double MinTrustedFilledSecondaryPairFallbackPairScore = 0.92;
@@ -1913,29 +1916,59 @@ internal static class WallTopologySpanVisibility
             return false;
         }
 
-        if (wall.DrawingLength < Math.Max(72.0, wall.Thickness * 10.0))
-        {
-            return false;
-        }
-
         var uniqueSourcePrimitiveCount = Math.Max(0, wall.SourcePrimitiveIds.Count - fragmentEvidence.DuplicatePrimitiveCount);
         var fragmentCount = Math.Max(fragmentEvidence.FragmentCount, uniqueSourcePrimitiveCount);
-        if (fragmentCount is < 2 or > 4
-            || fragmentEvidence.DuplicatePrimitiveCount > 8
-            || fragmentEvidence.GapRatio > 0.001
-            || fragmentEvidence.TotalHealedGap > 0.001)
-        {
-            return false;
-        }
-
         var evidence = wall.Evidence
             .Concat(assessment.Evidence)
             .Concat(assessment.ScoreBreakdown.PositiveEvidence)
             .Concat(assessment.ScoreBreakdown.NegativeEvidence)
             .Concat(component.Evidence)
             .ToArray();
+        var shortGeometricTwoSidedRoomBoundary =
+            wall.DrawingLength >= MinTrustedShortGeometricFragmentFallbackLengthDrawingUnits
+            && fragmentCount is >= 2 and <= MaxTrustedShortGeometricFragmentFallbackFragmentCount
+            && fragmentEvidence.DuplicatePrimitiveCount <= MaxTrustedShortGeometricFragmentFallbackDuplicateFragments
+            && fragmentEvidence.GapRatio <= 0.001
+            && fragmentEvidence.TotalHealedGap <= Math.Max(0.25, wall.Thickness * 0.08)
+            && ContainsEvidence(evidence, "geometric room boundary support")
+            && ContainsEvidence(evidence, "detected room evidence on both sides")
+            && ContainsEvidence(evidence, "only one trusted structural endpoint");
+        if (wall.DrawingLength < Math.Max(72.0, wall.Thickness * 10.0)
+            && !shortGeometricTwoSidedRoomBoundary)
+        {
+            return false;
+        }
+
+        if (fragmentCount is < 2
+            || (fragmentCount > 4 && !shortGeometricTwoSidedRoomBoundary)
+            || fragmentEvidence.DuplicatePrimitiveCount > 8
+            || fragmentEvidence.GapRatio > 0.001
+            || (fragmentEvidence.TotalHealedGap > 0.001 && !shortGeometricTwoSidedRoomBoundary))
+        {
+            return false;
+        }
+
         if (!ContainsEvidence(evidence, "clean fragment-merged interior room boundary promoted")
             || !ContainsEvidence(evidence, "supported wall evidence inside exterior envelope"))
+        {
+            return false;
+        }
+
+        if (shortGeometricTwoSidedRoomBoundary
+            && ContainsAnyEvidence(
+                evidence,
+                "outdoor",
+                "terrace",
+                "covered-area",
+                "covered entry",
+                "covered-entry",
+                "overbygd",
+                "surface pattern",
+                "object/fixture",
+                "fixture detail",
+                "door/opening",
+                "stair",
+                "railing"))
         {
             return false;
         }

@@ -17,6 +17,9 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
     private const int MaxTrustedDimensionLikeDenseRoomBoundaryTotalFaceFragments = 48;
     private const double MinTrustedFragmentMergedDenseRoomBoundaryLength = 48.0;
     private const double MaxTrustedFragmentMergedDenseRoomBoundaryLength = 90.0;
+    private const double MinTrustedShortGeometricFragmentMergedRoomBoundaryLength = 60.0;
+    private const int MaxTrustedShortGeometricFragmentMergedRoomBoundaryFragments = 8;
+    private const int MaxTrustedShortGeometricFragmentMergedRoomBoundaryDuplicateFragments = 8;
     private const int MinTrustedFragmentMergedDenseRoomBoundaryEndpoints = 3;
     private const int MaxTrustedFragmentMergedDenseRoomBoundaryDuplicateFragments = 12;
     private const double MinTrustedFilledDenseSideRoomWallLength = 44.0;
@@ -1644,6 +1647,26 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             return false;
         }
 
+        var uniqueSourcePrimitiveCount = Math.Max(0, wall.SourcePrimitiveIds.Count - fragmentEvidence.DuplicatePrimitiveCount);
+        var fragmentCount = Math.Max(fragmentEvidence.FragmentCount, uniqueSourcePrimitiveCount);
+        var evidence = assessment.Evidence
+            .Concat(wall.Evidence)
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(assessment.ScoreBreakdown.NegativeEvidence)
+            .ToArray();
+        var hasReliableGeometricRoomBoundarySupport =
+            hasGeometricRoomBoundarySupport
+            || evidence.Any(item => item.Contains("geometric room boundary support", StringComparison.OrdinalIgnoreCase));
+        var shortGeometricTwoSidedRoomBoundary =
+            sideEvidence.HasRoomsOnBothSides
+            && hasReliableGeometricRoomBoundarySupport
+            && wall.DrawingLength >= MinTrustedShortGeometricFragmentMergedRoomBoundaryLength
+            && fragmentCount is >= 2 and <= MaxTrustedShortGeometricFragmentMergedRoomBoundaryFragments
+            && fragmentEvidence.DuplicatePrimitiveCount <= MaxTrustedShortGeometricFragmentMergedRoomBoundaryDuplicateFragments
+            && fragmentEvidence.GapRatio <= 0.001
+            && fragmentEvidence.TotalHealedGap <= Math.Max(0.25, wall.Thickness * 0.08)
+            && evidence.Any(item => item.Contains("only one trusted structural endpoint", StringComparison.OrdinalIgnoreCase));
+
         var minimumLength = Math.Max(
             72.0,
             Math.Max(options.MinWallLength * 3.5, wall.Thickness * 10.0));
@@ -1651,13 +1674,13 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             roomReferenceCount == 0
             && sideEvidence.HasRoomsOnBothSides
             && wall.DrawingLength >= 72.0;
-        if (wall.DrawingLength < minimumLength && !allowsDenseTwoSidedLength)
+        if (wall.DrawingLength < minimumLength
+            && !allowsDenseTwoSidedLength
+            && !shortGeometricTwoSidedRoomBoundary)
         {
             return false;
         }
 
-        var uniqueSourcePrimitiveCount = Math.Max(0, wall.SourcePrimitiveIds.Count - fragmentEvidence.DuplicatePrimitiveCount);
-        var fragmentCount = Math.Max(fragmentEvidence.FragmentCount, uniqueSourcePrimitiveCount);
         var cleanDuplicatedRoomBoundary =
             roomReferenceCount > 0
             && fragmentCount <= 4
@@ -1671,11 +1694,6 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             && fragmentEvidence.DuplicatePrimitiveCount <= 12
             && fragmentEvidence.GapRatio <= 0.001
             && fragmentEvidence.TotalHealedGap <= 0.001;
-        var evidence = assessment.Evidence
-            .Concat(wall.Evidence)
-            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
-            .Concat(assessment.ScoreBreakdown.NegativeEvidence)
-            .ToArray();
         var longGeometricRoomBoundary =
             (roomReferenceCount > 0 || isSharedByRoomAdjacency || sideEvidence.HasRoomsOnBothSides)
             && wall.DrawingLength >= Math.Max(120.0, options.MinWallLength * 5.0)
@@ -1686,21 +1704,27 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             && (hasGeometricRoomBoundarySupport
                 || evidence.Any(item => item.Contains("geometric room boundary support", StringComparison.OrdinalIgnoreCase)));
         if (fragmentCount < 2
-            || (fragmentCount > 8 && !denseTwoSidedRoomBoundary && !longGeometricRoomBoundary)
-            || (fragmentEvidence.DuplicatePrimitiveCount > 3 && !cleanDuplicatedRoomBoundary && !denseTwoSidedRoomBoundary)
-            || (fragmentEvidence.GapRatio > 0.01 && !longGeometricRoomBoundary)
-            || (fragmentEvidence.TotalHealedGap > Math.Max(2.0, wall.Thickness * 0.35) && !longGeometricRoomBoundary))
+            || (fragmentCount > 8 && !denseTwoSidedRoomBoundary && !longGeometricRoomBoundary && !shortGeometricTwoSidedRoomBoundary)
+            || (fragmentEvidence.DuplicatePrimitiveCount > 3
+                && !cleanDuplicatedRoomBoundary
+                && !denseTwoSidedRoomBoundary
+                && !shortGeometricTwoSidedRoomBoundary)
+            || (fragmentEvidence.GapRatio > 0.01 && !longGeometricRoomBoundary && !shortGeometricTwoSidedRoomBoundary)
+            || (fragmentEvidence.TotalHealedGap > Math.Max(2.0, wall.Thickness * 0.35)
+                && !longGeometricRoomBoundary
+                && !shortGeometricTwoSidedRoomBoundary))
         {
             return false;
         }
 
         if (!longGeometricRoomBoundary
+            && !shortGeometricTwoSidedRoomBoundary
             && !evidence.Any(item => item.Contains("only one trusted structural endpoint", StringComparison.OrdinalIgnoreCase)))
         {
             return false;
         }
 
-        if (denseTwoSidedRoomBoundary
+        if ((denseTwoSidedRoomBoundary || shortGeometricTwoSidedRoomBoundary)
             && evidence.Any(item =>
                 item.Contains("outdoor", StringComparison.OrdinalIgnoreCase)
                 || item.Contains("terrace", StringComparison.OrdinalIgnoreCase)
