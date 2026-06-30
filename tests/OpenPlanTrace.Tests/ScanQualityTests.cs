@@ -1613,6 +1613,97 @@ public sealed class ScanQualityTests
     }
 
     [Fact]
+    public void PlacementExporter_AllowsTrustedAnchoredSecondaryWallBodyOverlappingObjectLinework()
+    {
+        var regions = new[]
+        {
+            new SheetRegion("sheet", 1, RegionKind.Sheet, new PlanRect(0, 0, 600, 400), Confidence.High),
+            new SheetRegion("main", 1, RegionKind.MainFloorPlan, new PlanRect(0, 0, 600, 400), Confidence.High)
+        };
+        var wall = SyntheticWall("trusted-object-overlap-secondary", 307, 420, 307, 566) with
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Interior,
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(new PlanPoint(303, 420), new PlanPoint(303, 566)),
+                new PlanLineSegment(new PlanPoint(311, 420), new PlanPoint(311, 566)),
+                FaceSeparation: 8,
+                OverlapRatio: 0.98,
+                Score: 0.92,
+                FirstFaceFragmentCount: 11,
+                SecondFaceFragmentCount: 10,
+                FirstFaceSourcePrimitiveIds: ["trusted-object-overlap-face-a"],
+                SecondFaceSourcePrimitiveIds: ["trusted-object-overlap-face-b"]),
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "face separation 8 drawing units",
+                "pair score 0.92",
+                "overlap ratio 0.98",
+                "wall evidence: strong double-edge wall body",
+                "wall type interior: supported wall evidence inside exterior envelope"
+            ]
+        };
+        var wallGraph = new WallGraph(
+            [SyntheticNode("n1", 307, 420), SyntheticNode("n2", 307, 566)],
+            [SyntheticEdge("e1", "n1", "n2", wall.Id)],
+            [
+                new WallGraphComponent(
+                    "secondary-component",
+                    1,
+                    WallGraphComponentKind.SecondaryStructural,
+                    new PlanRect(303, 420, 8, 146),
+                    [wall.Id],
+                    ["n1", "n2"],
+                    ["e1"],
+                    [wall.Id],
+                    146,
+                    Confidence.High,
+                    ["anchored single paired-wall body"])
+            ]);
+        var stairObject = new ObjectCandidate(
+            "stair-object",
+            1,
+            ObjectCandidateKind.Stair,
+            new PlanRect(240, 442, 65, 152),
+            Confidence.High)
+        {
+            Category = ObjectCategory.Stair,
+            SourceKind = ObjectCandidateSourceKind.WallComponentIsland,
+            SourceWallComponentKind = WallGraphComponentKind.ObjectLikeIsland,
+            Evidence = ["nearby text 'Trapperom' matches 'trapp'"]
+        };
+        var result = CreateSyntheticResult(
+            regions: regions,
+            walls: [wall],
+            wallGraph: wallGraph,
+            rooms: [SyntheticRoom("r1", new PlanRect(380, 120, 120, 120), ["room-boundary-anchor"])],
+            objects: [stairObject],
+            wallEvidenceMap: new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                [StrongPairedWallEvidence(wall, "both endpoints supported by structural context")])) with
+        {
+            Quality = UsableQuality()
+        };
+
+        var reasons = WallPlacementContextGuards.BuildReviewReasons(result);
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var exportedWall = document.RootElement.GetProperty("walls").EnumerateArray().Single(item =>
+            item.GetProperty("id").GetString() == wall.Id);
+
+        Assert.DoesNotContain(wall.Id, reasons.Keys);
+        Assert.True(exportedWall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, exportedWall.GetProperty("placementOmission").ValueKind);
+        Assert.False(
+            document.RootElement.GetProperty("summary").GetProperty("wallPlacementOmissionCounts")
+                .TryGetProperty("secondary_object_linework_without_room_boundary_support", out _));
+    }
+
+    [Fact]
     public void PlacementExporter_AllowsStairAdjacentSecondaryWallWhenItIsRoomBoundary()
     {
         var regions = new[]

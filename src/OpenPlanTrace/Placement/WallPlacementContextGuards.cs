@@ -14,6 +14,11 @@ public static class WallPlacementContextGuards
     private const double MinTrustedSecondaryInteriorWallFaceSeparationDrawingUnits = 2.0;
     private const double MaxTrustedSecondaryInteriorWallFaceSeparationDrawingUnits = 18.0;
     private const int MaxTrustedSecondaryInteriorWallFaceFragments = 80;
+    private const double MinTrustedAnchoredSingleSecondaryWallPairScore = 0.86;
+    private const double MinTrustedAnchoredSingleSecondaryWallOverlapRatio = 0.90;
+    private const double MinTrustedAnchoredSingleSecondaryWallFaceSeparationDrawingUnits = 2.0;
+    private const double MaxTrustedAnchoredSingleSecondaryWallFaceSeparationDrawingUnits = 18.0;
+    private const int MaxTrustedAnchoredSingleSecondaryWallFaceFragments = 80;
     private const double MinTrustedMainStructuralInteriorLengthDrawingUnits = 80.0;
     private const double MinTrustedMainStructuralInteriorPairScore = 0.82;
     private const double MinTrustedMainStructuralInteriorOverlapRatio = 0.95;
@@ -537,6 +542,11 @@ public static class WallPlacementContextGuards
                     SecondaryStructuralOverSourcedDetailLineworkReason);
             }
             else if (!hasRoomBoundarySupport
+                && !SecondaryStructuralComponentHasTrustedPairedWallBodySupport(
+                    wall,
+                    component,
+                    wallById,
+                    wallEvidenceByWallId)
                 && SecondaryStructuralWallOverlapsObjectLinework(
                     wall,
                     component,
@@ -1336,6 +1346,13 @@ public static class WallPlacementContextGuards
         && wall.DrawingLength >= 72
         && wall.DetectionKind == WallDetectionKind.ParallelLinePair
         && assessment.Category == WallEvidenceCategory.StrongWallBody
+        && wall.PairEvidence is { } pair
+        && pair.Score >= MinTrustedAnchoredSingleSecondaryWallPairScore
+        && pair.OverlapRatio >= MinTrustedAnchoredSingleSecondaryWallOverlapRatio
+        && pair.FaceSeparation >= MinTrustedAnchoredSingleSecondaryWallFaceSeparationDrawingUnits
+        && pair.FaceSeparation <= MaxTrustedAnchoredSingleSecondaryWallFaceSeparationDrawingUnits
+        && Math.Max(pair.FirstFaceFragmentCount, pair.SecondFaceFragmentCount)
+            <= MaxTrustedAnchoredSingleSecondaryWallFaceFragments
         && component.Evidence.Any(item =>
             item.Contains("anchored single paired-wall body", StringComparison.OrdinalIgnoreCase))
         && IsThinComponent(component.Bounds, minimumLongSide: 72, maxShortSide: 18, minimumAspectRatio: 3);

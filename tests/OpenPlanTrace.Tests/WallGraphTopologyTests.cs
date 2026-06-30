@@ -654,7 +654,19 @@ public sealed class WallGraphTopologyTests
         var anchoredWall = StrongPairedWall(
             "anchored-single-paired-wall",
             new PlanPoint(260, 114),
-            new PlanPoint(260, 220));
+            new PlanPoint(260, 220)) with
+        {
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(new PlanPoint(258, 114), new PlanPoint(258, 220)),
+                new PlanLineSegment(new PlanPoint(262, 114), new PlanPoint(262, 220)),
+                FaceSeparation: 4,
+                OverlapRatio: 1,
+                Score: 0.91,
+                FirstFaceFragmentCount: 2,
+                SecondFaceFragmentCount: 2,
+                FirstFaceSourcePrimitiveIds: ["anchored-single-paired-wall-face-a"],
+                SecondFaceSourcePrimitiveIds: ["anchored-single-paired-wall-face-b"])
+        };
         var context = new ScanContext(
             Document("wall-anchored-single-paired-promotion"),
             new ScannerOptions());
