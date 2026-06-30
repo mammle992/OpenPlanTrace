@@ -238,6 +238,12 @@ public static class PlanTraceGeoJsonExporter
         WallEvidenceWallAssessment? evidenceAssessment)
     {
         wallComponentLookup.TryGetValue(wall.Id, out var component);
+        var excludedFromStructuralTopology =
+            WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment)
+            && !WallPlacementContextGuards.IsTrustedObjectLikeLongCleanFragmentInteriorWallBody(
+                wall,
+                component,
+                evidenceAssessment);
         return
         Feature(
             $"wall:{wall.Id}",
@@ -250,7 +256,7 @@ public static class PlanTraceGeoJsonExporter
                 .AddValue("wallComponentKind", component?.Kind.ToString())
                 .AddValue(
                     "excludedFromStructuralTopology",
-                    WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment))
+                    excludedFromStructuralTopology)
                 .AddValue("thickness", wall.Thickness)
                 .AddValue("drawingLength", wall.DrawingLength)
                 .AddValue("lengthMeters", wall.LengthMeters)

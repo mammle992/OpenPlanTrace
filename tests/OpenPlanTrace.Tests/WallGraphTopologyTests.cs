@@ -1988,6 +1988,147 @@ public sealed class WallGraphTopologyTests
     }
 
     [Fact]
+    public async Task WallGraphStage_ProtectsRoomBoundaryFragmentFromObjectLikeEvidenceReclassification()
+    {
+        var mainWalls = new[]
+        {
+            DetectedWall("main-top", new PlanPoint(100, 100), new PlanPoint(700, 100)) with { WallType = WallType.Exterior },
+            DetectedWall("main-right", new PlanPoint(700, 100), new PlanPoint(700, 500)) with { WallType = WallType.Exterior },
+            DetectedWall("main-bottom", new PlanPoint(700, 500), new PlanPoint(100, 500)) with { WallType = WallType.Exterior },
+            DetectedWall("main-left", new PlanPoint(100, 500), new PlanPoint(100, 100)) with { WallType = WallType.Exterior }
+        };
+        var roomBoundary = CleanFragmentWall(
+            "wall-object-like-room-boundary-fragment",
+            new PlanPoint(320, 180),
+            new PlanPoint(320, 320));
+        var detailCompanion = StrongPairedWall(
+            "wall-object-like-detail-companion",
+            new PlanPoint(320, 320),
+            new PlanPoint(380, 320),
+            pairScore: 0.67);
+        var context = new ScanContext(
+            Document("object-like-room-boundary-fragment-protection"),
+            new ScannerOptions());
+        context.Walls.AddRange(mainWalls.Append(roomBoundary).Append(detailCompanion));
+        context.Rooms.Add(new RoomRegion(
+            "room-fragment-boundary",
+            1,
+            new PlanRect(180, 160, 140, 180),
+            new[]
+            {
+                new PlanPoint(180, 160),
+                new PlanPoint(320, 160),
+                new PlanPoint(320, 340),
+                new PlanPoint(180, 340)
+            },
+            new[] { roomBoundary.Id },
+            Confidence.High));
+        context.WallEvidenceMap = new WallEvidenceMap(
+            Array.Empty<WallEvidenceSegment>(),
+            Array.Empty<WallEvidenceBand>(),
+            mainWalls
+                .Select(wall => Assessment(wall, WallEvidenceDecision.Accept, WallEvidenceCategory.StrongWallBody, Confidence.High))
+                .Concat(new[]
+                {
+                    FragmentMergedReviewAssessment(roomBoundary),
+                    Assessment(detailCompanion, WallEvidenceDecision.Accept, WallEvidenceCategory.StrongWallBody, new Confidence(0.91))
+                })
+                .ToArray());
+
+        await new WallTopologyPreparationStage().ExecuteAsync(context, CancellationToken.None);
+        await new WallGraphStage().ExecuteAsync(context, CancellationToken.None);
+
+        var objectLikeComponent = Assert.Single(
+            context.WallGraph.Components,
+            component => component.WallIds.Contains(roomBoundary.Id)
+                && component.WallIds.Contains(detailCompanion.Id));
+        var protectedAssessment = Assert.Single(
+            context.WallEvidenceMap.WallAssessments,
+            assessment => assessment.WallId == roomBoundary.Id);
+        var reclassifiedAssessment = Assert.Single(
+            context.WallEvidenceMap.WallAssessments,
+            assessment => assessment.WallId == detailCompanion.Id);
+
+        Assert.Equal(WallGraphComponentKind.ObjectLikeIsland, objectLikeComponent.Kind);
+        Assert.True(objectLikeComponent.ExcludedFromStructuralTopology);
+        Assert.Equal(WallEvidenceCategory.MediumWallBody, protectedAssessment.Category);
+        Assert.Equal(WallEvidenceDecision.Review, protectedAssessment.Decision);
+        Assert.False(protectedAssessment.RejectedAsNoise);
+        Assert.Contains(
+            protectedAssessment.Evidence,
+            item => item.Contains("protected from object-like graph reclassification", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(WallEvidenceCategory.ObjectOrFixtureDetail, reclassifiedAssessment.Category);
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "wall_evidence.object_like_room_boundary_fragments_protected"
+                && diagnostic.Properties["protectedWallCount"] == "1");
+    }
+
+    [Fact]
+    public async Task WallGraphStage_ProtectsLongCleanObjectLikeFragmentFromFixtureReclassification()
+    {
+        var mainWalls = new[]
+        {
+            DetectedWall("main-top", new PlanPoint(100, 100), new PlanPoint(700, 100)) with { WallType = WallType.Exterior },
+            DetectedWall("main-right", new PlanPoint(700, 100), new PlanPoint(700, 500)) with { WallType = WallType.Exterior },
+            DetectedWall("main-bottom", new PlanPoint(700, 500), new PlanPoint(100, 500)) with { WallType = WallType.Exterior },
+            DetectedWall("main-left", new PlanPoint(100, 500), new PlanPoint(100, 100)) with { WallType = WallType.Exterior }
+        };
+        var longFragment = CleanFragmentWall(
+            "wall-object-like-long-clean-fragment",
+            new PlanPoint(320, 170),
+            new PlanPoint(320, 310));
+        var detailCompanion = StrongPairedWall(
+            "wall-object-like-long-fragment-companion",
+            new PlanPoint(320, 310),
+            new PlanPoint(380, 310),
+            pairScore: 0.67);
+        var context = new ScanContext(
+            Document("object-like-long-clean-fragment-protection"),
+            new ScannerOptions());
+        context.Walls.AddRange(mainWalls.Append(longFragment).Append(detailCompanion));
+        context.WallEvidenceMap = new WallEvidenceMap(
+            Array.Empty<WallEvidenceSegment>(),
+            Array.Empty<WallEvidenceBand>(),
+            mainWalls
+                .Select(wall => Assessment(wall, WallEvidenceDecision.Accept, WallEvidenceCategory.StrongWallBody, Confidence.High))
+                .Concat(new[]
+                {
+                    LongCleanFragmentReviewAssessment(longFragment),
+                    Assessment(detailCompanion, WallEvidenceDecision.Accept, WallEvidenceCategory.StrongWallBody, new Confidence(0.91))
+                })
+                .ToArray());
+
+        await new WallTopologyPreparationStage().ExecuteAsync(context, CancellationToken.None);
+        await new WallGraphStage().ExecuteAsync(context, CancellationToken.None);
+
+        var objectLikeComponent = Assert.Single(
+            context.WallGraph.Components,
+            component => component.WallIds.Contains(longFragment.Id)
+                && component.WallIds.Contains(detailCompanion.Id));
+        var protectedAssessment = Assert.Single(
+            context.WallEvidenceMap.WallAssessments,
+            assessment => assessment.WallId == longFragment.Id);
+        var reclassifiedAssessment = Assert.Single(
+            context.WallEvidenceMap.WallAssessments,
+            assessment => assessment.WallId == detailCompanion.Id);
+
+        Assert.Equal(WallGraphComponentKind.ObjectLikeIsland, objectLikeComponent.Kind);
+        Assert.True(objectLikeComponent.ExcludedFromStructuralTopology);
+        Assert.Equal(WallEvidenceCategory.MediumWallBody, protectedAssessment.Category);
+        Assert.Equal(WallEvidenceDecision.Review, protectedAssessment.Decision);
+        Assert.False(protectedAssessment.RejectedAsNoise);
+        Assert.Contains(
+            protectedAssessment.Evidence,
+            item => item.Contains(WallPlacementContextGuards.TrustedObjectLikeLongCleanFragmentInteriorEvidence, StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(WallEvidenceCategory.ObjectOrFixtureDetail, reclassifiedAssessment.Category);
+        Assert.Contains(
+            context.Diagnostics.Build().Messages,
+            diagnostic => diagnostic.Code == "wall_evidence.object_like_room_boundary_fragments_protected"
+                && diagnostic.Properties["protectedWallCount"] == "1");
+    }
+
+    [Fact]
     public async Task WallGraphStage_KeepsCompactLowPairScoreStrongWallClusterObjectLike()
     {
         var mainWalls = new[]
@@ -2332,6 +2473,40 @@ public sealed class WallGraphTopologyTests
                 new[] { "not placement-ready without graph recovery" })
         };
 
+    private static WallEvidenceWallAssessment LongCleanFragmentReviewAssessment(WallSegment wall) =>
+        new(
+            wall.Id,
+            wall.PageNumber,
+            wall.Bounds,
+            WallEvidenceCategory.MediumWallBody,
+            new Confidence(0.88),
+            PlacementReady: false,
+            RequiresReview: true,
+            RejectedAsNoise: false,
+            wall.SourcePrimitiveIds,
+            new[]
+            {
+                "merged collinear wall fragments",
+                "run merged 4 fragments",
+                "wall type interior: supported wall evidence inside exterior envelope",
+                "wall evidence: unlayered fragment-merged wall candidate has only one trusted structural endpoint; keep for topology but block exact placement until graph context is reviewed"
+            })
+        {
+            Decision = WallEvidenceDecision.Review,
+            ScoreBreakdown = new WallEvidenceScoreBreakdown(
+                0.62,
+                0,
+                0.62,
+                0,
+                0,
+                0.20,
+                0.10,
+                0,
+                0.08,
+                new[] { "fragment-merged wall body", "one trusted structural endpoint" },
+                new[] { "not placement-ready without graph recovery" })
+        };
+
     private static WallSegment DetectedWall(string id, PlanPoint start, PlanPoint end) =>
         new(
             id,
@@ -2372,5 +2547,28 @@ public sealed class WallGraphTopologyTests
                 RequiresGeometryReview: false,
                 new[] { "fragment-merged test wall" }),
             Evidence = new[] { "merged collinear wall fragments", "test detected wall" }
+        };
+
+    private static WallSegment CleanFragmentWall(string id, PlanPoint start, PlanPoint end) =>
+        DetectedWall(id, start, end) with
+        {
+            DetectionKind = WallDetectionKind.FragmentMerged,
+            WallType = WallType.Interior,
+            Confidence = new Confidence(0.88),
+            SourcePrimitiveIds = new[] { $"{id}:fragment-a", $"{id}:fragment-b", $"{id}:fragment-c", $"{id}:fragment-d" },
+            FragmentEvidence = new WallFragmentEvidence(
+                4,
+                0,
+                0,
+                0,
+                0,
+                RequiresGeometryReview: false,
+                new[] { "fragment geometry: 4 fragment(s)", "fragment geometry healed gap ratio 0" }),
+            Evidence = new[]
+            {
+                "merged collinear wall fragments",
+                "run merged 4 fragments",
+                "wall type interior: supported wall evidence inside exterior envelope"
+            }
         };
 }

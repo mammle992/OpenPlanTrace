@@ -71,6 +71,9 @@ public static class WallPlacementContextGuards
     public const string TrustedLongOneEndpointFragmentMergedInteriorEvidence =
         "trusted long one-end fragment-merged interior wall body";
 
+    public const string TrustedObjectLikeLongCleanFragmentInteriorEvidence =
+        "protected long clean object-like fragment wall kept as structural interior candidate";
+
     public const string TrustedDenseTwoSidedRoomFragmentMergedInteriorEvidence =
         "trusted dense two-sided room fragment-merged interior wall body";
 
@@ -281,8 +284,8 @@ public static class WallPlacementContextGuards
         }
 
         var evidence = extraEvidence is null
-            ? WallEvidenceFor(wall, assessment).Concat(component.Evidence).ToArray()
-            : WallEvidenceFor(wall, assessment).Concat(component.Evidence).Concat(extraEvidence).ToArray();
+            ? WallEvidenceFor(wall, assessment).ToArray()
+            : WallEvidenceFor(wall, assessment).Concat(extraEvidence).ToArray();
         if (!EvidenceContains(evidence, "supported wall evidence inside exterior envelope")
             || (!EvidenceContains(evidence, "one endpoint supported by structural context")
                 && !EvidenceContains(evidence, "both endpoints supported by structural context"))
@@ -324,6 +327,67 @@ public static class WallPlacementContextGuards
             "not trusted",
             "without shell support",
             "alone is not trusted");
+    }
+
+    public static bool IsTrustedObjectLikeLongCleanFragmentInteriorWallBody(
+        WallSegment wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? assessment,
+        IEnumerable<string>? extraEvidence = null)
+    {
+        ArgumentNullException.ThrowIfNull(wall);
+
+        if (component is null
+            || component.Kind != WallGraphComponentKind.ObjectLikeIsland
+            || !component.ExcludedFromStructuralTopology
+            || wall.WallType != WallType.Interior
+            || assessment is null
+            || !assessment.PlacementReady
+            || assessment.RequiresReview
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject
+            || assessment.Category != WallEvidenceCategory.MediumWallBody)
+        {
+            return false;
+        }
+
+        var evidence = extraEvidence is null
+            ? WallEvidenceFor(wall, assessment).ToArray()
+            : WallEvidenceFor(wall, assessment).Concat(extraEvidence).ToArray();
+        if (!EvidenceContains(evidence, TrustedObjectLikeLongCleanFragmentInteriorEvidence)
+            || !EvidenceContains(evidence, "promoted to placement-ready"))
+        {
+            return false;
+        }
+
+        return !EvidenceContainsAny(
+            evidence,
+            "outdoor covered-area boundary",
+            "unpaired outdoor covered-area boundary",
+            "covered-area boundary",
+            "outdoor/terrace room evidence alone",
+            "terrace",
+            "covered entry",
+            "covered-entry",
+            "overbygd",
+            "canopy",
+            "surface pattern",
+            "object/fixture detail",
+            "fixture detail",
+            "repeated short detail",
+            "door/opening",
+            "door swing",
+            "door leaf",
+            "door arc",
+            "stair",
+            "railing",
+            "dimension-like",
+            "classified Dimension",
+            "dimension/annotation",
+            "already represented",
+            "recovered duplicate wall body",
+            "rejected as non-wall",
+            "non-wall");
     }
 
     public static bool IsTrustedDenseTwoSidedRoomFragmentMergedInteriorWallBody(

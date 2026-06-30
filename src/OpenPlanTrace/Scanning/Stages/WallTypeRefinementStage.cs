@@ -88,6 +88,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         var rejectedEvidenceProtected = 0;
         var roomConfirmedPlacementPromoted = 0;
         var topologySupportedFragmentedPairPromoted = 0;
+        var protectedObjectLikeLongFragmentPromoted = 0;
         var fragmentedPairPlacementDemoted = 0;
         var denseLocalDetailPlacementDemoted = 0;
         var nonOrthogonalDimensionLikePlacementDemoted = 0;
@@ -457,6 +458,30 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             }
 
             if (assessment is not null
+                && TryPromoteProtectedObjectLikeLongCleanFragmentEvidence(
+                    updatedWall,
+                    assessment,
+                    component,
+                    out var protectedObjectLikePromotedAssessment,
+                    out var protectedObjectLikePromotionEvidence))
+            {
+                updatedAssessmentsByWallId[wall.Id] = protectedObjectLikePromotedAssessment;
+                if (updatedWall.WallType != WallType.Interior)
+                {
+                    changed++;
+                }
+
+                updatedWall = updatedWall with
+                {
+                    WallType = WallType.Interior,
+                    Evidence = AppendEvidence(updatedWall.Evidence, protectedObjectLikePromotionEvidence)
+                };
+                protectedObjectLikeLongFragmentPromoted++;
+                evidenceUpdated++;
+                assessment = protectedObjectLikePromotedAssessment;
+            }
+
+            if (assessment is not null
                 && hasGeometricRoomBoundarySupport
                 && !assessment.RejectedAsNoise)
             {
@@ -630,6 +655,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             rejectedEvidenceProtected,
             roomConfirmedPlacementPromoted,
             topologySupportedFragmentedPairPromoted,
+            protectedObjectLikeLongFragmentPromoted,
             fragmentedPairPlacementDemoted,
             denseLocalDetailPlacementDemoted,
             nonOrthogonalDimensionLikePlacementDemoted,
@@ -925,6 +951,17 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             return new WallTypeRefinement(
                 WallType.Exterior,
                 "wall type refined exterior: trusted long isolated exterior shell wall body");
+        }
+
+        if (IsProtectedObjectLikeLongCleanFragmentCandidate(
+            wall,
+            assessment,
+            component,
+            requirePlacementReady: false))
+        {
+            return new WallTypeRefinement(
+                WallType.Interior,
+                $"wall type refined interior: {WallPlacementContextGuards.TrustedObjectLikeLongCleanFragmentInteriorEvidence}");
         }
 
         if (IsNonStructuralWallComponent(component))
@@ -1345,8 +1382,17 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             assessment,
             component,
             options);
+        var hasIsolatedExteriorRoomBoundaryConfirmation = IsTrustedIsolatedExteriorRoomBoundary(
+            wall,
+            assessment,
+            component,
+            roomReferenceCount,
+            hasOutdoorRoomReference,
+            sideEvidence,
+            options);
         if ((!IsStructuralWallComponent(component)
-            && !isRoomConfirmableIsolatedComponent)
+            && !isRoomConfirmableIsolatedComponent
+            && !hasIsolatedExteriorRoomBoundaryConfirmation)
             || wall.WallType == WallType.Unknown
             || wall.FragmentEvidence?.RequiresGeometryReview == true)
         {
@@ -1373,7 +1419,8 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         if (hasOutdoorRoomReference
             || (sideEvidence.HasOutdoorRoomSide
                 && !hasRoomBoundaryFragmentConfirmation
-                && !hasGeometricRoomBoundaryPairConfirmation))
+                && !hasGeometricRoomBoundaryPairConfirmation
+                && !hasIsolatedExteriorRoomBoundaryConfirmation))
         {
             return false;
         }
@@ -1387,21 +1434,24 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             isSharedByRoomAdjacency
             || roomReferenceCount >= 2
             || sideEvidence.HasRoomsOnBothSides
-            || hasGeometricRoomBoundaryPairConfirmation;
+            || hasGeometricRoomBoundaryPairConfirmation
+            || hasIsolatedExteriorRoomBoundaryConfirmation;
         var hasShortStructuralReturnConfirmation =
             roomReferenceCount >= 1
             && supportedTopologyEndpointCount >= 2
             && IsTrustedShortStructuralReturnWall(wall, assessment, options);
         if (!hasStrongRoomConfirmation
             && !hasShortStructuralReturnConfirmation
-            && !hasRoomBoundaryFragmentConfirmation)
+            && !hasRoomBoundaryFragmentConfirmation
+            && !hasIsolatedExteriorRoomBoundaryConfirmation)
         {
             return false;
         }
 
         if (!HasWallBodyEvidence(wall, assessment)
             && !hasRoomBoundaryFragmentConfirmation
-            && !hasGeometricRoomBoundaryPairConfirmation)
+            && !hasGeometricRoomBoundaryPairConfirmation
+            && !hasIsolatedExteriorRoomBoundaryConfirmation)
         {
             return false;
         }
@@ -1425,6 +1475,13 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             {
                 "wall evidence: geometric room boundary support from reliable room-boundary alignment",
                 "wall evidence: geometric room-boundary paired wall promoted after room refinement confirmed the candidate is a structural room edge"
+            }
+            : Array.Empty<string>())
+        .Concat(hasIsolatedExteriorRoomBoundaryConfirmation
+            ? new[]
+            {
+                $"wall evidence: {WallPlacementReadinessEvaluator.RoomConfirmedIsolatedExteriorPromotionEvidence} because multiple indoor rooms referenced this exterior shell segment",
+                "wall evidence: room-confirmed isolated exterior shell segment promoted after room refinement confirmed it belongs to the structural envelope"
             }
             : Array.Empty<string>())
         .ToArray();
@@ -1461,6 +1518,95 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
 
         return HasWallBodyEvidence(wall, assessment)
             && !HasRoomConfirmedPromotionBlocker(wall, assessment);
+    }
+
+    private static bool IsTrustedIsolatedExteriorRoomBoundary(
+        WallSegment wall,
+        WallEvidenceWallAssessment assessment,
+        WallGraphComponent? component,
+        int roomReferenceCount,
+        bool hasOutdoorRoomReference,
+        RoomSideEvidence sideEvidence,
+        ScannerOptions options)
+    {
+        if (component is null
+            || component.ExcludedFromStructuralTopology
+            || component.Kind != WallGraphComponentKind.IsolatedFragment
+            || wall.WallType != WallType.Exterior
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.PairEvidence is not { } pair
+            || wall.DrawingLength < Math.Max(48.0, options.MinWallLength * 2.0)
+            || wall.Confidence.Value < 0.78
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject
+            || assessment.Category is not (WallEvidenceCategory.MediumWallBody
+                or WallEvidenceCategory.RecoveredWallBody)
+            || hasOutdoorRoomReference
+            || sideEvidence.HasOutdoorRoomSide)
+        {
+            return false;
+        }
+
+        var roomSideHits = sideEvidence.PositiveRoomHits + sideEvidence.NegativeRoomHits;
+        if (roomReferenceCount < 3 && roomSideHits < 6)
+        {
+            return false;
+        }
+
+        var maxFaceFragments = Math.Max(pair.FirstFaceFragmentCount, pair.SecondFaceFragmentCount);
+        var totalFaceFragments = pair.FirstFaceFragmentCount + pair.SecondFaceFragmentCount;
+        if (pair.Score < 0.70
+            || pair.OverlapRatio < 0.95
+            || pair.FaceSeparation < 1.5
+            || pair.FaceSeparation > Math.Max(30.0, options.DefaultWallThickness * 6.0)
+            || maxFaceFragments > 96
+            || totalFaceFragments > 180)
+        {
+            return false;
+        }
+
+        var evidence = assessment.Evidence
+            .Concat(wall.Evidence)
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(assessment.ScoreBreakdown.NegativeEvidence)
+            .ToArray();
+        if (!HasWallBodyEvidence(wall, assessment))
+        {
+            return false;
+        }
+
+        if (IsDimensionLikeWeakLayerEvidence(evidence)
+            && (roomReferenceCount < 3 || pair.OverlapRatio < 0.98 || pair.Score < 0.70))
+        {
+            return false;
+        }
+
+        return !EvidenceContainsAny(
+            evidence,
+            "outdoor",
+            "terrace",
+            "covered-area",
+            "covered entry",
+            "covered-entry",
+            "overbygd",
+            "canopy",
+            "railing",
+            "surface pattern",
+            "surface/detail pattern",
+            "object/fixture",
+            "fixture detail",
+            "repeated short detail",
+            "door/opening",
+            "door swing",
+            "door leaf",
+            "door arc",
+            "stair",
+            "already represented",
+            "recovered duplicate wall body",
+            "rejected as non-wall",
+            "non-wall",
+            "not trusted as exterior without shell support",
+            "outdoor/terrace room evidence alone is not trusted");
     }
 
     private static double RoomConfirmableIsolatedWallMinimumLength(
@@ -2008,6 +2154,102 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             Evidence = AppendEvidence(assessment.Evidence, promotionEvidence)
         };
         return true;
+    }
+
+    private static bool TryPromoteProtectedObjectLikeLongCleanFragmentEvidence(
+        WallSegment wall,
+        WallEvidenceWallAssessment assessment,
+        WallGraphComponent? component,
+        out WallEvidenceWallAssessment promotedAssessment,
+        out IReadOnlyList<string> promotionEvidence)
+    {
+        promotedAssessment = assessment;
+        promotionEvidence = Array.Empty<string>();
+
+        if (assessment.PlacementReady
+            || !assessment.RequiresReview
+            || !IsProtectedObjectLikeLongCleanFragmentCandidate(
+                wall,
+                assessment,
+                component,
+                requirePlacementReady: false))
+        {
+            return false;
+        }
+
+        promotionEvidence = new[]
+        {
+            $"wall evidence: {WallPlacementContextGuards.TrustedObjectLikeLongCleanFragmentInteriorEvidence} promoted to placement-ready after long-fragment structural review"
+        };
+        promotedAssessment = assessment with
+        {
+            PlacementReady = true,
+            RequiresReview = false,
+            Decision = WallEvidenceDecision.Accept,
+            Evidence = AppendEvidence(assessment.Evidence, promotionEvidence)
+        };
+        return true;
+    }
+
+    private static bool IsProtectedObjectLikeLongCleanFragmentCandidate(
+        WallSegment wall,
+        WallEvidenceWallAssessment? assessment,
+        WallGraphComponent? component,
+        bool requirePlacementReady)
+    {
+        if (component is null
+            || component.Kind != WallGraphComponentKind.ObjectLikeIsland
+            || !component.ExcludedFromStructuralTopology
+            || assessment is null
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject)
+        {
+            return false;
+        }
+
+        if (requirePlacementReady
+            && (!assessment.PlacementReady || assessment.RequiresReview))
+        {
+            return false;
+        }
+
+        var evidence = assessment.Evidence
+            .Concat(wall.Evidence)
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(assessment.ScoreBreakdown.NegativeEvidence)
+            .ToArray();
+        if (!evidence.Any(item => item.Contains(WallPlacementContextGuards.TrustedObjectLikeLongCleanFragmentInteriorEvidence, StringComparison.OrdinalIgnoreCase))
+            || !evidence.Any(item => item.Contains("protected long clean object-like fragment", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        return !EvidenceContainsAny(
+            evidence,
+            "outdoor",
+            "terrace",
+            "covered-area",
+            "covered entry",
+            "covered-entry",
+            "overbygd",
+            "canopy",
+            "surface pattern",
+            "object/fixture detail",
+            "fixture detail",
+            "repeated short detail",
+            "door/opening",
+            "door swing",
+            "door leaf",
+            "door arc",
+            "stair",
+            "railing",
+            "dimension-like",
+            "classified Dimension",
+            "dimension/annotation",
+            "already represented",
+            "recovered duplicate wall body",
+            "rejected as non-wall",
+            "non-wall");
     }
 
     private static bool TryDemoteFragmentedPlacementReadyWallEvidence(
@@ -2586,6 +2828,13 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             item.Contains("classified Dimension", StringComparison.OrdinalIgnoreCase)
             || item.Contains("dimension-like text", StringComparison.OrdinalIgnoreCase)
             || item.Contains("DimensionOrAnnotation", StringComparison.OrdinalIgnoreCase));
+
+    private static bool EvidenceContainsAny(IEnumerable<string> evidence, params string[] fragments)
+    {
+        var evidenceArray = evidence.ToArray();
+        return fragments.Any(fragment =>
+            evidenceArray.Any(item => item.Contains(fragment, StringComparison.OrdinalIgnoreCase)));
+    }
 
     private static bool HasExplicitWallBodyEvidence(IEnumerable<string> evidence) =>
         evidence.Any(item =>
@@ -5093,6 +5342,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
         int rejectedEvidenceProtected,
         int roomConfirmedPlacementPromoted,
         int topologySupportedFragmentedPairPromoted,
+        int protectedObjectLikeLongFragmentPromoted,
         int fragmentedPairPlacementDemoted,
         int denseLocalDetailPlacementDemoted,
         int nonOrthogonalDimensionLikePlacementDemoted,
@@ -5139,6 +5389,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
                 ["rejectedEvidenceProtectedWallCount"] = rejectedEvidenceProtected.ToString(),
                 ["roomConfirmedPlacementPromotedWallCount"] = roomConfirmedPlacementPromoted.ToString(),
                 ["topologySupportedFragmentedPairPromotedWallCount"] = topologySupportedFragmentedPairPromoted.ToString(),
+                ["protectedObjectLikeLongFragmentPromotedWallCount"] = protectedObjectLikeLongFragmentPromoted.ToString(),
                 ["fragmentedPairPlacementDemotedWallCount"] = fragmentedPairPlacementDemoted.ToString(),
                 ["denseLocalDetailPlacementDemotedWallCount"] = denseLocalDetailPlacementDemoted.ToString(),
                 ["nonOrthogonalDimensionLikePlacementDemotedWallCount"] = nonOrthogonalDimensionLikePlacementDemoted.ToString(),

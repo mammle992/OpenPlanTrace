@@ -1739,6 +1739,36 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementExporter_ExportsProtectedObjectLikeLongCleanFragmentAsSourceBackedPlacementWall()
+    {
+        var result = CreateProtectedObjectLikeLongCleanFragmentPlacementResult();
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var wall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == "protected-object-like-long-fragment");
+
+        Assert.Equal(JsonValueKind.Null, wall.GetProperty("placementOmission").ValueKind);
+        Assert.False(wall.GetProperty("excludedFromStructuralTopology").GetBoolean());
+        Assert.True(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.Single(wall.GetProperty("topologySpans").EnumerateArray());
+        Assert.Contains(
+            wall.GetProperty("topologySpans")[0].GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("source-backed fallback", StringComparison.OrdinalIgnoreCase) == true);
+
+        var summary = document.RootElement.GetProperty("summary");
+        Assert.Equal(1, summary.GetProperty("placementReadyWallCount").GetInt32());
+        Assert.Equal(1, summary.GetProperty("sourceBackedFallbackWallCount").GetInt32());
+        Assert.False(
+            summary
+                .GetProperty("wallPlacementOmissionCounts")
+                .TryGetProperty("object_like_linework", out _));
+    }
+
+    [Fact]
     public void PlacementExporter_ClassifiesTinyDoorAdjacentIsolatedFragmentAsSuppressedOpeningNoise()
     {
         var fragmentLine = new PlanLineSegment(
@@ -14093,6 +14123,115 @@ public sealed class ExportTests
                 Array.Empty<WallEvidenceBand>(),
                 assessments,
                 walls.Length,
+            0)
+        };
+    }
+
+    private static PlanScanResult CreateProtectedObjectLikeLongCleanFragmentPlacementResult()
+    {
+        var protectedEvidence = new[]
+        {
+            "merged collinear wall fragments",
+            "run merged 4 fragments",
+            "wall type interior: supported wall evidence inside exterior envelope",
+            $"wall evidence: {WallPlacementContextGuards.TrustedObjectLikeLongCleanFragmentInteriorEvidence}",
+            $"wall evidence: {WallPlacementContextGuards.TrustedObjectLikeLongCleanFragmentInteriorEvidence} promoted to placement-ready after long-fragment structural review"
+        };
+        var wall = SyntheticWall("protected-object-like-long-fragment", 80, 100, 240, 100) with
+        {
+            DetectionKind = WallDetectionKind.FragmentMerged,
+            WallType = WallType.Interior,
+            FragmentEvidence = new WallFragmentEvidence(
+                FragmentCount: 4,
+                TotalHealedGap: 0,
+                MaxHealedGap: 0,
+                DuplicatePrimitiveCount: 0,
+                GapRatio: 0,
+                RequiresGeometryReview: false,
+                Evidence: ["fragment geometry: 4 fragment(s)", "fragment geometry healed gap ratio 0"]),
+            Evidence = protectedEvidence
+        };
+        var component = new WallGraphComponent(
+            "protected-object-like-component",
+            1,
+            WallGraphComponentKind.ObjectLikeIsland,
+            wall.Bounds,
+            [wall.Id],
+            Array.Empty<string>(),
+            Array.Empty<string>(),
+            wall.SourcePrimitiveIds,
+            wall.DrawingLength,
+            Confidence.High,
+            ["synthetic object-like component that should be overridden by protected long fragment evidence"],
+            ExcludedFromStructuralTopology: true);
+        var assessment = new WallEvidenceWallAssessment(
+            wall.Id,
+            wall.PageNumber,
+            wall.Bounds,
+            WallEvidenceCategory.MediumWallBody,
+            Confidence.High,
+            PlacementReady: true,
+            RequiresReview: false,
+            RejectedAsNoise: false,
+            wall.SourcePrimitiveIds,
+            protectedEvidence)
+        {
+            Decision = WallEvidenceDecision.Accept
+        };
+        var now = DateTimeOffset.UtcNow;
+
+        return new PlanScanResult(
+            new PlanDocument(
+                "protected-object-like-long-fragment",
+                [
+                    new PlanPage(
+                        1,
+                        new PlanSize(320, 220),
+                        [WallLine(wall.Id, wall.CenterLine.Start, wall.CenterLine.End)])
+                ])
+            {
+                Metadata = new PlanMetadata
+                {
+                    SourceName = "protected-object-like-long-fragment.pdf",
+                    SourcePath = @"C:\plans\protected-object-like-long-fragment.pdf",
+                    Properties = new Dictionary<string, string>
+                    {
+                        ["format"] = "pdf",
+                        ["loader"] = "synthetic",
+                        ["sourceKind"] = PlanSourceKind.Pdf.ToString(),
+                        ["effectiveSourceKind"] = PlanSourceKind.Pdf.ToString()
+                    }
+                }
+            },
+            PlanLayerAnalysis.Empty,
+            PlanCalibration.Empty,
+            MeasurementConsistencyReport.Empty,
+            Array.Empty<TitleBlockAnalysis>(),
+            Array.Empty<DimensionAnnotation>(),
+            Array.Empty<PlanAnnotationBlock>(),
+            Array.Empty<GridAxis>(),
+            Array.Empty<GridBaySpacing>(),
+            Array.Empty<SheetRegion>(),
+            Array.Empty<SurfacePatternCandidate>(),
+            [wall],
+            new WallGraph(Array.Empty<WallNode>(), Array.Empty<WallEdge>(), [component]),
+            Array.Empty<RoomRegion>(),
+            RoomAdjacencyGraph.Empty,
+            Array.Empty<OpeningCandidate>(),
+            Array.Empty<ObjectCandidate>(),
+            Array.Empty<ObjectCandidateGroup>(),
+            Array.Empty<ObjectAggregate>(),
+            new PipelineDiagnostics(
+                now,
+                now,
+                Array.Empty<PipelineStageReport>(),
+                Array.Empty<PlanDiagnostic>()))
+        {
+            WallEvidenceMap = new WallEvidenceMap(
+                Array.Empty<WallEvidenceSegment>(),
+                Array.Empty<WallEvidenceBand>(),
+                [assessment],
+                1,
                 0)
         };
     }

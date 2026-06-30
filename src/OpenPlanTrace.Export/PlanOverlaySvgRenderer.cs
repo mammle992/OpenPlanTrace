@@ -929,8 +929,14 @@ public static class PlanOverlaySvgRenderer
                 wall,
                 component,
                 evidenceAssessment);
+        var trustedObjectLikeLongCleanFragmentInterior =
+            WallPlacementContextGuards.IsTrustedObjectLikeLongCleanFragmentInteriorWallBody(
+                wall,
+                component,
+                evidenceAssessment);
         return WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment)
             && !trustedRecoveredRoomBoundaryObjectLikeWall
+            && !trustedObjectLikeLongCleanFragmentInterior
             ? Math.Max(0.12, opacity * 0.32)
             : opacity;
     }
@@ -959,6 +965,14 @@ public static class PlanOverlaySvgRenderer
         if (trustedRecoveredRoomBoundaryObjectLikeWall)
         {
             return WallCssClass("wall wall-secondary wall-recovered-room-boundary", component, evidenceAssessment, ignoreTopologyExclusion: true);
+        }
+
+        if (WallPlacementContextGuards.IsTrustedObjectLikeLongCleanFragmentInteriorWallBody(
+                wall,
+                component,
+                evidenceAssessment))
+        {
+            return WallCssClass("wall wall-secondary wall-protected-long-fragment", component, evidenceAssessment, ignoreTopologyExclusion: true);
         }
 
         return component?.Kind switch
@@ -1035,15 +1049,23 @@ public static class PlanOverlaySvgRenderer
                 span.SourceWall,
                 component,
                 evidenceAssessment);
+        var trustedObjectLikeLongCleanFragmentInterior =
+            span.SourceWall is { } sourceWall
+            && WallPlacementContextGuards.IsTrustedObjectLikeLongCleanFragmentInteriorWallBody(
+                sourceWall,
+                component,
+                evidenceAssessment);
 
         if (WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment)
-            && !trustedRecoveredRoomBoundaryObjectLikeWall)
+            && !trustedRecoveredRoomBoundaryObjectLikeWall
+            && !trustedObjectLikeLongCleanFragmentInterior)
         {
             classes.Add("wall-topology-span-excluded");
         }
         else if (!trustedExteriorShellContinuityFragment
             && !trustedRoomBoundaryIsolatedFragment
             && !trustedRecoveredRoomBoundaryObjectLikeWall
+            && !trustedObjectLikeLongCleanFragmentInterior
             && !WallTopologySpanVisibility.IsPlacementReadyStructuralSpan(component, evidenceAssessment))
         {
             classes.Add("wall-topology-span-review-only");
@@ -1106,12 +1128,19 @@ public static class PlanOverlaySvgRenderer
                 footprint.SourceWall,
                 component,
                 evidenceAssessment);
+        var trustedObjectLikeLongCleanFragmentInterior =
+            WallPlacementContextGuards.IsTrustedObjectLikeLongCleanFragmentInteriorWallBody(
+                footprint.SourceWall,
+                component,
+                evidenceAssessment);
 
         if ((WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment)
-                && !trustedRecoveredRoomBoundaryObjectLikeWall)
+                && !trustedRecoveredRoomBoundaryObjectLikeWall
+                && !trustedObjectLikeLongCleanFragmentInterior)
             || (!trustedExteriorShellContinuityFragment
                 && !trustedRoomBoundaryIsolatedFragment
                 && !trustedRecoveredRoomBoundaryObjectLikeWall
+                && !trustedObjectLikeLongCleanFragmentInterior
                 && !WallTopologySpanVisibility.IsPlacementReadyStructuralSpan(component, evidenceAssessment)))
         {
             classes.Add("wall-body-footprint-excluded");

@@ -187,6 +187,164 @@ public sealed class WallPlacementReadinessTests
     }
 
     [Fact]
+    public void Evaluate_AllowsRoomConfirmedIsolatedExteriorShellSegment()
+    {
+        var wall = Wall("wall:isolated-exterior-room-confirmed-shell", Confidence.High) with
+        {
+            CenterLine = new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(164, 100)),
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Exterior,
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(new PlanPoint(100, 96.5), new PlanPoint(164, 96.5)),
+                new PlanLineSegment(new PlanPoint(100, 103.5), new PlanPoint(164, 103.5)),
+                FaceSeparation: 7,
+                OverlapRatio: 1,
+                Score: 0.721,
+                FirstFaceFragmentCount: 60,
+                SecondFaceFragmentCount: 2,
+                FirstFaceSourcePrimitiveIds: ["exterior-shell-face-a"],
+                SecondFaceSourcePrimitiveIds: ["exterior-shell-face-b"]),
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "layer (unlayered) classified Dimension (0,24)",
+                "layer evidence: contains dimension-like text",
+                "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+                "wall evidence: medium double-edge exterior wall body",
+                $"wall evidence: {WallPlacementReadinessEvaluator.RoomConfirmedIsolatedExteriorPromotionEvidence} because multiple indoor rooms referenced this exterior shell segment"
+            ]
+        };
+        var component = Component(
+            WallGraphComponentKind.IsolatedFragment,
+            excludedFromStructuralTopology: false,
+            wall.Id);
+        var evidence = Evidence(wall, WallEvidenceCategory.MediumWallBody, placementReady: true) with
+        {
+            Evidence = wall.Evidence
+        };
+
+        var readiness = WallPlacementReadinessEvaluator.Evaluate(
+            wall,
+            ReliableCalibration(),
+            component,
+            evidence);
+
+        Assert.True(readiness.ReadyForCoordinatePlacement);
+        Assert.True(readiness.ReadyForMetricPlacement);
+        Assert.False(readiness.RequiresReview);
+        Assert.False(readiness.CoordinatePlacementBlocked);
+        Assert.DoesNotContain("wall belongs to isolated wall graph fragment", readiness.Reasons);
+    }
+
+    [Fact]
+    public void Evaluate_BlocksRoomConfirmedIsolatedExteriorShellSegmentWithCoveredOutdoorEvidence()
+    {
+        var wall = Wall("wall:covered-isolated-exterior-shell", Confidence.High) with
+        {
+            CenterLine = new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(164, 100)),
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Exterior,
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(new PlanPoint(100, 96.5), new PlanPoint(164, 96.5)),
+                new PlanLineSegment(new PlanPoint(100, 103.5), new PlanPoint(164, 103.5)),
+                FaceSeparation: 7,
+                OverlapRatio: 1,
+                Score: 0.82,
+                FirstFaceFragmentCount: 8,
+                SecondFaceFragmentCount: 4,
+                FirstFaceSourcePrimitiveIds: ["covered-face-a"],
+                SecondFaceSourcePrimitiveIds: ["covered-face-b"]),
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "wall type exterior: outdoor covered-area boundary",
+                "wall type exterior: overbygd inngang / covered entry annotation nearby",
+                "wall evidence: medium double-edge exterior wall body",
+                $"wall evidence: {WallPlacementReadinessEvaluator.RoomConfirmedIsolatedExteriorPromotionEvidence} because multiple indoor rooms referenced this exterior shell segment"
+            ]
+        };
+        var component = Component(
+            WallGraphComponentKind.IsolatedFragment,
+            excludedFromStructuralTopology: false,
+            wall.Id);
+        var evidence = Evidence(wall, WallEvidenceCategory.MediumWallBody, placementReady: true) with
+        {
+            Evidence = wall.Evidence
+        };
+
+        var readiness = WallPlacementReadinessEvaluator.Evaluate(
+            wall,
+            ReliableCalibration(),
+            component,
+            evidence);
+
+        Assert.False(readiness.ReadyForCoordinatePlacement);
+        Assert.False(readiness.ReadyForMetricPlacement);
+        Assert.True(readiness.RequiresReview);
+        Assert.True(readiness.CoordinatePlacementBlocked);
+        Assert.Contains("wall belongs to isolated wall graph fragment", readiness.Reasons);
+    }
+
+    [Fact]
+    public void Evaluate_AllowsProtectedObjectLikeLongCleanFragmentInterior()
+    {
+        var wall = Wall("wall:protected-object-like-long-fragment", Confidence.High) with
+        {
+            CenterLine = new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(100, 240)),
+            DetectionKind = WallDetectionKind.FragmentMerged,
+            WallType = WallType.Interior,
+            SourcePrimitiveIds = ["fragment-a", "fragment-b", "fragment-c", "fragment-d"],
+            FragmentEvidence = new WallFragmentEvidence(
+                FragmentCount: 4,
+                TotalHealedGap: 0,
+                MaxHealedGap: 0,
+                DuplicatePrimitiveCount: 0,
+                GapRatio: 0,
+                RequiresGeometryReview: false,
+                Evidence: []),
+            Evidence =
+            [
+                "merged collinear wall fragments",
+                "run merged 4 fragments",
+                "wall type interior: supported wall evidence inside exterior envelope",
+                "wall evidence: unlayered fragment-merged wall candidate has only one trusted structural endpoint; keep for topology but block exact placement until graph context is reviewed",
+                $"wall evidence: {WallPlacementContextGuards.TrustedObjectLikeLongCleanFragmentInteriorEvidence}",
+                $"wall evidence: {WallPlacementContextGuards.TrustedObjectLikeLongCleanFragmentInteriorEvidence} promoted to placement-ready after long-fragment structural review"
+            ]
+        };
+        var component = new WallGraphComponent(
+            $"component:{wall.Id}",
+            1,
+            WallGraphComponentKind.ObjectLikeIsland,
+            wall.Bounds,
+            new[] { wall.Id },
+            Array.Empty<string>(),
+            Array.Empty<string>(),
+            wall.SourcePrimitiveIds,
+            wall.DrawingLength,
+            Confidence.Medium,
+            new[] { "wall graph component is compact object-like linework" },
+            ExcludedFromStructuralTopology: true);
+        var evidence = Evidence(wall, WallEvidenceCategory.MediumWallBody, placementReady: true) with
+        {
+            Evidence = wall.Evidence
+        };
+
+        var readiness = WallPlacementReadinessEvaluator.Evaluate(
+            wall,
+            ReliableCalibration(),
+            component,
+            evidence);
+
+        Assert.True(readiness.ReadyForCoordinatePlacement);
+        Assert.True(readiness.ReadyForMetricPlacement);
+        Assert.False(readiness.RequiresReview);
+        Assert.False(readiness.CoordinatePlacementBlocked);
+        Assert.DoesNotContain("wall belongs to compact object-like linework component", readiness.Reasons);
+        Assert.DoesNotContain("wall component excluded from structural topology", readiness.Reasons);
+    }
+
+    [Fact]
     public void Evaluate_AllowsTrustedTwoSidedRoomBoundaryIsolatedInteriorBody()
     {
         var wall = Wall("wall:two-sided-isolated-room-boundary", Confidence.High) with

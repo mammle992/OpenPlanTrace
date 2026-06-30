@@ -1052,7 +1052,11 @@ public sealed record WallExport(
     {
         wallComponentLookup.TryGetValue(wall.Id, out var component);
         var excludedFromStructuralTopology =
-            WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment);
+            WallEvidenceExportHelpers.IsExcludedFromStructuralTopology(component, evidenceAssessment)
+            && !WallPlacementContextGuards.IsTrustedObjectLikeLongCleanFragmentInteriorWallBody(
+                wall,
+                component,
+                evidenceAssessment);
         var representedBy = WallCleanTopologyRepresentationMatcher.FindRepresentingSpans(
             wall,
             component,
@@ -1590,6 +1594,12 @@ internal static class WallEvidenceExportHelpers
                 wall,
                 component,
                 evidenceAssessment);
+        var trustedObjectLikeLongCleanFragmentInterior =
+            wall is { } wallSegment
+            && WallPlacementContextGuards.IsTrustedObjectLikeLongCleanFragmentInteriorWallBody(
+                wallSegment,
+                component,
+                evidenceAssessment);
         var trustedIsolatedFragment =
             trustedExteriorShellContinuityFragment
             || trustedExteriorShellRepairSupportedWall
@@ -1598,10 +1608,12 @@ internal static class WallEvidenceExportHelpers
             || trustedRoomBoundaryIsolatedFragment;
         var trustedStructuralTopologyOverride =
             trustedIsolatedFragment
-            || trustedRecoveredRoomBoundaryObjectLikeWall;
+            || trustedRecoveredRoomBoundaryObjectLikeWall
+            || trustedObjectLikeLongCleanFragmentInterior;
 
         if (component?.Kind == WallGraphComponentKind.ObjectLikeIsland
-            && !trustedRecoveredRoomBoundaryObjectLikeWall)
+            && !trustedRecoveredRoomBoundaryObjectLikeWall
+            && !trustedObjectLikeLongCleanFragmentInterior)
         {
             reasons.Add("wall graph component is object-like detail, not placement wall geometry");
         }
@@ -1875,7 +1887,12 @@ public sealed record WallEdgeExport(
         wallComponentLookup.TryGetValue(edge.WallId, out var component);
         wallEvidenceAssessments.TryGetValue(edge.WallId, out var evidenceAssessment);
         var excludedFromStructuralTopology =
-            WallStructuralTrust.IsExcludedFromStructuralTopology(component, evidenceAssessment);
+            WallStructuralTrust.IsExcludedFromStructuralTopology(component, evidenceAssessment)
+            && !(topologySpan?.SourceWall is { } edgeSourceWall
+                && WallPlacementContextGuards.IsTrustedObjectLikeLongCleanFragmentInteriorWallBody(
+                    edgeSourceWall,
+                    component,
+                    evidenceAssessment));
         var reviewReasons = WallEvidenceExportHelpers.CoordinateReviewReasons(
             topologySpan?.SourceWall,
             component,

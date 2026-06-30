@@ -1419,6 +1419,196 @@ public sealed class WallTypeRefinementTests
     }
 
     [Fact]
+    public async Task WallTypeRefinement_PromotesRoomConfirmedIsolatedExteriorShellSegment()
+    {
+        var wall = new WallSegment(
+            "wall-isolated-exterior-room-confirmed-shell",
+            1,
+            new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(164, 100)),
+            7,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Exterior,
+            SourcePrimitiveIds = Enumerable.Range(1, 62)
+                .Select(index => $"exterior-shell-fragment-{index}")
+                .ToArray(),
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(new PlanPoint(100, 96.5), new PlanPoint(164, 96.5)),
+                new PlanLineSegment(new PlanPoint(100, 103.5), new PlanPoint(164, 103.5)),
+                FaceSeparation: 7,
+                OverlapRatio: 1,
+                Score: 0.721,
+                FirstFaceFragmentCount: 60,
+                SecondFaceFragmentCount: 2,
+                FirstFaceSourcePrimitiveIds: ["exterior-shell-face-a"],
+                SecondFaceSourcePrimitiveIds: ["exterior-shell-face-b"]),
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "pair score 0,721",
+                "first face merged 60 fragments",
+                "second face merged 2 fragments",
+                "layer (unlayered) classified Dimension (0,24)",
+                "layer evidence: contains dimension-like text",
+                "wall type exterior: near detected floorplan/wall envelope or local outer boundary",
+                "wall evidence: medium double-edge exterior wall body"
+            ]
+        };
+        var context = CreateContext("room-confirmed-isolated-exterior-shell");
+        context.Walls.Add(wall);
+        context.Rooms.Add(Room("room-a", RoomUseKind.Office, wall.Id));
+        context.Rooms.Add(Room("room-b", RoomUseKind.Bathroom, wall.Id));
+        context.Rooms.Add(Room("room-c", RoomUseKind.Kitchen, wall.Id));
+        context.WallGraph = IsolatedGraphFor(wall);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.MediumWallBody,
+            placementReady: false,
+            requiresReview: true,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var promoted = Assert.Single(context.WallEvidenceMap.WallAssessments);
+        Assert.True(promoted.PlacementReady);
+        Assert.False(promoted.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Accept, promoted.Decision);
+        Assert.Contains(
+            promoted.Evidence,
+            item => item.Contains(WallPlacementReadinessEvaluator.RoomConfirmedIsolatedExteriorPromotionEvidence, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task WallTypeRefinement_DoesNotPromoteCoveredOutdoorIsolatedExteriorShellSegment()
+    {
+        var wall = new WallSegment(
+            "wall-covered-outdoor-isolated-exterior-shell",
+            1,
+            new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(164, 100)),
+            7,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Exterior,
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(new PlanPoint(100, 96.5), new PlanPoint(164, 96.5)),
+                new PlanLineSegment(new PlanPoint(100, 103.5), new PlanPoint(164, 103.5)),
+                FaceSeparation: 7,
+                OverlapRatio: 1,
+                Score: 0.82,
+                FirstFaceFragmentCount: 8,
+                SecondFaceFragmentCount: 4,
+                FirstFaceSourcePrimitiveIds: ["covered-face-a"],
+                SecondFaceSourcePrimitiveIds: ["covered-face-b"]),
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "wall type exterior: outdoor covered-area boundary",
+                "wall type exterior: overbygd inngang / covered entry annotation nearby",
+                "wall evidence: medium double-edge exterior wall body"
+            ]
+        };
+        var context = CreateContext("covered-outdoor-isolated-exterior-shell");
+        context.Walls.Add(wall);
+        context.Rooms.Add(Room("room-outdoor-a", RoomUseKind.Outdoor, wall.Id));
+        context.Rooms.Add(Room("room-outdoor-b", RoomUseKind.Outdoor, wall.Id));
+        context.Rooms.Add(Room("room-outdoor-c", RoomUseKind.Outdoor, wall.Id));
+        context.WallGraph = IsolatedGraphFor(wall);
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.MediumWallBody,
+            placementReady: false,
+            requiresReview: true,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var retained = Assert.Single(context.WallEvidenceMap.WallAssessments);
+        Assert.False(retained.PlacementReady);
+        Assert.True(retained.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Review, retained.Decision);
+        Assert.DoesNotContain(
+            retained.Evidence,
+            item => item.Contains(WallPlacementReadinessEvaluator.RoomConfirmedIsolatedExteriorPromotionEvidence, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task WallTypeRefinement_PromotesProtectedObjectLikeLongCleanFragmentInterior()
+    {
+        var wall = new WallSegment(
+            "wall-protected-object-like-long-fragment",
+            1,
+            new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(100, 240)),
+            6,
+            Confidence.High)
+        {
+            DetectionKind = WallDetectionKind.FragmentMerged,
+            WallType = WallType.Interior,
+            SourcePrimitiveIds = new[] { "fragment-a", "fragment-b", "fragment-c", "fragment-d" },
+            FragmentEvidence = new WallFragmentEvidence(
+                FragmentCount: 4,
+                TotalHealedGap: 0,
+                MaxHealedGap: 0,
+                DuplicatePrimitiveCount: 0,
+                GapRatio: 0,
+                RequiresGeometryReview: false,
+                Evidence: Array.Empty<string>()),
+            Evidence = new[]
+            {
+                "merged collinear wall fragments",
+                "run merged 4 fragments",
+                "wall type interior: supported wall evidence inside exterior envelope",
+                "wall evidence: unlayered fragment-merged wall candidate has only one trusted structural endpoint; keep for topology but block exact placement until graph context is reviewed",
+                $"wall evidence: {WallPlacementContextGuards.TrustedObjectLikeLongCleanFragmentInteriorEvidence}"
+            }
+        };
+        var context = CreateContext("protected-object-like-long-fragment-promotion");
+        context.Walls.Add(wall);
+        context.WallGraph = new WallGraph(
+            Array.Empty<WallNode>(),
+            Array.Empty<WallEdge>(),
+            new[]
+            {
+                new WallGraphComponent(
+                    "component-object-like-long-fragment",
+                    1,
+                    WallGraphComponentKind.ObjectLikeIsland,
+                    wall.Bounds,
+                    new[] { wall.Id },
+                    Array.Empty<string>(),
+                    Array.Empty<string>(),
+                    wall.SourcePrimitiveIds,
+                    wall.DrawingLength,
+                    Confidence.Medium,
+                    new[] { "wall graph component is compact object-like linework" },
+                    ExcludedFromStructuralTopology: true)
+            });
+        context.WallEvidenceMap = EvidenceMapFor(
+            wall,
+            WallEvidenceCategory.MediumWallBody,
+            placementReady: false,
+            requiresReview: true,
+            rejectedAsNoise: false,
+            wall.Evidence);
+
+        await new WallTypeRefinementStage().ExecuteAsync(context, CancellationToken.None);
+
+        var refinedWall = Assert.Single(context.Walls);
+        var promoted = Assert.Single(context.WallEvidenceMap.WallAssessments);
+        Assert.Equal(WallType.Interior, refinedWall.WallType);
+        Assert.True(promoted.PlacementReady);
+        Assert.False(promoted.RequiresReview);
+        Assert.Equal(WallEvidenceDecision.Accept, promoted.Decision);
+        Assert.Contains(
+            promoted.Evidence,
+            item => item.Contains(WallPlacementContextGuards.TrustedObjectLikeLongCleanFragmentInteriorEvidence, StringComparison.OrdinalIgnoreCase)
+                && item.Contains("promoted to placement-ready", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task WallTypeRefinement_PromotesCleanFragmentMergedInteriorRoomBoundary()
     {
         var wall = new WallSegment(

@@ -8,6 +8,11 @@ internal sealed class WallGraphStage : IPipelineStage
     private const int MaxSecondaryInteriorFragmentPromotionFragments = 12;
     private const int MaxSecondaryInteriorFragmentPromotionDuplicatePrimitives = 8;
     private const double MaxSecondaryInteriorFragmentPromotionGapRatio = 0.08;
+    private const string ObjectLikeRoomBoundaryProtectionEvidence =
+        "wall evidence: protected from object-like graph reclassification because a long clean fragment wall is confirmed by room-boundary support";
+
+    private const string ObjectLikeLongCleanFragmentProtectionEvidence =
+        "wall evidence: " + WallPlacementContextGuards.TrustedObjectLikeLongCleanFragmentInteriorEvidence;
 
     public string Name => "wall-graph";
 
@@ -1322,7 +1327,20 @@ internal sealed class WallGraphStage : IPipelineStage
             .SelectMany(component => component.WallIds.Select(wallId => new { WallId = wallId, Component = component }))
             .GroupBy(item => item.WallId, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.First().Component, StringComparer.Ordinal);
+        var wallsById = context.Walls
+            .Where(wall => !string.IsNullOrWhiteSpace(wall.Id))
+            .GroupBy(wall => wall.Id, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var roomBoundaryWallIds = context.Rooms.Count == 0
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : RoomBoundaryWallReferenceBuilder
+                .Build(context.Rooms, context.Walls, context.Options.WallSnapTolerance)
+                .RoomIdsByWallId
+                .Keys
+                .ToHashSet(StringComparer.Ordinal);
         var refinedWallIds = new HashSet<string>(StringComparer.Ordinal);
+        var protectedWallIds = new HashSet<string>(StringComparer.Ordinal);
+        var protectionEvidenceByWallId = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
         var refinedAssessments = context.WallEvidenceMap.WallAssessments
             .Select(assessment =>
             {
@@ -1332,30 +1350,69 @@ internal sealed class WallGraphStage : IPipelineStage
                     return assessment;
                 }
 
+                if (wallsById.TryGetValue(assessment.WallId, out var wall)
+                    && TryGetObjectLikeFragmentProtectionEvidence(
+                        wall,
+                        assessment,
+                        roomBoundaryWallIds.Contains(assessment.WallId),
+                        context.Options,
+                        out var protectionEvidence))
+                {
+                    protectedWallIds.Add(assessment.WallId);
+                    protectionEvidenceByWallId[assessment.WallId] = protectionEvidence;
+                    return assessment with
+                    {
+                        Evidence = AppendEvidence(
+                            assessment.Evidence,
+                            protectionEvidence)
+                    };
+                }
+
                 refinedWallIds.Add(assessment.WallId);
                 return RefineObjectLikeComponentAssessment(assessment, component);
             })
             .ToArray();
 
-        if (refinedWallIds.Count == 0)
+        if (refinedWallIds.Count == 0 && protectedWallIds.Count == 0)
         {
             return;
         }
 
         var refinedSegments = context.WallEvidenceMap.Segments
-            .Select(segment => segment.WallId is not null && refinedWallIds.Contains(segment.WallId)
-                ? segment with
+            .Select(segment =>
+            {
+                if (segment.WallId is null)
                 {
-                    Category = WallEvidenceCategory.ObjectOrFixtureDetail,
-                    Confidence = new Confidence(Math.Max(segment.Confidence.Value, 0.74)),
-                    Evidence = AppendEvidence(
-                        segment.Evidence,
-                        new[]
-                        {
-                            $"wall evidence: graph component {componentByWallId[segment.WallId].Id} classified as object-like linework"
-                        })
+                    return segment;
                 }
-                : segment)
+
+                if (refinedWallIds.Contains(segment.WallId))
+                {
+                    return segment with
+                    {
+                        Category = WallEvidenceCategory.ObjectOrFixtureDetail,
+                        Confidence = new Confidence(Math.Max(segment.Confidence.Value, 0.74)),
+                        Evidence = AppendEvidence(
+                            segment.Evidence,
+                            new[]
+                            {
+                                $"wall evidence: graph component {componentByWallId[segment.WallId].Id} classified as object-like linework"
+                            })
+                    };
+                }
+
+                if (protectedWallIds.Contains(segment.WallId))
+                {
+                    return segment with
+                    {
+                        Evidence = AppendEvidence(
+                            segment.Evidence,
+                            protectionEvidenceByWallId[segment.WallId])
+                    };
+                }
+
+                return segment;
+            })
             .ToArray();
 
         context.WallEvidenceMap = context.WallEvidenceMap with
@@ -1367,44 +1424,233 @@ internal sealed class WallGraphStage : IPipelineStage
         for (var index = 0; index < context.Walls.Count; index++)
         {
             var wall = context.Walls[index];
-            if (!refinedWallIds.Contains(wall.Id) || !componentByWallId.TryGetValue(wall.Id, out var component))
+            if (!componentByWallId.TryGetValue(wall.Id, out var component))
             {
                 continue;
             }
 
-            context.Walls[index] = wall with
+            if (refinedWallIds.Contains(wall.Id))
             {
-                Evidence = AppendEvidence(
-                    wall.Evidence,
-                    new[]
-                    {
-                        $"wall evidence assessment: {WallEvidenceCategory.ObjectOrFixtureDetail} / rejected / graph component {component.Id}"
-                    })
-            };
+                context.Walls[index] = wall with
+                {
+                    Evidence = AppendEvidence(
+                        wall.Evidence,
+                        new[]
+                        {
+                            $"wall evidence assessment: {WallEvidenceCategory.ObjectOrFixtureDetail} / rejected / graph component {component.Id}"
+                        })
+                };
+            }
+            else if (protectedWallIds.Contains(wall.Id))
+            {
+                context.Walls[index] = wall with
+                {
+                    Evidence = AppendEvidence(
+                        wall.Evidence,
+                        protectionEvidenceByWallId[wall.Id])
+                };
+            }
         }
 
-        var refinedSourceIds = objectLikeComponents
-            .Where(component => component.WallIds.Any(refinedWallIds.Contains))
-            .SelectMany(component => component.SourcePrimitiveIds)
-            .Distinct(StringComparer.Ordinal)
+        if (refinedWallIds.Count > 0)
+        {
+            var refinedSourceIds = objectLikeComponents
+                .Where(component => component.WallIds.Any(refinedWallIds.Contains))
+                .SelectMany(component => component.SourcePrimitiveIds)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            context.AddDiagnostic(
+                "wall_evidence.object_like_components_reclassified",
+                DiagnosticSeverity.Info,
+                "wall-graph",
+                $"{refinedWallIds.Count} wall evidence assessment(s) were reclassified as object/fixture detail from object-like wall graph components.",
+                confidence: Confidence.Medium,
+                scope: DiagnosticScope.Detection,
+                sourcePrimitiveIds: refinedSourceIds,
+                properties: new Dictionary<string, string>
+                {
+                    ["reclassifiedWallCount"] = refinedWallIds.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["objectLikeComponentCount"] = objectLikeComponents.Count(component => component.WallIds.Any(refinedWallIds.Contains)).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["componentIds"] = string.Join(",", objectLikeComponents
+                        .Where(component => component.WallIds.Any(refinedWallIds.Contains))
+                        .Select(component => component.Id)
+                        .Take(20))
+                });
+        }
+
+        if (protectedWallIds.Count > 0)
+        {
+            context.AddDiagnostic(
+                "wall_evidence.object_like_room_boundary_fragments_protected",
+                DiagnosticSeverity.Info,
+                "wall-graph",
+                $"{protectedWallIds.Count} long clean fragment wall(s) were protected from object-like graph reclassification.",
+                confidence: Confidence.Medium,
+                scope: DiagnosticScope.Detection,
+                sourcePrimitiveIds: context.Walls
+                    .Where(wall => protectedWallIds.Contains(wall.Id))
+                    .SelectMany(wall => wall.SourcePrimitiveIds)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray(),
+                properties: new Dictionary<string, string>
+                {
+                    ["protectedWallCount"] = protectedWallIds.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["wallIds"] = string.Join(",", protectedWallIds.OrderBy(id => id, StringComparer.Ordinal).Take(20))
+                });
+        }
+    }
+
+    private static bool TryGetObjectLikeFragmentProtectionEvidence(
+        WallSegment wall,
+        WallEvidenceWallAssessment assessment,
+        bool hasRoomBoundaryReference,
+        ScannerOptions options,
+        out IReadOnlyList<string> protectionEvidence)
+    {
+        if (IsProtectedObjectLikeRoomBoundaryFragmentAssessment(
+            wall,
+            assessment,
+            hasRoomBoundaryReference,
+            options))
+        {
+            protectionEvidence = new[] { ObjectLikeRoomBoundaryProtectionEvidence };
+            return true;
+        }
+
+        if (IsProtectedObjectLikeLongCleanFragmentAssessment(wall, assessment))
+        {
+            protectionEvidence = new[] { ObjectLikeLongCleanFragmentProtectionEvidence };
+            return true;
+        }
+
+        protectionEvidence = Array.Empty<string>();
+        return false;
+    }
+
+    private static bool IsProtectedObjectLikeRoomBoundaryFragmentAssessment(
+        WallSegment wall,
+        WallEvidenceWallAssessment assessment,
+        bool hasRoomBoundaryReference,
+        ScannerOptions options)
+    {
+        if (!hasRoomBoundaryReference
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject
+            || assessment.Category is not (WallEvidenceCategory.MediumWallBody
+                or WallEvidenceCategory.StrongWallBody
+                or WallEvidenceCategory.RecoveredWallBody)
+            || wall.DetectionKind != WallDetectionKind.FragmentMerged
+            || wall.PairEvidence is not null
+            || wall.FragmentEvidence is not { RequiresGeometryReview: false } fragmentEvidence
+            || wall.DrawingLength < Math.Max(72.0, options.MinWallLength * 3.0)
+            || wall.Confidence.Value < 0.78
+            || assessment.Confidence.Value < 0.72)
+        {
+            return false;
+        }
+
+        if (fragmentEvidence.GapRatio > 0.015
+            || fragmentEvidence.TotalHealedGap > Math.Max(3.0, wall.Thickness * 0.6)
+            || fragmentEvidence.MaxHealedGap > Math.Max(3.0, wall.Thickness * 0.6))
+        {
+            return false;
+        }
+
+        var evidence = wall.Evidence
+            .Concat(assessment.Evidence)
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(assessment.ScoreBreakdown.NegativeEvidence)
             .ToArray();
-        context.AddDiagnostic(
-            "wall_evidence.object_like_components_reclassified",
-            DiagnosticSeverity.Info,
-            "wall-graph",
-            $"{refinedWallIds.Count} wall evidence assessment(s) were reclassified as object/fixture detail from object-like wall graph components.",
-            confidence: Confidence.Medium,
-            scope: DiagnosticScope.Detection,
-            sourcePrimitiveIds: refinedSourceIds,
-            properties: new Dictionary<string, string>
-            {
-                ["reclassifiedWallCount"] = refinedWallIds.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                ["objectLikeComponentCount"] = objectLikeComponents.Count(component => component.WallIds.Any(refinedWallIds.Contains)).ToString(System.Globalization.CultureInfo.InvariantCulture),
-                ["componentIds"] = string.Join(",", objectLikeComponents
-                    .Where(component => component.WallIds.Any(refinedWallIds.Contains))
-                    .Select(component => component.Id)
-                    .Take(20))
-            });
+        if (!evidence.Any(item => item.Contains("merged collinear wall fragments", StringComparison.OrdinalIgnoreCase))
+            || !evidence.Any(item => item.Contains("supported wall evidence inside exterior envelope", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        return !evidence.Any(item =>
+            item.Contains("outdoor", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("terrace", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("covered-area", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("covered entry", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("covered-entry", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("overbygd", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("canopy", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("surface pattern", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("object/fixture", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("fixture detail", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("repeated short detail", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("door/opening", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("door swing", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("door leaf", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("door arc", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("stair", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("railing", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("dimension-like", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("classified Dimension", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("dimension/annotation", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsProtectedObjectLikeLongCleanFragmentAssessment(
+        WallSegment wall,
+        WallEvidenceWallAssessment assessment)
+    {
+        if (assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject
+            || assessment.Category != WallEvidenceCategory.MediumWallBody
+            || wall.DetectionKind != WallDetectionKind.FragmentMerged
+            || wall.PairEvidence is not null
+            || wall.FragmentEvidence is not { RequiresGeometryReview: false } fragmentEvidence
+            || wall.DrawingLength < 120.0
+            || wall.Confidence.Value < 0.84
+            || assessment.Confidence.Value < 0.82)
+        {
+            return false;
+        }
+
+        var uniqueSourcePrimitiveCount = Math.Max(0, wall.SourcePrimitiveIds.Count - fragmentEvidence.DuplicatePrimitiveCount);
+        var fragmentCount = Math.Max(fragmentEvidence.FragmentCount, uniqueSourcePrimitiveCount);
+        if (fragmentCount is < 2 or > 12
+            || fragmentEvidence.DuplicatePrimitiveCount > 8
+            || fragmentEvidence.GapRatio > 0.001
+            || fragmentEvidence.TotalHealedGap > 0.001
+            || fragmentEvidence.MaxHealedGap > 0.001)
+        {
+            return false;
+        }
+
+        var evidence = wall.Evidence
+            .Concat(assessment.Evidence)
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(assessment.ScoreBreakdown.NegativeEvidence)
+            .ToArray();
+        if (!evidence.Any(item => item.Contains("merged collinear wall fragments", StringComparison.OrdinalIgnoreCase))
+            || !evidence.Any(item => item.Contains("supported wall evidence inside exterior envelope", StringComparison.OrdinalIgnoreCase))
+            || !evidence.Any(item => item.Contains("one trusted structural endpoint", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        return !evidence.Any(item =>
+            item.Contains("outdoor", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("terrace", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("covered-area", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("covered entry", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("covered-entry", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("overbygd", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("canopy", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("surface pattern", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("object/fixture", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("fixture detail", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("repeated short detail", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("door/opening", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("door swing", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("door leaf", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("door arc", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("stair", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("railing", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("dimension-like", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("classified Dimension", StringComparison.OrdinalIgnoreCase)
+            || item.Contains("dimension/annotation", StringComparison.OrdinalIgnoreCase));
     }
 
     private static void RefineShortIsolatedGraphWallEvidence(

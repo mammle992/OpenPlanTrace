@@ -1549,6 +1549,11 @@ public sealed record PlacementWallOmissionExport(
                 wall,
                 component,
                 evidenceAssessment);
+        var trustedObjectLikeLongCleanFragmentInterior =
+            WallPlacementContextGuards.IsTrustedObjectLikeLongCleanFragmentInteriorWallBody(
+                wall,
+                component,
+                evidenceAssessment);
 
         if (repairCandidates.Any(candidate => candidate.ImportImpact == WallGraphRepairImportImpact.TopologyImportBlocked))
         {
@@ -1610,7 +1615,8 @@ public sealed record PlacementWallOmissionExport(
         }
 
         if (component?.Kind == WallGraphComponentKind.ObjectLikeIsland
-            && !trustedRecoveredRoomBoundaryObjectLikeWall)
+            && !trustedRecoveredRoomBoundaryObjectLikeWall
+            && !trustedObjectLikeLongCleanFragmentInterior)
         {
             return new PlacementWallOmissionClassification(
                 "object_like_linework",
@@ -1630,7 +1636,8 @@ public sealed record PlacementWallOmissionExport(
         }
 
         if (excludedFromStructuralTopology
-            && !trustedRecoveredRoomBoundaryObjectLikeWall)
+            && !trustedRecoveredRoomBoundaryObjectLikeWall
+            && !trustedObjectLikeLongCleanFragmentInterior)
         {
             return new PlacementWallOmissionClassification(
                 "structural_topology_excluded",
@@ -2500,6 +2507,10 @@ public sealed record PlacementWallExport(
                 component,
                 evidenceAssessment)
             && !WallPlacementReadinessEvaluator.IsTrustedLongIsolatedExteriorShellWallBody(
+                wall,
+                component,
+                evidenceAssessment)
+            && !WallPlacementContextGuards.IsTrustedObjectLikeLongCleanFragmentInteriorWallBody(
                 wall,
                 component,
                 evidenceAssessment);
@@ -7893,7 +7904,12 @@ public sealed record PlacementWallGraphEdgeExport(
             && !WallPlacementReadinessEvaluator.IsTrustedLongIsolatedExteriorShellWallBody(
                 topologySpan?.SourceWall,
                 component,
-                evidenceAssessment);
+                evidenceAssessment)
+            && !(topologySpan?.SourceWall is { } edgeSourceWall
+                && WallPlacementContextGuards.IsTrustedObjectLikeLongCleanFragmentInteriorWallBody(
+                    edgeSourceWall,
+                    component,
+                    evidenceAssessment));
         return new PlacementWallGraphEdgeExport(
             topologySpan?.Id ?? edge.Id,
             edge.PageNumber,
@@ -7946,7 +7962,12 @@ public sealed record PlacementWallGraphEdgeExport(
             && !WallPlacementReadinessEvaluator.IsTrustedLongIsolatedExteriorShellWallBody(
                 topologySpan.SourceWall,
                 component,
-                evidenceAssessment);
+                evidenceAssessment)
+            && !(topologySpan.SourceWall is { } spanSourceWall
+                && WallPlacementContextGuards.IsTrustedObjectLikeLongCleanFragmentInteriorWallBody(
+                    spanSourceWall,
+                    component,
+                    evidenceAssessment));
         return new PlacementWallGraphEdgeExport(
             topologySpan.Id,
             topologySpan.PageNumber,
