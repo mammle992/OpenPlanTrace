@@ -10991,6 +10991,126 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementWallGraphExport_RejoinsShortOverlapSameAxisStructuralContinuation()
+    {
+        var nodes = new[]
+        {
+            SyntheticNode("same-axis-continuation-node-a", 100, 100, WallNodeKind.Endpoint),
+            SyntheticNode("same-axis-continuation-node-b", 100, 180, WallNodeKind.Endpoint),
+            SyntheticNode("same-axis-continuation-node-c", 102.8, 172, WallNodeKind.Endpoint),
+            SyntheticNode("same-axis-continuation-node-d", 102.8, 260, WallNodeKind.Endpoint)
+        };
+        var edges = new[]
+        {
+            new WallEdge(
+                "same-axis-continuation-edge-a",
+                1,
+                nodes[0].Id,
+                nodes[1].Id,
+                "same-axis-continuation-wall-a",
+                Confidence.High),
+            new WallEdge(
+                "same-axis-continuation-edge-b",
+                1,
+                nodes[2].Id,
+                nodes[3].Id,
+                "same-axis-continuation-wall-b",
+                Confidence.High)
+        };
+        var spans = new[]
+        {
+            new WallGraphTopologySpan(
+                edges[0].Id,
+                1,
+                edges[0].WallId,
+                edges[0].FromNodeId,
+                edges[0].ToNodeId,
+                new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(100, 180)),
+                new PlanRect(97.2, 97.2, 5.6, 85.6),
+                80,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                5.6,
+                Confidence.High,
+                ["same-axis-continuation-wall-a"],
+                [edges[0].Id],
+                ["synthetic main structural vertical wall piece"],
+                null),
+            new WallGraphTopologySpan(
+                edges[1].Id,
+                1,
+                edges[1].WallId,
+                edges[1].FromNodeId,
+                edges[1].ToNodeId,
+                new PlanLineSegment(new PlanPoint(102.8, 172), new PlanPoint(102.8, 260)),
+                new PlanRect(100, 169.2, 5.6, 93.6),
+                88,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                5.6,
+                Confidence.High,
+                ["same-axis-continuation-wall-b"],
+                [edges[1].Id],
+                ["synthetic main structural vertical wall continuation with short endpoint overlap"],
+                null)
+        };
+        var component = new WallGraphComponent(
+            "same-axis-continuation-component",
+            1,
+            WallGraphComponentKind.MainStructural,
+            new PlanRect(96, 96, 12, 168),
+            edges.Select(edge => edge.WallId).ToArray(),
+            nodes.Select(node => node.Id).ToArray(),
+            edges.Select(edge => edge.Id).ToArray(),
+            ["same-axis-continuation-source"],
+            168,
+            Confidence.High,
+            ["synthetic main structural same-axis continuation"]);
+        var componentLookup = edges.ToDictionary(
+            edge => edge.WallId,
+            _ => component,
+            StringComparer.Ordinal);
+
+        var export = PlacementWallGraphExport.From(
+            new WallGraph(nodes, edges, [component]),
+            spans,
+            PlanCalibration.Empty,
+            new Dictionary<string, PrimitiveSourceExport>(StringComparer.Ordinal),
+            componentLookup,
+            new Dictionary<string, WallEvidenceWallAssessment>(StringComparer.Ordinal));
+
+        var edge = Assert.Single(export.Edges);
+
+        Assert.Empty(export.ResidualEndpointOnHostCandidates);
+        Assert.Equal(100, edge.CenterLine!.Start.Y, precision: 3);
+        Assert.Equal(260, edge.CenterLine.End.Y, precision: 3);
+        Assert.InRange(edge.CenterLine.Start.X, 100, 102.8);
+        Assert.InRange(edge.CenterLine.End.X, 100, 102.8);
+        Assert.Equal(160, edge.DrawingLength, precision: 3);
+        Assert.Contains(
+            edge.Evidence,
+            item => item.Contains("inline run merged 2 collinear edge", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            edge.Evidence,
+            item => item.Contains("preserves 2 source wall id", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            export.Evidence,
+            item => item.Contains("residual endpoint-on-host-wall candidates after cleanup: 0 total", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void PlacementWallGraphExport_ReportsResidualEndpointOnHostWallDiagnostics()
     {
         var nodes = new[]

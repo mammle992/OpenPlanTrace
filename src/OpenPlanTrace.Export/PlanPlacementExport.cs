@@ -4333,7 +4333,8 @@ public sealed record PlacementWallGraphExport(
         var axis = WeightedAxis(cluster);
         var axisDistance = Math.Abs(span.Axis - axis);
         if (axisDistance > PlacementGraphMergeAxisTolerance(cluster, span)
-            && !CanUseOverlappingStructuralPlacementGraphMergeAxisTolerance(cluster, span, axisDistance))
+            && !CanUseOverlappingStructuralPlacementGraphMergeAxisTolerance(cluster, span, axisDistance)
+            && !CanUseShortOverlapStructuralPlacementGraphContinuationAxisTolerance(cluster, span, axisDistance))
         {
             return false;
         }
@@ -4393,6 +4394,56 @@ public sealed record PlacementWallGraphExport(
 
         var overlapRatio = overlap / Math.Max(Math.Min(span.Length, clusterLength), 0.001);
         return overlapRatio >= MinOverlappingStructuralPlacementGraphMergeOverlapRatio;
+    }
+
+    private static bool CanUseShortOverlapStructuralPlacementGraphContinuationAxisTolerance(
+        IReadOnlyList<PlacementGraphMergeSpan> cluster,
+        PlacementGraphMergeSpan span,
+        double axisDistance)
+    {
+        if (cluster.Count == 0
+            || !cluster.All(item => IsStructuralPlacementGraphMergeContinuation(item.Edge))
+            || !IsStructuralPlacementGraphMergeContinuation(span.Edge)
+            || HasPlacementGraphDetailOrSurfaceEvidence(span.Edge)
+            || cluster.Any(item => HasPlacementGraphDetailOrSurfaceEvidence(item.Edge)))
+        {
+            return false;
+        }
+
+        var maxThickness = cluster
+            .Select(item => item.Edge.ThicknessDrawingUnits)
+            .Append(span.Edge.ThicknessDrawingUnits)
+            .DefaultIfEmpty(0)
+            .Max();
+        var tolerance = Math.Clamp(
+            maxThickness * 0.60,
+            MaxInlinePlacementGraphMergeAxisDistanceDrawingUnits,
+            MaxOverlappingStructuralPlacementGraphMergeAxisDistanceDrawingUnits);
+        if (axisDistance > tolerance)
+        {
+            return false;
+        }
+
+        var clusterStart = cluster.Min(item => item.Start);
+        var clusterEnd = cluster.Max(item => item.End);
+        var clusterLength = Math.Max(0, clusterEnd - clusterStart);
+        var shorterLength = Math.Min(span.Length, clusterLength);
+        if (shorterLength < MinOverlappingStructuralPlacementGraphMergeLengthDrawingUnits)
+        {
+            return false;
+        }
+
+        var overlap = Math.Min(span.End, clusterEnd) - Math.Max(span.Start, clusterStart);
+        if (overlap <= MaxCoincidentPlacementNodeDistanceDrawingUnits)
+        {
+            return false;
+        }
+
+        var maxShortOverlap = Math.Max(
+            MinOverlappingStructuralPlacementGraphMergeLengthDrawingUnits,
+            maxThickness * 2.0);
+        return overlap <= maxShortOverlap
+            && overlap / Math.Max(shorterLength, 0.001) <= 0.25;
     }
 
     private static bool TouchesProtectedPlacementGraphJunction(
