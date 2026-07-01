@@ -98,6 +98,12 @@ internal static class WallTopologySpanVisibility
     private const double MinTrustedInteriorUnsafeCleanProjectionOverlapRatio = 0.95;
     private const int MaxTrustedInteriorUnsafeCleanProjectionFaceFragments = 96;
     private const int MaxTrustedInteriorUnsafeCleanProjectionTotalFaceFragments = 180;
+    private const double MinTrustedShortFilledInteriorUnsafeCleanProjectionLengthDrawingUnits = 30.0;
+    private const double MinTrustedShortFilledInteriorUnsafeCleanProjectionPairScore = 0.92;
+    private const double MinTrustedShortFilledInteriorUnsafeCleanProjectionOverlapRatio = 0.98;
+    private const double MaxTrustedShortFilledInteriorUnsafeCleanProjectionFaceSeparationDrawingUnits = 8.0;
+    private const int MaxTrustedShortFilledInteriorUnsafeCleanProjectionFaceFragments = 8;
+    private const int MaxTrustedShortFilledInteriorUnsafeCleanProjectionTotalFaceFragments = 12;
     private const double MinTrustedFilledExteriorUnsafeCleanProjectionLengthDrawingUnits = 72.0;
     private const double MinTrustedFilledExteriorUnsafeCleanProjectionPairScore = 0.80;
     private const double MinTrustedFilledExteriorUnsafeCleanProjectionOverlapRatio = 0.95;
@@ -1564,6 +1570,77 @@ internal static class WallTopologySpanVisibility
             && hasFilledWallBody;
     }
 
+    internal static bool IsTrustedShortFilledInteriorUnsafeCleanProjectionWallBody(
+        WallSegment? wall,
+        WallGraphComponent? component,
+        WallEvidenceWallAssessment? assessment)
+    {
+        if (wall is null
+            || component is null
+            || assessment is null
+            || component.ExcludedFromStructuralTopology
+            || component.Kind is not (WallGraphComponentKind.MainStructural or WallGraphComponentKind.SecondaryStructural)
+            || wall.WallType != WallType.Interior
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.DrawingLength < MinTrustedShortFilledInteriorUnsafeCleanProjectionLengthDrawingUnits
+            || wall.DrawingLength >= MinTrustedInteriorUnsafeCleanProjectionLengthDrawingUnits
+            || wall.PairEvidence is not { } pair
+            || pair.Score < MinTrustedShortFilledInteriorUnsafeCleanProjectionPairScore
+            || pair.OverlapRatio < MinTrustedShortFilledInteriorUnsafeCleanProjectionOverlapRatio
+            || pair.FaceSeparation < MinSourceBackedFallbackFaceSeparationDrawingUnits
+            || pair.FaceSeparation > MaxTrustedShortFilledInteriorUnsafeCleanProjectionFaceSeparationDrawingUnits
+            || Math.Max(pair.FirstFaceFragmentCount, pair.SecondFaceFragmentCount) > MaxTrustedShortFilledInteriorUnsafeCleanProjectionFaceFragments
+            || pair.FirstFaceFragmentCount + pair.SecondFaceFragmentCount > MaxTrustedShortFilledInteriorUnsafeCleanProjectionTotalFaceFragments
+            || !assessment.PlacementReady
+            || assessment.RequiresReview
+            || assessment.RejectedAsNoise
+            || assessment.Decision == WallEvidenceDecision.Reject
+            || assessment.Category != WallEvidenceCategory.StrongWallBody)
+        {
+            return false;
+        }
+
+        var evidence = wall.Evidence
+            .Concat(assessment.Evidence)
+            .Concat(assessment.ScoreBreakdown.PositiveEvidence)
+            .Concat(assessment.ScoreBreakdown.NegativeEvidence)
+            .Concat(component.Evidence)
+            .ToArray();
+        if (!ContainsEvidence(evidence, "filled wall-solid primitive")
+            || !ContainsEvidence(evidence, "filled closed vector wall body")
+            || !ContainsEvidence(evidence, "supported wall evidence inside exterior envelope")
+            || (!ContainsEvidence(evidence, "geometric room boundary support")
+                && !ContainsEvidence(evidence, "explicit room boundary support")
+                && !ContainsEvidence(evidence, "detected room evidence on both sides")
+                && !ContainsEvidence(evidence, "shared by room adjacency boundary")))
+        {
+            return false;
+        }
+
+        return !ContainsAnyEvidence(
+            evidence,
+            "outdoor covered-area boundary",
+            "unpaired outdoor covered-area boundary",
+            "covered-area boundary",
+            "covered entry",
+            "covered-entry",
+            "overbygd",
+            "terrace",
+            "railing",
+            "surface pattern",
+            "object/fixture",
+            "fixture detail",
+            "repeated short detail",
+            "review as detail/object",
+            "door swing",
+            "door leaf",
+            "door arc",
+            "stair",
+            "not trusted",
+            "without shell support",
+            "alone is not trusted");
+    }
+
     private static bool IsTrustedInteriorSourceBackedFallbackForUnsafeCleanProjection(
         WallSegment wall,
         WallTopologySpanVisibilityContext context)
@@ -1576,7 +1653,6 @@ internal static class WallTopologySpanVisibility
             || component.Kind is not (WallGraphComponentKind.MainStructural or WallGraphComponentKind.SecondaryStructural)
             || wall.WallType != WallType.Interior
             || wall.DetectionKind != WallDetectionKind.ParallelLinePair
-            || wall.DrawingLength < MinTrustedInteriorUnsafeCleanProjectionLengthDrawingUnits
             || wall.PairEvidence is not { } pair
             || pair.Score < MinTrustedInteriorUnsafeCleanProjectionPairScore
             || pair.OverlapRatio < MinTrustedInteriorUnsafeCleanProjectionOverlapRatio
@@ -1617,28 +1693,38 @@ internal static class WallTopologySpanVisibility
             return false;
         }
 
-        return !ContainsAnyEvidence(
-            evidence,
-            "outdoor covered-area boundary",
-            "unpaired outdoor covered-area boundary",
-            "covered-area boundary",
-            "covered entry",
-            "covered-entry",
-            "overbygd",
-            "terrace",
-            "railing",
-            "surface pattern",
-            "object/fixture",
-            "fixture detail",
-            "repeated short detail",
-            "review as detail/object",
-            "door swing",
-            "door leaf",
-            "door arc",
-            "stair",
-            "not trusted",
-            "without shell support",
-            "alone is not trusted");
+        if (ContainsAnyEvidence(
+                evidence,
+                "outdoor covered-area boundary",
+                "unpaired outdoor covered-area boundary",
+                "covered-area boundary",
+                "covered entry",
+                "covered-entry",
+                "overbygd",
+                "terrace",
+                "railing",
+                "surface pattern",
+                "object/fixture",
+                "fixture detail",
+                "repeated short detail",
+                "review as detail/object",
+                "door swing",
+                "door leaf",
+                "door arc",
+                "stair",
+                "not trusted",
+                "without shell support",
+                "alone is not trusted"))
+        {
+            return false;
+        }
+
+        if (wall.DrawingLength >= MinTrustedInteriorUnsafeCleanProjectionLengthDrawingUnits)
+        {
+            return true;
+        }
+
+        return IsTrustedShortFilledInteriorUnsafeCleanProjectionWallBody(wall, component, assessment);
     }
 
     private static bool IsTrustedRoomReferencedPlacementReadyPairFallback(
@@ -4507,8 +4593,125 @@ internal static class WallTopologySpanVisibility
             return false;
         }
 
+        if (MergeWouldOverextendTrustedShortFilledInteriorSource(first, second))
+        {
+            return false;
+        }
+
         var shorterLength = Math.Max(Math.Min(first.DrawingLength, second.DrawingLength), 0.001);
         return overlap / shorterLength < MinContainedDuplicateOverlapRatio;
+    }
+
+    private static bool MergeWouldOverextendTrustedShortFilledInteriorSource(
+        WallGraphTopologySpan first,
+        WallGraphTopologySpan second) =>
+        MergeWouldOverextendTrustedShortFilledInteriorSource(first, second, first.SourceWall)
+        || MergeWouldOverextendTrustedShortFilledInteriorSource(first, second, second.SourceWall);
+
+    private static bool MergeWouldOverextendTrustedShortFilledInteriorSource(
+        WallGraphTopologySpan first,
+        WallGraphTopologySpan second,
+        WallSegment? sourceWall)
+    {
+        if (!IsPotentialShortFilledInteriorMergeAnchor(sourceWall))
+        {
+            return false;
+        }
+
+        var orientation = ResolveAxisOrientation(first.CenterLine);
+        var targetCoordinate = WeightedAxisCoordinate([first, second]);
+        var start = Math.Min(AxisMin(first.CenterLine), AxisMin(second.CenterLine));
+        var end = Math.Max(AxisMax(first.CenterLine), AxisMax(second.CenterLine));
+        var proposed = orientation == PlacementRunOrientation.Horizontal
+            ? new PlanLineSegment(new PlanPoint(start, targetCoordinate), new PlanPoint(end, targetCoordinate))
+            : new PlanLineSegment(new PlanPoint(targetCoordinate, start), new PlanPoint(targetCoordinate, end));
+        var thickness = Math.Max(Math.Max(first.Thickness, second.Thickness), sourceWall!.Thickness);
+        var driftLimit = Math.Max(
+            MinUnsafeCleanTopologyProjectionDriftDrawingUnits,
+            thickness * MaxUnsafeCleanTopologyProjectionDriftThicknessRatio);
+        var maxProjectionDistance = Math.Max(
+            sourceWall.CenterLine.DistanceToPoint(proposed.Start),
+            sourceWall.CenterLine.DistanceToPoint(proposed.End));
+        var projectionOverextends = maxProjectionDistance > driftLimit;
+        if (!projectionOverextends)
+        {
+            var startParameter = sourceWall.CenterLine.ProjectParameter(proposed.Start);
+            var endParameter = sourceWall.CenterLine.ProjectParameter(proposed.End);
+            var projectedLength = Math.Abs(endParameter - startParameter) * sourceWall.CenterLine.Length;
+            var overrun = Math.Max(0, proposed.Length - projectedLength);
+            projectionOverextends = projectedLength > 0.001
+                && overrun > driftLimit
+                && overrun / projectedLength >= MinUnsafeCleanTopologyLengthOverrunRatio;
+        }
+
+        return projectionOverextends
+            && HasTrustedShortFilledInteriorMergeEvidence(sourceWall, first, second);
+    }
+
+    private static bool IsPotentialShortFilledInteriorMergeAnchor(WallSegment? sourceWall)
+    {
+        if (sourceWall is null
+            || sourceWall.WallType != WallType.Interior
+            || sourceWall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || sourceWall.DrawingLength < MinTrustedShortFilledInteriorUnsafeCleanProjectionLengthDrawingUnits
+            || sourceWall.DrawingLength >= MinTrustedInteriorUnsafeCleanProjectionLengthDrawingUnits
+            || sourceWall.Confidence.Value < 0.84
+            || sourceWall.PairEvidence is not { } pair
+            || pair.Score < MinTrustedShortFilledInteriorUnsafeCleanProjectionPairScore
+            || pair.OverlapRatio < MinTrustedShortFilledInteriorUnsafeCleanProjectionOverlapRatio
+            || pair.FaceSeparation < MinSourceBackedFallbackFaceSeparationDrawingUnits
+            || pair.FaceSeparation > MaxTrustedShortFilledInteriorUnsafeCleanProjectionFaceSeparationDrawingUnits
+            || Math.Max(pair.FirstFaceFragmentCount, pair.SecondFaceFragmentCount) > MaxTrustedShortFilledInteriorUnsafeCleanProjectionFaceFragments
+            || pair.FirstFaceFragmentCount + pair.SecondFaceFragmentCount > MaxTrustedShortFilledInteriorUnsafeCleanProjectionTotalFaceFragments)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool HasTrustedShortFilledInteriorMergeEvidence(
+        WallSegment sourceWall,
+        WallGraphTopologySpan first,
+        WallGraphTopologySpan second)
+    {
+        var evidence = sourceWall.Evidence
+            .Concat(first.Evidence)
+            .Concat(second.Evidence)
+            .ToArray();
+        if (!ContainsEvidence(evidence, "filled wall-solid primitive")
+            || !ContainsEvidence(evidence, "filled closed vector wall body")
+            || !ContainsEvidence(evidence, "supported wall evidence inside exterior envelope")
+            || (!ContainsEvidence(evidence, "geometric room boundary support")
+                && !ContainsEvidence(evidence, "explicit room boundary support")
+                && !ContainsEvidence(evidence, "detected room evidence on both sides")
+                && !ContainsEvidence(evidence, "shared by room adjacency boundary")))
+        {
+            return false;
+        }
+
+        return !ContainsAnyEvidence(
+            evidence,
+            "outdoor covered-area boundary",
+            "unpaired outdoor covered-area boundary",
+            "covered-area boundary",
+            "covered entry",
+            "covered-entry",
+            "overbygd",
+            "terrace",
+            "railing",
+            "surface pattern",
+            "object/fixture",
+            "fixture detail",
+            "repeated short detail",
+            "review as detail/object",
+            "door swing",
+            "door leaf",
+            "door arc",
+            "stair",
+            "not trusted",
+            "without shell support",
+            "alone is not trusted");
     }
 
     private static WallGraphTopologySpan CreateMergedCollinearPlacementSpan(

@@ -14,6 +14,11 @@
     <ProjectReference Include="..\OpenPlanTrace\OpenPlanTrace.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>OpenPlanTrace.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+  <ItemGroup>
     <EmbeddedResource
       Include="..\..\docs\schemas\openplantrace.scan.v71.schema.json"
       LogicalName="OpenPlanTrace.Export.Schemas.openplantrace.scan.v71.schema.json" />

@@ -8788,6 +8788,104 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void WallTopologySpanVisibility_TrustsShortFilledInteriorUnsafeCleanProjectionWallBody()
+    {
+        var result = CreateOffAxisTopologySpanResult(
+            "short-filled-interior-trusted-unsafe-clean-projection",
+            new PlanPoint(144.434, 100),
+            sourceEndX: 144.434,
+            detectionKind: WallDetectionKind.ParallelLinePair,
+            wallType: WallType.Interior,
+            category: WallEvidenceCategory.StrongWallBody,
+            assessmentEvidence:
+            [
+                "filled wall-solid primitive",
+                "wall evidence: filled closed vector wall body",
+                "wall type interior: supported wall evidence inside exterior envelope",
+                "wall evidence: geometric room boundary support from reliable room-boundary alignment"
+            ]);
+        var shortFilledPair = new WallPairEvidence(
+            new PlanLineSegment(new PlanPoint(100, 99.135), new PlanPoint(144.434, 99.135)),
+            new PlanLineSegment(new PlanPoint(100, 100.865), new PlanPoint(144.434, 100.865)),
+            1.73,
+            1,
+            0.94,
+            1,
+            1,
+            ["first-face"],
+            ["second-face"]);
+        var wall = result.Walls.Single() with
+        {
+            Thickness = 1.73,
+            PairEvidence = shortFilledPair,
+            Evidence = result.Walls.Single().Evidence
+                .Append("parallel wall-face pair")
+                .Append("filled wall-solid primitive")
+                .Append("wall evidence: filled closed vector wall body")
+                .Append("wall type interior: supported wall evidence inside exterior envelope")
+                .Append("wall evidence: geometric room boundary support from reliable room-boundary alignment")
+                .ToArray()
+        };
+        var component = result.WallGraph.Components.Single();
+        var assessment = result.WallEvidenceMap.WallAssessments.Single();
+
+        Assert.True(WallTopologySpanVisibility.IsTrustedShortFilledInteriorUnsafeCleanProjectionWallBody(
+            wall,
+            component,
+            assessment));
+    }
+
+    [Fact]
+    public void WallTopologySpanVisibility_BlocksShortFilledInteriorUnsafeCleanProjectionWallBodyWithDoorEvidence()
+    {
+        var result = CreateOffAxisTopologySpanResult(
+            "short-filled-interior-door-detail-unsafe-clean-projection",
+            new PlanPoint(144.434, 100),
+            sourceEndX: 144.434,
+            detectionKind: WallDetectionKind.ParallelLinePair,
+            wallType: WallType.Interior,
+            category: WallEvidenceCategory.StrongWallBody,
+            assessmentEvidence:
+            [
+                "filled wall-solid primitive",
+                "wall evidence: filled closed vector wall body",
+                "wall type interior: supported wall evidence inside exterior envelope",
+                "wall evidence: geometric room boundary support from reliable room-boundary alignment",
+                "door leaf linework"
+            ]);
+        var shortDoorPair = new WallPairEvidence(
+            new PlanLineSegment(new PlanPoint(100, 99.135), new PlanPoint(144.434, 99.135)),
+            new PlanLineSegment(new PlanPoint(100, 100.865), new PlanPoint(144.434, 100.865)),
+            1.73,
+            1,
+            0.94,
+            1,
+            1,
+            ["first-face"],
+            ["second-face"]);
+        var wall = result.Walls.Single() with
+        {
+            Thickness = 1.73,
+            PairEvidence = shortDoorPair,
+            Evidence = result.Walls.Single().Evidence
+                .Append("parallel wall-face pair")
+                .Append("filled wall-solid primitive")
+                .Append("wall evidence: filled closed vector wall body")
+                .Append("wall type interior: supported wall evidence inside exterior envelope")
+                .Append("wall evidence: geometric room boundary support from reliable room-boundary alignment")
+                .Append("door leaf linework")
+                .ToArray()
+        };
+        var component = result.WallGraph.Components.Single();
+        var assessment = result.WallEvidenceMap.WallAssessments.Single();
+
+        Assert.False(WallTopologySpanVisibility.IsTrustedShortFilledInteriorUnsafeCleanProjectionWallBody(
+            wall,
+            component,
+            assessment));
+    }
+
+    [Fact]
     public void PlacementExporter_BlocksFilledExteriorUnsafeCleanFallbackWhenEvidenceIsTerraceDetail()
     {
         var result = CreateOffAxisTopologySpanResult(
