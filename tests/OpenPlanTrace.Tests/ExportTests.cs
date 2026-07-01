@@ -4980,6 +4980,62 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementExporter_AnchorsSourceBackedFallbackPairAxisToSourceWallExtents()
+    {
+        var result = CreateSourceBackedFallbackWallResult();
+        var sourceWall = result.Walls.Single(wall => wall.Id == "source-backed-fallback-wall");
+        var overextendedPairWall = sourceWall with
+        {
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(new PlanPoint(60, 116), new PlanPoint(220, 116)),
+                new PlanLineSegment(new PlanPoint(60, 124), new PlanPoint(220, 124)),
+                FaceSeparation: 8,
+                OverlapRatio: 1,
+                Score: 0.94,
+                FirstFaceFragmentCount: 1,
+                SecondFaceFragmentCount: 1,
+                FirstFaceSourcePrimitiveIds: ["overextended-first-face"],
+                SecondFaceSourcePrimitiveIds: ["overextended-second-face"])
+        };
+        result = result with
+        {
+            Walls = [overextendedPairWall]
+        };
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var wall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == sourceWall.Id);
+
+        var topologySpan = Assert.Single(wall.GetProperty("topologySpans").EnumerateArray());
+        var solidSpan = Assert.Single(wall.GetProperty("solidSpans").EnumerateArray());
+        var topologyLine = topologySpan.GetProperty("centerLine");
+        var solidLine = solidSpan.GetProperty("centerLine");
+        var bodyPolygon = solidSpan.GetProperty("bodyPolygon");
+
+        Assert.Equal(100, topologySpan.GetProperty("drawingLength").GetDouble(), precision: 3);
+        Assert.Equal(80, topologyLine.GetProperty("start").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(180, topologyLine.GetProperty("end").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(100, solidSpan.GetProperty("drawingLength").GetDouble(), precision: 3);
+        Assert.Equal(80, solidLine.GetProperty("start").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(180, solidLine.GetProperty("end").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(80, bodyPolygon[0].GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(180, bodyPolygon[1].GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(180, bodyPolygon[2].GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(80, bodyPolygon[3].GetProperty("x").GetDouble(), precision: 3);
+        Assert.Contains(
+            topologySpan.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("anchored to source wall extents", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Contains(
+            solidSpan.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("anchored to source wall extents", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
     public void PlacementExporter_RecoversShortExteriorWallSolidWhenGraphSpanIsMissing()
     {
         var result = CreateSourceBackedFallbackWallResult(
@@ -8560,7 +8616,7 @@ public sealed class ExportTests
     }
 
     [Fact]
-    public void PlacementExporter_BlocksOverextendedPairedFaceCleanRun()
+    public void PlacementExporter_AnchorsOverextendedPairedFaceCleanRunToSourceWallExtents()
     {
         var result = CreateOffAxisTopologySpanResult(
             "overextended-paired-face-clean-run",
@@ -8601,36 +8657,27 @@ public sealed class ExportTests
         var root = document.RootElement;
         var wall = Assert.Single(root.GetProperty("walls").EnumerateArray());
         var topologySpan = Assert.Single(wall.GetProperty("topologySpans").EnumerateArray());
-        var omission = wall.GetProperty("placementOmission");
-        var issue = Assert.Single(root.GetProperty("issues").EnumerateArray()
-            .Where(item => item.GetProperty("code").GetString() == "placement.review.fragment_geometry"));
+        var topologyLine = topologySpan.GetProperty("centerLine");
 
-        Assert.Equal("fragment_geometry_review", omission.GetProperty("code").GetString());
-        Assert.False(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, wall.GetProperty("placementOmission").ValueKind);
+        Assert.True(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
         Assert.True(wall.GetProperty("reliability").GetProperty("requiresReview").GetBoolean());
+        Assert.Equal(60, topologySpan.GetProperty("drawingLength").GetDouble(), precision: 3);
+        Assert.Equal(100, topologyLine.GetProperty("start").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(160, topologyLine.GetProperty("end").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(2, topologySpan.GetProperty("sourceWallStartProjectionDistanceDrawingUnits").GetDouble(), precision: 3);
+        Assert.Equal(2, topologySpan.GetProperty("sourceWallEndProjectionDistanceDrawingUnits").GetDouble(), precision: 3);
+        Assert.Contains(
+            topologySpan.GetProperty("evidence").EnumerateArray(),
+            item => item.GetString()?.Contains("anchored to source wall extents", StringComparison.OrdinalIgnoreCase) == true);
         var solidSpan = Assert.Single(wall.GetProperty("solidSpans").EnumerateArray());
-        Assert.False(solidSpan.GetProperty("readyForCoordinatePlacement").GetBoolean());
-        Assert.Equal("fragment_geometry_review", solidSpan.GetProperty("placementOmissionCode").GetString());
-        Assert.True(topologySpan.GetProperty("sourceWallEndProjectionDistanceDrawingUnits").GetDouble() > 12);
+        Assert.True(solidSpan.GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, solidSpan.GetProperty("placementOmissionCode").ValueKind);
         Assert.Contains(
-            omission.GetProperty("evidence").EnumerateArray(),
-            item => item.GetString()?.Contains("clean placement projection drift requires review", StringComparison.Ordinal) == true);
-        Assert.Contains(
-            omission.GetProperty("evidence").EnumerateArray(),
-            item => item.GetString()?.Contains("clean placement source-length overrun requires review", StringComparison.Ordinal) == true);
-        Assert.Equal(
-            "fragment_geometry_review",
-            issue.GetProperty("properties").GetProperty("placementOmissionCode").GetString());
-        Assert.Equal(0, root.GetProperty("summary").GetProperty("placementReadyWallCount").GetInt32());
-        Assert.Equal(
-            1,
-            root.GetProperty("summary")
-                .GetProperty("wallPlacementOmissionCounts")
-                .GetProperty("fragment_geometry_review")
-                .GetInt32());
-        Assert.Contains(
-            root.GetProperty("summary").GetProperty("importReadiness").GetProperty("reviewIssueCodes").EnumerateArray(),
-            item => item.GetString() == "placement.wall_fragment.geometry_requires_review");
+            solidSpan.GetProperty("evidence").EnumerateArray(),
+            item => item.GetString()?.Contains("anchored to source wall extents", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Equal(1, root.GetProperty("summary").GetProperty("placementReadyWallCount").GetInt32());
+        Assert.Equal(1, root.GetProperty("summary").GetProperty("wallTopologySpanCount").GetInt32());
     }
 
     [Fact]
@@ -9145,6 +9192,33 @@ public sealed class ExportTests
             .EnumerateArray()
             .Single(item => item.GetProperty("id").GetString() == "endpoint-snap-horizontal-node-b");
         Assert.Equal(200, graphNode.GetProperty("position").GetProperty("x").GetDouble(), precision: 3);
+    }
+
+    [Fact]
+    public void PlacementExporter_ClampsSourceParametersAfterEndpointSnapBeyondSourceWall()
+    {
+        var result = CreateEndpointSnapPlacementResult(
+            horizontalSourceEndX: 198,
+            horizontalGraphEndX: 198,
+            verticalX: 200);
+
+        using var document = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false }));
+        var wall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == "endpoint-snap-horizontal");
+        var span = Assert.Single(wall.GetProperty("topologySpans").EnumerateArray());
+        var line = span.GetProperty("centerLine");
+
+        Assert.Equal(200, line.GetProperty("end").GetProperty("x").GetDouble(), precision: 3);
+        Assert.Equal(100, span.GetProperty("drawingLength").GetDouble(), precision: 3);
+        Assert.Equal(1, span.GetProperty("sourceWallEndParameter").GetDouble(), precision: 3);
+        Assert.Equal(98, span.GetProperty("sourceWallProjectedLengthDrawingUnits").GetDouble(), precision: 3);
+        Assert.Contains(
+            span.GetProperty("evidence").EnumerateArray(),
+            item => item.GetString()?.Contains("source projection parameters clamped", StringComparison.OrdinalIgnoreCase) == true);
     }
 
     [Fact]
@@ -16182,13 +16256,16 @@ public sealed class ExportTests
         };
     }
 
-    private static PlanScanResult CreateEndpointSnapPlacementResult()
+    private static PlanScanResult CreateEndpointSnapPlacementResult(
+        double horizontalSourceEndX = 200,
+        double horizontalGraphEndX = 198,
+        double verticalX = 200)
     {
-        var horizontal = SyntheticWall("endpoint-snap-horizontal", 100, 100, 200, 100) with
+        var horizontal = SyntheticWall("endpoint-snap-horizontal", 100, 100, horizontalSourceEndX, 100) with
         {
             WallType = WallType.Interior
         };
-        var vertical = SyntheticWall("endpoint-snap-vertical", 200, 80, 200, 130) with
+        var vertical = SyntheticWall("endpoint-snap-vertical", verticalX, 80, verticalX, 130) with
         {
             WallType = WallType.Interior
         };
@@ -16196,9 +16273,9 @@ public sealed class ExportTests
         var nodes = new[]
         {
             SyntheticNode("endpoint-snap-horizontal-node-a", 100, 100, WallNodeKind.Endpoint),
-            SyntheticNode("endpoint-snap-horizontal-node-b", 198, 100, WallNodeKind.Endpoint),
-            SyntheticNode("endpoint-snap-vertical-node-a", 200, 80, WallNodeKind.Endpoint),
-            SyntheticNode("endpoint-snap-vertical-node-b", 200, 130, WallNodeKind.Endpoint)
+            SyntheticNode("endpoint-snap-horizontal-node-b", horizontalGraphEndX, 100, WallNodeKind.Endpoint),
+            SyntheticNode("endpoint-snap-vertical-node-a", verticalX, 80, WallNodeKind.Endpoint),
+            SyntheticNode("endpoint-snap-vertical-node-b", verticalX, 130, WallNodeKind.Endpoint)
         };
         var edges = new[]
         {

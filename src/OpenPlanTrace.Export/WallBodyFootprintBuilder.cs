@@ -18,7 +18,8 @@ internal sealed record WallBodyFootprint(
 internal sealed record WallPlacementAxis(
     PlanLineSegment CenterLine,
     string GeometrySource,
-    bool UsesPairedFaceEvidence);
+    bool UsesPairedFaceEvidence,
+    bool AnchoredToSourceWallExtents = false);
 
 internal static class WallBodyFootprintBuilder
 {
@@ -35,14 +36,17 @@ internal static class WallBodyFootprintBuilder
 
         if (TryBuildCenterLineFromPairEvidence(
             wall.PairEvidence,
+            sourceLine,
             normalizedStart,
             normalizedEnd,
-            out var pairCenterLine))
+            out var pairCenterLine,
+            out var anchoredToSourceWallExtents))
         {
             return new WallPlacementAxis(
                 pairCenterLine,
                 "detected paired wall-face midpoint",
-                UsesPairedFaceEvidence: true);
+                UsesPairedFaceEvidence: true,
+                anchoredToSourceWallExtents);
         }
 
         return new WallPlacementAxis(
@@ -61,19 +65,25 @@ internal static class WallBodyFootprintBuilder
     {
         var normalizedStart = Math.Clamp(Math.Min(startParameter, endParameter), 0, 1);
         var normalizedEnd = Math.Clamp(Math.Max(startParameter, endParameter), 0, 1);
+        var sourceLine = new PlanLineSegment(
+            wall.CenterLine.PointAt(normalizedStart),
+            wall.CenterLine.PointAt(normalizedEnd));
         var placementAxis = BuildPlacementAxis(wall, normalizedStart, normalizedEnd);
         var line = placementAxis.CenterLine;
         var alongVector = line.Vector.Normalize();
         var fallbackNormalVector = new PlanVector(-alongVector.Y, alongVector.X);
         var hasPairEvidenceBody = TryBuildBodyPolygonFromPairEvidence(
             wall.PairEvidence,
+            sourceLine,
             normalizedStart,
             normalizedEnd,
             fallbackNormalVector,
             out var bodyPolygon,
             out var normalVector);
         var geometrySource = hasPairEvidenceBody
-            ? "detected paired wall-face evidence"
+            ? placementAxis.AnchoredToSourceWallExtents
+                ? "detected paired wall-face evidence anchored to source wall extents"
+                : "detected paired wall-face evidence"
             : "centerline plus wall thickness";
         if (!hasPairEvidenceBody)
         {
@@ -306,6 +316,7 @@ internal static class WallBodyFootprintBuilder
 
     private static bool TryBuildBodyPolygonFromPairEvidence(
         WallPairEvidence? pairEvidence,
+        PlanLineSegment sourceLine,
         double startParameter,
         double endParameter,
         PlanVector fallbackNormalVector,
@@ -315,40 +326,25 @@ internal static class WallBodyFootprintBuilder
         normalVector = fallbackNormalVector;
         bodyPolygon = Array.Empty<PlanPoint>();
 
-        if (pairEvidence is null
-            || pairEvidence.FirstFaceLine.Length <= 0.001
-            || pairEvidence.SecondFaceLine.Length <= 0.001
-            || pairEvidence.FaceSeparation <= 0.001)
+        if (!TryBuildSourceAnchoredPairFaceSegment(
+            pairEvidence,
+            sourceLine,
+            startParameter,
+            endParameter,
+            out var firstStart,
+            out var firstEnd,
+            out var secondStart,
+            out var secondEnd,
+            out var faceNormalVector,
+            out _,
+            out _))
         {
             return false;
         }
 
-        var firstStart = pairEvidence.FirstFaceLine.PointAt(startParameter);
-        var firstEnd = pairEvidence.FirstFaceLine.PointAt(endParameter);
-        var secondStart = pairEvidence.SecondFaceLine.PointAt(startParameter);
-        var secondEnd = pairEvidence.SecondFaceLine.PointAt(endParameter);
-        var sameDirectionDistance = firstStart.DistanceTo(secondStart) + firstEnd.DistanceTo(secondEnd);
-        var reverseDirectionDistance = firstStart.DistanceTo(secondEnd) + firstEnd.DistanceTo(secondStart);
-        if (reverseDirectionDistance < sameDirectionDistance)
+        if (faceNormalVector.Length > 0.001)
         {
-            (secondStart, secondEnd) = (secondEnd, secondStart);
-        }
-
-        if (!PairFaceCapsAreOrthogonal(
-            firstStart,
-            firstEnd,
-            secondStart,
-            secondEnd,
-            pairEvidence.FaceSeparation))
-        {
-            return false;
-        }
-
-        var faceNormal = pairEvidence.SecondFaceLine.Midpoint - pairEvidence.FirstFaceLine.Midpoint;
-        var normalizedFaceNormal = faceNormal.Normalize();
-        if (normalizedFaceNormal.Length > 0.001)
-        {
-            normalVector = normalizedFaceNormal;
+            normalVector = faceNormalVector;
         }
 
         bodyPolygon =
@@ -364,12 +360,67 @@ internal static class WallBodyFootprintBuilder
 
     private static bool TryBuildCenterLineFromPairEvidence(
         WallPairEvidence? pairEvidence,
+        PlanLineSegment sourceLine,
         double startParameter,
         double endParameter,
-        out PlanLineSegment centerLine)
+        out PlanLineSegment centerLine,
+        out bool anchoredToSourceWallExtents)
     {
         centerLine = default;
+        anchoredToSourceWallExtents = false;
+        if (!TryBuildSourceAnchoredPairFaceSegment(
+            pairEvidence,
+            sourceLine,
+            startParameter,
+            endParameter,
+            out var firstStart,
+            out var firstEnd,
+            out var secondStart,
+            out var secondEnd,
+            out _,
+            out var parameterCenterLine,
+            out anchoredToSourceWallExtents))
+        {
+            return false;
+        }
+
+        centerLine = new PlanLineSegment(
+            Midpoint(firstStart, secondStart),
+            Midpoint(firstEnd, secondEnd));
+        if (centerLine.Length <= 0.001)
+        {
+            return false;
+        }
+
+        anchoredToSourceWallExtents = anchoredToSourceWallExtents
+            || centerLine.Start.DistanceTo(parameterCenterLine.Start) > 0.75
+            || centerLine.End.DistanceTo(parameterCenterLine.End) > 0.75
+            || Math.Abs(centerLine.Length - parameterCenterLine.Length) > 0.75;
+        return true;
+    }
+
+    private static bool TryBuildSourceAnchoredPairFaceSegment(
+        WallPairEvidence? pairEvidence,
+        PlanLineSegment sourceLine,
+        double startParameter,
+        double endParameter,
+        out PlanPoint firstStart,
+        out PlanPoint firstEnd,
+        out PlanPoint secondStart,
+        out PlanPoint secondEnd,
+        out PlanVector faceNormalVector,
+        out PlanLineSegment parameterCenterLine,
+        out bool anchoredToSourceWallExtents)
+    {
+        firstStart = default;
+        firstEnd = default;
+        secondStart = default;
+        secondEnd = default;
+        faceNormalVector = default;
+        parameterCenterLine = default;
+        anchoredToSourceWallExtents = false;
         if (pairEvidence is null
+            || sourceLine.Length <= 0.001
             || pairEvidence.FirstFaceLine.Length <= 0.001
             || pairEvidence.SecondFaceLine.Length <= 0.001
             || pairEvidence.FaceSeparation <= 0.001
@@ -378,17 +429,56 @@ internal static class WallBodyFootprintBuilder
             return false;
         }
 
-        var firstStart = pairEvidence.FirstFaceLine.PointAt(startParameter);
-        var firstEnd = pairEvidence.FirstFaceLine.PointAt(endParameter);
-        var secondStart = pairEvidence.SecondFaceLine.PointAt(startParameter);
-        var secondEnd = pairEvidence.SecondFaceLine.PointAt(endParameter);
-        var sameDirectionDistance = firstStart.DistanceTo(secondStart) + firstEnd.DistanceTo(secondEnd);
-        var reverseDirectionDistance = firstStart.DistanceTo(secondEnd) + firstEnd.DistanceTo(secondStart);
+        var firstFaceLine = pairEvidence.FirstFaceLine;
+        var secondFaceLine = pairEvidence.SecondFaceLine;
+        var sameDirectionDistance = firstFaceLine.Start.DistanceTo(secondFaceLine.Start)
+            + firstFaceLine.End.DistanceTo(secondFaceLine.End);
+        var reverseDirectionDistance = firstFaceLine.Start.DistanceTo(secondFaceLine.End)
+            + firstFaceLine.End.DistanceTo(secondFaceLine.Start);
         if (reverseDirectionDistance < sameDirectionDistance)
         {
-            (secondStart, secondEnd) = (secondEnd, secondStart);
+            secondFaceLine = secondFaceLine.Reverse();
         }
 
+        var pairCenterAxis = new PlanLineSegment(
+            Midpoint(firstFaceLine.Start, secondFaceLine.Start),
+            Midpoint(firstFaceLine.End, secondFaceLine.End));
+        if (pairCenterAxis.Length <= 0.001)
+        {
+            return false;
+        }
+
+        var sourceVector = sourceLine.Vector.Normalize();
+        var pairVector = pairCenterAxis.Vector.Normalize();
+        if (sourceVector.Length <= 0.001
+            || pairVector.Length <= 0.001
+            || Math.Abs(sourceVector.Dot(pairVector)) < 0.985)
+        {
+            return false;
+        }
+
+        var maxAxisOffset = Math.Max(2.0, (pairEvidence.FaceSeparation / 2.0) + 2.0);
+        if (Math.Min(
+            sourceLine.DistanceToPoint(pairCenterAxis.Midpoint),
+            pairCenterAxis.DistanceToPoint(sourceLine.Midpoint)) > maxAxisOffset)
+        {
+            return false;
+        }
+
+        var sourceStartOnPairAxis = pairCenterAxis.ProjectParameter(sourceLine.Start);
+        var sourceEndOnPairAxis = pairCenterAxis.ProjectParameter(sourceLine.End);
+        var maxExtension = Math.Max(24.0, sourceLine.Length * 0.35);
+        var extensionBefore = Math.Max(0, -Math.Min(sourceStartOnPairAxis, sourceEndOnPairAxis)) * pairCenterAxis.Length;
+        var extensionAfter = Math.Max(0, Math.Max(sourceStartOnPairAxis, sourceEndOnPairAxis) - 1) * pairCenterAxis.Length;
+        if (Math.Max(extensionBefore, extensionAfter) > maxExtension)
+        {
+            return false;
+        }
+
+        firstStart = firstFaceLine.PointAt(sourceStartOnPairAxis);
+        firstEnd = firstFaceLine.PointAt(sourceEndOnPairAxis);
+        secondStart = secondFaceLine.PointAt(sourceStartOnPairAxis);
+        secondEnd = secondFaceLine.PointAt(sourceEndOnPairAxis);
         if (!PairFaceCapsAreOrthogonal(
             firstStart,
             firstEnd,
@@ -399,10 +489,20 @@ internal static class WallBodyFootprintBuilder
             return false;
         }
 
-        centerLine = new PlanLineSegment(
-            Midpoint(firstStart, secondStart),
-            Midpoint(firstEnd, secondEnd));
-        return centerLine.Length > 0.001;
+        var parameterFirstStart = firstFaceLine.PointAt(startParameter);
+        var parameterFirstEnd = firstFaceLine.PointAt(endParameter);
+        var parameterSecondStart = secondFaceLine.PointAt(startParameter);
+        var parameterSecondEnd = secondFaceLine.PointAt(endParameter);
+        parameterCenterLine = new PlanLineSegment(
+            Midpoint(parameterFirstStart, parameterSecondStart),
+            Midpoint(parameterFirstEnd, parameterSecondEnd));
+
+        faceNormalVector = (secondFaceLine.Midpoint - firstFaceLine.Midpoint).Normalize();
+        anchoredToSourceWallExtents = firstStart.DistanceTo(parameterFirstStart) > 0.75
+            || firstEnd.DistanceTo(parameterFirstEnd) > 0.75
+            || secondStart.DistanceTo(parameterSecondStart) > 0.75
+            || secondEnd.DistanceTo(parameterSecondEnd) > 0.75;
+        return true;
     }
 
     private static bool PairFaceCapsAreOrthogonal(

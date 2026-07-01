@@ -2710,6 +2710,10 @@ internal static class WallTopologySpanVisibility
         if (placementAxis.UsesPairedFaceEvidence)
         {
             evidence.Add($"source-backed fallback centered between paired wall faces using {placementAxis.GeometrySource}");
+            if (placementAxis.AnchoredToSourceWallExtents)
+            {
+                evidence.Add("source-backed fallback paired-face axis anchored to source wall extents to avoid overextended face fragments");
+            }
         }
 
         if (wall.PairEvidence is { } pair)
@@ -3838,10 +3842,9 @@ internal static class WallTopologySpanVisibility
         double maxEndpointShift)
     {
         var bounds = line.Bounds.Inflate(Math.Max(span.Thickness / 2.0, 0.5));
-        var evidence = span.Evidence
+        var evidenceItems = span.Evidence
             .Concat(extraEvidence)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
+            .ToList();
         var sourceWall = span.SourceWall;
         if (sourceWall is null
             || sourceWall.CenterLine.Length <= 0.001
@@ -3864,17 +3867,28 @@ internal static class WallTopologySpanVisibility
                 SourceWallEndProjectionDistanceDrawingUnits = MaxNullable(
                     span.SourceWallEndProjectionDistanceDrawingUnits,
                     maxEndpointShift),
-                Evidence = evidence
+                Evidence = evidenceItems
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray()
             };
         }
 
         var sourceLine = sourceWall.CenterLine;
         var sourceLength = sourceLine.Length;
-        var startParameter = sourceLine.ProjectParameter(line.Start);
-        var endParameter = sourceLine.ProjectParameter(line.End);
-        var centerParameter = sourceLine.ProjectParameter(line.Midpoint);
+        var rawStartParameter = sourceLine.ProjectParameter(line.Start);
+        var rawEndParameter = sourceLine.ProjectParameter(line.End);
+        var rawCenterParameter = sourceLine.ProjectParameter(line.Midpoint);
+        var startParameter = Math.Clamp(rawStartParameter, 0, 1);
+        var endParameter = Math.Clamp(rawEndParameter, 0, 1);
+        var centerParameter = Math.Clamp(rawCenterParameter, 0, 1);
         var startOffset = startParameter * sourceLength;
         var endOffset = endParameter * sourceLength;
+        if (Math.Abs(rawStartParameter - startParameter) > 0.001
+            || Math.Abs(rawEndParameter - endParameter) > 0.001
+            || Math.Abs(rawCenterParameter - centerParameter) > 0.001)
+        {
+            evidenceItems.Add("clean placement source projection parameters clamped to source wall extents after line rebuild");
+        }
 
         return span with
         {
@@ -3889,7 +3903,9 @@ internal static class WallTopologySpanVisibility
             SourceWallCenterParameter = centerParameter,
             SourceWallStartProjectionDistanceDrawingUnits = sourceLine.DistanceToPoint(line.Start),
             SourceWallEndProjectionDistanceDrawingUnits = sourceLine.DistanceToPoint(line.End),
-            Evidence = evidence
+            Evidence = evidenceItems
+                .Distinct(StringComparer.Ordinal)
+                .ToArray()
         };
     }
 
@@ -5694,6 +5710,10 @@ internal static class WallTopologySpanVisibility
         if (placementAxis.UsesPairedFaceEvidence)
         {
             evidence = evidence.Append($"split topology span centered between paired wall faces using {placementAxis.GeometrySource}");
+            if (placementAxis.AnchoredToSourceWallExtents)
+            {
+                evidence = evidence.Append("split topology span paired-face axis anchored to source wall extents");
+            }
         }
 
         return span with
@@ -6332,6 +6352,10 @@ internal static class WallTopologySpanVisibility
             if (placementAxis.UsesPairedFaceEvidence)
             {
                 evidence.Add($"clean placement run centered between paired wall faces using {placementAxis.GeometrySource}");
+                if (placementAxis.AnchoredToSourceWallExtents)
+                {
+                    evidence.Add("clean placement run paired-face axis anchored to source wall extents");
+                }
             }
 
             return new WallGraphTopologySpan(
