@@ -354,6 +354,106 @@ public sealed class WallPlacementReadinessTests
     }
 
     [Fact]
+    public void Evaluate_AllowsTrustedOpeningLinkedFilledInteriorWindowWall()
+    {
+        var wall = Wall("wall:window-linked-filled-interior", Confidence.High) with
+        {
+            CenterLine = new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(168, 100)),
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Interior,
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(new PlanPoint(100, 95.75), new PlanPoint(168, 95.75)),
+                new PlanLineSegment(new PlanPoint(100, 104.25), new PlanPoint(168, 104.25)),
+                FaceSeparation: 8.5,
+                OverlapRatio: 1,
+                Score: 0.93,
+                FirstFaceFragmentCount: 64,
+                SecondFaceFragmentCount: 19,
+                FirstFaceSourcePrimitiveIds: ["window-linked-face-a"],
+                SecondFaceSourcePrimitiveIds: ["window-linked-face-b"]),
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "filled wall-solid primitive",
+                "wall evidence: filled closed vector wall body",
+                "wall type interior supported wall evidence inside exterior envelope",
+                "opening-linked wall fragment: wall is referenced by opening candidate(s) synthetic-window (Window/Fixed/Horizontal)",
+                "layer (unlayered) classified Dimension (0,24)",
+                "wall evidence: demoted from placement-ready because opening-linked isolated detail needed review"
+            ]
+        };
+        var component = Component(
+            WallGraphComponentKind.IsolatedFragment,
+            excludedFromStructuralTopology: false,
+            wall.Id);
+        var evidence = Evidence(wall, WallEvidenceCategory.MediumWallBody, placementReady: false) with
+        {
+            Evidence = wall.Evidence
+        };
+
+        var readiness = WallPlacementReadinessEvaluator.Evaluate(
+            wall,
+            ReliableCalibration(),
+            component,
+            evidence,
+            ["wall evidence requires review before exact coordinate placement"]);
+
+        Assert.True(readiness.ReadyForCoordinatePlacement);
+        Assert.True(readiness.ReadyForMetricPlacement);
+        Assert.False(readiness.RequiresReview, string.Join("; ", readiness.Reasons));
+        Assert.False(readiness.CoordinatePlacementBlocked);
+        Assert.DoesNotContain("wall belongs to isolated wall graph fragment", readiness.Reasons);
+    }
+
+    [Fact]
+    public void Evaluate_BlocksOpeningLinkedFilledInteriorDoorDetail()
+    {
+        var wall = Wall("wall:door-linked-filled-detail", Confidence.High) with
+        {
+            CenterLine = new PlanLineSegment(new PlanPoint(100, 100), new PlanPoint(168, 100)),
+            DetectionKind = WallDetectionKind.ParallelLinePair,
+            WallType = WallType.Interior,
+            PairEvidence = new WallPairEvidence(
+                new PlanLineSegment(new PlanPoint(100, 95.75), new PlanPoint(168, 95.75)),
+                new PlanLineSegment(new PlanPoint(100, 104.25), new PlanPoint(168, 104.25)),
+                FaceSeparation: 8.5,
+                OverlapRatio: 1,
+                Score: 0.93,
+                FirstFaceFragmentCount: 2,
+                SecondFaceFragmentCount: 2,
+                FirstFaceSourcePrimitiveIds: ["door-linked-face-a"],
+                SecondFaceSourcePrimitiveIds: ["door-linked-face-b"]),
+            Evidence =
+            [
+                "parallel wall-face pair",
+                "filled wall-solid primitive",
+                "wall evidence: filled closed vector wall body",
+                "wall type interior supported wall evidence inside exterior envelope",
+                "opening-linked wall fragment: wall is referenced by opening candidate(s) synthetic-door (Door/Swing/Vertical)",
+                "door leaf linework"
+            ]
+        };
+        var component = Component(
+            WallGraphComponentKind.IsolatedFragment,
+            excludedFromStructuralTopology: false,
+            wall.Id);
+        var evidence = Evidence(wall, WallEvidenceCategory.MediumWallBody, placementReady: false) with
+        {
+            Evidence = wall.Evidence
+        };
+
+        var readiness = WallPlacementReadinessEvaluator.Evaluate(
+            wall,
+            ReliableCalibration(),
+            component,
+            evidence);
+
+        Assert.False(readiness.ReadyForCoordinatePlacement);
+        Assert.True(readiness.RequiresReview);
+        Assert.Contains("wall belongs to isolated wall graph fragment", readiness.Reasons);
+    }
+
+    [Fact]
     public void Evaluate_BlocksTrustedDimensionLikeExteriorPerimeterShellWithCoveredEvidence()
     {
         var wall = Wall("wall:covered-dimension-like-exterior-perimeter-shell", Confidence.High) with

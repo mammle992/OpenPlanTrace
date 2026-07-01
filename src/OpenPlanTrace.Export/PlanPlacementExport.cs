@@ -1554,6 +1554,11 @@ public sealed record PlacementWallOmissionExport(
                 wall,
                 component,
                 evidenceAssessment);
+        var trustedOpeningLinkedFilledInteriorWallBody =
+            WallPlacementReadinessEvaluator.IsTrustedOpeningLinkedFilledInteriorWallBody(
+                wall,
+                component,
+                evidenceAssessment);
 
         if (repairCandidates.Any(candidate => candidate.ImportImpact == WallGraphRepairImportImpact.TopologyImportBlocked))
         {
@@ -1637,7 +1642,8 @@ public sealed record PlacementWallOmissionExport(
 
         if (excludedFromStructuralTopology
             && !trustedRecoveredRoomBoundaryObjectLikeWall
-            && !trustedObjectLikeLongCleanFragmentInterior)
+            && !trustedObjectLikeLongCleanFragmentInterior
+            && !trustedOpeningLinkedFilledInteriorWallBody)
         {
             return new PlacementWallOmissionClassification(
                 "structural_topology_excluded",
@@ -1655,7 +1661,8 @@ public sealed record PlacementWallOmissionExport(
                 "Keep the raw wall and opening cutout for QA, but do not import the tiny door-adjacent remainder as a structural wall unless reviewed.");
         }
 
-        if (IsSuppressedOpeningLinkedIsolatedFragment(component, wall, topologySpans, evidence))
+        if (!trustedOpeningLinkedFilledInteriorWallBody
+            && IsSuppressedOpeningLinkedIsolatedFragment(component, wall, topologySpans, evidence))
         {
             return new PlacementWallOmissionClassification(
                 "opening_linked_isolated_fragment_suppressed",
@@ -1664,7 +1671,8 @@ public sealed record PlacementWallOmissionExport(
                 "Use the opening anchor and surrounding clean walls for placement; keep this fragment as source QA evidence unless a reviewer promotes it.");
         }
 
-        if (component?.Kind == WallGraphComponentKind.IsolatedFragment)
+        if (component?.Kind == WallGraphComponentKind.IsolatedFragment
+            && !trustedOpeningLinkedFilledInteriorWallBody)
         {
             return new PlacementWallOmissionClassification(
                 "isolated_fragment",

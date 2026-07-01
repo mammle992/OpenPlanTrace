@@ -5131,6 +5131,111 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementExporter_RecoversTrustedOpeningLinkedFilledInteriorPairWhenGraphSpanIsMissing()
+    {
+        var result = CreateSourceBackedFallbackWallResult(
+            pairScore: 0.93,
+            pairOverlapRatio: 1,
+            faceSeparation: 8.5,
+            firstFaceFragmentCount: 64,
+            secondFaceFragmentCount: 19,
+            wallLength: 68,
+            wallType: WallType.Interior,
+            componentKind: WallGraphComponentKind.IsolatedFragment,
+            category: WallEvidenceCategory.MediumWallBody,
+            placementReady: false,
+            requiresReview: true,
+            evidence:
+            [
+                "parallel wall-face pair",
+                "face separation 8.5 drawing units",
+                "pair score 0.93",
+                "overlap ratio 1",
+                "filled wall-solid primitive",
+                "wall evidence: filled closed vector wall body",
+                "wall type interior supported wall evidence inside exterior envelope",
+                "opening-linked wall fragment: wall is referenced by opening candidate(s) synthetic-window (Window/Fixed/Horizontal)",
+                "layer (unlayered) classified Dimension (0,24)",
+                "wall evidence: demoted from placement-ready because opening-linked isolated detail needed review"
+            ]);
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var wall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == "source-backed-fallback-wall");
+
+        var topologySpan = Assert.Single(wall.GetProperty("topologySpans").EnumerateArray());
+
+        Assert.Contains("source-backed-fallback", topologySpan.GetProperty("id").GetString(), StringComparison.Ordinal);
+        Assert.Equal(JsonValueKind.Null, wall.GetProperty("placementOmission").ValueKind);
+        Assert.True(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+        Assert.Contains(
+            topologySpan.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("window-linked filled interior wall body", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Equal(68, topologySpan.GetProperty("drawingLength").GetDouble(), precision: 3);
+
+        var summary = document.RootElement.GetProperty("summary");
+        Assert.Equal(1, summary.GetProperty("placementReadyWallCount").GetInt32());
+        Assert.Equal(0, summary.GetProperty("placementOmittedWallCount").GetInt32());
+        Assert.Equal(1, summary.GetProperty("sourceBackedFallbackWallCount").GetInt32());
+        Assert.Equal(1, summary.GetProperty("sourceBackedFallbackTopologySpanCount").GetInt32());
+    }
+
+    [Fact]
+    public void PlacementExporter_DoesNotRecoverOpeningLinkedFilledInteriorDoorDetail()
+    {
+        var result = CreateSourceBackedFallbackWallResult(
+            pairScore: 0.93,
+            pairOverlapRatio: 1,
+            faceSeparation: 8.5,
+            firstFaceFragmentCount: 2,
+            secondFaceFragmentCount: 2,
+            wallLength: 68,
+            wallType: WallType.Interior,
+            componentKind: WallGraphComponentKind.IsolatedFragment,
+            category: WallEvidenceCategory.MediumWallBody,
+            placementReady: false,
+            requiresReview: true,
+            evidence:
+            [
+                "parallel wall-face pair",
+                "face separation 8.5 drawing units",
+                "pair score 0.93",
+                "overlap ratio 1",
+                "filled wall-solid primitive",
+                "wall evidence: filled closed vector wall body",
+                "wall type interior supported wall evidence inside exterior envelope",
+                "opening-linked wall fragment: wall is referenced by opening candidate(s) synthetic-door (Door/Swing/Vertical)",
+                "door leaf linework"
+            ]);
+
+        var placementJson = PlanPlacementJsonExporter.Serialize(
+            result,
+            new PlanPlacementJsonExportOptions { WriteIndented = false });
+        using var document = JsonDocument.Parse(placementJson);
+        var wall = document.RootElement
+            .GetProperty("walls")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == "source-backed-fallback-wall");
+
+        Assert.Empty(wall.GetProperty("topologySpans").EnumerateArray());
+        Assert.Equal(
+            "opening_linked_isolated_fragment_suppressed",
+            wall.GetProperty("placementOmission").GetProperty("code").GetString());
+        Assert.False(wall.GetProperty("reliability").GetProperty("readyForCoordinatePlacement").GetBoolean());
+
+        var summary = document.RootElement.GetProperty("summary");
+        Assert.Equal(0, summary.GetProperty("placementReadyWallCount").GetInt32());
+        Assert.Equal(1, summary.GetProperty("placementOmittedWallCount").GetInt32());
+        Assert.Equal(0, summary.GetProperty("sourceBackedFallbackWallCount").GetInt32());
+        Assert.Equal(0, summary.GetProperty("sourceBackedFallbackTopologySpanCount").GetInt32());
+    }
+
+    [Fact]
     public void PlacementExporter_RecoversRoomBoundaryShortExteriorReviewWallSolid()
     {
         var result = CreateSourceBackedFallbackWallResult(

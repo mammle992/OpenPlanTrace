@@ -1604,6 +1604,11 @@ internal static class WallEvidenceExportHelpers
                 wall,
                 component,
                 evidenceAssessment);
+        var trustedOpeningLinkedFilledInteriorWallBody =
+            WallPlacementReadinessEvaluator.IsTrustedOpeningLinkedFilledInteriorWallBody(
+                wall,
+                component,
+                evidenceAssessment);
         var trustedRecoveredRoomBoundaryObjectLikeWall =
             WallPlacementReadinessEvaluator.IsTrustedRecoveredRoomBoundaryObjectLikeWall(
                 wall,
@@ -1623,7 +1628,8 @@ internal static class WallEvidenceExportHelpers
             || trustedLongIsolatedExteriorShellWallBody
             || trustedRoomBoundaryIsolatedFragment
             || trustedRoomBoundaryIsolatedExteriorWall
-            || trustedDimensionLikeExteriorPerimeterWallBody;
+            || trustedDimensionLikeExteriorPerimeterWallBody
+            || trustedOpeningLinkedFilledInteriorWallBody;
         var trustedStructuralTopologyOverride =
             trustedIsolatedFragment
             || trustedRecoveredRoomBoundaryObjectLikeWall
@@ -1662,7 +1668,8 @@ internal static class WallEvidenceExportHelpers
                 && !trustedMainStructuralExteriorWallBody
                 && !trustedMainStructuralExteriorRecallWallBody
                 && !trustedLongIsolatedExteriorShellWallBody
-                && !trustedDimensionLikeExteriorPerimeterWallBody)
+                && !trustedDimensionLikeExteriorPerimeterWallBody
+                && !trustedOpeningLinkedFilledInteriorWallBody)
             {
                 reasons.Add("wall evidence requires review before exact coordinate placement");
             }
