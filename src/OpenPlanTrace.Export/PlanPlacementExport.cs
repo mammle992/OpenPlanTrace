@@ -922,11 +922,13 @@ public sealed record PlacementImportReadinessExport(
 
     private static bool ShouldKeepPlacementIssueInformationalForReadiness(string code) =>
         string.Equals(code, "placement.review.dense_minor_routing_detail", StringComparison.Ordinal)
-        || string.Equals(code, "placement.review.rejected_strong_wall_body", StringComparison.Ordinal);
+        || string.Equals(code, "placement.review.rejected_strong_wall_body", StringComparison.Ordinal)
+        || string.Equals(code, "placement.info.wall_graph_endpoint_gap_nonblocking", StringComparison.Ordinal);
 
     private static bool ShouldIncludePlacementIssueForImportReadiness(PlacementIssueExport issue) =>
         !string.Equals(issue.Code, "placement.review.dense_minor_routing_detail", StringComparison.Ordinal)
-        && !string.Equals(issue.Code, "placement.review.rejected_strong_wall_body", StringComparison.Ordinal);
+        && !string.Equals(issue.Code, "placement.review.rejected_strong_wall_body", StringComparison.Ordinal)
+        && !string.Equals(issue.Code, "placement.info.wall_graph_endpoint_gap_nonblocking", StringComparison.Ordinal);
 }
 
 public sealed record PlacementPageSummaryExport(
@@ -9241,12 +9243,21 @@ public sealed record PlacementIssueExport(
                 ? new[] { $"candidate wall ids: {wallIds}" }
                 : Array.Empty<string>();
             var isEndpointOverrun = string.Equals(diagnostic.Code, "wall_graph.endpoint_overrun.review", StringComparison.Ordinal);
+            var isNonBlockingEndpointGap = !isEndpointOverrun
+                && !WallGraphEndpointGapImpactsCleanPlacementTopology(diagnostic, placementWallsById);
+            properties["placementImportImpact"] = isNonBlockingEndpointGap
+                ? "NonBlockingOmittedEndpoint"
+                : "ReviewRequired";
 
             yield return new PlacementIssueExport(
                 isEndpointOverrun
                     ? "placement.review.wall_graph_endpoint_overrun"
-                    : "placement.review.wall_graph_endpoint_gap",
-                diagnostic.Severity.ToString(),
+                    : isNonBlockingEndpointGap
+                        ? "placement.info.wall_graph_endpoint_gap_nonblocking"
+                        : "placement.review.wall_graph_endpoint_gap",
+                isNonBlockingEndpointGap
+                    ? DiagnosticSeverity.Info.ToString()
+                    : diagnostic.Severity.ToString(),
                 diagnostic.Message,
                 diagnostic.PageNumber,
                 pageNumbers,
@@ -9256,10 +9267,17 @@ public sealed record PlacementIssueExport(
                 ClampRatio(diagnostic.Confidence?.Value ?? 0.5),
                 isEndpointOverrun
                     ? "Review or correct this possible endpoint-overrun trim before importing wall graph topology."
+                    : isNonBlockingEndpointGap
+                        ? "Review this endpoint gap only if the omitted endpoint wall is manually promoted into clean placement topology."
                     : "Review or correct this possible unsnapped wall junction before importing wall graph topology.",
                 sourcePrimitiveIds,
                 ExportSourceHelpers.SourceLayers(sourcePrimitiveIds, sourceLookup),
-                BuildIssueEvidence(new[] { diagnostic.Message }.Concat(gapEvidence).Concat(wallEvidence)),
+                BuildIssueEvidence(new[] { diagnostic.Message }
+                    .Concat(gapEvidence)
+                    .Concat(wallEvidence)
+                    .Concat(isNonBlockingEndpointGap
+                        ? new[] { "non-blocking because the endpoint wall is not clean placement-ready" }
+                        : Array.Empty<string>())),
                 properties);
         }
 
@@ -9420,6 +9438,54 @@ public sealed record PlacementIssueExport(
             }
         }
     }
+
+    private static bool WallGraphEndpointGapImpactsCleanPlacementTopology(
+        PlanDiagnostic diagnostic,
+        IReadOnlyDictionary<string, PlacementWallExport>? placementWallsById)
+    {
+        if (placementWallsById is null
+            || placementWallsById.Count == 0
+            || !diagnostic.Properties.TryGetValue("wallIds", out var wallIdsText)
+            || string.IsNullOrWhiteSpace(wallIdsText))
+        {
+            return true;
+        }
+
+        var wallIds = wallIdsText
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (wallIds.Length == 0)
+        {
+            return true;
+        }
+
+        var gapKind = diagnostic.Properties.TryGetValue("gapKind", out var foundGapKind)
+            ? foundGapKind
+            : string.Empty;
+        if (string.Equals(gapKind, WallGraphRepairCandidateKind.EndpointToWall.ToString(), StringComparison.Ordinal)
+            && diagnostic.Properties.TryGetValue("hostWallId", out var hostWallId)
+            && !string.IsNullOrWhiteSpace(hostWallId))
+        {
+            var endpointWallIds = wallIds
+                .Where(id => !string.Equals(id, hostWallId, StringComparison.Ordinal))
+                .ToArray();
+            if (endpointWallIds.Length > 0)
+            {
+                return endpointWallIds.Any(id => IsCleanPlacementWallForEndpointGap(id, placementWallsById));
+            }
+        }
+
+        return wallIds.Any(id => IsCleanPlacementWallForEndpointGap(id, placementWallsById));
+    }
+
+    private static bool IsCleanPlacementWallForEndpointGap(
+        string wallId,
+        IReadOnlyDictionary<string, PlacementWallExport> placementWallsById) =>
+        placementWallsById.TryGetValue(wallId, out var wall)
+        && wall.PlacementOmission is null
+        && wall.Reliability.ReadyForCoordinatePlacement;
 
     private static IReadOnlyList<string> BuildIssueEvidence(params string[] evidence) =>
         BuildIssueEvidence((IEnumerable<string>)evidence);

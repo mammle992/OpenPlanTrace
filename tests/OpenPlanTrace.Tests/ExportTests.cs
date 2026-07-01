@@ -3138,6 +3138,65 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void PlacementJsonExporter_DowngradesEndpointGapIssueWhenEndpointWallIsNotCleanPlacementReady()
+    {
+        var result = WithEndpointToWallHostRepairCandidate(CreateDenseMinorRoutingDetailResult());
+        result = result with
+        {
+            Diagnostics = result.Diagnostics with
+            {
+                Messages =
+                [
+                    .. result.Diagnostics.Messages,
+                    new PlanDiagnostic(
+                        "wall_graph.endpoint_gap.review",
+                        DiagnosticSeverity.Warning,
+                        "wall-graph",
+                        "A wall graph endpoint nearly touches another wall endpoint or host wall but was not safely snapped.")
+                    {
+                        Scope = DiagnosticScope.Detection,
+                        PageNumber = 1,
+                        Region = new PlanRect(256, 96, 8, 32),
+                        Confidence = Confidence.Medium,
+                        SourcePrimitiveIds = ["detail-host", "detail-tooth-4"],
+                        Properties = new Dictionary<string, string>
+                        {
+                            ["gapKind"] = "EndpointToWall",
+                            ["gapDistance"] = "24",
+                            ["nodeId"] = "node-t4-end",
+                            ["hostWallId"] = "detail-host",
+                            ["wallIds"] = "detail-host,detail-tooth-4"
+                        }
+                    }
+                ]
+            }
+        };
+
+        using var parsed = JsonDocument.Parse(PlanPlacementJsonExporter.Serialize(result));
+        var root = parsed.RootElement;
+        var issues = root.GetProperty("issues").EnumerateArray().ToArray();
+        var nonBlockingGap = Assert.Single(issues, issue =>
+            issue.GetProperty("code").GetString() == "placement.info.wall_graph_endpoint_gap_nonblocking");
+
+        Assert.Equal("Info", nonBlockingGap.GetProperty("severity").GetString());
+        Assert.Equal(
+            "NonBlockingOmittedEndpoint",
+            nonBlockingGap.GetProperty("properties").GetProperty("placementImportImpact").GetString());
+        Assert.Contains(
+            nonBlockingGap.GetProperty("evidence").EnumerateArray(),
+            evidence => evidence.GetString()?.Contains("non-blocking", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.DoesNotContain(
+            issues,
+            issue => issue.GetProperty("code").GetString() == "placement.review.wall_graph_endpoint_gap");
+        Assert.DoesNotContain(
+            "placement.wall_graph.endpoint_gaps.require_review",
+            JsonStrings(root
+                .GetProperty("summary")
+                .GetProperty("importReadiness")
+                .GetProperty("reviewIssueCodes")));
+    }
+
+    [Fact]
     public async Task VisualSnapshotExporter_WritesPerPageLayerBoundsAndIssues()
     {
         var result = await CreateScanResultAsync();
