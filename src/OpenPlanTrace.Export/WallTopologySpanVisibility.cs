@@ -132,6 +132,12 @@ internal static class WallTopologySpanVisibility
     private const double MinTopologyBlockedFallbackPairScore = 0.80;
     private const double MinTopologyBlockedFallbackOverlapRatio = 0.95;
     private const int MaxTopologyBlockedFallbackFaceFragmentCount = 48;
+    private const double MinRecallExteriorBridgeLengthDrawingUnits = 80.0;
+    private const double MinRecallExteriorBridgePairScore = 0.52;
+    private const double MinRecallExteriorBridgePairOverlapRatio = 0.75;
+    private const double MinRecallExteriorBridgeFaceSeparationDrawingUnits = 6.0;
+    private const int MaxRecallExteriorBridgeFaceFragments = 320;
+    private const int MaxRecallExteriorBridgeTotalFaceFragments = 340;
 
     public static IReadOnlyList<WallGraphTopologySpan> BuildVisibleTopologySpans(
         PlanScanResult result,
@@ -320,6 +326,11 @@ internal static class WallTopologySpanVisibility
                 span.SourceWall,
                 component,
                 assessment);
+        var hasTrustedDimensionLikeExteriorPerimeterWallBody =
+            WallPlacementReadinessEvaluator.IsTrustedDimensionLikeExteriorPerimeterWallBody(
+                span.SourceWall,
+                component,
+                assessment);
         var hasTrustedObjectLikeLongCleanFragmentInterior =
             span.SourceWall is { } sourceWall
             && WallPlacementContextGuards.IsTrustedObjectLikeLongCleanFragmentInteriorWallBody(
@@ -335,6 +346,7 @@ internal static class WallTopologySpanVisibility
             && !hasTrustedMainStructuralExteriorWallBody
             && !hasTrustedLongIsolatedExteriorShellWallBody
             && !hasTrustedRoomBoundaryIsolatedExteriorWall
+            && !hasTrustedDimensionLikeExteriorPerimeterWallBody
             && !hasTrustedObjectLikeLongCleanFragmentInterior)
         {
             return false;
@@ -391,10 +403,16 @@ internal static class WallTopologySpanVisibility
                 span.SourceWall,
                 component,
                 assessment);
+        var trustedDimensionLikeExteriorPerimeterWallBody =
+            WallPlacementReadinessEvaluator.IsTrustedDimensionLikeExteriorPerimeterWallBody(
+                span.SourceWall,
+                component,
+                assessment);
         if (!trustedExteriorShellContinuityFragment
             && !trustedExteriorShellRepairSupportedWall
             && !trustedRoomBoundaryIsolatedFragment
             && !trustedRoomBoundaryIsolatedExteriorWall
+            && !trustedDimensionLikeExteriorPerimeterWallBody
             && !IsPlacementReadyStructuralSpan(component, assessment))
         {
             return false;
@@ -834,6 +852,11 @@ internal static class WallTopologySpanVisibility
                 wall,
                 component,
                 assessment);
+        var hasTrustedDimensionLikeExteriorPerimeterWallBody =
+            WallPlacementReadinessEvaluator.IsTrustedDimensionLikeExteriorPerimeterWallBody(
+                wall,
+                component,
+                assessment);
         var hasTrustedRecoveredRoomBoundaryObjectLikeWall =
             WallPlacementReadinessEvaluator.IsTrustedRecoveredRoomBoundaryObjectLikeWall(
                 wall,
@@ -896,6 +919,7 @@ internal static class WallTopologySpanVisibility
                 && !hasTrustedMainStructuralExteriorWallBody
                 && !hasTrustedMainStructuralExteriorRecallWallBody
                 && !hasTrustedLongIsolatedExteriorShellWallBody
+                && !hasTrustedDimensionLikeExteriorPerimeterWallBody
                 && !hasTrustedGeometricRoomBoundaryPairPromotion
                 && !hasTrustedRoomReferencedPlacementReadyPair
                 && !trustedUnsafeInteriorCleanProjectionFallback
@@ -918,6 +942,7 @@ internal static class WallTopologySpanVisibility
                 && !hasTrustedMainStructuralExteriorRecallWallBody
                 && !hasTrustedLongIsolatedExteriorShellWallBody
                 && !hasTrustedRoomBoundaryIsolatedExteriorWall
+                && !hasTrustedDimensionLikeExteriorPerimeterWallBody
                 && !hasTrustedGeometricRoomBoundaryPairPromotion
                 && !hasTrustedRoomReferencedPlacementReadyPair
                 && !trustedUnsafeInteriorCleanProjectionFallback
@@ -940,6 +965,7 @@ internal static class WallTopologySpanVisibility
                 && !hasTrustedMainStructuralExteriorRecallWallBody
                 && !hasTrustedLongIsolatedExteriorShellWallBody
                 && !hasTrustedRoomBoundaryIsolatedExteriorWall
+                && !hasTrustedDimensionLikeExteriorPerimeterWallBody
                 && !hasTrustedGeometricRoomBoundaryPairPromotion
                 && !hasTrustedRoomReferencedPlacementReadyPair
                 && !trustedUnsafeInteriorCleanProjectionFallback
@@ -970,6 +996,7 @@ internal static class WallTopologySpanVisibility
                 && !hasTrustedMainStructuralExteriorRecallWallBody
                 && !hasTrustedLongIsolatedExteriorShellWallBody
                 && !hasTrustedRoomBoundaryIsolatedExteriorWall
+                && !hasTrustedDimensionLikeExteriorPerimeterWallBody
                 && !hasTrustedGeometricRoomBoundaryPairPromotion
                 && !hasTrustedRoomReferencedPlacementReadyPair
                 && !trustedUnsafeInteriorCleanProjectionFallback
@@ -998,6 +1025,7 @@ internal static class WallTopologySpanVisibility
             && !hasTrustedMainStructuralExteriorRecallWallBody
             && !hasTrustedLongIsolatedExteriorShellWallBody
             && !hasTrustedRoomBoundaryIsolatedExteriorWall
+            && !hasTrustedDimensionLikeExteriorPerimeterWallBody
             && !trustedUnsafeInteriorCleanProjectionFallback
             && !hasTrustedDenseTwoSidedRoomFragmentMergedInterior
             && !hasTrustedObjectLikeLongCleanFragmentInterior
@@ -1034,6 +1062,7 @@ internal static class WallTopologySpanVisibility
             || hasTrustedMainStructuralExteriorRecallWallBody
             || hasTrustedLongIsolatedExteriorShellWallBody
             || hasTrustedRoomBoundaryIsolatedExteriorWall
+            || hasTrustedDimensionLikeExteriorPerimeterWallBody
             || hasTrustedGeometricRoomBoundaryPairPromotion
             || hasTrustedRoomReferencedPlacementReadyPair
             || hasTrustedSourceBackedExteriorShellClosure
@@ -2181,6 +2210,11 @@ internal static class WallTopologySpanVisibility
                 wall,
                 component,
                 assessment);
+        var hasTrustedDimensionLikeExteriorPerimeterWallBody =
+            WallPlacementReadinessEvaluator.IsTrustedDimensionLikeExteriorPerimeterWallBody(
+                wall,
+                component,
+                assessment);
         if (!hasTrustedExteriorShellContinuityFragment
             && pair.Score < MinSourceBackedFallbackPairScore)
         {
@@ -2202,6 +2236,8 @@ internal static class WallTopologySpanVisibility
                 ? MaxTrustedNoisySourceBackedFallbackFaceFragmentCount
             : hasTrustedExteriorShellContinuityFragment
                 ? int.MaxValue
+            : hasTrustedDimensionLikeExteriorPerimeterWallBody
+                ? MaxTopologySupportedSourceBackedFallbackFaceFragmentCount
             : wall.DrawingLength >= MinLongSourceBackedFallbackWallLengthDrawingUnits
             && component?.Kind == WallGraphComponentKind.MainStructural
                 ? MaxLongSourceBackedFallbackFaceFragmentCount
@@ -2301,6 +2337,11 @@ internal static class WallTopologySpanVisibility
                 wall,
                 component,
                 assessment);
+        var trustedDimensionLikeExteriorPerimeterWallBody =
+            WallPlacementReadinessEvaluator.IsTrustedDimensionLikeExteriorPerimeterWallBody(
+                wall,
+                component,
+                assessment);
         var trustedUnsafeInteriorCleanProjectionFallback =
             IsTrustedInteriorSourceBackedFallbackForUnsafeCleanProjection(wall, context);
         var trustedInferredSharedRoomBoundary =
@@ -2389,6 +2430,10 @@ internal static class WallTopologySpanVisibility
         else if (trustedMainStructuralExteriorRecallWallBody)
         {
             evidence.Add("source-backed fallback accepted because long main-structural exterior wall recall recovered a fragmented paired wall body");
+        }
+        else if (trustedDimensionLikeExteriorPerimeterWallBody)
+        {
+            evidence.Add("source-backed fallback accepted because dimension-like perimeter evidence matched a trusted exterior wall body");
         }
         else if (trustedInferredSharedRoomBoundary)
         {
@@ -4104,6 +4149,11 @@ internal static class WallTopologySpanVisibility
             return false;
         }
 
+        if (IsTrustedRecallExteriorPlacementRunBridgeSpan(span, evidence))
+        {
+            return true;
+        }
+
         if (wall.PairEvidence is { } pair)
         {
             return pair.Score >= MinSourceBackedFallbackPairScore
@@ -4119,6 +4169,42 @@ internal static class WallTopologySpanVisibility
                 evidence,
                 "source-backed exterior shell closure",
                 "inferred exterior shell wall");
+    }
+
+    private static bool IsTrustedRecallExteriorPlacementRunBridgeSpan(
+        WallGraphTopologySpan span,
+        IReadOnlyList<string> evidence)
+    {
+        if (!IsSourceBackedFallbackSpan(span)
+            || span.SourceWall is not { WallType: WallType.Exterior } wall
+            || wall.DetectionKind != WallDetectionKind.ParallelLinePair
+            || wall.DrawingLength < MinRecallExteriorBridgeLengthDrawingUnits
+            || wall.PairEvidence is not { } pair
+            || !ContainsEvidence(evidence, "main-structural exterior wall recall"))
+        {
+            return false;
+        }
+
+        var maxFaceFragments = Math.Max(pair.FirstFaceFragmentCount, pair.SecondFaceFragmentCount);
+        var totalFaceFragments = pair.FirstFaceFragmentCount + pair.SecondFaceFragmentCount;
+        if (pair.Score < MinRecallExteriorBridgePairScore
+            || pair.OverlapRatio < MinRecallExteriorBridgePairOverlapRatio
+            || pair.FaceSeparation < MinRecallExteriorBridgeFaceSeparationDrawingUnits
+            || pair.FaceSeparation > MaxSourceBackedFallbackFaceSeparationDrawingUnits
+            || maxFaceFragments > MaxRecallExteriorBridgeFaceFragments
+            || totalFaceFragments > MaxRecallExteriorBridgeTotalFaceFragments)
+        {
+            return false;
+        }
+
+        return ContainsAnyEvidence(
+            evidence,
+            "wall type exterior",
+            "near detected floorplan/wall envelope",
+            "local outer boundary",
+            "exterior shell",
+            "global-room-envelope-edge",
+            "global-envelope-fragment-chain");
     }
 
     private static bool HasCollinearExteriorBridgeBlockedEvidence(WallGraphTopologySpan span)
