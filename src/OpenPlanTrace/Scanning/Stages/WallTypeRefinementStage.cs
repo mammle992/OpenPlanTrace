@@ -7,6 +7,11 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
     private const string StageName = "wall-type-refinement";
     private const double MinTrustedDimensionLikeDenseRoomBoundaryPairScore = 0.80;
     private const double MinSecondaryTrustedDimensionLikeDenseRoomBoundaryLength = 32.0;
+    private const double MinVeryShortSecondaryDenseRoomBoundaryLength = 24.0;
+    private const double MaxVeryShortSecondaryDenseRoomBoundaryLength = 32.0;
+    private const double MinVeryShortSecondaryDenseRoomBoundaryPairScore = 0.87;
+    private const int MinVeryShortSecondaryDenseRoomBoundaryEndpointCount = 3;
+    private const int MinVeryShortSecondaryDenseRoomBoundarySideRoomHits = 5;
     private const double MinTrustedDenseStructuralEndpointWallLength = 42.0;
     private const double MinTrustedDenseStructuralEndpointPairScore = 0.80;
     private const double MinTrustedDenseStructuralEndpointPairOverlap = 0.98;
@@ -2518,6 +2523,16 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             && wall.DrawingLength <= 72.0
             && (component.Kind == WallGraphComponentKind.MainStructural
                 || component.Kind == WallGraphComponentKind.SecondaryStructural);
+        var hasVeryShortSecondarySideEndpointProof =
+            sideRoomHitCount >= MinVeryShortSecondaryDenseRoomBoundarySideRoomHits
+            && supportedTopologyEndpointCount >= MinVeryShortSecondaryDenseRoomBoundaryEndpointCount
+            && pairScore >= MinVeryShortSecondaryDenseRoomBoundaryPairScore
+            && pairOverlap >= 0.98
+            && wall.DrawingLength >= MinVeryShortSecondaryDenseRoomBoundaryLength
+            && wall.DrawingLength < MaxVeryShortSecondaryDenseRoomBoundaryLength
+            && component.Kind == WallGraphComponentKind.SecondaryStructural
+            && evidence.Any(item =>
+                item.Contains("supported wall evidence inside exterior envelope", StringComparison.OrdinalIgnoreCase));
         var hasMainStructuralOneEndpointSideProof =
             component.Kind == WallGraphComponentKind.MainStructural
             && sideRoomHitCount >= MinMainStructuralOneEndpointDenseRoomBoundarySideRoomHits
@@ -2539,6 +2554,7 @@ internal sealed class WallTypeRefinementStage : IPipelineStage
             && evidence.Any(item => item.Contains("supported wall evidence inside exterior envelope", StringComparison.OrdinalIgnoreCase));
         if (!hasGeometricRoomBoundaryProof
             && !hasStrongSideEndpointProof
+            && !hasVeryShortSecondarySideEndpointProof
             && !hasMainStructuralOneEndpointSideProof
             && !hasStructuralEndpointProof)
         {
