@@ -1,6 +1,5 @@
-import * as pdfjsLib from "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.mjs";
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.mjs";
+let pdfRenderer;
+const rustViewer = document.documentElement.dataset.engine === "rust";
 
 const defaultBenchmarkFilters = {
   query: "",
@@ -50,6 +49,7 @@ const defaultObjectReviewCropPadding = 18;
 const currentKvemoCropSchemaVersion = "openplantrace.kvemo-crops.v2";
 const supportedKvemoCropSchemaVersions = new Set([
   currentKvemoCropSchemaVersion,
+  "openplantrace.rust.kvemo-crops.v1",
   "openplantrace.kvemo-crops.v1"
 ]);
 const currentObjectReviewDatasetSchemaVersion = "openplantrace.object-review-dataset.v2";
@@ -68,6 +68,7 @@ const defaultEnabledLayers = [
   "wallBodyFootprints",
   "wallTopologySpans",
   "rooms",
+  "exteriorEnclosures",
   "openings",
   "objectAggregates",
   "surfacePatterns",
@@ -101,6 +102,7 @@ const overlayLegendItems = [
   { key: "wallTopologyReviewSpans", label: "Review-only wall spans", stroke: "#a65f00", fill: "rgba(166, 95, 0, 0.035)", dash: "1 4" },
   { key: "nodes", label: "Wall nodes", stroke: "#191a1f", fill: "#ffffff" },
   { key: "rooms", label: "Rooms", stroke: "#3f8f57", fill: "rgba(63, 143, 87, 0.08)" },
+  { key: "exteriorEnclosures", label: "Exterior enclosure outlines for review", stroke: "#a65f00", fill: "transparent", dash: "6 4" },
   { key: "roomClusters", label: "Room clusters", stroke: "#3f8f57", fill: "rgba(63, 143, 87, 0.05)", dash: "8 5" },
   { key: "roomAdjacency", label: "Room links", stroke: "#386fc3", fill: "rgba(56, 111, 195, 0.06)", dash: "4 4" },
   { key: "openings", label: "Openings", stroke: "#386fc3", fill: "rgba(56, 111, 195, 0.11)" },
@@ -124,6 +126,7 @@ const placementOverlayLayerKeys = new Set([
   "wallTopologySpans",
   "wallTopologyReviewSpans",
   "rooms",
+  "exteriorEnclosures",
   "openings",
   "objectAggregates",
   "surfacePatterns",
@@ -556,7 +559,7 @@ function syncLayerControls() {
     checkbox.disabled = !available;
     const label = checkbox.closest("label");
     if (label) {
-      label.hidden = !available && Boolean(state.placement);
+      label.hidden = !available && (Boolean(state.placement) || layerKey === "exteriorEnclosures");
       label.classList.toggle("disabled", !available);
     }
   });
@@ -582,6 +585,11 @@ setBenchmarkDetails();
 updateNavigation();
 loadScanFromQueryString();
 
+if (rustViewer) {
+  elements.fileInput.accept += ",.dxf";
+  document.querySelector(".drop-title").textContent = "Drop a PDF, DXF, scan or review file";
+}
+
 async function loadFiles(files) {
   const jsonl = files.find(isJsonLinesFile);
   if (jsonl) {
@@ -603,7 +611,10 @@ async function loadFiles(files) {
 
   if (pdf) {
     await loadPdfFile(pdf);
+    return;
   }
+  const dxf = rustViewer && files.find(file => file.name.toLowerCase().endsWith(".dxf"));
+  if (dxf) await loadPdfFile(dxf);
 }
 
 async function loadFile(file) {
@@ -672,7 +683,7 @@ async function loadPdfFile(file) {
 
   try {
     const [pdf] = await Promise.all([
-      loadPdfForPreview(file),
+      isPdfFile(file) ? loadPdfForPreview(file) : Promise.resolve(null),
       scanPdf(file, documentRevision, overlayRevision, operationRevision)
     ]);
 
@@ -707,7 +718,7 @@ async function loadPdfAndScanJsonFiles(pdfFile, jsonFile) {
   try {
     const [pdf, payload] = await Promise.all([
       loadPdfForPreview(pdfFile),
-      parseJsonFile(jsonFile)
+      parseJsonFile(jsonFile).then(projectNativeScan)
     ]);
 
     if (!isCurrentDocumentLoad(documentRevision)) {
@@ -939,7 +950,7 @@ function normalizeKvemoEntry(raw, sequence, lineNumber, imageFiles) {
     bounds: normalizeRect(raw.bounds),
     cropBounds: normalizeRect(raw.cropBounds),
     reviewCropBounds: normalizeRect(raw.cropBounds),
-    confidence: Number.isFinite(Number(raw.deterministicConfidence)) ? Number(raw.deterministicConfidence) : null,
+    confidence: raw.deterministicConfidence != null && Number.isFinite(Number(raw.deterministicConfidence)) ? Number(raw.deterministicConfidence) : null,
     category: raw.category || "Unknown",
     imageFileName,
     imageUrl: localImage?.url || kvemoImageApiUrl(raw.imagePath),
@@ -957,7 +968,7 @@ function normalizeKvemoEntry(raw, sequence, lineNumber, imageFiles) {
     sourceEvidence: raw.sourceEvidence || {},
     evidence: normalizeStringArray(raw.evidence),
     reviewReasons: normalizeStringArray(raw.reviewReasons),
-    visualAi: raw.classification || null,
+    visualAi: raw.classification?.accepted === false ? null : raw.classification || null,
     metadata: [
       raw.reviewPriority ? `priority ${raw.reviewPriority}` : "",
       raw.suggestedTrainingUse ? `training ${raw.suggestedTrainingUse}` : "",
@@ -1761,7 +1772,7 @@ async function loadPdfFromUrl(pdfUrl, scanUrl, benchmarkUrl, reviewSessionUrl, b
     if (scanUrl) {
       const [pdf, payload] = await Promise.all([
         loadPdfForPreview(file),
-        fetchJson(scanUrl)
+        fetchJson(scanUrl).then(projectNativeScan)
       ]);
 
       if (!isCurrentDocumentLoad(documentRevision)) {
@@ -1828,6 +1839,7 @@ async function loadScanPayload(
   documentRevision = state.documentLoadRevision,
   overlayRevision = state.benchmarkOverlayRevision,
   operationRevision = state.viewerOperationRevision) {
+  payload = await projectNativeScan(payload);
   if (isPlacementPayload(payload)) {
     await loadPlacementPayload(payload, label, documentRevision, overlayRevision, operationRevision);
     return;
@@ -2034,8 +2046,11 @@ async function loadScanComparisonPayloads(
     return;
   }
 
-  const baseline = normalizeScanPayload(baselinePayload);
-  const candidate = normalizeScanPayload(candidatePayload);
+  const baseline = normalizeScanPayload(await projectNativeScan(baselinePayload));
+  const candidate = normalizeScanPayload(await projectNativeScan(candidatePayload));
+  if (!isCurrentDocumentLoad(documentRevision)) {
+    return;
+  }
 
   state.pdf = null;
   state.placement = null;
@@ -2504,8 +2519,17 @@ function nullableFiniteNumber(value) {
 }
 
 async function loadPdfForPreview(file) {
-  const bytes = await file.arrayBuffer();
-  return pdfjsLib.getDocument({ data: bytes }).promise;
+  pdfRenderer ??= import("https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.mjs")
+    .then(lib => {
+      lib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.mjs";
+      return lib;
+    })
+    .catch(error => {
+      pdfRenderer = undefined;
+      throw error;
+    });
+  const [lib, bytes] = await Promise.all([pdfRenderer, file.arrayBuffer()]);
+  return lib.getDocument({ data: bytes }).promise;
 }
 
 async function parseJsonFile(file) {
@@ -2746,6 +2770,107 @@ function drawVisualSnapshotOverlay() {
     });
 }
 
+async function projectNativeScan(payload) {
+  if (!String(payload?.schemaVersion || "").startsWith("openplantrace.rust.scan.") &&
+      !(rustViewer && payload?.schemaVersion === "openplantrace.scan.compact.v1")) {
+    return payload;
+  }
+  const response = await fetch("/api/native-view", {
+    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    const problem = await response.json().catch(() => ({}));
+    throw new Error(problem.error || "Open this scan with the Rust viewer.");
+  }
+  return response.json();
+}
+
+function nativeWallVisibleOnLayer(wall, key, placementPacket) {
+  const status = wall.placementDecision?.status;
+  switch (key) {
+    case "walls":
+    case "wallTopologySpans": return status === "Ready";
+    case "wallBodyFootprints": return !placementPacket || status === "Ready";
+    case "rawWalls": return true;
+    case "wallTopologyReviewSpans": return status === "Review";
+    case "suppressedDetails": return status === "EvidenceOnly";
+    default: return false;
+  }
+}
+
+function drawNativeWallSpans(wall, showThickness, stroke) {
+  for (const span of wall.nativeSolidSpans) {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    let d = `M ${span.start.x} ${span.start.y}`;
+    if (span.curve) {
+      const {center, radius, startAngle, sweep} = span.curve;
+      const half = startAngle + sweep / 2;
+      const arc = `A ${radius} ${radius} 0 0 ${sweep > 0 ? 1 : 0}`;
+      d += ` ${arc} ${center.x + radius * Math.cos(half)} ${center.y + radius * Math.sin(half)} ${arc} ${span.end.x} ${span.end.y}`;
+    } else {
+      d += ` L ${span.end.x} ${span.end.y}`;
+    }
+    path.setAttribute("d", d);
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", stroke);
+    path.setAttribute("stroke-width", showThickness && wall.thickness > 0 ? wall.thickness : 0.6);
+    path.setAttribute("data-native-wall", wall.id);
+    if (wall.placementDecision) path.setAttribute("data-placement-status", wall.placementDecision.status);
+    addTitle(path, [wall.id, wall.placementDecision?.status].filter(Boolean).join(" — "));
+    attachInspection(path, describeItem("wall", wall));
+    elements.overlay.appendChild(path);
+  }
+}
+
+function drawNativeCornerJunctions(page, visibleWalls) {
+  for (const joint of page.cornerJunctions ?? []) {
+    if (!joint.wallIds.every(id => visibleWalls.has(id))) continue;
+    const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+    polygon.setAttribute("points", joint.polygon.map(p => `${p.x},${p.y}`).join(" "));
+    polygon.setAttribute("fill", "#235b84");
+    polygon.setAttribute("data-native-corner", joint.id);
+    addTitle(polygon, `Measured wall corner · ${joint.id}`);
+    attachInspection(polygon, {
+      type: "Wall corner", id: joint.id, pageNumber: page.number,
+      bounds: boundsFromPoints(joint.polygon), boundary: joint.polygon,
+      placementSummary: joint.requiresReview ? "Review required" : "Ready",
+      hostWallIds: joint.wallIds, sourcePrimitiveIds: joint.sourceIds
+    });
+    elements.overlay.appendChild(polygon);
+  }
+}
+
+function drawNativeEnclosures(page) {
+  for (const enclosure of page.exteriorEnclosures ?? []) {
+    const status = enclosure.requiresReview ? "Review required" : "Reviewed";
+    const area = `${formatNumber(enclosure.areaDrawingUnitsSquared)} drawing units²`;
+    const bounds = boundsFromPoints(enclosure.polygon);
+    for (const edge of enclosure.boundaryEdges) {
+      const threshold = edge.kind === "opening";
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("x1", edge.start.x);
+      line.setAttribute("y1", edge.start.y);
+      line.setAttribute("x2", edge.end.x);
+      line.setAttribute("y2", edge.end.y);
+      line.setAttribute("stroke", threshold ? "#386fc3" : "#a65f00");
+      line.setAttribute("stroke-width", "1.5");
+      line.setAttribute("stroke-dasharray", threshold ? "2 4" : "6 4");
+      line.setAttribute("vector-effect", "non-scaling-stroke");
+      line.setAttribute("data-native-enclosure", enclosure.id);
+      line.setAttribute("data-boundary-kind", edge.kind);
+      const kind = threshold ? "Opening threshold" : "Exterior boundary";
+      addTitle(line, `${kind} · ${status} · ${area}`);
+      attachInspection(line, {
+        type: "Exterior enclosure", kind, id: enclosure.id, pageNumber: page.number,
+        bounds, boundary: enclosure.polygon,
+        line: { start: edge.start, end: edge.end }, measurement: area,
+        placementSummary: status, hostWallIds: edge.wallIds, sourcePrimitiveIds: edge.sourceIds
+      });
+      elements.overlay.appendChild(line);
+    }
+  }
+}
+
 function drawOverlay() {
   clearOverlay();
 
@@ -2765,6 +2890,25 @@ function drawOverlay() {
   setCoordinateDetails(state.scan);
   setLegend();
   setAnalysisCounts(state.scan);
+
+  const nativeWalls = state.scan.schemaVersion === "openplantrace.rust.viewer.v1";
+  if (nativeWalls) {
+    const placementPacket = Boolean(state.scan.placementSource);
+    const visibleWalls = state.scan.walls.filter(onCurrentPage).filter(visibleBySourceLayer);
+    if (page.cornerJunctions?.length && (state.enabledLayers.has("wallBodyFootprints") || state.enabledLayers.has("walls"))) {
+      drawNativeCornerJunctions(page, new Set(visibleWalls.filter(w => w.placementDecision?.status === "Ready").map(w => w.id)));
+    }
+    for (const wall of visibleWalls) {
+      const visible = key => state.enabledLayers.has(key) && nativeWallVisibleOnLayer(wall, key, placementPacket);
+      const review = visible("wallTopologyReviewSpans");
+      const evidence = visible("suppressedDetails");
+      const body = visible("wallBodyFootprints");
+      if (review || evidence || body || visible("walls") || visible("wallTopologySpans") || visible("rawWalls")) {
+        drawNativeWallSpans(wall, body || review || evidence, review ? "#a65f00" : evidence ? "#0f6b78" : "#235b84");
+      }
+    }
+    if (state.enabledLayers.has("exteriorEnclosures")) drawNativeEnclosures(page);
+  }
 
   if (state.enabledLayers.has("regions")) {
     state.scan.regions.filter(onCurrentPage).forEach((region) => {
@@ -2930,6 +3074,9 @@ function drawOverlay() {
       if (opening.centerLine) {
         addLine(opening.centerLine, "opening-line", `${opening.type} placement line - ${opening.id}`, confidence(opening.confidence), describeItem("opening", opening));
       }
+      for (const swing of opening.swingObservations ?? []) {
+        addLine({start:swing.hinge, end:swing.openTip}, "opening-line", `Open leaf — ${swing.arcSourceId}`, 0.7, describeItem("opening", opening));
+      }
     });
   }
 
@@ -2938,7 +3085,12 @@ function drawOverlay() {
       if (!visibleBySourceLayer(object)) {
         return;
       }
-      addRect(object.bounds, "object", visualAiLabel(object) || object.label || object.category || object.kind, confidence(object.confidence), describeItem("object", object));
+      const title = visualAiLabel(object) || object.label || object.category || object.kind;
+      if (object.footprint?.polygon?.length >= 3) {
+        addPolygon(object.footprint.polygon, "object", title, confidence(object.confidence), describeItem("object", object));
+      } else {
+        addRect(object.bounds, "object", title, confidence(object.confidence), describeItem("object", object));
+      }
     });
   }
 
@@ -3008,7 +3160,7 @@ function drawOverlay() {
 
   if (state.enabledLayers.has("rawWalls")) {
     state.scan.walls.filter(onCurrentPage).forEach((wall) => {
-      if (!visibleBySourceLayer(wall) || !shouldDrawRawWallAuditLine(wall)) {
+      if (nativeWalls || !visibleBySourceLayer(wall) || !shouldDrawRawWallAuditLine(wall)) {
         return;
       }
 
@@ -3021,7 +3173,7 @@ function drawOverlay() {
         component,
         wall.wallType ? `type ${wall.wallType}` : "",
         wall.evidenceAssessment?.category ? `evidence ${wall.evidenceAssessment.category}` : "",
-        `confidence ${wall.confidence.toFixed(2)}`,
+        Number.isFinite(wall.confidence) ? `confidence ${wall.confidence.toFixed(2)}` : "",
         wallReliabilitySummary(wall)
       ].filter(Boolean).join(" - ");
       const className = rawWallAuditClassName(wall);
@@ -3030,7 +3182,7 @@ function drawOverlay() {
     });
   }
 
-  if (state.enabledLayers.has("wallBodyFootprints")) {
+  if (!nativeWalls && state.enabledLayers.has("wallBodyFootprints")) {
     state.scan.walls.filter(onCurrentPage).forEach((wall) => {
       if (!visibleBySourceLayer(wall)) {
         return;
@@ -3069,7 +3221,7 @@ function drawOverlay() {
     });
   }
 
-  if (state.enabledLayers.has("wallTopologySpans")) {
+  if (!nativeWalls && state.enabledLayers.has("wallTopologySpans")) {
     state.scan.walls.filter(onCurrentPage).forEach((wall) => {
       if (!visibleBySourceLayer(wall)) {
         return;
@@ -3105,7 +3257,7 @@ function drawOverlay() {
     });
   }
 
-  if (state.enabledLayers.has("wallTopologyReviewSpans")) {
+  if (!nativeWalls && state.enabledLayers.has("wallTopologyReviewSpans")) {
     const solvedReviewRuns = placementGraphWallEdges(state.scan)
       .filter(onCurrentPage)
       .filter((edge) => edge.solverRun && !wallIsPlacementReady(edge));
@@ -3181,7 +3333,7 @@ function drawOverlay() {
     }
   }
 
-  if (state.enabledLayers.has("walls")) {
+  if (!nativeWalls && state.enabledLayers.has("walls")) {
     const allGraphEdges = placementGraphWallEdges(state.scan).filter(onCurrentPage);
     const graphEdges = allGraphEdges.filter(wallIsPlacementReady);
     if (allGraphEdges.length) {
@@ -4421,6 +4573,8 @@ function describeItem(type, item) {
     evidence: item.evidence || [],
     pairEvidence: item.pairEvidence || null,
     hostWallIds: item.hostWallIds || item.adjacentWallIds || [],
+    placementHostWallIds: item.placementHostWallIds,
+    placementDecision: item.placementDecision,
     connectedRoomLinks: item.connectedRoomLinks || [],
     roomId: item.roomId || (item.connectedRoomIds?.length ? item.connectedRoomIds.join(" -> ") : ""),
     roomLabel: item.roomLabel || (item.connectedRoomLabels?.length ? item.connectedRoomLabels.join(" -> ") : ""),
@@ -6262,6 +6416,17 @@ function setSelection(item = null) {
     ["Room", item.roomLabel || item.roomId || "-"],
     ["Metadata", item.metadata || "-"],
     ["Host walls", item.hostWallIds?.length ? item.hostWallIds.join(", ") : "-"],
+    ...(Array.isArray(item.placementHostWallIds) ? [["Placement-ready hosts", item.placementHostWallIds.join(", ") || "None"]] : []),
+    ...(item.placementDecision ? [
+      ["Wall placement", item.placementDecision.status],
+      ["Placement reason", item.placementDecision.reason.replaceAll("_", " ")],
+      ["Component", item.placementDecision.componentId],
+      ...(item.placementDecision.supportWallIds?.length ? [["Supporting walls", item.placementDecision.supportWallIds]] : []),
+      ...(item.placementDecision.supportSourceIds?.length ? [["Supporting primitives", item.placementDecision.supportSourceIds]] : []),
+      ["Supporting junctions", item.placementDecision.junctionNodeIds.join(", ") || "None"],
+      ["Related openings", item.placementDecision.openingIds.join(", ") || "None"],
+      ["Related rooms", item.placementDecision.roomIds.join(", ") || "None"]
+    ] : []),
     ["Swing", item.swing || "-"],
     ["Wall pair", item.pairEvidence ? `separation ${formatNumber(item.pairEvidence.faceSeparation)}, overlap ${formatNumber(item.pairEvidence.overlapRatio)}, score ${formatNumber(item.pairEvidence.score)}` : "-"],
     ["Room links", item.connectedRoomLinks?.length ? item.connectedRoomLinks.map(formatRoomConnectionLink).join("; ") : "-"],
@@ -6277,7 +6442,15 @@ function setSelection(item = null) {
     const term = document.createElement("dt");
     const detail = document.createElement("dd");
     term.textContent = label;
-    detail.textContent = value;
+    if (Array.isArray(value) && value.length > 4) {
+      const disclosure = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = `Show ${value.length} IDs`;
+      disclosure.append(summary, document.createTextNode(value.join(", ")));
+      detail.append(disclosure);
+    } else {
+      detail.textContent = Array.isArray(value) ? value.join(", ") : value;
+    }
     list.append(term, detail);
   });
 
@@ -7126,6 +7299,11 @@ function setCounts(scan = null) {
         ["Surface patterns", scan.surfacePatterns?.length ?? 0],
         ["Wall components", scan.wallComponents?.length ?? 0],
         ["Walls", scan.walls.length],
+        ...(scan.walls.some(w => w.placementDecision) ? [
+          ["Placement-ready walls", scan.walls.filter(w => w.placementDecision?.status === "Ready").length],
+          ["Walls for review", scan.walls.filter(w => w.placementDecision?.status === "Review").length],
+          ["Evidence-only walls", scan.walls.filter(w => w.placementDecision?.status === "EvidenceOnly").length]
+        ] : []),
         ["Curved wall candidates", scan.curvedWalls?.length ?? 0],
         ["Nodes", scan.nodes.length],
         ["Rooms", scan.rooms.length],
@@ -7389,6 +7567,7 @@ function appendWallReliabilityLegend(container, scan = state.scan) {
 }
 
 function appendWallTopologyLegend(container, scan = state.scan) {
+  if (scan?.schemaVersion === "openplantrace.rust.viewer.v1") return;
   const walls = (scan?.walls ?? []).filter(onCurrentPage);
   const curvedWalls = (scan?.curvedWalls ?? []).filter(onCurrentPage);
   if (!walls.length && !curvedWalls.length) {
@@ -10944,19 +11123,22 @@ function routingLayerItemCount(layer) {
 }
 
 function overlayLegendItemsForCurrentPayload(scan = state.scan) {
+  const items = scan?.schemaVersion === "openplantrace.rust.viewer.v1" && scan.pages.some(p => p.exteriorEnclosures?.length)
+    ? overlayLegendItems : overlayLegendItems.filter(item => item.key !== "exteriorEnclosures");
   if (!scan && state.visualSnapshot) {
     const layerKeys = new Set((visualSnapshotCurrentPage()?.layers ?? [])
       .map((layer) => visualSnapshotOverlayKey(layer.name))
       .filter(Boolean));
-    return overlayLegendItems.filter((item) => layerKeys.has(item.key));
+    return items.filter((item) => layerKeys.has(item.key));
   }
 
   if (!state.placement || !scan) {
-    return overlayLegendItems;
+    return items;
   }
 
-  return overlayLegendItems
-    .filter((item) => placementOverlayLayerKeys.has(item.key))
+  return items
+    .filter((item) => placementOverlayLayerKeys.has(item.key)
+      || (["openplantrace.rust.placement.v2", "openplantrace.rust.placement.v3"].includes(scan.placementSource?.schemaVersion) && ["suppressedDetails", "nodes", "objects"].includes(item.key)))
     .filter((item) => item.key === "wallTruth" || layerTotalForKey(scan, item.key) > 0);
 }
 
@@ -10964,7 +11146,19 @@ function availableOverlayLayerKeys(scan = state.scan) {
   return new Set(overlayLegendItemsForCurrentPayload(scan).map((item) => item.key));
 }
 
+function nativeWallLayerCount(scan, key, page) {
+  if (scan?.schemaVersion !== "openplantrace.rust.viewer.v1") return null;
+  if (key === "exteriorEnclosures") {
+    return scan.pages.reduce((sum, p) => sum + (page == null || p.number === page ? p.exteriorEnclosures?.length ?? 0 : 0), 0);
+  }
+  if (!["walls", "rawWalls", "wallBodyFootprints", "wallTopologySpans", "wallTopologyReviewSpans", "suppressedDetails"].includes(key)) return null;
+  const walls = (scan.walls || []).filter(w => page == null || (w.pageNumber === page && visibleBySourceLayer(w)));
+  return walls.filter(w => w.nativeSolidSpans.length && nativeWallVisibleOnLayer(w, key, Boolean(scan.placementSource))).length;
+}
+
 function layerTotalForKey(scan, key) {
+  const nativeCount = nativeWallLayerCount(scan, key, null);
+  if (nativeCount != null) return nativeCount;
   switch (key) {
     case "regions":
       return scan.regions?.length ?? 0;
@@ -11029,7 +11223,11 @@ function layerTotalForKey(scan, key) {
 }
 
 function layerCountForKey(scan, key) {
-  const currentPageOnly = (items = []) => items.filter((item) => item.pageNumber == null || item.pageNumber === state.currentPage).length;
+  const nativeCount = nativeWallLayerCount(scan, key, state.currentPage);
+  if (nativeCount != null) return nativeCount;
+  const currentPageOnly = (items = []) => items.filter(item =>
+    (item.pageNumber == null || item.pageNumber === state.currentPage) &&
+    (scan.schemaVersion !== "openplantrace.rust.viewer.v1" || visibleBySourceLayer(item))).length;
   switch (key) {
     case "regions":
       return currentPageOnly(scan.regions);
@@ -15372,6 +15570,11 @@ function describeMetricOpeningPlacement(placement) {
 }
 
 function describeSwing(item) {
+  if (item.swingObservations?.length) {
+    return item.swingObservations.map(swing =>
+      `${swing.arcSourceId} — hinge ${formatPointCoordinates(swing.hinge)}, closed tip ${formatPointCoordinates(swing.closedTip)}, open tip ${formatPointCoordinates(swing.openTip)}`).join(" / ");
+  }
+  if (item.hinge) return `Hinge ${formatPointCoordinates(item.hinge)}`;
   if (!item.swingSide && !item.swingDirection && !item.hingeSide) {
     return "";
   }
@@ -16026,6 +16229,7 @@ function resetViewerState(sourceMode = "empty", options = {}) {
 
 function isPlacementPayload(payload) {
   return String(payload?.schemaVersion || "").startsWith("openplantrace.placement.")
+    || ["openplantrace.rust.placement.v2", "openplantrace.rust.placement.v3"].includes(payload?.schemaVersion)
     || (payload?.qualityGate
       && payload?.coordinateSystem
       && Array.isArray(payload?.pages)
@@ -16422,6 +16626,9 @@ function normalizePlacementPayload(payload) {
   if (!pages.length) {
     throw new Error("Placement JSON does not contain any pages.");
   }
+  if (["openplantrace.rust.placement.v2", "openplantrace.rust.placement.v3"].includes(payload.schemaVersion)) {
+    return normalizeNativePlacement(payload, pages);
+  }
 
   const calibration = normalizePlacementCalibration(payload.calibration);
   const quality = normalizePlacementQuality(payload, calibration);
@@ -16499,6 +16706,52 @@ function normalizePlacementPages(pages) {
       };
     })
     .filter(Boolean);
+}
+
+function normalizeNativePlacement(payload, pages) {
+  const walls = [], openings = [], rooms = [], nodes = [], objects = [], objectGroups = [], scaleGroups = [];
+  for (const page of pages) {
+    const n = page.pageNumber;
+    const ready = new Set(page.wallSets.readyWallIds);
+    const review = new Set(page.wallSets.reviewWallIds);
+    const evidenceOnly = new Set(page.wallSets.evidenceOnlyWallIds);
+    const barriers = new Set(page.barriers.map(barrier => barrier.wallId));
+    const observed = new Set();
+    for (const wall of page.walls) {
+      const id = wall.wallId;
+      const sets = [ready, review, evidenceOnly].filter(set => set.has(id));
+      const status = ready.has(id) ? "Ready" : review.has(id) ? "Review" : "EvidenceOnly";
+      if (sets.length !== 1 || observed.has(id) || wall.decision?.status !== status || barriers.has(id) !== ready.has(id)) {
+        throw new Error(`Inconsistent placement membership for wall ${id} on page ${n}.`);
+      }
+      observed.add(id);
+      walls.push({...wall, id, pageNumber:n, nativeSolidSpans:wall.spans,
+        placementDecision:wall.decision, requiresReview:status !== "Ready",
+        bounds:boundsFromPoints([wall.centerLine.start, wall.centerLine.end]),
+        sourcePrimitiveIds:wall.sourceIds, wallComponentId:wall.decision.componentId});
+    }
+    if (ready.size + review.size + evidenceOnly.size !== observed.size || barriers.size !== ready.size || page.barriers.length !== ready.size) {
+      throw new Error(`Placement wall sets do not match the wall inventory on page ${n}.`);
+    }
+    for (const o of page.openings) {
+      openings.push({...o, pageNumber:n, type:o.kind, centerLine:{start:o.start,end:o.end},
+        bounds:boundsFromPoints([o.start,o.end]), evidence:[o.evidence], sourcePrimitiveIds:o.sourceIds});
+    }
+    for (const room of page.rooms) rooms.push({...room, pageNumber:n, boundary:room.polygon, bounds:boundsFromPoints(room.polygon)});
+    for (const node of page.wallGraph.nodes) nodes.push({...node, pageNumber:n});
+    for (const o of page.objects) objects.push({...o, pageNumber:n, label:o.name, position:o.at,
+      bounds:boundsFromPoints(o.footprint?.polygon ?? [o.at]), sourcePrimitiveIds:o.sourceIds});
+    for (const [i, g] of page.objectGroups.entries()) objectGroups.push({...g, id:`p${n}:group:${i+1}`,
+      pageNumbers:[n], pageNumber:n, label:g.name, objectIds:g.memberIds, count:g.memberIds.length});
+    if (page.unitsToMillimeters > 0) scaleGroups.push({scope:"Page", pageNumber:n, millimetersPerDrawingUnit:page.unitsToMillimeters, source:page.scaleSource});
+  }
+  const scale = scaleGroups.length === pages.length && scaleGroups.every(g => g.millimetersPerDrawingUnit === scaleGroups[0].millimetersPerDrawingUnit)
+    ? scaleGroups[0].millimetersPerDrawingUnit : null;
+  const normalized = normalizeScanPayload({schemaVersion:"openplantrace.rust.viewer.v1", documentId:"OpenPlanTrace placement",
+    pages, walls, openings, rooms, nodes, objects, objectGroups,
+    calibration:scaleGroups.length ? {hasReliableMeasurementScale:scale != null, millimetersPerDrawingUnit:scale, scaleGroups} : null});
+  normalized.placementSource = payload;
+  return normalized;
 }
 
 function normalizePlacementItem(item) {

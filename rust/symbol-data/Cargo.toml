@@ -1,0 +1,21 @@
+[package]
+name = "openplantrace-symbol-data"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "BSD-2-Clause"
+publish = false
+description = "Deterministic licensed symbol dataset preparation and shared RGB crop preprocessing"
+
+[[bin]]
+name = "openplantrace-real-data"
+path = "src/bin/real_data.rs"
+
+[dependencies]
+image = { version = "=0.25.10", default-features = false, features = ["png"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+sha2 = "0.11"
+
+[profile.release]
+debug = "line-tables-only"

@@ -1,0 +1,28 @@
+[package]
+name = "openplantrace-rs"
+version = "0.12.32-alpha.20"
+edition = "2024"
+rust-version = "1.99"
+license = "BSD-2-Clause"
+description = "Standalone Rust floor-plan scanner for raster, vector and mixed PDF and ASCII DXF"
+
+[dependencies]
+lopdf = { version = "=0.47.0", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+flate2 = "1"
+hayro = { version = "=0.9.0", default-features = false, features = ["embed-fonts"] }
+jsonschema = { version = "=0.61.1", default-features = false, optional = true }
+tract-onnx = { version = "=0.23.10", default-features = false, optional = true }
+sha2 = { version = "0.11", optional = true }
+image = { version = "=0.25.10", default-features = false, features = ["png"], optional = true }
+openplantrace-symbol-data = { path = "symbol-data", optional = true }
+
+[features]
+default = ["published-contracts"]
+published-contracts = ["dep:jsonschema"]
+onnx = ["dep:tract-onnx","dep:sha2","dep:image","dep:openplantrace-symbol-data"]
+
+[profile.release]
+debug = "line-tables-only"
+

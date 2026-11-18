@@ -860,6 +860,7 @@
         "coordinateTrust": {
           "enum": [
             "Blocked",
+            "BlockedByImportReadiness",
             "Usable",
             "UsableWithReview"
           ]
@@ -868,6 +869,7 @@
           "enum": [
             "Uncalibrated",
             "Calibrated",
+            "CalibratedWithBlockingOutlierReview",
             "CalibratedWithOutlierReview"
           ]
         },

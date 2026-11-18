@@ -1,0 +1,83 @@
+%PDF-1.7
+% public generated QA fixture
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 240 200] /Contents 4 0 R /Resources << /Pattern << /BattA 8 0 R /BattB 9 0 R >> /Properties << /Wall 5 0 R /Furn 6 0 R /Door 7 0 R >> /XObject << /WhiteImage 10 0 R >> /ExtGState << /Half << /ca 0.5 /CA 0.5 >> /Invisible << /ca 0 /CA 0 >> /Masked << /SMask << /S /Luminosity /G 11 0 R >> >> >> >> >>
+endobj
+4 0 obj
+<<  /Length 950 >>
+stream
+/OC /Wall BDC 0 G 0.2 w 220 81 m 220 80 l S 220 80 m 179 80 l S 179 80 m 179 60 l S 179 60 m 178 60 l S 178 60 m 178 80 l S 22 80 m 22 60 l S 22 60 m 21 60 l S 21 60 m 21 80 l S 21 80 m 0 80 l S 0 80 m 0 81 l S q 1 g 80 79.8 15 1.4 re f Q q 1 g 219.8 80.2 0.4 0.6 re f Q  0 81 m 220 81 l S 178 80 m 22 80 l S 20 98 m 180 98 l S 180 98 m 180 120 l S 180 120 m 178 120 l S 178 120 m 178 100 l S 178 100 m 22 100 l S 22 100 m 22 120 l S 22 120 m 20 120 l S 20 120 m 20 98 l S 20 95 m 180 95 l S q /Pattern cs /BattA scn 19 81 162 14 re f Q q /Pattern cs /BattB scn 19 95 162 3 re f Q EMC /OC /Furn BDC 0 G 0.2 w 22 80 m 178 80 l S 22 81 m 178 81 l S 22 95 m 178 95 l S 22 98 m 178 98 l S 22 100 m 178 100 l S EMC /OC /Wall BDC 0 G 0.2 w 100 140 m 180 140 l S 100 142 m 180 142 l S 140 138 m 140 144 l S 160 138 m 160 144 l S EMC /OC /Door BDC 0 G 0.2 w 140 140 m 160 140 l S 140 140 m 140 160 l S 160 140 m 160 151.045695 151.045695 160 140 160 c S EMC 
+endstream
+endobj
+5 0 obj
+<< /Type /OCG /Name (A-WALL) >>
+endobj
+6 0 obj
+<< /Type /OCG /Name (A-FURN) >>
+endobj
+7 0 obj
+<< /Type /OCG /Name (A-DOOR) >>
+endobj
+8 0 obj
+<< /Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1 /BBox [-1 -1 101 101] /XStep 100 /YStep 100 /Resources << >> /Matrix [0.16 0 0 0.14 20 81] /Length 368 >>
+stream
+0.25 G 1 w
+0 100 m 13 90 l S 13 90 m 17 80 l S 17 80 m 7 25 l S
+7 25 m 12 12 l S 12 12 m 25 0 l S 25 0 m 38 12 l S
+38 12 m 43 25 l S 43 25 m 33 80 l S 33 80 m 37 90 l S
+37 90 m 50 100 l S 50 100 m 63 90 l S 63 90 m 67 80 l S
+67 80 m 57 25 l S 57 25 m 62 12 l S 62 12 m 75 0 l S
+75 0 m 88 12 l S 88 12 m 93 25 l S 93 25 m 83 80 l S
+83 80 m 87 90 l S 87 90 m 100 100 l S
+endstream
+endobj
+9 0 obj
+<< /Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1 /BBox [-1 -1 101 101] /XStep 100 /YStep 100 /Resources << >> /Matrix [0.08 0 0 0.03 20 95] /Length 368 >>
+stream
+0.25 G 1 w
+0 100 m 13 90 l S 13 90 m 17 80 l S 17 80 m 7 25 l S
+7 25 m 12 12 l S 12 12 m 25 0 l S 25 0 m 38 12 l S
+38 12 m 43 25 l S 43 25 m 33 80 l S 33 80 m 37 90 l S
+37 90 m 50 100 l S 50 100 m 63 90 l S 63 90 m 67 80 l S
+67 80 m 57 25 l S 57 25 m 62 12 l S 62 12 m 75 0 l S
+75 0 m 88 12 l S 88 12 m 93 25 l S 93 25 m 83 80 l S
+83 80 m 87 90 l S 87 90 m 100 100 l S
+endstream
+endobj
+10 0 obj
+<< /Type /XObject /Subtype /Image /Width 4 /Height 4 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 48 >>
+stream
+ÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿ
+endstream
+endobj
+11 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 200 200] /Group << /S /Transparency /CS /DeviceGray >> /Resources << >> /Length 22 >>
+stream
+0.5 g 0 0 200 200 re f
+endstream
+endobj
+xref
+0 12
+0000000000 65535 f 
+0000000039 00000 n 
+0000000088 00000 n 
+0000000145 00000 n 
+0000000504 00000 n 
+0000001506 00000 n 
+0000001553 00000 n 
+0000001600 00000 n 
+0000001647 00000 n 
+0000002214 00000 n 
+0000002781 00000 n 
+0000002973 00000 n 
+trailer
+<< /Size 12 /Root 1 0 R >>
+startxref
+3159
+%%EOF

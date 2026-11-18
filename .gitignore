@@ -1,48 +1,27 @@
-bin/
-obj/
-.vs/
-.vscode/
-TestResults/
-coverage/
-real-pdf-output/
+# Runtime outputs and compiler caches remain local.
+target/
 artifacts/
-viewer*.log
+scan-output/
+first-scan/
 *.log
 *.tmp
-*.bak
-
-# Private/user-provided drawing inputs should stay local unless explicitly
-# reviewed and force-added as public fixtures.
+*.pdb
+*.exe
+*.zip
+*.local.json
+*.local.md
+# Drawings require an explicit provenance review.
 *.pdf
 *.dwg
 *.dxf
 *.rvt
 *.ifc
-*.nwd
-*.nwc
-!docs/**/*.pdf
-!samples/golden/**/*.pdf
-!samples/golden/**/*.dxf
-
-# Local benchmark/review outputs generated from private or user-provided plans
-*.local.json
-*.local.jsonl
-*.local.md
-*.draft.json
-*.draft.jsonl
-*.draft.md
-*.draft-review.md
-
-# Local visual QA captures / screenshots / photos
+!samples/self-test/*.pdf
+!samples/golden/semantic-smoke.dxf
+# Original-drawing screenshots stay local.
 *.png
 *.jpg
 *.jpeg
 *.webp
-*.bmp
 *.tif
 *.tiff
-
-*.user
-*.suo
-*.nupkg
-*.snupkg

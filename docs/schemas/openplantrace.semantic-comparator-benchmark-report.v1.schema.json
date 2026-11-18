@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openplantrace.dev/schemas/openplantrace.semantic-comparator-benchmark-report.v1.schema.json",
+  "title": "OpenPlanTrace semantic comparator memory benchmark",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "recordedAtUtc",
+    "configHash",
+    "semanticOptionsHash",
+    "comparatorAssemblyHash",
+    "peakWorkingSetBudgetBytes",
+    "peakPrivateBytesBudgetBytes",
+    "sampleIntervalMilliseconds",
+    "measurements",
+    "peakWorkingSetBytes",
+    "peakPrivateBytes",
+    "semanticDiff",
+    "gates",
+    "passed"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "openplantrace.semantic-comparator-benchmark-report.v1" },
+    "recordedAtUtc": { "type": "string", "format": "date-time" },
+    "configHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "semanticOptionsHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "comparatorAssemblyHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "peakWorkingSetBudgetBytes": { "type": "integer", "minimum": 1 },
+    "peakPrivateBytesBudgetBytes": { "type": "integer", "minimum": 1 },
+    "sampleIntervalMilliseconds": { "type": "integer", "minimum": 1 },
+    "measurements": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["repetition", "runtimeMilliseconds", "peakWorkingSetBytes", "peakPrivateBytes", "semanticReportHash"],
+        "properties": {
+          "repetition": { "type": "integer", "minimum": 1 },
+          "runtimeMilliseconds": { "type": "number", "minimum": 0 },
+          "peakWorkingSetBytes": { "type": "integer", "minimum": 0 },
+          "peakPrivateBytes": { "type": "integer", "minimum": 0 },
+          "semanticReportHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "peakWorkingSetBytes": { "type": "integer", "minimum": 0 },
+    "peakPrivateBytes": { "type": "integer", "minimum": 0 },
+    "semanticDiff": { "$ref": "openplantrace.semantic-output-diff.v1.schema.json" },
+    "gates": { "type": "array", "items": { "type": "object" } },
+    "passed": { "type": "boolean" }
+  },
+  "additionalProperties": false
+}

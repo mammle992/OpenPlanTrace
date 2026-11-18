@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:openplantrace:schema:decision-trace:v1",
+  "title": "OpenPlanTrace structural decision trace",
+  "type": "object",
+  "additionalProperties": false,
+  "x-openplantrace-schemaVersion": "openplantrace.decision-trace.v1",
+  "required": [
+    "schemaVersion",
+    "traceId",
+    "decisionFingerprint",
+    "traceFingerprint",
+    "decision",
+    "observations",
+    "consumers"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "openplantrace.decision-trace.v1" },
+    "traceId": { "type": "string", "minLength": 1 },
+    "decisionFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "traceFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "decision": { "$ref": "#/$defs/decision" },
+    "observations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/observation" }
+    },
+    "consumers": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/consumer" }
+    }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      }
+    },
+    "segment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end"],
+      "properties": {
+        "start": { "$ref": "#/$defs/point" },
+        "end": { "$ref": "#/$defs/point" }
+      }
+    },
+    "bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minX", "minY", "maxX", "maxY"],
+      "properties": {
+        "minX": { "type": "number" },
+        "minY": { "type": "number" },
+        "maxX": { "type": "number" },
+        "maxY": { "type": "number" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "sourceId"],
+      "properties": {
+        "kind": { "type": "string" },
+        "sourceId": { "type": "string", "minLength": 1 },
+        "pageNumber": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "geometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "pageNumber", "coordinateSystemId", "vertices"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "enum": ["point", "segment", "bounds", "polyline"] },
+        "pageNumber": { "type": "integer", "minimum": 1 },
+        "coordinateSystemId": { "type": "string", "minLength": 1 },
+        "point": { "$ref": "#/$defs/point" },
+        "segment": { "$ref": "#/$defs/segment" },
+        "bounds": { "$ref": "#/$defs/bounds" },
+        "vertices": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/point" }
+        }
+      }
+    },
+    "measurement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "value", "unit"],
+      "properties": {
+        "kind": { "type": "string" },
+        "value": { "type": "number" },
+        "unit": { "type": "string" }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "confidence", "sources", "geometry", "measurements"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "sources": { "type": "array", "items": { "$ref": "#/$defs/source" } },
+        "geometry": { "type": "array", "items": { "$ref": "#/$defs/geometry" } },
+        "measurements": { "type": "array", "items": { "$ref": "#/$defs/measurement" } }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["none", "score", "measurement", "count", "reference", "flag"] },
+        "score": { "type": "number" },
+        "value": { "type": "number" },
+        "threshold": { "type": "number" },
+        "comparison": { "type": "string" },
+        "unit": { "type": "string" },
+        "count": { "type": "integer" },
+        "countThreshold": { "type": "integer" },
+        "referenceKind": { "type": "string" },
+        "referenceId": { "type": "string", "minLength": 1 },
+        "flag": { "type": "boolean" }
+      }
+    },
+    "reason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "effect", "payload", "observationIds"],
+      "properties": {
+        "code": { "type": "string" },
+        "effect": { "type": "string" },
+        "payload": { "$ref": "#/$defs/payload" },
+        "observationIds": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decisionId", "targetId", "family", "authorityKind", "authorityVersion", "outcome", "confidence", "reasons", "sources", "geometry"],
+      "properties": {
+        "decisionId": { "type": "string", "minLength": 1 },
+        "targetId": { "type": "string", "minLength": 1 },
+        "family": { "type": "string" },
+        "authorityKind": { "type": "string" },
+        "authorityVersion": { "type": "string", "minLength": 1 },
+        "outcome": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "reasons": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/reason" } },
+        "sources": { "type": "array", "items": { "$ref": "#/$defs/source" } },
+        "geometry": { "type": "array", "items": { "$ref": "#/$defs/geometry" } }
+      }
+    },
+    "consumer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["consumerKind", "consumerId", "action", "decisionFingerprint"],
+      "properties": {
+        "consumerKind": { "type": "string" },
+        "consumerId": { "type": "string", "minLength": 1 },
+        "action": { "type": "string" },
+        "decisionFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    }
+  }
+}

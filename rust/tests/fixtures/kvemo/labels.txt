@@ -1,0 +1,4 @@
+# Class order returned by the channel-means test graphs.
+red|Furniture
+green|Lighting
+blue|HVACEquipment

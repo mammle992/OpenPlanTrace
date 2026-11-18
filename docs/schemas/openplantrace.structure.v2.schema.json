@@ -689,6 +689,9 @@
         "reasons"
       ],
       "properties": {
+        "coordinatePlacementBlocked": {
+          "type": "boolean"
+        },
         "readyForCoordinatePlacement": {
           "type": "boolean"
         },
@@ -1269,7 +1272,7 @@
           "minLength": 1
         },
         "profile": {
-          "enum": ["conservative", "balanced", "recall-first"]
+          "enum": ["joint-structural", "conservative", "balanced", "recall-first"]
         },
         "score": {
           "type": "number",

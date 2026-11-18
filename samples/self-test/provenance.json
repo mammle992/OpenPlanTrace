@@ -1,0 +1,155 @@
+{
+  "schema": "openplantrace.public-samples.v1",
+  "license": "BSD-2-Clause",
+  "copyright": "Copyright (c) 2026 OpenPlanTrace contributors",
+  "redistributionBasis": "Authored synthetic fixtures generated entirely from explicit local mathematical geometry and literal PDF operations, distributed with the repository BSD-2-Clause notice. No client or external PDF was used as source.",
+  "source": "Self-contained regenerate.py; finite wall and paint controls previously used in the alpha validation suite",
+  "generatorSha256": "5492e54413f1aa3bc42bbef6e9490868f1ae0373a3d49176b48231da1ecb5bc4",
+  "licenseSha256": "21fa5ac95761b157611c06c91d84ac7ffcb5027f90c0cbb1468c701be214812b",
+  "thirdPartyArtworkOrFontFilesIncluded": false,
+  "scannerEngine": "0.12.32-alpha.20",
+  "scannerExeSha256": "2853c4d28bf591d2a2210f62ecdaee4eb200937f2394b12d9bbdcf2c06a4ec3f",
+  "scannerExeRole": "Reference executable before public path remapping",
+  "publicRemappedExecutableVerification": {
+    "status": "verified",
+    "scannerExeSha256": "6dd19a8e61cfce657cb042793c6b41f9cbece582ca47b4d5a8d9f74f8cd89827",
+    "independentlyVerified": true,
+    "sampleReadyBarrierCounts": [1, 1, 0, 0, 0],
+    "sampleResultsMatchReference": true,
+    "pairedAndSampleScansPassed": 130,
+    "publicValidatorsPassed": 390
+  },
+  "publicSampleLayout": "samples/self-test",
+  "limitations": [
+    "Synthetic vector paint/finish controls only",
+    "Door symbol supplies context; selected body does not cross it",
+    "No window, raster, mixed-PDF, furniture-recognition or complete-house benchmark"
+  ],
+  "files": [
+    {
+      "file": "01-insulated-wall.pdf",
+      "bytes": 3404,
+      "sha256": "91d91f26a7357bbfe901f016637cb6fe71d05f3e8c264e9946928f55cd168a9d",
+      "pages": 1,
+      "pageSize": [
+        240,
+        200
+      ],
+      "embeddedFontCount": 0,
+      "paintedImageCount": 0,
+      "unusedGeneratedWhiteImage": {
+        "width": 4,
+        "height": 4,
+        "rgbBytes": 48,
+        "allBytes255": true
+      },
+      "documentMetadata": false,
+      "attachments": false,
+      "linksOrScripts": false,
+      "privatePaths": false,
+      "regeneratedBytesExact": true,
+      "testedReadyBarriers": 1,
+      "testedDoorSymbols": 1
+    },
+    {
+      "file": "02-background-then-local-faces.pdf",
+      "bytes": 3433,
+      "sha256": "a8dd11eb0efa6c01c7ded61341b0eda092a878150211e40fb28bc9cbf0929ab6",
+      "pages": 1,
+      "pageSize": [
+        240,
+        200
+      ],
+      "embeddedFontCount": 0,
+      "paintedImageCount": 0,
+      "unusedGeneratedWhiteImage": {
+        "width": 4,
+        "height": 4,
+        "rgbBytes": 48,
+        "allBytes255": true
+      },
+      "documentMetadata": false,
+      "attachments": false,
+      "linksOrScripts": false,
+      "privatePaths": false,
+      "regeneratedBytesExact": true,
+      "testedReadyBarriers": 1,
+      "testedDoorSymbols": 1
+    },
+    {
+      "file": "03-erased-finish.pdf",
+      "bytes": 3433,
+      "sha256": "b4857cc6cedfaa78070a1069170dd759cb4ecb90fcd86efe5d9ab756fb6470aa",
+      "pages": 1,
+      "pageSize": [
+        240,
+        200
+      ],
+      "embeddedFontCount": 0,
+      "paintedImageCount": 0,
+      "unusedGeneratedWhiteImage": {
+        "width": 4,
+        "height": 4,
+        "rgbBytes": 48,
+        "allBytes255": true
+      },
+      "documentMetadata": false,
+      "attachments": false,
+      "linksOrScripts": false,
+      "privatePaths": false,
+      "regeneratedBytesExact": true,
+      "testedReadyBarriers": 0,
+      "testedDoorSymbols": 1
+    },
+    {
+      "file": "04-erased-remote-closure.pdf",
+      "bytes": 3465,
+      "sha256": "57f28763e2f55bea1a98af111df1ea742ede26b96cac1e3ea99de76b99f69f29",
+      "pages": 1,
+      "pageSize": [
+        240,
+        200
+      ],
+      "embeddedFontCount": 0,
+      "paintedImageCount": 0,
+      "unusedGeneratedWhiteImage": {
+        "width": 4,
+        "height": 4,
+        "rgbBytes": 48,
+        "allBytes255": true
+      },
+      "documentMetadata": false,
+      "attachments": false,
+      "linksOrScripts": false,
+      "privatePaths": false,
+      "regeneratedBytesExact": true,
+      "testedReadyBarriers": 0,
+      "testedDoorSymbols": 1
+    },
+    {
+      "file": "05-compound-paint-erases-closure.pdf",
+      "bytes": 3485,
+      "sha256": "95cddbea6c0abfa529e16cf788ec2b609d1ddee628c6e2f4441e940f7771774b",
+      "pages": 1,
+      "pageSize": [
+        240,
+        200
+      ],
+      "embeddedFontCount": 0,
+      "paintedImageCount": 0,
+      "unusedGeneratedWhiteImage": {
+        "width": 4,
+        "height": 4,
+        "rgbBytes": 48,
+        "allBytes255": true
+      },
+      "documentMetadata": false,
+      "attachments": false,
+      "linksOrScripts": false,
+      "privatePaths": false,
+      "regeneratedBytesExact": true,
+      "testedReadyBarriers": 0,
+      "testedDoorSymbols": 1
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openplantrace.dev/schemas/openplantrace.enforcement-source-audit.v1.schema.json",
+  "title": "OpenPlanTrace source enforcement audit",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "repositoryCommit",
+    "policyHash",
+    "counts",
+    "behavioralProseSites",
+    "parserMethods",
+    "helperConcealmentCandidates",
+    "dependencyViolations",
+    "legacyBoundaryViolations",
+    "decisionOwnership",
+    "duplicatedSemanticTerms",
+    "gates",
+    "passed"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "openplantrace.enforcement-source-audit.v1" },
+    "repositoryCommit": { "type": "string" },
+    "policyHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "counts": { "$ref": "#/$defs/counts" },
+    "behavioralProseSites": { "type": "array", "items": { "$ref": "#/$defs/site" } },
+    "parserMethods": { "type": "array", "items": { "type": "object" } },
+    "helperConcealmentCandidates": { "type": "array", "items": { "type": "object" } },
+    "dependencyViolations": { "type": "array", "items": { "type": "object" } },
+    "legacyBoundaryViolations": { "type": "array", "items": { "type": "object" } },
+    "decisionOwnership": { "type": "array", "items": { "type": "object" } },
+    "duplicatedSemanticTerms": { "type": "array", "items": { "type": "object" } },
+    "gates": { "type": "array", "items": { "$ref": "#/$defs/gate" } },
+    "passed": { "type": "boolean" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "counts": {
+      "type": "object",
+      "required": ["productionFiles", "directBehavioralProseReads", "transitiveBehavioralProseReads", "behavioralDecisionSites", "parserMethods", "potentialHelperConcealments", "uniqueSemanticTerms", "crossFileSemanticTerms", "dependencyViolations", "ownershipLocations"],
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
+    "site": {
+      "type": "object",
+      "required": ["kind", "relativePath", "line", "member", "reader", "semanticTerms", "fingerprint"],
+      "properties": {
+        "kind": { "type": "string" },
+        "relativePath": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "member": { "type": "string" },
+        "reader": { "type": "string" },
+        "semanticTerms": { "type": "array", "items": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" } },
+        "fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      },
+      "additionalProperties": false
+    },
+    "gate": {
+      "type": "object",
+      "required": ["id", "passed", "message"],
+      "properties": {
+        "id": { "type": "string" },
+        "passed": { "type": "boolean" },
+        "message": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

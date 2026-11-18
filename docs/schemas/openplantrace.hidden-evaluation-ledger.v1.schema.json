@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openplantrace.dev/schemas/openplantrace.hidden-evaluation-ledger.v1.schema.json",
+  "title": "OpenPlanTrace hidden evaluation ledger entry",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "sequence",
+    "previousRecordHash",
+    "recordHash",
+    "commitHash",
+    "manifestHash",
+    "evaluatedAtUtc",
+    "evaluationKind",
+    "datasetState",
+    "outcome",
+    "resultRevealed",
+    "metricsHash",
+    "aggregateMetrics"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "openplantrace.hidden-evaluation-ledger.v1" },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "previousRecordHash": { "type": "string", "pattern": "^(genesis|sha256:[0-9a-f]{64})$" },
+    "recordHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "commitHash": { "type": "string", "pattern": "^[0-9a-f]{7,64}$" },
+    "manifestHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "evaluatedAtUtc": { "type": "string", "format": "date-time" },
+    "evaluationKind": { "enum": ["Validation", "FinalHoldout"] },
+    "datasetState": { "enum": ["Hidden", "Validation", "Retired"] },
+    "outcome": { "enum": ["Pass", "Fail", "NearPass"] },
+    "resultRevealed": { "type": "boolean" },
+    "successClaimCommitHash": { "type": "string", "pattern": "^[0-9a-f]{7,64}$" },
+    "metricsHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "aggregateMetrics": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "type": "number" }
+    }
+  },
+  "additionalProperties": false
+}

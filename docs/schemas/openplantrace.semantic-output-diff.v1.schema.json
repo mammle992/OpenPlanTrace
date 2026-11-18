@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openplantrace.dev/schemas/openplantrace.semantic-output-diff.v1.schema.json",
+  "title": "OpenPlanTrace semantic output comparison",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "baselineArtifactHash",
+    "candidateArtifactHash",
+    "baselineFileCount",
+    "candidateFileCount",
+    "baselineBytes",
+    "candidateBytes",
+    "baselineEntityCount",
+    "candidateEntityCount",
+    "excludedArtifacts",
+    "gainedEntities",
+    "lostEntities",
+    "changes",
+    "gates",
+    "passed"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "openplantrace.semantic-output-diff.v1" },
+    "baselineArtifactHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "candidateArtifactHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "baselineFileCount": { "type": "integer", "minimum": 0 },
+    "candidateFileCount": { "type": "integer", "minimum": 0 },
+    "baselineBytes": { "type": "integer", "minimum": 0 },
+    "candidateBytes": { "type": "integer", "minimum": 0 },
+    "baselineEntityCount": { "type": "integer", "minimum": 0 },
+    "candidateEntityCount": { "type": "integer", "minimum": 0 },
+    "excludedArtifacts": { "type": "array", "items": { "type": "string" } },
+    "gainedEntities": { "type": "array", "items": { "type": "string" } },
+    "lostEntities": { "type": "array", "items": { "type": "string" } },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["artifact", "entityPath", "propertyPath", "category", "baselineHash", "candidateHash", "approved", "sourceReviewed"],
+        "properties": {
+          "artifact": { "type": "string" },
+          "entityPath": { "type": "string" },
+          "propertyPath": { "type": "string" },
+          "category": { "enum": ["Geometry", "Classification", "ReviewState", "EvidenceNarrative", "Metadata", "Other", "GainedEntity", "LostEntity"] },
+          "baselineHash": { "type": "string" },
+          "candidateHash": { "type": "string" },
+          "approved": { "type": "boolean" },
+          "sourceReviewed": { "type": "boolean" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "gates": { "type": "array", "items": { "type": "object" } },
+    "passed": { "type": "boolean" }
+  },
+  "additionalProperties": false
+}

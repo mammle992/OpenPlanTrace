@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openplantrace.dev/schemas/openplantrace.paired-benchmark-report.v1.schema.json",
+  "title": "OpenPlanTrace paired benchmark report",
+  "type": "object",
+  "required": ["schemaVersion", "recordedAtUtc", "manifestHash", "semanticOptionsHash", "harnessAssemblyHash", "reportRendererAssemblyHash", "baselineCliHash", "candidateCliHash", "baselineBundleHash", "candidateBundleHash", "environment", "methodology", "fixtures", "gates", "passed"],
+  "properties": {
+    "schemaVersion": { "const": "openplantrace.paired-benchmark-report.v1" },
+    "recordedAtUtc": { "type": "string", "format": "date-time" },
+    "manifestHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "semanticOptionsHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "harnessAssemblyHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "reportRendererAssemblyHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "baselineCliHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "candidateCliHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "baselineBundleHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "candidateBundleHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "environment": { "type": "object" },
+    "methodology": { "type": "object" },
+    "fixtures": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["fixtureId", "inputSha256", "absoluteRuntimeBudgetMilliseconds", "absoluteWorkingSetBudgetBytes", "absolutePrivateBytesBudgetBytes", "phaseCompletionWorkingSetTargetBytes", "pairs", "baselineRuntime", "candidateRuntime", "baselineWorkingSet", "candidateWorkingSet", "baselinePrivateBytes", "candidatePrivateBytes", "runtimeRatioMedian", "runtimeRatioUpper95", "workingSetRatioMedian", "workingSetRatioUpper95", "semanticComparisonCount", "semanticChangeCount", "semanticFailurePairIndices", "futureTelemetry", "semanticDiff", "gates"],
+        "properties": {
+          "fixtureId": { "type": "string" },
+          "inputSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "absoluteRuntimeBudgetMilliseconds": { "type": "number", "exclusiveMinimum": 0 },
+          "absoluteWorkingSetBudgetBytes": { "type": "integer", "exclusiveMinimum": 0 },
+          "absolutePrivateBytesBudgetBytes": { "type": "integer", "exclusiveMinimum": 0 },
+          "phaseCompletionWorkingSetTargetBytes": { "type": "integer", "exclusiveMinimum": 0 },
+          "pairs": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "type": "object",
+              "required": ["index", "first", "baseline", "candidate", "semanticDiff"],
+              "properties": {
+                "index": { "type": "integer", "minimum": 1 },
+                "first": { "enum": ["baseline", "candidate"] },
+                "baseline": { "type": "object" },
+                "candidate": { "type": "object" },
+                "semanticDiff": { "$ref": "openplantrace.semantic-output-diff.v1.schema.json" }
+              },
+              "additionalProperties": false
+            }
+          },
+          "baselineRuntime": { "type": "object" },
+          "candidateRuntime": { "type": "object" },
+          "baselineWorkingSet": { "type": "object" },
+          "candidateWorkingSet": { "type": "object" },
+          "baselinePrivateBytes": { "type": "object" },
+          "candidatePrivateBytes": { "type": "object" },
+          "runtimeRatioMedian": { "type": "number" },
+          "runtimeRatioUpper95": { "type": "number" },
+          "workingSetRatioMedian": { "type": "number" },
+          "workingSetRatioUpper95": { "type": "number" },
+          "semanticComparisonCount": { "type": "integer", "minimum": 2 },
+          "semanticChangeCount": { "type": "integer", "minimum": 0 },
+          "semanticFailurePairIndices": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 1 },
+            "uniqueItems": true
+          },
+          "futureTelemetry": { "type": "object" },
+          "semanticDiff": { "$ref": "openplantrace.semantic-output-diff.v1.schema.json" },
+          "gates": { "type": "array", "items": { "type": "object" } }
+        },
+        "additionalProperties": false
+      }
+    },
+    "gates": { "type": "array", "items": { "type": "object" } },
+    "passed": { "type": "boolean" }
+  },
+  "additionalProperties": false
+}
