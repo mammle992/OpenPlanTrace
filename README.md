@@ -2,13 +2,15 @@
 
 **Version 0.12.32-alpha.20. Human review is required before using wall placement.**
 
+Rust is the primary implementation on `main`. The previous C# version is preserved on the [legacy C# branch](https://github.com/mammle992/OpenPlanTrace/tree/codex/legacy-csharp-before-rust). The Rust release remains experimental.
+
 OpenPlanTrace reads vector, raster and mixed PDFs and ASCII DXF drawings, then exports observed geometry, wall-readiness decisions, physical openings and supported connections. Production PDF scanning runs in Rust and does not require Poppler, PDFium or Python.
 
 This experimental release qualifies insulated wall finishes using their actual source contours and visibility through PDF paint. Earlier background paint can be distinguished from a later erased finish, while remote contour closures remain protected. Supporting contour edges do not become wall material.
 
 ## Try the Windows build
 
-Download the Windows x64 ZIP from this prerelease and extract it. In PowerShell:
+Download the [Windows x64 ZIP](https://github.com/mammle992/OpenPlanTrace/releases/download/v0.12.32-alpha.20/OpenPlanTrace-Rust-0.12.32-alpha.20-Windows-x64.zip) from the [experimental release](https://github.com/mammle992/OpenPlanTrace/releases/tag/v0.12.32-alpha.20) and extract it. In PowerShell:
 
 ```powershell
 .\openplantrace-rs.exe --version
