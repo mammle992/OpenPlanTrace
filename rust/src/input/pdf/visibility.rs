@@ -2,15 +2,76 @@
 //! and bounded opaque objects. Drawing annotations and nonwhite face strokes
 //! stay independent of fill evidence. Complex occluders may withhold a receipt
 //! anywhere in their bounds. This is source evidence, not raster compositing.
-use super::{Graphics, Point, Rect, Subpath, material};
+use super::{Graphics, Object, Point, Rect, Subpath, material, numbers, strokes::Device};
 
 const GRID: usize = 32;
 const BUDGET: usize = 4_000_000;
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum NativeInk {
+    Gray([u64; 1]),
+    Rgb([u64; 3]),
+    Cmyk([u64; 4]),
+}
+
+impl NativeInk {
+    pub(super) fn from_operands(device: Device, operands: &[Object]) -> Option<Self> {
+        fn components<const N: usize>(operands: &[Object]) -> Option<[u64; N]> {
+            let values = numbers::<N>(operands)?;
+            values
+                .iter()
+                .all(|v| (0.0..=1.0).contains(v))
+                .then(|| values.map(f64::to_bits))
+        }
+        match device {
+            Device::Gray => components(operands).map(Self::Gray),
+            Device::Rgb => components(operands).map(Self::Rgb),
+            Device::Cmyk => components(operands).map(Self::Cmyk),
+        }
+    }
+}
+
+pub(super) type RectangularFills = VisibleFills<(String, Option<NativeInk>)>;
+
+impl RectangularFills {
+    pub(super) fn paint(
+        &mut self,
+        paths: &[Subpath],
+        graphics: &Graphics,
+        even_odd: bool,
+        ink: Option<NativeInk>,
+    ) {
+        self.paint_clipped_where(
+            paths,
+            graphics,
+            even_odd,
+            |(_, previous), corners, cover| {
+                // Equal native ink across a transverse junction preserves the
+                // earlier painted strip. Collinear redraws still retire it.
+                !(ink.is_some()
+                    && ink == *previous
+                    && cover.is_some_and(|cover| transverse(corners, cover)))
+            },
+        );
+    }
+}
+
+fn transverse(first: &[Point; 4], second: &[Point; 4]) -> bool {
+    fn long_axis(corners: &[Point; 4]) -> Option<Point> {
+        let (a, b) = (corners[1] - corners[0], corners[3] - corners[0]);
+        let (long, short) = if a.norm() >= b.norm() { (a, b) } else { (b, a) };
+        (long.norm() >= 3.0 * short.norm()).then(|| long.unit())
+    }
+    long_axis(first)
+        .zip(long_axis(second))
+        .is_some_and(|(a, b)| a.dot(b).abs() <= 0.15)
+}
 
 struct Fill<T> {
     id: Option<T>,
     bounds: Rect,
     corners: [Point; 4],
+    exact: Option<ExactFootprint>,
     visited: usize,
 }
 
@@ -50,6 +111,15 @@ impl<T> VisibleFills<T> {
     }
 
     pub(super) fn add(&mut self, id: T, corners: [Point; 4]) {
+        self.add_footprint(id, corners, None);
+    }
+
+    pub(super) fn add_footprint(
+        &mut self,
+        id: T,
+        corners: [Point; 4],
+        exact: Option<ExactFootprint>,
+    ) {
         if self.budget == 0 {
             return;
         }
@@ -71,20 +141,51 @@ impl<T> VisibleFills<T> {
             id: Some(id),
             bounds,
             corners,
+            exact,
             visited: 0,
         });
     }
 
-    pub(super) fn paint(&mut self, paths: &[Subpath], clip: Option<Rect>, even_odd: bool) {
-        self.paint_where(paths, clip, even_odd, |_| true);
+    pub(super) fn paint_clipped(
+        &mut self,
+        paths: &[Subpath],
+        graphics: &Graphics,
+        even_odd: bool,
+        obscures: impl Fn(&T) -> bool,
+    ) {
+        self.paint_clipped_where(paths, graphics, even_odd, |id, _, _| obscures(id));
     }
 
-    pub(super) fn paint_where(
+    fn paint_clipped_where(
+        &mut self,
+        paths: &[Subpath],
+        graphics: &Graphics,
+        even_odd: bool,
+        obscures: impl Fn(&T, &[Point; 4], Option<&[Point; 4]>) -> bool,
+    ) {
+        self.paint_where(
+            paths,
+            graphics.clip.or(graphics.uncertain_clip),
+            even_odd,
+            obscures,
+            graphics.concave_edge_count(),
+            |points| {
+                graphics
+                    .concave_clips
+                    .iter()
+                    .all(|c| c.overlaps_footprint(points))
+            },
+        );
+    }
+
+    fn paint_where(
         &mut self,
         paths: &[Subpath],
         clip: Option<Rect>,
         even_odd: bool,
-        obscures: impl Fn(&T) -> bool,
+        obscures: impl Fn(&T, &[Point; 4], Option<&[Point; 4]>) -> bool,
+        clip_work: usize,
+        may_clip: impl Fn(&[Point; 4]) -> bool,
     ) {
         if self.fills.is_empty() || self.budget == 0 {
             return;
@@ -99,15 +200,28 @@ impl<T> VisibleFills<T> {
             return;
         };
         let outline = material::paint_rectangle(paths);
+        let cover_triangle = if let [path] = paths {
+            triangle(path)
+        } else {
+            None
+        };
         let n: usize = paths.iter().map(|p| p.ps.len()).sum();
         // Unresolved curved or very complex shapes can obscure a band. Their
         // enclosing bounds are sufficient to withhold a receipt without deriving a wall.
         let simple = outline.is_none() && n <= 512 && paths.iter().all(|p| p.curves == 0);
-        self.obscure(bounds, if simple { n.max(1) } else { 1 }, |f| {
-            if !f.id.as_ref().is_some_and(&obscures) {
+        let cost = if simple { n.max(1) } else { 1 };
+        self.obscure(bounds, cost.saturating_add(clip_work), |f| {
+            if !f
+                .id
+                .as_ref()
+                .is_some_and(|id| obscures(id, &f.corners, outline.as_ref()))
+                || !may_clip(&f.corners)
+            {
                 return false;
             }
-            if let Some(rect) = &outline {
+            if let (Some(a), Some(b)) = (&f.exact, &cover_triangle) {
+                convex_overlap(a.points(), b)
+            } else if let Some(rect) = &outline {
                 material::overlaps(&f.corners, rect)
             } else if simple {
                 polygon_overlaps(&f.corners, paths, even_odd)
@@ -160,7 +274,7 @@ impl<T> VisibleFills<T> {
                     closed: true,
                     ..Subpath::default()
                 };
-                self.paint(&[cover], Some(clip), false);
+                self.paint_clipped(&[cover], g, false, |_| true);
             } else if let Some(r) = path.bounds() {
                 // A curve, joined path or round cap can cover more than the
                 // centerline. Include the pen transformed into page space.
@@ -227,6 +341,84 @@ impl<T> VisibleFills<T> {
     pub(super) fn exhausted(&self) -> bool {
         self.budget == 0
     }
+}
+
+fn triangle(path: &Subpath) -> Option<[Point; 3]> {
+    if path.curves != 0 {
+        return None;
+    }
+    let points = match path.ps.as_slice() {
+        [a, b, c] => [*a, *b, *c],
+        [a, b, c, close] if a == close => [*a, *b, *c],
+        _ => return None,
+    };
+    let [a, b, c] = points;
+    ((b - a).cross(c - a).abs() > 1e-12 && points.iter().all(|p| p.finite())).then_some(points)
+}
+
+pub(super) enum ExactFootprint {
+    Triangle([Point; 3]),
+    Stock([Point; 4]),
+}
+
+impl ExactFootprint {
+    fn points(&self) -> &[Point] {
+        match self {
+            Self::Triangle(points) => points,
+            Self::Stock(points) => points,
+        }
+    }
+}
+
+/// Store the actual outline only for stock-sized, already-certified exterior
+/// fills. Drafting hairlines retain the original visibility behavior.
+pub(super) fn exterior_footprint(path: &Subpath) -> Option<ExactFootprint> {
+    if let Some([a, b, c]) = triangle(path) {
+        return (a.distance(b).min(b.distance(c)).min(c.distance(a)) >= 2.)
+            .then_some(ExactFootprint::Triangle([a, b, c]));
+    }
+    let ring = match path.ps.as_slice() {
+        [a, b, c, d] => [*a, *b, *c, *d],
+        [a, b, c, d, end] if a == end => [*a, *b, *c, *d],
+        _ => return None,
+    };
+    let edge = |i| ring[(i + 1) % 4] - ring[i];
+    let side = (0..4).max_by(|&a, &b| edge(a).norm().total_cmp(&edge(b).norm()))?;
+    let near = edge(side);
+    let far = edge((side + 2) % 4);
+    let width = near.unit().cross(ring[(side + 3) % 4] - ring[side]).abs();
+    (width >= 2.
+        && near.norm().min(far.norm()) >= 6. * width
+        && near.unit().cross(far.unit()).abs() <= 1e-8)
+        .then_some(ExactFootprint::Stock(ring))
+}
+
+fn convex_overlap(a: &[Point], b: &[Point]) -> bool {
+    // A shared edge has zero interior overlap even if both bounding
+    // rectangles intersect. Test both sets of actual edge normals.
+    let origin = a[0];
+    [a, b]
+        .into_iter()
+        .flat_map(|ring| {
+            ring.iter()
+                .zip(ring.iter().cycle().skip(1))
+                .map(|(&p, &q)| q - p)
+        })
+        .all(|edge| {
+            let range = |points: &[Point]| {
+                points
+                    .iter()
+                    .map(|&p| edge.cross(p - origin))
+                    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), value| {
+                        (lo.min(value), hi.max(value))
+                    })
+            };
+            let (lo, hi) = range(a);
+            let (from, to) = range(b);
+            let precision =
+                hi.abs().max(to.abs()).max(lo.abs()).max(from.abs()) * 32. * f64::EPSILON;
+            hi.min(to) - lo.max(from) > precision
+        })
 }
 
 // Either a fill boundary runs inside the measured band, or the entire band

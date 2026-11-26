@@ -1,12 +1,13 @@
 mod cli;
-use openplantrace_rs::pipeline;
+use openplantrace_rs::{pipeline, stage_profile};
 use std::{env, path::PathBuf, process::ExitCode};
 const HELP: &str = "OpenPlanTrace Rust
   scan INPUT [--out NEW_DIRECTORY] [--json FILE] [--structure FILE] [--placement FILE]
        [--connections FILE] [--connections-svg FILE]
        [--geojson FILE --geo-transform a,b,c,d,e,f] [--local-features FILE] [--svg FILE] [--svg-dir DIRECTORY] [--page N]
+       [--scan-page N]
        [--units-to-mm N] [--layer-profile FILE] [--layer-category PATTERN=CATEGORY] [--object-label-profile FILE] [--compact-json] [--no-svg]
-       [--compact-scan FILE] [--compact-scan-gzip FILE.gz]
+       [--compact-scan FILE] [--compact-scan-gzip FILE.gz] [--stage-profile NEW_JSON_FILE]
   batch FILE_OR_DIRECTORY... --out-dir NEW_DIRECTORY [--recursive] [--parallel N] [--retries N]
   batch --manifest MANIFEST.json [--out-dir NEW_DIRECTORY]
   batch-compare BASELINE.json CANDIDATE.json [--json COMPARISON.json]
@@ -67,6 +68,8 @@ fn run(cmd: String, mut args: impl Iterator<Item = String>) -> Result<(), String
             let mut visual = cli::visual::Arguments::default();
             let mut object_profiles = Vec::new();
             let mut object_model = None;
+            let mut profile_path = None;
+            let mut scan_page = None;
             while let Some(opt) = args.next() {
                 if visual.take(&opt, &mut args)? {
                     continue;
@@ -84,6 +87,17 @@ fn run(cmd: String, mut args: impl Iterator<Item = String>) -> Result<(), String
                     .ok_or_else(|| format!("missing value for {opt}"))?;
                 match opt.as_str() {
                     "--out" | "--out-dir" if out.is_none() => out = Some(PathBuf::from(val)),
+                    "--scan-page" if scan_page.is_none() => {
+                        scan_page = Some(
+                            val.parse::<u32>()
+                                .ok()
+                                .filter(|n| *n > 0)
+                                .ok_or("--scan-page must be positive")?,
+                        );
+                    }
+                    "--stage-profile" if profile_path.is_none() => {
+                        profile_path = Some(PathBuf::from(val));
+                    }
                     "--units-to-mm" if scale.is_none() => {
                         scale = Some(val.parse::<f64>().map_err(|_| "invalid --units-to-mm")?)
                     }
@@ -102,50 +116,62 @@ fn run(cmd: String, mut args: impl Iterator<Item = String>) -> Result<(), String
             if out.as_deref().is_some_and(std::path::Path::exists) {
                 return Err("output already exists; use a fresh directory".into());
             }
-            let visual = visual.prepare()?;
-            if object_model.is_some() && out.is_none() {
-                return Err("--object-model-bundle requires --out for its review sidecar".into());
-            }
-            let object_review = object_model
-                .as_deref()
-                .map(|p| cli::object_review::ScannerReview::load(p, &input))
-                .transpose()?;
-            let mut scan = pipeline::scan_file_with_profiles(
-                &input,
-                &cli::batch::thresholds(thresholds)?,
-                scale,
-                &layers.resolve()?,
-                &cli::profiles::load_objects(&object_profiles)?,
-            )?;
-            visual.apply(&mut scan)?;
-            outputs.write_with_extra(&scan, out.as_deref(), geo, overlays, |stage| {
-                if let Some(review) = &object_review {
-                    review.write(
-                        &scan,
-                        stage.ok_or("object review requires an output directory")?,
-                    )?;
+            let scan_and_export = || {
+                let mut stage = stage_profile::scope("prepare_scan_options");
+                let visual = visual.prepare()?;
+                if object_model.is_some() && out.is_none() {
+                    return Err(
+                        "--object-model-bundle requires --out for its review sidecar".into(),
+                    );
                 }
-                visual.staged(out.as_deref(), stage, |where_to| {
-                    if let Some((stage, dest)) = where_to {
-                        openplantrace_rs::visual::dataset::write(
+                let object_review = object_model
+                    .as_deref()
+                    .map(|p| cli::object_review::ScannerReview::load(p, &input))
+                    .transpose()?;
+                let opts = cli::batch::thresholds(thresholds)?;
+                let layers = layers.resolve()?;
+                let profiles = cli::profiles::load_objects(&object_profiles)?;
+                stage.next("build_scan");
+                let mut scan = pipeline::scan_file_with_profiles_on_page(
+                    &input, &opts, scale, &layers, &profiles, scan_page,
+                )?;
+                stage.next("optional_visual_inference");
+                visual.apply(&mut scan)?;
+                stage.next("write_scan_outputs");
+                outputs.write_with_extra(&scan, out.as_deref(), geo, overlays, |stage| {
+                    if let Some(review) = &object_review {
+                        review.write(
                             &scan,
-                            &input,
-                            stage,
-                            dest,
-                            &visual.crop,
+                            stage.ok_or("object review requires an output directory")?,
                         )?;
                     }
-                    Ok(())
-                })
-            })?;
-            println!(
-                "Scanned {} page(s): {} selected walls, {} openings, {} reviewable rooms.",
-                scan.pages.len(),
-                scan.pages.iter().map(|p| p.walls.len()).sum::<usize>(),
-                scan.pages.iter().map(|p| p.openings.len()).sum::<usize>(),
-                scan.pages.iter().map(|p| p.rooms.len()).sum::<usize>()
-            );
-            Ok(())
+                    visual.staged(out.as_deref(), stage, |where_to| {
+                        if let Some((stage, dest)) = where_to {
+                            openplantrace_rs::visual::dataset::write(
+                                &scan,
+                                &input,
+                                stage,
+                                dest,
+                                &visual.crop,
+                            )?;
+                        }
+                        Ok(())
+                    })
+                })?;
+                stage.next("print_scan_summary");
+                println!(
+                    "Scanned {} page(s): {} selected walls, {} openings, {} reviewable rooms.",
+                    scan.pages.len(),
+                    scan.pages.iter().map(|p| p.walls.len()).sum::<usize>(),
+                    scan.pages.iter().map(|p| p.openings.len()).sum::<usize>(),
+                    scan.pages.iter().map(|p| p.rooms.len()).sum::<usize>()
+                );
+                Ok(())
+            };
+            match profile_path {
+                Some(path) => stage_profile::capture(&path, scan_and_export),
+                None => scan_and_export(),
+            }
         }
         _ => Err(format!("unknown command: {cmd}\n{HELP}")),
     }

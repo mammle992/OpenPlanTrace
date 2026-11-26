@@ -47,6 +47,13 @@ fn page(primitives: Vec<Primitive>) -> Page {
         number: 1,
         placement_paint_ids: None,
         placement_polygon_paint_ids: None,
+        placement_paint_remainders: vec![],
+        white_nested_walls: vec![],
+        terminal_stock: vec![],
+        local_stock: vec![],
+        stepped_stock: vec![],
+        capped_stock: vec![],
+        placement_contact_paint: vec![],
         material_tiles: vec![],
         width: 500.,
         height: 500.,
@@ -64,6 +71,37 @@ fn opposing() -> Page {
         line("second open", pt(54., 20.), pt(54., 44.)),
         line("shut", pt(30., 20.), pt(54., 20.)),
     ])
+}
+
+#[test]
+fn a_shared_jamb_keeps_an_adjacent_pane_and_blocks_a_coincident_window() {
+    let door_wall = wall("door wall", pt(1., 20.), pt(90., 20.), 4., &[]);
+    let pane_wall = wall("pane wall", pt(1., 21.), pt(90., 21.), 4., &[]);
+    let walls = HashMap::from([
+        (door_wall.id.as_str(), &door_wall),
+        (pane_wall.id.as_str(), &pane_wall),
+    ]);
+    let opening = |kind, host: &Wall, start, end| Opening {
+        id: String::new(),
+        page: 1,
+        kind,
+        operation: String::new(),
+        host_wall_id: host.id.clone(),
+        host_wall_ids: vec![host.id.clone()],
+        start,
+        end,
+        hinge: None,
+        swing_observations: vec![],
+        source_ids: vec!["shared jamb".into()],
+        evidence: OpeningEvidence::FiniteWindowAssembly,
+        requires_review: true,
+        physical_jambs: None,
+    };
+    let door = opening(OpeningKind::Door, &door_wall, pt(15., 20.), pt(35., 20.));
+    let pane = opening(OpeningKind::Window, &pane_wall, pt(35., 21.), pt(55., 21.));
+    let coincident = opening(OpeningKind::Window, &pane_wall, pt(15., 21.), pt(35., 21.));
+    assert!(!window_competes_with_door(&pane, &door, &walls));
+    assert!(window_competes_with_door(&coincident, &door, &walls));
 }
 #[test]
 fn one_physical_cut_retains_two_authored_hands_and_their_own_leaf_strokes() {
@@ -105,6 +143,91 @@ fn differing_jambs_or_missing_radial_leaf_cannot_merge_overlapping_door_claims()
         detect(&source, &[host], &Options::default())
             .unwrap()
             .is_empty()
+    );
+}
+
+fn meeting_leaves() -> (Page, Vec<Wall>) {
+    let mut primitives = vec![
+        arc("west arc", pt(30., 0.), 0., FRAC_PI_2),
+        arc("east arc", pt(78., 0.), PI, -FRAC_PI_2),
+        line("west open", pt(30., 0.), pt(30., 24.)),
+        line("east open", pt(78., 0.), pt(78., 24.)),
+        line("west shut", pt(30., 0.), pt(54., 0.)),
+        line("east shut", pt(78., 0.), pt(54., 0.)),
+        line("west cap", pt(27., -1.), pt(27., 5.)),
+        line("east cap", pt(81., -1.), pt(81., 5.)),
+        line("west wall face", pt(0., -1.), pt(27., -1.)),
+        line("east wall face", pt(81., -1.), pt(108., -1.)),
+    ];
+    for p in &mut primitives[6..] {
+        p.layer = Some("Walls".into());
+    }
+    let walls = vec![
+        wall(
+            "west wall",
+            pt(0., 2.),
+            pt(27., 2.),
+            6.,
+            &["west wall face"],
+        ),
+        wall(
+            "east wall",
+            pt(81., 2.),
+            pt(108., 2.),
+            6.,
+            &["east wall face"],
+        ),
+    ];
+    (page(primitives), walls)
+}
+
+#[test]
+fn opposed_leaf_tips_meet_between_two_independently_measured_jambs() {
+    let (mut source, walls) = meeting_leaves();
+    let options = Options {
+        max_opening_gap: 40.,
+        ..Options::default()
+    };
+    let openings = detect(&source, &walls, &options).unwrap();
+    let [door] = openings.as_slice() else {
+        panic!("expected one double-leaf doorway");
+    };
+    assert_eq!(door.evidence, OpeningEvidence::WallGapSwing);
+    assert_eq!(door.host_wall_ids, ["west wall", "east wall"]);
+    assert_eq!(door.start, pt(27., 2.));
+    assert_eq!(door.end, pt(81., 2.));
+    assert_eq!(door.swing_observations.len(), 2);
+    assert!(door.source_ids.iter().any(|s| s == "west cap"));
+    assert!(door.source_ids.iter().any(|s| s == "east cap"));
+    let source_map = source
+        .primitives
+        .iter()
+        .map(|p| (p.id.as_str(), p))
+        .collect();
+    assert!(validate_swing_sources(door, &source_map));
+    source.primitives.reverse();
+    assert_eq!(openings, detect(&source, &walls, &options).unwrap());
+    source.primitives.retain(|p| p.id != "east open");
+    assert!(detect(&source, &walls, &options).unwrap().is_empty());
+}
+
+#[test]
+fn an_independently_observed_window_vetoes_the_paired_gap_fallback() {
+    let (mut source, mut walls) = meeting_leaves();
+    let mut frame = line("window frame", pt(35., 2.), pt(73., 2.));
+    frame.layer = Some("Windows".into());
+    source.primitives.push(frame);
+    walls.push(wall(
+        "independent glass host",
+        pt(0., 2.),
+        pt(108., 2.),
+        6.,
+        &[],
+    ));
+    let openings = detect(&source, &walls, &Options::default()).unwrap();
+    assert!(
+        openings.iter().any(|o| o.kind == OpeningKind::Window)
+            && openings.iter().all(|o| o.kind != OpeningKind::Door)
     );
 }
 #[test]

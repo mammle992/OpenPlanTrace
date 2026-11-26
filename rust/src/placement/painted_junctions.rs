@@ -124,6 +124,13 @@ pub(crate) mod tests {
             exterior_connections: None,
             placement_paint_ids: Some(paints),
             placement_polygon_paint_ids: Some(vec![]),
+            placement_paint_remainders: vec![],
+            white_nested_walls: vec![],
+            terminal_stock: vec![],
+            local_stock: vec![],
+            stepped_stock: vec![],
+            capped_stock: vec![],
+            placement_contact_paint: vec![],
             material_tiles: vec![],
             width: 10000.,
             height: 10000.,
@@ -135,6 +142,7 @@ pub(crate) mod tests {
             placement_decisions: None,
             withheld_walls: Some(vec![]),
             openings: vec![],
+            window_panes: vec![],
             nodes: vec![],
             edges: vec![],
             rooms: vec![Room {
@@ -451,6 +459,13 @@ pub(crate) mod tests {
             number: 1,
             placement_paint_ids: page.placement_paint_ids.clone(),
             placement_polygon_paint_ids: page.placement_polygon_paint_ids.clone(),
+            placement_paint_remainders: vec![],
+            white_nested_walls: vec![],
+            terminal_stock: vec![],
+            local_stock: vec![],
+            stepped_stock: vec![],
+            capped_stock: vec![],
+            placement_contact_paint: vec![],
             material_tiles: vec![],
             width: page.width,
             height: page.height,
@@ -1435,6 +1450,7 @@ fn select_with_budget(
     for (i, body, ids) in accepted {
         if body.start != page.walls[i].start || body.end != page.walls[i].end {
             decisions[i].placement_extent = Some(PlacementExtent {
+                thickness: None,
                 start: body.start,
                 end: body.end,
                 source_ids: ids.clone(),

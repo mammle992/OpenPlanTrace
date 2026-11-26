@@ -36,6 +36,13 @@ fn scan() -> Scan {
                 material_tiles: vec![],
                 placement_paint_ids: None,
                 placement_polygon_paint_ids: None,
+                placement_paint_remainders: vec![],
+                white_nested_walls: vec![],
+                terminal_stock: vec![],
+                local_stock: vec![],
+                stepped_stock: vec![],
+                capped_stock: vec![],
+                placement_contact_paint: vec![],
             }],
         },
         &Options::default(),
@@ -48,7 +55,7 @@ fn scan() -> Scan {
 #[test]
 fn connection_report_round_trips_without_changing_physical_placement() {
     let current = scan();
-    assert_eq!(current.schema_version, "openplantrace.rust.scan.v16");
+    assert_eq!(current.schema_version, "openplantrace.rust.scan.v43");
     export::validate(&current).unwrap();
     let report = current.pages[0].exterior_connections.as_ref().unwrap();
     assert!(!report.nodes.is_empty());

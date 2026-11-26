@@ -12,7 +12,7 @@ Each file is one 240 by 200 unit page. An insulation assembly with two rows has 
 | `04-erased-remote-closure.pdf` | Full assembly stays under review because a required remote contour closure was erased. Later local faces cannot repair it. |
 | `05-compound-paint-erases-closure.pdf` | Full assembly stays under review. A second internal subpath boundary does not make an opaque painted union transparent. |
 
-In both alpha tests, the first two PDFs export one ready barrier of thickness 20 over native drawing bounds `[22,100,178,120]`; the last three export no ready barriers. The separate door symbol is detected in all five. Independently valid core material may remain eligible in later versions even when a full assembly is withheld.
+In the original alpha 20 evaluation, the first two PDFs export one ready barrier of thickness 20 over native drawing bounds `[22,100,178,120]`; the last three export no ready barriers. The separate door symbol is detected in all five. Independently valid core material may remain eligible in later versions even when a full assembly is withheld.
 
 Run a sample from the Windows runtime package root:
 
@@ -38,4 +38,4 @@ From the `samples/self-test` directory, an optional byte-for-byte regeneration c
 python .\regenerate.py --check
 ```
 
-The reference run used Windows scanner engine `0.12.32-alpha.20`, original executable SHA256 `2853c4d28bf591d2a2210f62ecdaee4eb200937f2394b12d9bbdcf2c06a4ec3f`, before public path remapping. The independently verified public executable has SHA256 `6dd19a8e61cfce657cb042793c6b41f9cbece582ca47b4d5a8d9f74f8cd89827`. All five exact PDFs produced matching ready-barrier counts `[1,1,0,0,0]` on both executables. Independent release verification also passed 130 paired/sample scans and 390 public validator checks. No broad accuracy or performance claim follows from these small controls.
+These fixtures were authored for alpha 20. Alpha 48 uses the same fixture bytes. For the current executable checksum and verification results, see the [alpha 48 release](https://github.com/mammle992/OpenPlanTrace/releases/tag/v0.12.60-alpha.48).

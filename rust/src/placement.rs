@@ -1,14 +1,24 @@
 //! Choose coordinate-ready walls from observations. Opening hosts and measured wall extents
 //! remain in the source scan regardless of their placement status.
+pub(crate) mod authored_scope;
 pub mod connections;
 mod effective;
 pub mod enclosures;
 mod exterior;
+mod exterior_cores;
+mod exterior_piers;
+pub(crate) mod finish_attachments;
+mod inner_mitre_stock;
+mod inner_painted_runs;
+mod one_mitre_stock;
 mod opening_flanks;
 mod outlined_insulation;
 mod painted_junctions;
 pub use effective::effective_wall;
 pub(crate) use effective::{corner_joints, effective_page, observation_page};
+pub(crate) mod capped_facade;
+mod cavity_cores;
+pub(crate) mod cavity_material;
 mod hatching;
 pub mod insulation;
 pub(crate) mod jamb;
@@ -16,7 +26,17 @@ mod laminates;
 mod material;
 mod overlap;
 pub(crate) mod raster;
+pub(crate) mod raster_continuations;
+pub(crate) mod raster_hinged_doors;
+pub(crate) mod raster_jamb_return;
+pub(crate) mod raster_jamb_stocks;
+pub(crate) mod raster_narrow_course;
+mod skew_cores;
+mod staggered_cores;
+pub(crate) mod stepped_facade;
 pub(crate) mod stroked;
+pub(crate) mod wall_layers;
+pub(crate) mod white_nested;
 use crate::model::{PageScan, Point, Wall};
 use material::{WallMaterial, materials};
 use serde::{Deserialize, Serialize};
@@ -65,6 +85,35 @@ pub enum WallReason {
     CurvedWallNeedsReview,
     IncompletePhysicalSpan,
     ConnectedRasterMaterialFaces,
+    SourceBoundedRasterPartition,
+    SourceBoundedRasterCompanion,
+    SourceBoundedRasterOffsetPair,
+    SourceBoundedExteriorCore,
+    SourceBoundedInteriorCore,
+    SourceBoundedWallLining,
+    SourceBoundedStaggeredPaintedCore,
+    SourceBoundedCavityWall,
+    SourceBoundedDoubleInsetCavityWall,
+    SourceBoundedCavityWallLeaf,
+    SourceBoundedSkewPaintedCore,
+    SourceBoundedExteriorPier,
+    SourceBoundedInteriorPaintedRun,
+    SourceBoundedExteriorMitreStock,
+    SourceBoundedInteriorMitreStock,
+    SourceBoundedWhiteNestedWall,
+    SourceBoundedRasterIsolatedCourse,
+    SourceBoundedRasterCourse,
+    SourceBoundedRasterFaceContinuation,
+    SourceBoundedOverheadGateStock,
+    SourceBoundedRasterJambStock,
+    SourceBoundedCoextensiveWallLeaf,
+    SourceBoundedRasterNarrowCourse,
+    SourceBoundedDashedSwingStock,
+    SourceBoundedExteriorLining,
+    SourceBoundedRasterSectionCourse,
+    SourceBoundedSteppedFacade,
+    SourceBoundedCappedFacade,
+    SourceBoundedRasterJambReturn,
     RasterFacesNeedReview,
     RasterContextBudgetExceeded,
 }
@@ -92,6 +141,8 @@ pub struct WallDecision {
 pub struct PlacementExtent {
     pub start: Point,
     pub end: Point,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thickness: Option<f64>,
     pub source_ids: Vec<String>,
 }
 
@@ -241,11 +292,466 @@ fn end_supports(
     ends
 }
 
-/// Current additions operate after frozen selection and preserve earlier Ready walls.
-pub(crate) fn select(page: &PageScan) -> Result<Vec<WallDecision>, String> {
+/// Replay the alpha 20 selection for archived v16 scans.
+pub(crate) fn select_preview20(page: &PageScan) -> Result<Vec<WallDecision>, String> {
     let mut decisions = select_preview19(page)?;
     outlined_insulation::select(page, &mut decisions)?;
     Ok(decisions)
+}
+
+/// Replay v17 selection independently of later raster placement rules.
+pub(crate) fn select_preview22(page: &PageScan) -> Result<Vec<WallDecision>, String> {
+    let mut decisions = select_preview20(page)?;
+    select_additional_material(page, &mut decisions);
+    Ok(decisions)
+}
+
+fn select_preview23(page: &PageScan) -> Result<Vec<WallDecision>, String> {
+    let mut decisions = select_preview22(page)?;
+    select_raster_companions(page, &mut decisions);
+    Ok(decisions)
+}
+
+fn select_preview24(page: &PageScan) -> Result<Vec<WallDecision>, String> {
+    let mut decisions = select_preview23(page)?;
+    select_raster_offset_pairs(page, &mut decisions);
+    Ok(decisions)
+}
+
+fn select_preview25(page: &PageScan, authored: bool) -> Result<Vec<WallDecision>, String> {
+    if !authored {
+        if page.walls.iter().any(exterior_cores::is_derived) {
+            return Err("derived exterior core requires authored vector material".into());
+        }
+        return select_preview24(page);
+    }
+    let first_core = original_wall_observations(page).len();
+    let mut original = page.clone();
+    original.walls.truncate(first_core);
+    let mut decisions = select_preview24(&original)?;
+    append_exterior_cores(&mut original, &mut decisions);
+    if original.walls.len() != page.walls.len()
+        || !original.walls[first_core..]
+            .iter()
+            .zip(&page.walls[first_core..])
+            .all(|(expected, actual)| exterior_cores::same_body(expected, actual))
+    {
+        return Err("exterior core provenance or finite geometry failed replay".into());
+    }
+    Ok(decisions)
+}
+
+fn select_preview26(page: &PageScan, authored: bool) -> Result<Vec<WallDecision>, String> {
+    if !authored {
+        if page.walls.iter().any(exterior_cores::is_step) {
+            return Err("exterior step requires authored vector material".into());
+        }
+        return select_preview25(page, false);
+    }
+    let first_step = page
+        .walls
+        .iter()
+        .position(exterior_cores::is_step)
+        .unwrap_or(page.walls.len());
+    let mut original = page.clone();
+    original.walls.truncate(first_step);
+    original
+        .openings
+        .retain(|o| o.evidence != crate::model::OpeningEvidence::ExteriorFrameGap);
+    let mut decisions = select_preview25(&original, true)?;
+    append_exterior_steps(&mut original, &mut decisions);
+    if original.walls.len() != page.walls.len()
+        || !original.walls[first_step..]
+            .iter()
+            .zip(&page.walls[first_step..])
+            .all(|(expected, actual)| exterior_cores::same_body(expected, actual))
+    {
+        return Err("exterior step geometry failed authored tile replay".into());
+    }
+    Ok(decisions)
+}
+
+fn late_vector_wall(wall: &Wall) -> bool {
+    wall.id.starts_with("interior-core:")
+        || wall.id.starts_with("interior-jamb:")
+        || wall.id.starts_with("interior-seam:")
+}
+
+fn select_preview27(page: &PageScan, authored: bool) -> Result<Vec<WallDecision>, String> {
+    if !authored {
+        if page.walls.iter().any(late_vector_wall)
+            || page
+                .openings
+                .iter()
+                .any(|o| o.evidence == crate::model::OpeningEvidence::AuthoredInteriorGap)
+        {
+            return Err("interior core requires authored vector material".into());
+        }
+        crate::openings::validate_exterior_window_frames(page, false)?;
+        return select_preview26(page, false);
+    }
+    let first_late = page
+        .walls
+        .iter()
+        .position(late_vector_wall)
+        .unwrap_or(page.walls.len());
+    let mut original = page.clone();
+    original.walls.truncate(first_late);
+    original
+        .openings
+        .retain(|o| o.evidence != crate::model::OpeningEvidence::AuthoredInteriorGap);
+    let mut decisions = select_preview26(&original, true)?;
+    original.placement_decisions = Some(decisions.clone());
+    crate::openings::validate_exterior_window_frames(&original, true)?;
+    apply_vector_assemblies(&mut original, &mut decisions);
+    original.placement_decisions = Some(decisions.clone());
+    crate::openings::validate_authored_interior_gaps(&original, page)?;
+    if original.walls.len() != page.walls.len()
+        || !original.walls[first_late..]
+            .iter()
+            .zip(&page.walls[first_late..])
+            .all(|(expected, actual)| exterior_cores::same_body(expected, actual))
+    {
+        return Err("interior wall geometry failed authored tile replay".into());
+    }
+    Ok(decisions)
+}
+
+pub(crate) fn select(page: &PageScan) -> Result<Vec<WallDecision>, String> {
+    let mut decisions = select_before_remainders(page)?;
+    select_remainders(page, &mut decisions);
+    Ok(decisions)
+}
+
+fn select_before_remainders(page: &PageScan) -> Result<Vec<WallDecision>, String> {
+    let mut decisions = select_before_interior_mitre(page)?;
+    select_interior_mitre(page, &mut decisions);
+    Ok(decisions)
+}
+
+pub(crate) fn select_remainders(page: &PageScan, decisions: &mut [WallDecision]) {
+    cavity_cores::select_remainders(page, decisions);
+}
+
+fn select_before_interior_mitre(page: &PageScan) -> Result<Vec<WallDecision>, String> {
+    let mut decisions = select_before_painted_runs(page)?;
+    select_painted_runs(page, &mut decisions);
+    Ok(decisions)
+}
+
+pub(crate) fn select_interior_mitre(page: &PageScan, decisions: &mut [WallDecision]) {
+    inner_mitre_stock::select(page, decisions);
+}
+
+fn select_before_painted_runs(page: &PageScan) -> Result<Vec<WallDecision>, String> {
+    let mut decisions = select_after_staggered_cores(page, authored_scope::supports(page))?;
+    select_bounded_wall_cores(page, &mut decisions);
+    Ok(decisions)
+}
+
+pub(crate) fn select_painted_runs(page: &PageScan, decisions: &mut [WallDecision]) {
+    cavity_cores::select_mitred(page, decisions);
+    inner_painted_runs::select(page, decisions);
+    one_mitre_stock::select(page, decisions);
+}
+
+pub(crate) fn select_bounded_wall_cores(page: &PageScan, decisions: &mut [WallDecision]) {
+    cavity_cores::select(page, decisions);
+    skew_cores::select(page, decisions);
+}
+
+pub(crate) fn apply_double_inset_wall_cores(page: &mut PageScan) -> Result<(), String> {
+    let mut decisions = page
+        .placement_decisions
+        .take()
+        .ok_or("missing wall placement decisions")?;
+    cavity_cores::select_double_inset(page, &mut decisions);
+    page.placement_decisions = Some(decisions);
+    Ok(())
+}
+
+pub(crate) fn apply_bounded_raster_courses(page: &mut PageScan) -> Result<(), String> {
+    if !page
+        .pdf_input
+        .as_ref()
+        .is_some_and(|input| input.route == crate::input::raster::PdfRoute::Raster)
+    {
+        return Ok(());
+    }
+    let mut decisions = page
+        .placement_decisions
+        .take()
+        .ok_or("missing wall placement decisions")?;
+    let result = raster::select_bounded_courses(page, &mut decisions);
+    page.placement_decisions = Some(decisions);
+    result
+}
+
+fn exterior_pier(wall: &Wall) -> bool {
+    wall.id.starts_with("exterior-pier:")
+}
+
+pub(crate) fn append_exterior_piers(
+    page: &mut PageScan,
+    signed_terminal_proof: bool,
+) -> Result<(), String> {
+    let mut decisions = page
+        .placement_decisions
+        .take()
+        .ok_or("missing wall placement decisions")?;
+    let result = exterior_piers::append(page, &mut decisions, signed_terminal_proof);
+    page.placement_decisions = Some(decisions);
+    result
+}
+
+pub(crate) fn apply_bounded_wall_context(page: &mut PageScan) -> Result<(), String> {
+    if !has_bounded_wall_context(page) {
+        return Ok(());
+    }
+    let mut decisions = page
+        .placement_decisions
+        .take()
+        .ok_or("missing wall placement decisions")?;
+    raster::select_isolated_courses(page, &mut decisions);
+    white_nested::select(page, &mut decisions, &page.white_nested_walls);
+    page.placement_decisions = Some(decisions);
+    Ok(())
+}
+
+pub(crate) fn has_bounded_wall_context(page: &PageScan) -> bool {
+    !page.white_nested_walls.is_empty()
+        || page
+            .pdf_input
+            .as_ref()
+            .is_some_and(|pdf| pdf.route == crate::input::raster::PdfRoute::Raster)
+}
+
+pub(crate) fn before_exterior_recovery(page: &PageScan) -> std::borrow::Cow<'_, PageScan> {
+    let first = page.walls.iter().position(exterior_pier);
+    let door = |o: &crate::model::Opening| {
+        matches!(
+            o.evidence,
+            crate::model::OpeningEvidence::AuthoredExteriorSwingCasing
+                | crate::model::OpeningEvidence::AuthoredExteriorOverheadFrame
+        )
+    };
+    if first.is_none() && !page.openings.iter().any(door) {
+        return std::borrow::Cow::Borrowed(page);
+    }
+    let mut base = page.clone();
+    let omit: HashSet<_> = page
+        .walls
+        .iter()
+        .skip(first.unwrap_or(page.walls.len()))
+        .map(|w| w.id.as_str())
+        .chain(
+            page.openings
+                .iter()
+                .filter(|o| door(o))
+                .map(|o| o.id.as_str()),
+        )
+        .collect();
+    if let Some(first) = first {
+        base.walls.truncate(first);
+        if let Some(decisions) = &mut base.placement_decisions {
+            decisions.truncate(first);
+        }
+    }
+    base.openings.retain(|o| !door(o));
+    base.semantics
+        .routing
+        .retain(|r| !omit.contains(r.entity_id.as_str()));
+    std::borrow::Cow::Owned(base)
+}
+
+pub(crate) struct ExteriorReplayPolicy {
+    pub signed_terminal_proof: bool,
+    pub overhead_frames: bool,
+    pub rough_glazing: bool,
+    pub double_inset_cores: bool,
+    pub bounded_raster_courses: bool,
+    pub layerless_overhead: bool,
+    pub terminal_overhead_stock: bool,
+    pub coextensive_wall_assemblies: bool,
+    pub dashed_swings: bool,
+    pub exterior_wall_linings: bool,
+    pub stepped_facade: bool,
+    pub capped_facade: bool,
+}
+
+pub(crate) fn validate_exterior_recovery(
+    base: &PageScan,
+    saved: &PageScan,
+    early_decisions: Option<&[WallDecision]>,
+    policy: ExteriorReplayPolicy,
+) -> Result<(), String> {
+    let mut measured = base.clone();
+    if let Some(decisions) = early_decisions {
+        measured.placement_decisions = Some(decisions.to_vec());
+    }
+    append_exterior_piers(&mut measured, policy.signed_terminal_proof)?;
+    let first = base.walls.len();
+    crate::openings::exterior_swing::append(&mut measured)?;
+    if early_decisions.is_some() {
+        apply_bounded_wall_context(&mut measured)?;
+    }
+    if policy.overhead_frames {
+        crate::openings::overhead_frame::append(&mut measured)?;
+    }
+    if policy.rough_glazing {
+        crate::windows::rough_glazing::append(&mut measured)?;
+    }
+    if policy.double_inset_cores {
+        apply_double_inset_wall_cores(&mut measured)?;
+    }
+    if policy.bounded_raster_courses {
+        apply_bounded_raster_courses(&mut measured)?;
+    }
+    if policy.layerless_overhead {
+        crate::openings::layerless_overhead::append(&mut measured)?;
+    }
+    if policy.terminal_overhead_stock {
+        crate::openings::layerless_overhead::append_terminal_stock(&mut measured)?;
+    }
+    if policy.dashed_swings {
+        crate::openings::dashed_swing::append(&mut measured)?;
+    }
+    if policy.coextensive_wall_assemblies {
+        cavity_material::coextensive::apply(&mut measured);
+    }
+    if policy.exterior_wall_linings {
+        cavity_material::exterior_lining::apply(&mut measured);
+    }
+    if policy.stepped_facade {
+        stepped_facade::append(&mut measured)?;
+    }
+    if policy.capped_facade {
+        capped_facade::append(&mut measured)?;
+    }
+    if measured.walls.len() != saved.walls.len() || measured.walls[first..] != saved.walls[first..]
+    {
+        return Err(format!(
+            "late wall material disagrees with source evidence on page {}",
+            saved.page_number
+        ));
+    }
+    if policy.rough_glazing && measured.window_panes != saved.window_panes {
+        return Err(format!(
+            "late opening pane archive disagrees with source evidence on page {}",
+            saved.page_number
+        ));
+    }
+    if measured.openings != saved.openings {
+        return Err(format!(
+            "authored exterior openings disagree with source evidence on page {}",
+            saved.page_number
+        ));
+    }
+    if policy.overhead_frames {
+        let ids: HashSet<_> = measured
+            .openings
+            .iter()
+            .filter(|o| {
+                matches!(
+                    o.evidence,
+                    crate::model::OpeningEvidence::AuthoredExteriorOverheadFrame
+                        | crate::model::OpeningEvidence::AuthoredExteriorRoughGlazing
+                        | crate::model::OpeningEvidence::LayerlessOverheadProjection
+                        | crate::model::OpeningEvidence::LayerlessDashedSwing
+                )
+            })
+            .map(|o| o.id.as_str())
+            .chain(
+                measured
+                    .walls
+                    .iter()
+                    .filter(|w| {
+                        crate::openings::layerless_overhead::is_terminal_stock(w)
+                            || crate::openings::dashed_swing::is_stock(w)
+                            || stepped_facade::is_stock(w)
+                            || capped_facade::is_stock(w)
+                    })
+                    .map(|w| w.id.as_str()),
+            )
+            .collect();
+        let routes = |p: &PageScan| {
+            p.semantics
+                .routing
+                .iter()
+                .filter(|r| ids.contains(r.entity_id.as_str()))
+                .map(|r| serde_json::json!(r))
+                .collect::<Vec<_>>()
+        };
+        if routes(&measured) != routes(saved) {
+            return Err(format!(
+                "late exterior opening routes disagree with source evidence on page {}",
+                saved.page_number
+            ));
+        }
+    }
+    if measured.placement_decisions != saved.placement_decisions {
+        let error = if policy.double_inset_cores {
+            "placement wall decisions disagree with source evidence"
+        } else {
+            "wall placement disagrees with source evidence"
+        };
+        return Err(format!("{error} on page {}", saved.page_number));
+    }
+    Ok(())
+}
+
+fn select_after_staggered_cores(
+    page: &PageScan,
+    authored: bool,
+) -> Result<Vec<WallDecision>, String> {
+    let mut decisions = select_preview27(page, authored)?;
+    select_staggered_painted_cores(page, &mut decisions);
+    Ok(decisions)
+}
+
+pub(crate) fn select_staggered_painted_cores(page: &PageScan, decisions: &mut [WallDecision]) {
+    staggered_cores::select(page, decisions);
+}
+
+pub(crate) fn apply_vector_assemblies(page: &mut PageScan, decisions: &mut Vec<WallDecision>) {
+    wall_layers::reconcile(page, decisions);
+    exterior_cores::append_interiors(page, decisions);
+    wall_layers::reconcile_attached(page, decisions);
+}
+
+pub(crate) fn original_wall_observations(page: &PageScan) -> &[Wall] {
+    let end = page
+        .walls
+        .iter()
+        .position(|wall| {
+            exterior_cores::is_derived(wall)
+                || exterior_cores::is_step(wall)
+                || late_vector_wall(wall)
+                || exterior_pier(wall)
+        })
+        .unwrap_or(page.walls.len());
+    &page.walls[..end]
+}
+
+pub(crate) fn append_exterior_cores(page: &mut PageScan, decisions: &mut Vec<WallDecision>) {
+    exterior_cores::append(page, decisions);
+}
+
+pub(crate) fn append_exterior_steps(page: &mut PageScan, decisions: &mut Vec<WallDecision>) {
+    exterior_cores::append_steps(page, decisions);
+}
+
+/// Apply the same additional evidence rules during scanning and saved-scan replay.
+pub(crate) fn select_additional_material(page: &PageScan, decisions: &mut [WallDecision]) {
+    raster::select_local_partitions(page, decisions);
+}
+
+pub(crate) fn select_raster_companions(page: &PageScan, decisions: &mut [WallDecision]) {
+    raster::select_companion(page, decisions);
+}
+
+pub(crate) fn select_raster_offset_pairs(page: &PageScan, decisions: &mut [WallDecision]) {
+    raster::select_offset_pair(page, decisions);
 }
 
 pub(crate) fn select_preview19(page: &PageScan) -> Result<Vec<WallDecision>, String> {
@@ -654,6 +1160,157 @@ fn select_with_policy(page: &PageScan, policy: Policy) -> Result<Vec<WallDecisio
 pub fn validate(page: &PageScan, required: bool) -> Result<(), String> {
     match (&page.placement_decisions, required) {
         (Some(actual), true) if *actual == select(page)? => Ok(()),
+        (None, false) => Ok(()),
+        _ => Err(format!(
+            "placement wall decisions disagree with source evidence on page {}",
+            page.page_number
+        )),
+    }
+}
+
+pub(crate) fn validate_preview34(page: &PageScan) -> Result<(), String> {
+    if page.placement_decisions.as_ref() == Some(&select_before_painted_runs(page)?) {
+        return Ok(());
+    }
+    Err(format!(
+        "placement wall decisions disagree with source evidence on page {}",
+        page.page_number
+    ))
+}
+
+pub(crate) fn validate_preview35(page: &PageScan) -> Result<(), String> {
+    if page.placement_decisions.as_ref() == Some(&select_before_interior_mitre(page)?) {
+        return Ok(());
+    }
+    Err(format!(
+        "placement wall decisions disagree with source evidence on page {}",
+        page.page_number
+    ))
+}
+
+pub(crate) fn validate_preview36(page: &PageScan) -> Result<(), String> {
+    if page.placement_decisions.as_ref() == Some(&select_before_remainders(page)?) {
+        return Ok(());
+    }
+    Err(format!(
+        "placement wall decisions disagree with source evidence on page {}",
+        page.page_number
+    ))
+}
+
+pub(crate) fn validate_preview32(page: &PageScan) -> Result<(), String> {
+    if page.placement_decisions.as_ref()
+        == Some(&select_after_staggered_cores(
+            page,
+            authored_scope::supports(page),
+        )?)
+    {
+        return Ok(());
+    }
+    Err(format!(
+        "placement wall decisions disagree with source evidence on page {}",
+        page.page_number
+    ))
+}
+
+pub(crate) fn validate_preview20(page: &PageScan) -> Result<(), String> {
+    if page.placement_decisions.as_ref() == Some(&select_preview20(page)?) {
+        Ok(())
+    } else {
+        Err(format!(
+            "placement wall decisions disagree with source evidence on page {}",
+            page.page_number
+        ))
+    }
+}
+
+pub(crate) fn validate_preview22(page: &PageScan) -> Result<(), String> {
+    if page.placement_decisions.as_ref() == Some(&select_preview22(page)?) {
+        Ok(())
+    } else {
+        Err(format!(
+            "placement wall decisions disagree with source evidence on page {}",
+            page.page_number
+        ))
+    }
+}
+
+pub(crate) fn validate_preview23(page: &PageScan) -> Result<(), String> {
+    if page.placement_decisions.as_ref() == Some(&select_preview23(page)?) {
+        Ok(())
+    } else {
+        Err(format!(
+            "placement wall decisions disagree with source evidence on page {}",
+            page.page_number
+        ))
+    }
+}
+
+pub(crate) fn validate_preview24(page: &PageScan) -> Result<(), String> {
+    if !page.walls.iter().any(exterior_cores::is_derived)
+        && page.placement_decisions.as_ref() == Some(&select_preview24(page)?)
+    {
+        Ok(())
+    } else {
+        Err(format!(
+            "placement wall decisions disagree with source evidence on page {}",
+            page.page_number
+        ))
+    }
+}
+
+pub(crate) fn validate_preview25(page: &PageScan) -> Result<(), String> {
+    if !page.walls.iter().any(exterior_cores::is_step)
+        && page
+            .openings
+            .iter()
+            .all(|o| o.evidence != crate::model::OpeningEvidence::ExteriorFrameGap)
+        && page.placement_decisions.as_ref()
+            == Some(&select_preview25(page, authored_scope::legacy(page))?)
+    {
+        Ok(())
+    } else {
+        Err(format!(
+            "placement wall decisions disagree with source evidence on page {}",
+            page.page_number
+        ))
+    }
+}
+
+pub(crate) fn validate_preview26(page: &PageScan) -> Result<(), String> {
+    if !page.walls.iter().any(late_vector_wall)
+        && page.placement_decisions.as_ref()
+            == Some(&select_preview26(page, authored_scope::legacy(page))?)
+    {
+        Ok(())
+    } else {
+        Err(format!(
+            "placement wall decisions disagree with source evidence on page {}",
+            page.page_number
+        ))
+    }
+}
+
+pub(crate) fn validate_preview27(page: &PageScan) -> Result<(), String> {
+    if page.placement_decisions.as_ref()
+        == Some(&select_preview27(page, authored_scope::legacy(page))?)
+    {
+        Ok(())
+    } else {
+        Err(format!(
+            "placement wall decisions disagree with source evidence on page {}",
+            page.page_number
+        ))
+    }
+}
+
+pub(crate) fn validate_preview28(page: &PageScan, required: bool) -> Result<(), String> {
+    match (&page.placement_decisions, required) {
+        (Some(actual), true)
+            if *actual == select_after_staggered_cores(page, authored_scope::legacy(page))? =>
+        {
+            Ok(())
+        }
         (None, false) => Ok(()),
         _ => Err(format!(
             "placement wall decisions disagree with source evidence on page {}",

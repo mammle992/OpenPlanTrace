@@ -40,6 +40,13 @@ fn basin() -> Scan {
             material_tiles: vec![],
             placement_paint_ids: None,
             placement_polygon_paint_ids: None,
+            placement_paint_remainders: vec![],
+            white_nested_walls: vec![],
+            terminal_stock: vec![],
+            local_stock: vec![],
+            stepped_stock: vec![],
+            capped_stock: vec![],
+            placement_contact_paint: vec![],
             pdf_input: None,
             primitives: vec![
                 primitive(

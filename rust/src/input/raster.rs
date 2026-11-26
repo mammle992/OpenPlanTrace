@@ -3,6 +3,14 @@ mod extract;
 pub mod render;
 
 use crate::model::{Document, Point, Primitive, Shape};
+pub(crate) use extract::dense_material_tone;
+pub(crate) use extract::verified_face_continuations;
+pub(crate) use extract::verified_hinged_doors;
+pub(crate) use extract::verified_jamb_stocks;
+pub(crate) use extract::{VerifiedRasterCourse, verified_course};
+pub(crate) use extract::{VerifiedRasterJambReturn, verified_jamb_returns};
+pub(crate) use extract::{VerifiedRasterNarrowCourse, verified_narrow_courses};
+pub(crate) use extract::{VerifiedRasterSectionCourse, verified_section_courses};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -48,6 +56,94 @@ pub struct RasterBand {
     pub width_pixels: f64,
 }
 
+/// Source pixels for one finite local raster witness, in row-major order.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RasterCoursePatch {
+    /// Half-open native pixel extent [x0, y0, x1, y1].
+    pub bounds: [u32; 4],
+    pub luma: Vec<u8>,
+    pub neutral_ink: Vec<bool>,
+}
+
+/// Local measured ink at the bounded ends of a stepped raster wall course.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RasterCourseReceipt {
+    /// Zero-based indices in `PdfInput::bands`, in course order.
+    pub band_indices: [usize; 3],
+    pub return_band_index: usize,
+    pub cap: RasterCoursePatch,
+    pub middle: RasterCoursePatch,
+    pub shoulder: RasterCoursePatch,
+}
+
+/// Bounded source pixels and earlier band references for a review observation.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RasterFaceContinuationReceipt {
+    pub retained_face_source_id: String,
+    /// Earlier anchors immediately below/above the new interval along the axis.
+    pub anchor_band_indices: [Option<usize>; 2],
+    pub patch: RasterCoursePatch,
+}
+
+/// The measured orientation and rough cuts for a raster swing symbol.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RasterHingedDoorReceipt {
+    pub vertical: bool,
+    pub rough_jambs: [u32; 2],
+    pub cross: [u32; 2],
+    /// Wall-axis row of the open leaf and its free tip on the cross axis.
+    pub leaf: [u32; 2],
+    pub hinge_at_high: bool,
+    pub opens_high: bool,
+    pub patch: RasterCoursePatch,
+}
+
+/// Independently sampled finite material next to a hinged aperture.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RasterJambStockReceipt {
+    pub door_index: usize,
+    pub at_high_end: bool,
+    pub return_band_index: usize,
+    pub along: [u32; 2],
+    pub cross: [u32; 2],
+    pub patch: RasterCoursePatch,
+}
+
+/// Local native pixels showing a narrow body at a verified jamb return.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RasterNarrowCourseReceipt {
+    pub jamb_stock_index: usize,
+    pub inner_band_index: usize,
+    pub patch: RasterCoursePatch,
+}
+
+/// Two bounded witnesses for a measured course beyond a transverse section mark.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RasterSectionCourseReceipt {
+    pub previous_course_index: usize,
+    pub outer_band_index: usize,
+    pub inner_band_index: usize,
+    pub course_patch: RasterCoursePatch,
+    pub section_patch: RasterCoursePatch,
+}
+
+/// Pixels for a transverse wall where two verified hosts seat on opposite sides.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RasterJambReturnReceipt {
+    pub jamb_stock_index: usize,
+    pub incoming_band_index: usize,
+    pub course_patches: [RasterCoursePatch; 2],
+    pub shoulder_patch: RasterCoursePatch,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PdfInput {
@@ -63,10 +159,31 @@ pub struct PdfInput {
     pub threshold: u8,
     pub raster_source_ids: Vec<String>,
     pub bands: Vec<RasterBand>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub raster_course_receipts: Vec<RasterCourseReceipt>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub raster_face_continuations: Vec<RasterFaceContinuationReceipt>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub raster_hinged_doors: Vec<RasterHingedDoorReceipt>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub raster_jamb_stocks: Vec<RasterJambStockReceipt>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub raster_narrow_courses: Vec<RasterNarrowCourseReceipt>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub raster_section_courses: Vec<RasterSectionCourseReceipt>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub raster_jamb_returns: Vec<RasterJambReturnReceipt>,
 }
 
 const COVERAGE_SIDE: usize = 256;
 const MAX_RENDER_DIMENSION: u32 = 3200;
+const MAX_DOCUMENT_COURSE_SAMPLES: usize = 262_144;
+const MAX_DOCUMENT_CONTINUATION_SAMPLES: usize = 131_072;
+const MAX_DOCUMENT_HINGED_DOOR_SAMPLES: usize = 262_144;
+const MAX_DOCUMENT_JAMB_STOCK_SAMPLES: usize = 131_072;
+const MAX_DOCUMENT_NARROW_COURSE_SAMPLES: usize = 131_072;
+const MAX_DOCUMENT_SECTION_COURSE_SAMPLES: usize = 131_072;
+const MAX_DOCUMENT_JAMB_RETURN_SAMPLES: usize = 131_072;
 
 fn image_rectangles(primitives: &[Primitive]) -> Vec<(&str, Point, Point)> {
     primitives
@@ -120,16 +237,64 @@ fn vector_count(primitives: &[Primitive]) -> usize {
         .count()
 }
 
-pub(super) fn interpret(bytes: &[u8], doc: &mut Document) -> Result<(), String> {
+pub(super) fn interpret_with_residual_hatch(
+    bytes: &[u8],
+    doc: &mut Document,
+    selected: Option<u32>,
+) -> Result<(), String> {
+    interpret_with(doc, || render::Renderer::with_page(bytes, selected))
+}
+
+pub(super) fn interpret_owned_with_residual_hatch(
+    bytes: Vec<u8>,
+    pdf: lopdf::Document,
+    doc: &mut Document,
+    selected: Option<u32>,
+) -> Result<(), String> {
+    interpret_with(doc, move || {
+        let budgets = render::Renderer::preflight(&pdf, selected)?;
+        drop(pdf);
+        render::Renderer::from_preflight(bytes, budgets)
+    })
+}
+
+fn interpret_with(
+    doc: &mut Document,
+    renderer: impl FnOnce() -> Result<render::Renderer, String>,
+) -> Result<(), String> {
+    let _profile = crate::stage_profile::scope("pdf_raster_import");
+    let setup = crate::stage_profile::scope("raster_renderer_setup");
     let mut source_count: usize = doc.pages.iter().map(|p| p.primitives.len()).sum();
+    let band_limit = super::MAX_ITEMS / 4;
     let mut band_count = 0usize;
+    let mut residual_band_count = 0usize;
+    let mut residual_appendices = Vec::new();
+    let mut allow_residual_hatch = true;
+    let mut course_sample_count = 0usize;
+    let mut course_pages = Vec::new();
+    let mut continuation_sample_count = 0usize;
+    let mut continuation_pages = Vec::new();
+    let mut hinged_door_samples = 0usize;
+    let mut hinged_door_pages = Vec::new();
+    let mut jamb_stock_samples = 0usize;
+    let mut jamb_stock_pages = Vec::new();
+    let mut narrow_course_samples = 0usize;
+    let mut narrow_course_pages = Vec::new();
+    let mut section_course_samples = 0usize;
+    let mut section_course_pages = Vec::new();
+    let mut jamb_return_samples = 0usize;
+    let mut jamb_return_pages = Vec::new();
     let renderer = doc
         .pages
         .iter()
         .any(|p| !image_rectangles(&p.primitives).is_empty())
-        .then(|| render::Renderer::new(bytes))
+        .then(renderer)
         .transpose()?;
-    for (index, page) in doc.pages.iter_mut().enumerate() {
+    drop(setup);
+    for page_index in 0..doc.pages.len() {
+        let page = &mut doc.pages[page_index];
+        let _profile = crate::stage_profile::page("pdf_route_page", page.number);
+        let mut stage = crate::stage_profile::scope("pdf_route_and_image_coverage");
         let mut image_ids: Vec<_> = image_rectangles(&page.primitives)
             .iter()
             .map(|(id, _, _)| id.to_string())
@@ -165,6 +330,13 @@ pub(super) fn interpret(bytes: &[u8], doc: &mut Document) -> Result<(), String> 
             threshold: 0,
             raster_source_ids: vec![],
             bands: vec![],
+            raster_course_receipts: vec![],
+            raster_face_continuations: vec![],
+            raster_hinged_doors: vec![],
+            raster_jamb_stocks: vec![],
+            raster_narrow_courses: vec![],
+            raster_section_courses: vec![],
+            raster_jamb_returns: vec![],
         };
         if route != PdfRoute::Vector {
             // Spend fewer pixels on small raster assets without discarding their provenance.
@@ -174,13 +346,15 @@ pub(super) fn interpret(bytes: &[u8], doc: &mut Document) -> Result<(), String> 
             } else {
                 MAX_RENDER_DIMENSION
             };
+            stage.next("raster_render_page");
             let rendered = renderer
                 .as_ref()
                 .ok_or("missing PDF renderer")?
-                .render(index, budget)
+                .render((page.number - 1) as usize, budget)
                 .map_err(|e| {
                     format!("PDF page {} raster interpretation failed: {e}", page.number)
                 })?;
+            stage.next("raster_image_mask");
             let eligible = mask(
                 rendered.width,
                 rendered.height,
@@ -188,14 +362,26 @@ pub(super) fn interpret(bytes: &[u8], doc: &mut Document) -> Result<(), String> 
                 page.height,
                 &page.primitives,
             );
-            let extracted = extract::extract(
+            stage.next("raster_extract");
+            let pure_raster = route == PdfRoute::Raster;
+            let extracted = extract::extract_with_residual_hatch(
                 rendered.width,
                 rendered.height,
                 &rendered.rgba,
                 page.width,
                 page.height,
                 Some(&eligible),
+                pure_raster,
+                pure_raster && allow_residual_hatch,
+                pure_raster && course_sample_count <= MAX_DOCUMENT_COURSE_SAMPLES,
+                pure_raster && continuation_sample_count <= MAX_DOCUMENT_CONTINUATION_SAMPLES,
+                pure_raster && hinged_door_samples <= MAX_DOCUMENT_HINGED_DOOR_SAMPLES,
+                pure_raster && jamb_stock_samples <= MAX_DOCUMENT_JAMB_STOCK_SAMPLES,
+                pure_raster && narrow_course_samples <= MAX_DOCUMENT_NARROW_COURSE_SAMPLES,
+                pure_raster && section_course_samples <= MAX_DOCUMENT_SECTION_COURSE_SAMPLES,
+                pure_raster && jamb_return_samples <= MAX_DOCUMENT_JAMB_RETURN_SAMPLES,
             )?;
+            stage.next("raster_source_inventory");
             // A raster face can coincide with a vector grid or a real vector
             // wall. Keep both source witnesses; deduplicate physical placements
             // only after vector authority has been evaluated independently.
@@ -213,16 +399,187 @@ pub(super) fn interpret(bytes: &[u8], doc: &mut Document) -> Result<(), String> 
                     "PDF document exceeds total source geometry budget after raster interpretation",
                 )?;
             band_count = band_count
-                .checked_add(info.bands.len())
-                .filter(|n| *n <= super::MAX_ITEMS / 4)
+                .checked_add(extracted.bands_before_residuals)
+                .filter(|n| *n <= band_limit)
                 .ok_or("PDF document exceeds measured raster band budget")?;
+            let residual_count = info.bands.len() - extracted.bands_before_residuals;
+            if residual_count > 0 {
+                residual_band_count = residual_band_count.saturating_add(residual_count);
+                residual_appendices.push((page_index, extracted.bands_before_residuals));
+            }
+            if !extracted.raster_course_receipts.is_empty() {
+                let samples: usize = extracted
+                    .raster_course_receipts
+                    .iter()
+                    .map(|r| r.cap.luma.len() + r.middle.luma.len() + r.shoulder.luma.len())
+                    .sum();
+                course_sample_count = course_sample_count.saturating_add(samples);
+                info.raster_course_receipts = extracted.raster_course_receipts;
+                course_pages.push(page_index);
+            }
+            if !extracted.raster_face_continuations.is_empty() {
+                let samples: usize = extracted
+                    .raster_face_continuations
+                    .iter()
+                    .map(|r| r.patch.luma.len())
+                    .sum();
+                continuation_sample_count = continuation_sample_count.saturating_add(samples);
+                info.raster_face_continuations = extracted.raster_face_continuations;
+                continuation_pages.push(page_index);
+            }
+            if !extracted.raster_hinged_doors.is_empty() {
+                let samples: usize = extracted
+                    .raster_hinged_doors
+                    .iter()
+                    .map(|r| r.patch.luma.len())
+                    .sum();
+                hinged_door_samples = hinged_door_samples.saturating_add(samples);
+                info.raster_hinged_doors = extracted.raster_hinged_doors;
+                hinged_door_pages.push(page_index);
+            }
+            if !extracted.raster_jamb_stocks.is_empty() {
+                let samples: usize = extracted
+                    .raster_jamb_stocks
+                    .iter()
+                    .map(|r| r.patch.luma.len())
+                    .sum();
+                jamb_stock_samples = jamb_stock_samples.saturating_add(samples);
+                info.raster_jamb_stocks = extracted.raster_jamb_stocks;
+                jamb_stock_pages.push(page_index);
+            }
+            if !extracted.raster_narrow_courses.is_empty() {
+                let samples: usize = extracted
+                    .raster_narrow_courses
+                    .iter()
+                    .map(|r| r.patch.luma.len())
+                    .sum();
+                narrow_course_samples = narrow_course_samples.saturating_add(samples);
+                info.raster_narrow_courses = extracted.raster_narrow_courses;
+                narrow_course_pages.push(page_index);
+            }
+            if !extracted.raster_section_courses.is_empty() {
+                let samples: usize = extracted
+                    .raster_section_courses
+                    .iter()
+                    .map(|r| r.course_patch.luma.len() + r.section_patch.luma.len())
+                    .sum();
+                section_course_samples = section_course_samples.saturating_add(samples);
+                info.raster_section_courses = extracted.raster_section_courses;
+                section_course_pages.push(page_index);
+            }
+            if !extracted.raster_jamb_returns.is_empty() {
+                let samples: usize = extracted
+                    .raster_jamb_returns
+                    .iter()
+                    .map(|r| {
+                        r.course_patches.iter().map(|p| p.luma.len()).sum::<usize>()
+                            + r.shoulder_patch.luma.len()
+                    })
+                    .sum();
+                jamb_return_samples = jamb_return_samples.saturating_add(samples);
+                info.raster_jamb_returns = extracted.raster_jamb_returns;
+                jamb_return_pages.push(page_index);
+            }
             page.primitives.extend(raster);
             doc.warnings.push(format!("PDF page {} automatically selected {:?}: {:.1}% combined image coverage, {} vector primitives, {} pixel-derived faces.", page.number, route, coverage*100., vectors, info.raster_source_ids.len()));
         }
         page.pdf_input = Some(info);
+        // Release the optional appendices as soon as the whole-document
+        // budget would overflow. Later sheets still get the old allowance.
+        if allow_residual_hatch && band_count.saturating_add(residual_band_count) > band_limit {
+            allow_residual_hatch = false;
+            for (page_index, prefix) in residual_appendices.drain(..) {
+                if let Some(info) = &mut doc.pages[page_index].pdf_input {
+                    info.bands.truncate(prefix);
+                    info.raster_face_continuations.clear();
+                    info.raster_jamb_stocks.clear();
+                    info.raster_jamb_returns.clear();
+                    info.raster_narrow_courses.clear();
+                    info.raster_section_courses.clear();
+                }
+            }
+        }
+        if course_sample_count > MAX_DOCUMENT_COURSE_SAMPLES {
+            for page_index in course_pages.drain(..) {
+                if let Some(info) = &mut doc.pages[page_index].pdf_input {
+                    info.raster_course_receipts.clear();
+                }
+            }
+        }
+        if continuation_sample_count > MAX_DOCUMENT_CONTINUATION_SAMPLES {
+            for page_index in continuation_pages.drain(..) {
+                if let Some(info) = &mut doc.pages[page_index].pdf_input {
+                    info.raster_face_continuations.clear();
+                }
+            }
+        }
+        if hinged_door_samples > MAX_DOCUMENT_HINGED_DOOR_SAMPLES {
+            for page_index in hinged_door_pages.drain(..) {
+                if let Some(info) = &mut doc.pages[page_index].pdf_input {
+                    info.raster_hinged_doors.clear();
+                    info.raster_jamb_stocks.clear();
+                    info.raster_jamb_returns.clear();
+                    info.raster_narrow_courses.clear();
+                    info.raster_section_courses.clear();
+                }
+            }
+        }
+        if jamb_stock_samples > MAX_DOCUMENT_JAMB_STOCK_SAMPLES {
+            for page_index in jamb_stock_pages.drain(..) {
+                if let Some(info) = &mut doc.pages[page_index].pdf_input {
+                    info.raster_jamb_stocks.clear();
+                    info.raster_jamb_returns.clear();
+                    info.raster_narrow_courses.clear();
+                    info.raster_section_courses.clear();
+                }
+            }
+        }
+        if narrow_course_samples > MAX_DOCUMENT_NARROW_COURSE_SAMPLES {
+            for page_index in narrow_course_pages.drain(..) {
+                if let Some(info) = &mut doc.pages[page_index].pdf_input {
+                    info.raster_narrow_courses.clear();
+                    info.raster_section_courses.clear();
+                }
+            }
+        }
+        if section_course_samples > MAX_DOCUMENT_SECTION_COURSE_SAMPLES {
+            for page_index in section_course_pages.drain(..) {
+                if let Some(info) = &mut doc.pages[page_index].pdf_input {
+                    info.raster_section_courses.clear();
+                }
+            }
+        }
+        if jamb_return_samples > MAX_DOCUMENT_JAMB_RETURN_SAMPLES {
+            for page_index in jamb_return_pages.drain(..) {
+                if let Some(info) = &mut doc.pages[page_index].pdf_input {
+                    info.raster_jamb_returns.clear();
+                }
+            }
+        }
     }
     doc.warnings
         .retain(|w| !w.starts_with("PDF image footprint retained; raster contents not vectorized"));
+    Ok(())
+}
+
+fn validate_course_receipts(info: &PdfInput, width: f64, height: f64) -> Result<(), String> {
+    if info.raster_course_receipts.len() > extract::MAX_COURSE_RECEIPTS {
+        return Err("invalid raster course evidence inventory".into());
+    }
+    let mut seen = HashSet::new();
+    for receipt in &info.raster_course_receipts {
+        let [a, b, c] = receipt.band_indices;
+        let mut indices = [a, b, c, receipt.return_band_index];
+        indices.sort_unstable();
+        if indices.windows(2).any(|pair| pair[0] == pair[1])
+            || !seen.insert((receipt.band_indices, receipt.return_band_index))
+            || verified_course(info, width, height, receipt).is_none()
+        {
+            return Err(
+                "raster course evidence disagrees with its measured bands or pixels".into(),
+            );
+        }
+    }
     Ok(())
 }
 
@@ -414,5 +771,18 @@ pub fn validate(
             }
         }
     }
-    Ok(())
+    validate_course_receipts(info, width, height)?;
+    verified_face_continuations(info, sources, width, height)?;
+    if !info.raster_jamb_returns.is_empty() {
+        verified_jamb_returns(info, sources, width, height)?;
+    }
+    if !info.raster_section_courses.is_empty() {
+        verified_section_courses(info, sources, width, height).map(|_| ())
+    } else if !info.raster_narrow_courses.is_empty() {
+        verified_narrow_courses(info, sources, width, height).map(|_| ())
+    } else if info.raster_jamb_stocks.is_empty() {
+        verified_hinged_doors(info, sources, width, height).map(|_| ())
+    } else {
+        verified_jamb_stocks(info, sources, width, height).map(|_| ())
+    }
 }

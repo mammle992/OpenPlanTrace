@@ -2,7 +2,13 @@
 //! An edge of a typed filled body cannot double as a window frame.
 use crate::model::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
+mod authored_frame;
+mod composite;
 mod glazed_panel;
+mod physical;
+pub(crate) mod rough_glazing;
+mod units;
+pub(crate) use physical::{retained_window_observations, separate_panes, validate_window_units};
 #[derive(Clone, Copy)]
 struct Line<'a> {
     a: Point,
@@ -19,6 +25,21 @@ impl Line<'_> {
 }
 const DIST: f64 = 1.5;
 const CELL: f64 = 8.;
+
+fn drafted_fixture(p: &Primitive) -> bool {
+    p.layer_category_override.is_none()
+        && p.layer.as_deref().is_some_and(|layer| {
+            layer
+                .to_lowercase()
+                .split(|c: char| !c.is_alphanumeric())
+                .any(|word| {
+                    matches!(
+                        word,
+                        "inventar" | "innredning" | "kjøkkeninnredning" | "sanitærinstallasjoner"
+                    )
+                })
+        })
+}
 fn cell(p: Point) -> (i64, i64) {
     ((p.x / CELL).floor() as i64, (p.y / CELL).floor() as i64)
 }
@@ -36,6 +57,17 @@ pub(crate) fn assemblies(
     let owned: HashSet<_> = doors
         .iter()
         .flat_map(|d| d.source_ids.iter().map(String::as_str))
+        .collect();
+    let leaves: HashSet<_> = doors
+        .iter()
+        .flat_map(|d| &d.swing_observations)
+        .flat_map(|s| {
+            s.open_leaf_source_ids
+                .iter()
+                .chain(&s.closed_leaf_source_ids)
+                .chain(std::iter::once(&s.arc_source_id))
+        })
+        .map(String::as_str)
         .collect();
     let filled: HashSet<_> = walls
         .iter()
@@ -62,7 +94,8 @@ pub(crate) fn assemblies(
         if !matches!(
             p.layer_kind(),
             LayerKind::Unknown | LayerKind::Wall | LayerKind::Window
-        ) || owned.contains(p.id.as_str())
+        ) || leaves.contains(p.id.as_str())
+            || drafted_fixture(p)
         {
             continue;
         }
@@ -77,6 +110,11 @@ pub(crate) fn assemblies(
             }
             if l <= max_short {
                 ticks.push(line)
+            }
+            // A built frame can give the neighboring pane the same jamb.
+            // Door-owned stroke segments cannot supply that pane's rails.
+            if owned.contains(p.id.as_str()) {
+                continue;
             }
             if l < o.min_opening_gap * 0.72 || l > o.max_opening_gap * 1.35 {
                 continue;

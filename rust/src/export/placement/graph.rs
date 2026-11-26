@@ -38,6 +38,10 @@ pub(super) fn selected(
                 && matches!(
                     d.reason,
                     WallReason::ConnectedRasterMaterialFaces
+                        | WallReason::SourceBoundedRasterPartition
+                        | WallReason::SourceBoundedRasterCompanion
+                        | WallReason::SourceBoundedRasterOffsetPair
+                        | WallReason::SourceBoundedExteriorCore
                         | WallReason::PaintedWallLayersBetweenFaces
                         | WallReason::PaintedCoreBetweenWallFaces
                         | WallReason::InsulatedDoorJamb

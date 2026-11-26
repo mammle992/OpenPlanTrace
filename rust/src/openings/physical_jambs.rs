@@ -510,6 +510,7 @@ pub(crate) mod tests {
             hinge: Some(Point::new(100., 68.)),
             swing_observations: vec![SwingObservation {
                 arc_source_id: "swing".into(),
+                segment_source_ids: vec![],
                 hinge: Point::new(100., 68.),
                 closed_tip: Point::new(100., 48.),
                 open_tip: Point::new(120., 68.),

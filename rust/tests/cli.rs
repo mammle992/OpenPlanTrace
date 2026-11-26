@@ -313,6 +313,91 @@ fn individual_exports_match_the_bundle_and_use_the_selected_page() {
 }
 
 #[test]
+fn scan_page_skips_other_sheets_and_renders_the_original_raster_page() {
+    use lopdf::{Document, Stream, dictionary};
+    let root = temp("selected-source");
+    fs::create_dir_all(&root).unwrap();
+    let mut pdf = Document::with_version("1.7");
+    let tree = pdf.new_object_id();
+    let invalid = pdf.add_object(dictionary! {
+        "Type"=>"Page", "Parent"=>tree, "MediaBox"=>vec![0.into(),0.into(),111.into(),111.into()],
+        "Rotate"=>45,
+    });
+    let image = pdf.add_object(Stream::new(
+        dictionary! {
+            "Type"=>"XObject", "Subtype"=>"Image", "Width"=>128, "Height"=>128,
+            "ColorSpace"=>"DeviceGray", "BitsPerComponent"=>8,
+        },
+        (0..128 * 128)
+            .map(|i| if i % 128 < 4 { 0 } else { 255 })
+            .collect(),
+    ));
+    let content = pdf.add_object(Stream::new(
+        dictionary! {},
+        b"q 210 0 0 297 0 0 cm /Im Do Q".to_vec(),
+    ));
+    let floor = pdf.add_object(dictionary! {
+        "Type"=>"Page","Parent"=>tree,"MediaBox"=>vec![0.into(),0.into(),210.into(),297.into()],
+        "Resources"=>dictionary!{"XObject"=>dictionary!{"Im"=>image}}, "Contents"=>content,
+    });
+    pdf.objects.insert(
+        tree,
+        dictionary! {"Type"=>"Pages", "Count"=>2, "Kids"=>vec![invalid.into(),floor.into()]}.into(),
+    );
+    let catalog = pdf.add_object(dictionary! {"Type"=>"Catalog", "Pages"=>tree});
+    pdf.trailer.set("Root", catalog);
+    let input = root.join("sheets.pdf");
+    pdf.save(&input).unwrap();
+
+    let bundle = root.join("selected");
+    let result = cli()
+        .arg("scan")
+        .arg(&input)
+        .args(["--scan-page", "2"])
+        .arg("--out")
+        .arg(&bundle)
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let data: serde_json::Value =
+        serde_json::from_slice(&fs::read(bundle.join("scan.json")).unwrap()).unwrap();
+    let pages = data["pages"].as_array().unwrap();
+    assert_eq!(pages.len(), 1);
+    assert_eq!(pages[0]["pageNumber"], 2);
+    assert_eq!(pages[0]["width"], 210.);
+    assert_eq!(pages[0]["height"], 297.);
+    assert_eq!(pages[0]["pdfInput"]["route"], "raster");
+    assert!(pages[0]["pdfInput"]["renderHeight"].as_u64().unwrap() > 0);
+
+    let missing = root.join("missing");
+    let result = cli()
+        .arg("scan")
+        .arg(&input)
+        .args(["--scan-page", "3"])
+        .arg("--out")
+        .arg(&missing)
+        .output()
+        .unwrap();
+    assert!(!result.status.success() && !missing.exists());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("page 3 was not found"));
+
+    assert!(
+        !cli()
+            .arg("scan")
+            .arg(&input)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn compact_output_round_trips_and_rejects_invalid_dictionary_references() {
     let root = temp("dictionary");
     let raw = root.join("scan.json");

@@ -16,7 +16,7 @@ This file summarizes the third-party packages currently referenced by the reposi
 
 ## Rust dependencies
 
-The direct dependencies of the Rust executables are listed below. The Cargo lockfiles in `rust`, `rust/viewer` and `rust/qa/replay` record transitive versions. Each crate carries its upstream license.
+The direct dependencies of the Rust executables are listed below. The Cargo lockfiles in `rust`, `rust/viewer` and `rust/model-eval` record transitive versions. Each crate carries its upstream license.
 
 | Rust dependency | Locked version | License | Used by |
 |---|---|---|---|
@@ -30,7 +30,7 @@ The direct dependencies of the Rust executables are listed below. The Cargo lock
 
 The browser viewer loads PDF.js 4.10.38 (Apache-2.0) to render source PDFs.
 
-The Rust replay runner ports the polygon fill used by Pillow so that previously registered wall and clear-area measurements can be compared pixel for pixel. [Pillow copyright and permission notice](rust/qa/replay/src/walls/LICENSE-Pillow.txt)
+The optional Rust replay runner is distributed separately. Its Pillow copyright and permission notice accompanies the runner.
 
 ## .NET test and development dependencies
 

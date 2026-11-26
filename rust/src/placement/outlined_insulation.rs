@@ -1073,6 +1073,7 @@ fn select_with_budget(
         d.support_source_ids = ids.clone();
         d.support_wall_ids.clear();
         d.placement_extent = Some(PlacementExtent {
+            thickness: None,
             start: w.start,
             end: w.end,
             source_ids: ids,
@@ -1352,6 +1353,13 @@ mod tests {
             exterior_connections: None,
             placement_paint_ids: Some(vec![]),
             placement_polygon_paint_ids: Some(vec![]),
+            placement_paint_remainders: vec![],
+            white_nested_walls: vec![],
+            terminal_stock: vec![],
+            local_stock: vec![],
+            stepped_stock: vec![],
+            capped_stock: vec![],
+            placement_contact_paint: vec![],
             material_tiles: vec![],
             width: 1000.,
             height: 1000.,
@@ -1380,6 +1388,7 @@ mod tests {
             placement_decisions: None,
             withheld_walls: Some(vec![]),
             openings: vec![],
+            window_panes: vec![],
             nodes: vec![],
             edges: vec![],
             rooms: vec![],
@@ -2092,6 +2101,13 @@ mod tests {
             material_tiles: page.material_tiles.clone(),
             placement_paint_ids: page.placement_paint_ids.clone(),
             placement_polygon_paint_ids: page.placement_polygon_paint_ids.clone(),
+            placement_paint_remainders: vec![],
+            white_nested_walls: vec![],
+            terminal_stock: vec![],
+            local_stock: vec![],
+            stepped_stock: vec![],
+            capped_stock: vec![],
+            placement_contact_paint: vec![],
         };
         page.semantics = crate::semantics::interpret(
             &source,
@@ -2144,6 +2160,13 @@ mod tests {
             material_tiles: page.material_tiles.clone(),
             placement_paint_ids: page.placement_paint_ids.clone(),
             placement_polygon_paint_ids: page.placement_polygon_paint_ids.clone(),
+            placement_paint_remainders: vec![],
+            white_nested_walls: vec![],
+            terminal_stock: vec![],
+            local_stock: vec![],
+            stepped_stock: vec![],
+            capped_stock: vec![],
+            placement_contact_paint: vec![],
         };
         page.semantics = crate::semantics::interpret(
             &source,

@@ -562,6 +562,7 @@ mod tests {
             hinge: Some(hinge),
             swing_observations: vec![SwingObservation {
                 arc_source_id: "arc".into(),
+                segment_source_ids: vec![],
                 hinge,
                 closed_tip: tip,
                 open_tip: p(12., 11.),

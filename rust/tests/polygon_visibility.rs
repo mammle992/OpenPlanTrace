@@ -9,10 +9,14 @@ use openplantrace_rs::{
 const TRAPEZOID: &str = "0.5 g 30 30 m 90 30 l 90 70 l 40 70 l h f";
 
 fn page(before: &str, candidate: &str, after: &str, rotate: i64) -> Page {
+    page_with_layer(before, candidate, after, rotate, "A-WALL")
+}
+
+fn page_with_layer(before: &str, candidate: &str, after: &str, rotate: i64, layer: &str) -> Page {
     let mut pdf = Document::with_version("1.7");
     let tree = pdf.new_object_id();
     let wall = pdf.add_object(dictionary! {
-        "Type"=>"OCG", "Name"=>lopdf::Object::string_literal("A-WALL")
+        "Type"=>"OCG", "Name"=>lopdf::Object::string_literal(layer)
     });
     let mask = pdf.add_object(Stream::new(dictionary! {
         "Type"=>"XObject", "Subtype"=>"Form", "BBox"=>vec![0.into(),0.into(),220.into(),220.into()],
@@ -44,6 +48,47 @@ fn page(before: &str, candidate: &str, after: &str, rotate: i64) -> Page {
         .unwrap()
         .pages
         .remove(0)
+}
+
+#[test]
+fn complementary_exterior_miter_triangles_keep_both_paint_receipts() {
+    let first = "0.5 g 40 40 m 60 40 l 60 60 l h f";
+    for (second, retain_first) in [
+        ("0.5 g 40 40 m 60 60 l 40 60 l h f", true),
+        ("1 g 42 41 m 61 41 l 61 59 l h f", false),
+    ] {
+        let sheet = page_with_layer("", first, second, 0, "Exterior Wall");
+        let observed = sheet
+            .primitives
+            .iter()
+            .find(|p| p.layer.as_deref() == Some("Exterior Wall"))
+            .unwrap();
+        let inventory = sheet.placement_polygon_paint_ids.as_ref().unwrap();
+        assert_eq!(inventory.contains(&observed.id), retain_first, "{second}");
+    }
+}
+
+#[test]
+fn a_triangle_along_mitred_exterior_stock_only_retires_overlapped_paint() {
+    let stock = "0.5 g 30 30 m 85 30 l 82 35 l 30 35 l h f";
+    for (triangle, retained) in [
+        ("0.5 g 85 30 m 90 35 l 82 35 l h f", true),
+        ("1 g 84 30 m 90 35 l 81 35 l h f", false),
+    ] {
+        let page = page_with_layer("", stock, triangle, 0, "Exterior Wall");
+        let wall = page
+            .primitives
+            .iter()
+            .find(|p| p.layer.as_deref() == Some("Exterior Wall"))
+            .unwrap();
+        assert_eq!(
+            page.placement_polygon_paint_ids
+                .as_ref()
+                .unwrap()
+                .contains(&wall.id),
+            retained
+        );
+    }
 }
 
 fn candidate_ids(page: &Page) -> Vec<&str> {
@@ -109,6 +154,29 @@ fn finite_miter_triangle_and_affine_rotated_trapezoid_remain_convex_authority() 
         let sheet = page("", &paint, "", 0);
         assert_eq!(certified_candidates(&sheet), 1);
         assert!(sheet.placement_paint_ids.as_ref().unwrap().is_empty());
+    }
+}
+
+#[test]
+fn identical_opaque_transverse_rectangles_preserve_the_earlier_painted_strip() {
+    const STRIP: &str = "0.7 0.7 0.7 rg 30 60 100 3 re f";
+    for (cover, retained) in [
+        ("0.7 0.7 0.7 rg 80 30 4 70 re f", true),
+        ("0.7 0.7 0.71 rg 80 30 4 70 re f", false),
+        ("0.7 0.7 0.7 rg 40 60 100 3 re f", false),
+        ("0.7 g 80 30 4 70 re f", false),
+        ("/Missing gs 0.7 0.7 0.7 rg 80 30 4 70 re f", false),
+        (
+            "/AbsoluteColorimetric ri 0.7 0.7 0.7 rg 80 30 4 70 re f",
+            false,
+        ),
+        ("0.7 0.7 0.7 rg 1 0 0 RG 8 w 80 30 4 70 re B", false),
+        ("1 g 80 30 4 70 re f", false),
+    ] {
+        let sheet = page("", STRIP, cover, 0);
+        let ids = candidate_ids(&sheet);
+        let receipts = sheet.placement_paint_ids.as_ref().unwrap();
+        assert_eq!(receipts.iter().any(|id| id == ids[0]), retained, "{cover}");
     }
 }
 

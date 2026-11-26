@@ -2,10 +2,20 @@
 //!
 //! Only ready, finite straight wall bodies participate. Openings remain logical
 //! threshold edges; no swing, image crop, or nearest-end guess creates material.
-use crate::model::{Opening, OpeningKind, PageScan, Point, on_segment};
-use crate::placement::WallStatus;
+use crate::model::{Opening, OpeningEvidence, OpeningKind, PageScan, Point, Wall, on_segment};
+use crate::placement::{WallReason, WallStatus};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+
+mod authored;
+mod exterior_boundaries;
+mod exterior_finite_contacts;
+mod exterior_paint_joints;
+mod exterior_thresholds;
+mod finite_paint_contacts;
+mod nominal_axis;
+mod painted_contact;
+mod stepped_jambs;
 
 const MAX_WALLS: usize = 12_000;
 const MAX_SPANS: usize = 40_000;
@@ -13,6 +23,8 @@ const MAX_EDGES: usize = 100_000;
 const MAX_WORK: usize = 16_000_000;
 const MAX_FACE_VERTICES: usize = 4096;
 const MAX_GAPS: usize = 4096;
+const BODY_CONTACT: &str = "finite_aperture_clipped_wall_material_contact";
+pub(crate) const STEPPED_APERTURE_THRESHOLD: &str = stepped_jambs::THRESHOLD;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -45,6 +57,8 @@ pub enum ConnectionKind {
     OpeningJambContact,
     DoorThreshold,
     WindowThreshold,
+    SectionMarkContact,
+    RasterShoulderContact,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -146,6 +160,7 @@ fn point_key(p: Point) -> (u64, u64) {
 struct Solid {
     a: Point,
     b: Point,
+    axis_offset: Point,
     half: f64,
     wall: usize,
     cuts: Vec<f64>,
@@ -171,8 +186,8 @@ impl Solid {
     }
     fn rect(&self) -> Rect {
         Rect {
-            a: self.a,
-            b: self.b,
+            a: self.a - self.axis_offset,
+            b: self.b - self.axis_offset,
             half: self.half,
         }
     }
@@ -238,7 +253,188 @@ impl Rect {
 struct Aperture<'a> {
     opening: &'a Opening,
     rect: Rect,
+    framed_door: Option<FramedDoor>,
 }
+
+pub(crate) const FRAMED_DOOR_THRESHOLD: &str = "source_bounded_framed_door_threshold";
+
+struct FramedDoor {
+    host_ids: [String; 2],
+    source_ids: Vec<String>,
+}
+
+/// The preserved swing measures the leaf lane. Two independently replayed
+/// exterior caps can supply its actual material-to-material aperture.
+fn framed_door(o: &Opening, hosts: &[&Wall], eps: f64) -> Option<(Rect, FramedDoor)> {
+    let [first, second] = hosts else { return None };
+    if o.kind != OpeningKind::Door
+        || o.evidence != OpeningEvidence::FiniteJambSwing
+        || o.swing_observations.len() != 1
+        || first.id == second.id
+        || !o.start.finite()
+        || !o.end.finite()
+        || o.start.distance(o.end) <= eps
+    {
+        return None;
+    }
+    let axis = (o.end - o.start).unit();
+    let reach = o.start.distance(o.end);
+    let local = |p: Point| (p - o.start).dot(axis);
+    let caps = |w: &Wall| {
+        let span = w.end - w.start;
+        let half = w.thickness * 0.5;
+        if w.curve.is_some()
+            || !w.start.finite()
+            || !w.end.finite()
+            || !half.is_finite()
+            || half <= eps
+            || span.norm() <= eps
+            || span.cross(axis).abs() > eps
+            || (o.start - w.start).cross(axis).abs() > half + eps
+            || (o.end - w.start).cross(axis).abs() > half + eps
+        {
+            return None;
+        }
+        let (a, b) = (local(w.start), local(w.end));
+        if a.max(b) <= eps && a.max(b) >= -w.thickness * 0.85 - eps {
+            Some((0, if a >= b { w.start } else { w.end }))
+        } else if a.min(b) >= reach - eps && a.min(b) <= reach + w.thickness * 0.85 + eps {
+            Some((1, if a <= b { w.start } else { w.end }))
+        } else {
+            None
+        }
+    };
+    let (side, a) = caps(first)?;
+    let (other, b) = caps(second)?;
+    if side == other || (b - a).cross(axis).abs() > eps {
+        return None;
+    }
+    let (start, end) = if side == 0 { (a, b) } else { (b, a) };
+    let host_ids = if side == 0 {
+        [first.id.clone(), second.id.clone()]
+    } else {
+        [second.id.clone(), first.id.clone()]
+    };
+    Some((
+        Rect {
+            a: start,
+            b: end,
+            half: first.thickness.max(second.thickness) * 0.5,
+        },
+        FramedDoor {
+            host_ids,
+            source_ids: ids(o
+                .source_ids
+                .iter()
+                .chain(&first.source_ids)
+                .chain(&second.source_ids)
+                .cloned()),
+        },
+    ))
+}
+
+// The measured sill belongs to the opening. The logical threshold uses the
+// two verified wall-axis endpoints, which can be inset from that sill.
+fn finite_capped_wall_axis(
+    opening: &Opening,
+    hosts: &[&Wall],
+    eps: f64,
+) -> Option<(Rect, FramedDoor)> {
+    let [a, b] = hosts else { return None };
+    let [first, second] = opening.host_wall_ids.as_slice() else {
+        return None;
+    };
+    let [left, right] = if &a.id == first && &b.id == second {
+        [*a, *b]
+    } else if &b.id == first && &a.id == second {
+        [*b, *a]
+    } else {
+        return None;
+    };
+    let span = opening.end - opening.start;
+    if !opening.start.finite() || !opening.end.finite() || span.norm() <= eps {
+        return None;
+    }
+    let axis = span.unit();
+    let cap = |wall: &Wall, sill: Point, approach: Point| {
+        let [a, b] = [wall.start, wall.end];
+        let [x, y] = [a, b].map(|p| (p - sill).dot(approach));
+        let p = if x >= y { a } else { b };
+        (wall.curve.is_none()
+            && wall.thickness.is_finite()
+            && wall.thickness > eps
+            && (b - a).cross(axis).abs() <= eps
+            && x.max(y).abs() <= eps
+            && (p - sill).cross(axis).abs() <= 2. * wall.thickness + eps)
+            .then_some(p)
+    };
+    let start = cap(left, opening.start, axis)?;
+    let end = cap(right, opening.end, axis * -1.)?;
+    if (end - start).cross(axis).abs() > eps {
+        return None;
+    }
+    Some((
+        Rect {
+            a: start,
+            b: end,
+            half: left.thickness.max(right.thickness) * 0.5,
+        },
+        FramedDoor {
+            host_ids: [first.clone(), second.clone()],
+            source_ids: ids(opening
+                .source_ids
+                .iter()
+                .chain(&left.source_ids)
+                .chain(&right.source_ids)
+                .cloned()),
+        },
+    ))
+}
+
+fn raster_jamb_axis(opening: &Opening, hosts: &[&Wall], eps: f64) -> Option<(Rect, FramedDoor)> {
+    let [a, b] = hosts else { return None };
+    let length = opening.start.distance(opening.end);
+    if length <= eps || !length.is_finite() || opening.kind != OpeningKind::Door {
+        return None;
+    }
+    let axis = (opening.end - opening.start).unit();
+    let at_cap = |wall: &Wall, p: Point, approach: Point| -> Option<f64> {
+        let direction = wall.end - wall.start;
+        let half = wall.thickness * 0.5;
+        if wall.curve.is_some()
+            || !half.is_finite()
+            || half <= eps
+            || direction.cross(axis).abs() > eps
+        {
+            return None;
+        }
+        let [x, y] = [wall.start, wall.end].map(|q| (q - p).dot(approach));
+        let offset = (wall.start - p).cross(axis).abs();
+        (x.max(y).abs() <= eps && x.min(y) < -eps && offset <= half + eps).then_some(half + offset)
+    };
+    let match_caps = |left: &Wall, right: &Wall| {
+        let l = at_cap(left, opening.start, axis)?;
+        let r = at_cap(right, opening.end, axis * -1.)?;
+        Some((
+            Rect {
+                a: opening.start,
+                b: opening.end,
+                half: l.max(r),
+            },
+            FramedDoor {
+                host_ids: [left.id.clone(), right.id.clone()],
+                source_ids: ids(opening
+                    .source_ids
+                    .iter()
+                    .chain(&left.source_ids)
+                    .chain(&right.source_ids)
+                    .cloned()),
+            },
+        ))
+    };
+    match_caps(a, b).or_else(|| match_caps(b, a))
+}
+
 fn crosses_aperture(
     a: Point,
     b: Point,
@@ -282,6 +478,31 @@ struct Link {
     evidence: &'static str,
     // A graph endpoint cut is resolved only on its proven incident solid.
     anchors: [Option<usize>; 2],
+}
+
+struct SourcePath {
+    wall_ids: [String; 2],
+    path: Vec<Point>,
+    source_ids: Vec<String>,
+    kind: ConnectionKind,
+    evidence: &'static str,
+}
+
+impl SourcePath {
+    fn facade(p: super::stepped_facade::Joint, evidence: &'static str) -> Self {
+        let [start, end] = p.points;
+        Self {
+            wall_ids: p.wall_ids,
+            path: [start]
+                .into_iter()
+                .chain(p.support_points)
+                .chain([end])
+                .collect(),
+            source_ids: p.source_ids,
+            kind: ConnectionKind::MeasuredCorner,
+            evidence,
+        }
+    }
 }
 /// Reconcile only endpoints joined by proven source incidence. A near-zero
 /// material/jamb connector can have differently rounded projections on its two
@@ -460,6 +681,27 @@ fn contact(a: &Solid, b: &Solid, eps: f64) -> Option<(Point, Point)> {
     covered_by_union(p, q, &[a.rect(), b.rect()], eps).then_some((p, q))
 }
 
+fn shared_terminal_corner(a: &Solid, b: &Solid, eps: f64) -> Option<Point> {
+    if a.axis().dot(b.axis()).abs() > 1e-5 {
+        return None;
+    }
+    let corners = |s: &Solid| {
+        let u = s.axis();
+        let off = Point::new(-u.y, u.x) * s.half;
+        let body = s.rect();
+        [body.a + off, body.a - off, body.b + off, body.b - off]
+    };
+    let other = corners(b);
+    let points = corners(a);
+    let mut shared = points.into_iter().filter(|p| {
+        other.iter().any(|q| q.distance(*p) <= eps)
+            && a.rect().contains(*p, eps)
+            && b.rect().contains(*p, eps)
+    });
+    let point = shared.next()?;
+    shared.next().is_none().then_some(point)
+}
+
 struct Builder {
     page: u32,
     nodes: Vec<ConnectionNode>,
@@ -556,10 +798,13 @@ impl Builder {
             source_ids: link.source_ids,
             evidence: link.evidence.into(),
             // This labels existing support, never permission to extrude a
-            // connection edge. Both threshold kinds are empty apertures.
+            // connection edge. Apertures and section overprints carry topology.
             contributes_wall_material: !matches!(
                 link.kind,
-                ConnectionKind::DoorThreshold | ConnectionKind::WindowThreshold
+                ConnectionKind::DoorThreshold
+                    | ConnectionKind::WindowThreshold
+                    | ConnectionKind::SectionMarkContact
+                    | ConnectionKind::RasterShoulderContact
             ),
             adds_wall_material: false,
             requires_review: true,
@@ -571,11 +816,105 @@ impl Builder {
 /// Build a separate graph from a validated native scan. Observed walls, existing
 /// graph nodes, aperture measurements and placement material remain unchanged.
 pub fn build(page: &PageScan) -> Result<ConnectionPass, String> {
-    let view = crate::placement::effective_page(page);
-    build_measured(&view)
+    build_measured(
+        &crate::placement::effective_page(page),
+        super::authored_scope::supports(page),
+        true,
+        ExteriorLinks::CertifiedFacades,
+    )
 }
 
-fn build_measured(page: &PageScan) -> Result<ConnectionPass, String> {
+pub(crate) fn build_scan_v42(page: &PageScan) -> Result<ConnectionPass, String> {
+    build_measured(
+        &crate::placement::effective_page(page),
+        super::authored_scope::supports(page),
+        true,
+        ExteriorLinks::SteppedJambs,
+    )
+}
+
+pub(crate) fn build_scan_v34(page: &PageScan) -> Result<ConnectionPass, String> {
+    build_measured(
+        &crate::placement::effective_page(page),
+        super::authored_scope::supports(page),
+        true,
+        ExteriorLinks::Exact,
+    )
+}
+
+pub(crate) fn build_scan_v33(page: &PageScan) -> Result<ConnectionPass, String> {
+    build_measured(
+        &crate::placement::effective_page(page),
+        super::authored_scope::supports(page),
+        true,
+        ExteriorLinks::Legacy,
+    )
+}
+
+pub(crate) fn build_preview33(page: &PageScan) -> Result<ConnectionPass, String> {
+    build_measured(
+        &crate::placement::effective_page(page),
+        super::authored_scope::supports(page),
+        true,
+        ExteriorLinks::None,
+    )
+}
+
+pub(crate) fn build_preview31(page: &PageScan) -> Result<ConnectionPass, String> {
+    build_measured(
+        &crate::placement::effective_page(page),
+        super::authored_scope::supports(page),
+        false,
+        ExteriorLinks::None,
+    )
+}
+
+pub(crate) fn build_preview28(page: &PageScan) -> Result<ConnectionPass, String> {
+    build_measured(
+        &crate::placement::effective_page(page),
+        super::authored_scope::legacy(page),
+        false,
+        ExteriorLinks::None,
+    )
+}
+
+pub(crate) fn build_preview26(page: &PageScan) -> Result<ConnectionPass, String> {
+    build_measured(
+        &crate::placement::effective_page(page),
+        false,
+        false,
+        ExteriorLinks::None,
+    )
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ExteriorLinks {
+    None,
+    Legacy,
+    Exact,
+    SteppedJambs,
+    CertifiedFacades,
+}
+
+impl ExteriorLinks {
+    fn exact_contacts(self) -> bool {
+        matches!(
+            self,
+            Self::Exact | Self::SteppedJambs | Self::CertifiedFacades
+        )
+    }
+
+    fn stepped_jambs(self) -> bool {
+        matches!(self, Self::SteppedJambs | Self::CertifiedFacades)
+    }
+}
+
+fn build_measured(
+    page: &PageScan,
+    authored_vectors: bool,
+    painted_contacts: bool,
+    exterior: ExteriorLinks,
+) -> Result<ConnectionPass, String> {
     if !page.width.is_finite() || !page.height.is_finite() || page.width <= 0. || page.height <= 0.
     {
         return Err("connection pass requires positive finite page dimensions".into());
@@ -642,10 +981,62 @@ fn build_measured(page: &PageScan) -> Result<ConnectionPass, String> {
         report.diagnostics.push("No placement-ready finite wall bodies; exterior connectivity is unresolved, not an empty complete house.".into());
         return Ok(report);
     }
+    let mut framed_hosts = HashMap::<&str, Vec<&Wall>>::new();
+    for decision in page.placement_decisions.iter().flatten() {
+        charge(&mut work, 1)?;
+        if matches!(
+            decision.reason,
+            WallReason::SourceBoundedExteriorCore
+                | WallReason::SourceBoundedOverheadGateStock
+                | WallReason::SourceBoundedRasterJambStock
+                | WallReason::SourceBoundedDashedSwingStock
+        ) && decision.status == WallStatus::Ready
+            && let [opening] = decision.opening_ids.as_slice()
+            && let Some(&i) = wall_by_id.get(decision.wall_id.as_str())
+        {
+            framed_hosts
+                .entry(opening.as_str())
+                .or_default()
+                .push(&page.walls[i]);
+        }
+    }
     let mut apertures = vec![];
+    let source = authored_vectors.then(|| authored::Source::new(page));
     for o in &page.openings {
         charge(&mut work, 1)?;
         charge(&mut work, o.host_wall_ids.len())?;
+        if let Some((rect, proof)) =
+            framed_hosts
+                .get(o.id.as_str())
+                .and_then(|hosts| match o.evidence {
+                    OpeningEvidence::LayerlessOverheadProjection
+                    | OpeningEvidence::LayerlessDashedSwing => {
+                        finite_capped_wall_axis(o, hosts, eps)
+                    }
+                    OpeningEvidence::RasterFiniteHingedDoor => raster_jamb_axis(o, hosts, eps),
+                    _ => framed_door(o, hosts, eps),
+                })
+        {
+            apertures.push(Aperture {
+                opening: o,
+                rect,
+                framed_door: Some(proof),
+            });
+            continue;
+        }
+        if let Some((rect, proof)) = source
+            .as_ref()
+            .map(|s| s.door(page, o, &eligible, eps, &mut work))
+            .transpose()?
+            .flatten()
+        {
+            apertures.push(Aperture {
+                opening: o,
+                rect,
+                framed_door: Some(proof),
+            });
+            continue;
+        }
         let half = o
             .host_wall_ids
             .iter()
@@ -664,6 +1055,7 @@ fn build_measured(page: &PageScan) -> Result<ConnectionPass, String> {
                     b: o.end,
                     half,
                 },
+                framed_door: None,
             });
         } else {
             report.diagnostics.push(format!(
@@ -673,6 +1065,11 @@ fn build_measured(page: &PageScan) -> Result<ConnectionPass, String> {
         }
     }
     let mut solids = vec![];
+    let offsets = if authored_vectors {
+        nominal_axis::offsets(page, &eligible)
+    } else {
+        HashMap::new()
+    };
     for &wi in &eligible {
         let w = &page.walls[wi];
         charge(&mut work, page.openings.len())?;
@@ -685,9 +1082,11 @@ fn build_measured(page: &PageScan) -> Result<ConnectionPass, String> {
                 report.diagnostics.push(format!("Wall {} has a non-host aperture conflict; its conflicted solid span is withheld from the connection graph.",w.id));
                 continue;
             }
+            let axis_offset = offsets.get(&wi).copied().unwrap_or_default();
             solids.push(Solid {
-                a: s.start,
-                b: s.end,
+                a: s.start + axis_offset,
+                b: s.end + axis_offset,
+                axis_offset,
                 half: w.thickness * 0.5,
                 wall: wi,
                 cuts: vec![0., 1.],
@@ -703,6 +1102,28 @@ fn build_measured(page: &PageScan) -> Result<ConnectionPass, String> {
             .entry(page.walls[s.wall].id.as_str())
             .or_default()
             .push(i);
+    }
+    let core_decisions: HashMap<_, _> = page
+        .placement_decisions
+        .iter()
+        .flatten()
+        .filter(|d| {
+            d.reason == WallReason::SourceBoundedExteriorCore && d.status == WallStatus::Ready
+        })
+        .map(|d| (d.wall_id.as_str(), d))
+        .collect();
+    let mut core_hosts: HashMap<&str, Vec<usize>> = HashMap::new();
+    for (&id, d) in &core_decisions {
+        for raw in &d.support_wall_ids {
+            core_hosts
+                .entry(raw.as_str())
+                .or_default()
+                .extend(by_wall.get(id).into_iter().flatten().copied());
+        }
+    }
+    for alternatives in core_hosts.values_mut() {
+        alternatives.sort_unstable();
+        alternatives.dedup();
     }
     let mut links = vec![];
     let mut order: Vec<_> = (0..solids.len()).collect();
@@ -722,7 +1143,56 @@ fn build_measured(page: &PageScan) -> Result<ConnectionPass, String> {
             if solids[i].wall == solids[j].wall || bb[1] > aa[3] + eps || aa[1] > bb[3] + eps {
                 continue;
             }
+            let wa = &page.walls[solids[i].wall];
+            let wb = &page.walls[solids[j].wall];
             let Some((a, b)) = contact(&solids[i], &solids[j], eps) else {
+                let exterior = (core_decisions.contains_key(wa.id.as_str())
+                    && core_decisions.contains_key(wb.id.as_str()))
+                .then(|| shared_terminal_corner(&solids[i], &solids[j], eps))
+                .flatten();
+                let proof = exterior
+                    .map(|point| (point, "shared_finite_exterior_core_corner"))
+                    .or_else(|| {
+                        Some((
+                            source
+                                .as_ref()?
+                                .exact_touch(wa, wb, &solids[i], &solids[j], eps)?,
+                            "shared_finite_authored_wall_face",
+                        ))
+                    });
+                let Some((corner, evidence)) = proof else {
+                    continue;
+                };
+                let a = solids[i].project(corner).0;
+                let b = solids[j].project(corner).0;
+                if crosses_aperture(a, corner, &apertures, None, eps, &mut work)?
+                    || crosses_aperture(b, corner, &apertures, None, eps, &mut work)?
+                {
+                    continue;
+                }
+                // The direct axis-to-axis shortcut would cut across an empty
+                // quadrant. Two links meet on the actual material corner.
+                let proof = ids(wa
+                    .source_ids
+                    .iter()
+                    .cloned()
+                    .chain(wb.source_ids.iter().cloned()));
+                for (index, endpoint) in [(i, a), (j, b)] {
+                    solids[index].cut(endpoint);
+                    push_link(
+                        &mut links,
+                        Link {
+                            a: endpoint,
+                            b: corner,
+                            kind: ConnectionKind::MeasuredCorner,
+                            wall_ids: ids([wa.id.clone(), wb.id.clone()]),
+                            opening_ids: vec![],
+                            source_ids: proof.clone(),
+                            evidence,
+                            anchors: [Some(index), None],
+                        },
+                    )?;
+                }
                 continue;
             };
             if crosses_aperture(a, b, &apertures, None, eps, &mut work)? {
@@ -730,8 +1200,6 @@ fn build_measured(page: &PageScan) -> Result<ConnectionPass, String> {
             }
             solids[i].cut(a);
             solids[j].cut(b);
-            let wa = &page.walls[solids[i].wall];
-            let wb = &page.walls[solids[j].wall];
             push_link(
                 &mut links,
                 Link {
@@ -745,8 +1213,216 @@ fn build_measured(page: &PageScan) -> Result<ConnectionPass, String> {
                         .iter()
                         .cloned()
                         .chain(wb.source_ids.iter().cloned())),
-                    evidence: "finite_aperture_clipped_wall_material_contact",
+                    evidence: BODY_CONTACT,
                     anchors: [Some(i), Some(j)],
+                },
+            )?;
+        }
+    }
+    for proof in super::cavity_material::coextensive::assemblies(page) {
+        let hit = |id: &str, point: Point, terminal| {
+            let mut matches = by_wall.get(id)?.iter().copied().filter(|&i| {
+                let s = &solids[i];
+                if !s.rect().contains(point, eps) || s.project(point).0.distance(point) > eps {
+                    return false;
+                }
+                let endpoint = point.distance(s.a).min(point.distance(s.b)) <= eps;
+                endpoint == terminal
+            });
+            let index = matches.next()?;
+            matches.next().is_none().then_some(index)
+        };
+        let (Some(i), Some(j)) = (
+            hit(proof.stem, proof.tip, true),
+            hit(proof.owner, proof.axis_contact, false),
+        ) else {
+            continue;
+        };
+        if crosses_aperture(
+            proof.tip,
+            proof.axis_contact,
+            &apertures,
+            None,
+            eps,
+            &mut work,
+        )? {
+            continue;
+        }
+        solids[i].cut(proof.tip);
+        solids[j].cut(proof.axis_contact);
+        push_link(
+            &mut links,
+            Link {
+                a: proof.tip,
+                b: proof.axis_contact,
+                kind: ConnectionKind::MaterialContact,
+                wall_ids: ids([proof.stem.to_owned(), proof.owner.to_owned()]),
+                opening_ids: vec![],
+                source_ids: proof.source_ids.into_iter().map(str::to_owned).collect(),
+                evidence: "coextensive_wall_through_certified_transverse_paint",
+                anchors: [Some(i), Some(j)],
+            },
+        )?;
+    }
+    for proof in super::raster_narrow_course::contacts(page)? {
+        let anchor = |id: &str, at: Point| {
+            let mut found = by_wall.get(id)?.iter().copied().filter(|&i| {
+                let s = &solids[i];
+                s.a.distance(at).min(s.b.distance(at)) <= eps
+                    && s.rect().contains(proof.contact, eps)
+            });
+            let index = found.next()?;
+            found.next().is_none().then_some(index)
+        };
+        let endpoints = [proof.junction_end, proof.jamb_far_end];
+        let (Some(a), Some(b)) = (
+            anchor(&proof.wall_id, endpoints[0]),
+            anchor(&proof.jamb_id, endpoints[1]),
+        ) else {
+            continue;
+        };
+        if links.iter().any(|l| {
+            l.kind == ConnectionKind::MaterialContact
+                && (l.anchors == [Some(a), Some(b)] || l.anchors == [Some(b), Some(a)])
+        }) || crosses_aperture(
+            endpoints[0],
+            proof.contact,
+            &apertures,
+            None,
+            eps,
+            &mut work,
+        )? || crosses_aperture(
+            endpoints[1],
+            proof.contact,
+            &apertures,
+            None,
+            eps,
+            &mut work,
+        )? {
+            continue;
+        }
+        for (i, from) in [a, b].into_iter().zip(endpoints) {
+            solids[i].cut(from);
+            push_link(
+                &mut links,
+                Link {
+                    a: from,
+                    b: proof.contact,
+                    kind: ConnectionKind::MeasuredCorner,
+                    wall_ids: ids([proof.wall_id.clone(), proof.jamb_id.clone()]),
+                    opening_ids: vec![],
+                    source_ids: proof.source_ids.clone(),
+                    evidence: "source_bounded_raster_jamb_return_contact",
+                    anchors: [Some(i), None],
+                },
+            )?;
+        }
+    }
+    for proof in super::raster_narrow_course::section_contacts(page)? {
+        let endpoints = [proof.previous_end, proof.new_end];
+        let at_end = |id: &str, at: Point| {
+            let mut hits = by_wall
+                .get(id)?
+                .iter()
+                .copied()
+                .filter(|&i| at.distance(solids[i].a).min(at.distance(solids[i].b)) <= eps);
+            let i = hits.next()?;
+            hits.next().is_none().then_some(i)
+        };
+        let (Some(a), Some(b)) = (
+            at_end(&proof.previous_wall_id, endpoints[0]),
+            at_end(&proof.wall_id, endpoints[1]),
+        ) else {
+            continue;
+        };
+        if crosses_aperture(endpoints[0], endpoints[1], &apertures, None, eps, &mut work)? {
+            continue;
+        }
+        push_link(
+            &mut links,
+            Link {
+                a: endpoints[0],
+                b: endpoints[1],
+                kind: ConnectionKind::SectionMarkContact,
+                wall_ids: ids([proof.previous_wall_id, proof.wall_id]),
+                opening_ids: vec![],
+                source_ids: proof.source_ids,
+                evidence: "source_bounded_raster_section_mark_contact",
+                anchors: [Some(a), Some(b)],
+            },
+        )?;
+    }
+    let facade_paths = super::stepped_facade::joints(page)
+        .into_iter()
+        .map(|p| SourcePath::facade(p, "source_bounded_stepped_facade_contact"))
+        .chain(
+            super::capped_facade::joints(page)
+                .into_iter()
+                .map(|p| SourcePath::facade(p, "source_bounded_capped_facade_contact")),
+        );
+    let shoulders = super::raster_jamb_return::contacts(page)?
+        .into_iter()
+        .map(|p| SourcePath {
+            wall_ids: [p.host_wall_id, p.wall_id],
+            path: p.points,
+            source_ids: p.source_ids,
+            kind: ConnectionKind::RasterShoulderContact,
+            evidence: "source_bounded_raster_jamb_shoulder",
+        });
+    for proof in facade_paths.chain(shoulders) {
+        let mut path = proof.path;
+        path.dedup_by(|a, b| a.distance(*b) <= eps);
+        if path.len() < 2 {
+            continue;
+        }
+        let locate = |id: &str, at: Point| {
+            let mut hits = by_wall
+                .get(id)?
+                .iter()
+                .copied()
+                .filter(|&i| solids[i].project(at).0.distance(at) <= eps);
+            let i = hits.next()?;
+            hits.next().is_none().then_some(i)
+        };
+        let [start, end] = [path[0], path[path.len() - 1]];
+        let (Some(a), Some(b)) = (
+            locate(&proof.wall_ids[0], start),
+            locate(&proof.wall_ids[1], end),
+        ) else {
+            continue;
+        };
+        if links.iter().any(|link| {
+            link.kind == ConnectionKind::MaterialContact
+                && ((link.anchors == [Some(a), Some(b)]
+                    && link.a.distance(start) <= eps
+                    && link.b.distance(end) <= eps)
+                    || (link.anchors == [Some(b), Some(a)]
+                        && link.b.distance(start) <= eps
+                        && link.a.distance(end) <= eps))
+        }) {
+            continue;
+        }
+        let mut obstructed = false;
+        for p in path.windows(2) {
+            obstructed |= crosses_aperture(p[0], p[1], &apertures, None, eps, &mut work)?;
+        }
+        if obstructed {
+            continue;
+        }
+        solids[a].cut(start);
+        solids[b].cut(end);
+        for (i, p) in path.windows(2).enumerate() {
+            push_link(
+                &mut links,
+                Link {
+                    a: p[0],
+                    b: p[1],
+                    kind: proof.kind,
+                    wall_ids: ids(proof.wall_ids.clone()),
+                    opening_ids: vec![],
+                    source_ids: proof.source_ids.clone(),
+                    evidence: proof.evidence,
+                    anchors: [(i == 0).then_some(a), (i + 2 == path.len()).then_some(b)],
                 },
             )?;
         }
@@ -771,10 +1447,11 @@ fn build_measured(page: &PageScan) -> Result<ConnectionPass, String> {
         .filter(|d| d.placement_extent.is_some())
         .map(|d| d.wall_id.as_str())
         .collect();
-    for joint in corners
-        .into_iter()
-        .filter(|j| j.wall_ids.iter().all(|id| !bounded.contains(id.as_str())))
-    {
+    for joint in corners.into_iter().filter(|j| {
+        j.wall_ids
+            .iter()
+            .all(|id| !bounded.contains(id.as_str()) && !core_decisions.contains_key(id.as_str()))
+    }) {
         let center = (joint.polygon[0] + joint.polygon[2]) * 0.5;
         let mut anchors = vec![];
         for (side, wid) in joint.wall_ids.iter().enumerate() {
@@ -849,21 +1526,40 @@ fn build_measured(page: &PageScan) -> Result<ConnectionPass, String> {
             )?;
         }
     }
+    if let Some(source) = &source {
+        source.join(page, &mut solids, &apertures, &mut links, eps, &mut work)?;
+    } else if painted_contacts
+        && !painted_contact::append(page, &mut solids, &apertures, &mut links, eps, &mut work)
+    {
+        report
+            .diagnostics
+            .push("Painted terminal contact review reached its work limit.".into());
+    }
+    if exterior != ExteriorLinks::None {
+        exterior_paint_joints::append(page, &mut solids, &apertures, &mut links, eps, &mut work)?;
+    }
     // Canonical opening nodes use the measured aperture, including windows.
     // A portal is retained only when BOTH jambs attach through real host body.
     for portal in &apertures {
         let o = portal.opening;
+        let framed = portal.framed_door.as_ref();
+        let paired = o.kind == OpeningKind::Door && o.swing_observations.len() == 2;
+        let host_ids = framed.map_or(o.host_wall_ids.as_slice(), |f| f.host_ids.as_slice());
+        let ends = [portal.rect.a, portal.rect.b];
         let mut attachments = [vec![], vec![]];
-        for (side, p) in [o.start, o.end].into_iter().enumerate() {
-            for &i in o
-                .host_wall_ids
-                .iter()
-                .flat_map(|id| by_wall.get(id.as_str()).into_iter().flatten())
-            {
+        for (side, p) in ends.into_iter().enumerate() {
+            for &i in host_ids.iter().flat_map(|id| {
+                by_wall.get(id.as_str()).into_iter().flatten().chain(
+                    paired
+                        .then(|| core_hosts.get(id.as_str()))
+                        .flatten()
+                        .into_iter()
+                        .flatten(),
+                )
+            }) {
                 charge(&mut work, 1)?;
                 let s = &solids[i];
-                let w = &page.walls[s.wall];
-                if !o.host_wall_ids.contains(&w.id) {
+                if attachments[side].iter().any(|&(anchor, _)| anchor == i) {
                     continue;
                 }
                 let q = s.project(p).0;
@@ -879,7 +1575,7 @@ fn build_measured(page: &PageScan) -> Result<ConnectionPass, String> {
             report.diagnostics.push(format!("Opening {} has an unsupported jamb in the ready-wall graph; its threshold remains unresolved.",o.id));
             continue;
         }
-        if crosses_aperture(o.start, o.end, &apertures, Some(&o.id), eps, &mut work)? {
+        if crosses_aperture(ends[0], ends[1], &apertures, Some(&o.id), eps, &mut work)? {
             report.diagnostics.push(format!(
                 "Opening {} overlaps another aperture; threshold withheld.",
                 o.id
@@ -893,8 +1589,8 @@ fn build_measured(page: &PageScan) -> Result<ConnectionPass, String> {
         push_link(
             &mut links,
             Link {
-                a: o.start,
-                b: o.end,
+                a: ends[0],
+                b: ends[1],
                 kind: if o.kind == OpeningKind::Door {
                     ConnectionKind::DoorThreshold
                 } else {
@@ -902,13 +1598,17 @@ fn build_measured(page: &PageScan) -> Result<ConnectionPass, String> {
                 },
                 wall_ids: wall_ids.clone(),
                 opening_ids: vec![o.id.clone()],
-                source_ids: o.source_ids.clone(),
-                evidence: "finite_source_hosted_opening_threshold_no_material",
+                source_ids: framed.map_or_else(|| o.source_ids.clone(), |f| f.source_ids.clone()),
+                evidence: if framed.is_some() {
+                    FRAMED_DOOR_THRESHOLD
+                } else {
+                    "finite_source_hosted_opening_threshold_no_material"
+                },
                 anchors: [None, None],
             },
         )?;
         for (side, list) in attachments.into_iter().enumerate() {
-            let p = [o.start, o.end][side];
+            let p = ends[side];
             for (i, q) in list {
                 solids[i].cut(q);
                 push_link(
@@ -925,6 +1625,44 @@ fn build_measured(page: &PageScan) -> Result<ConnectionPass, String> {
                     },
                 )?;
             }
+        }
+    }
+    if exterior != ExteriorLinks::None {
+        let previous = links.len();
+        exterior_thresholds::append(page, &mut solids, &apertures, &mut links, eps, &mut work)?;
+        let resolved: HashSet<_> = links[previous..].iter().filter(|link| {
+            matches!(link.kind, ConnectionKind::DoorThreshold | ConnectionKind::WindowThreshold)
+        }).flat_map(|link| link.opening_ids.iter()).flat_map(|id| [
+            format!("Opening {id} has an unsupported jamb in the ready-wall graph; its threshold remains unresolved."),
+            format!("Opening {id} overlaps another aperture; threshold withheld."),
+        ]).collect();
+        report
+            .diagnostics
+            .retain(|diagnostic| !resolved.contains(diagnostic));
+    }
+    if exterior.exact_contacts()
+        && !exterior_finite_contacts::append(page, &solids, &apertures, &mut links, eps, &mut work)
+    {
+        report
+            .diagnostics
+            .push("Exact exterior painted contacts exceeded the optional graph work limit.".into());
+    }
+    if exterior.stepped_jambs() {
+        let previous = links.len();
+        if stepped_jambs::append(page, &solids, &apertures, &mut links, eps, &mut work) {
+            let resolved: HashSet<_> = links[previous..].iter()
+                .filter(|link| link.evidence == STEPPED_APERTURE_THRESHOLD)
+                .flat_map(|link| &link.opening_ids).flat_map(|id| [
+                    format!("Opening {id} has an unsupported jamb in the ready-wall graph; its threshold remains unresolved."),
+                    format!("Opening {id} overlaps another aperture; threshold withheld."),
+                ]).collect();
+            report
+                .diagnostics
+                .retain(|message| !resolved.contains(message));
+        } else {
+            report
+                .diagnostics
+                .push("Exact stepped jamb review exceeded the optional graph work limit.".into());
         }
     }
     // Resolve all cuts before emitting links so exact shared points retain one
@@ -978,7 +1716,10 @@ fn build_measured(page: &PageScan) -> Result<ConnectionPass, String> {
     }
     report.nodes = graph.nodes;
     report.edges = graph.edges;
-    finish(page, &mut report, eps, &mut work)?;
+    let exterior_walls = source
+        .as_ref()
+        .map_or_else(HashSet::new, |s| s.exterior_walls(page));
+    finish(page, &mut report, eps, &mut work, &exterior_walls, exterior)?;
     if !report.omitted_walls.is_empty() {
         report.diagnostics.push(format!("{} observed walls are outside the eligible finite-ready subset; closed graph cycles do not establish complete house coverage.",report.omitted_walls.len()));
     }
@@ -990,6 +1731,8 @@ fn finish(
     report: &mut ConnectionPass,
     eps: f64,
     work: &mut usize,
+    exterior_walls: &HashSet<&str>,
+    exterior: ExteriorLinks,
 ) -> Result<(), String> {
     let wall_by_id: HashMap<_, _> = page.walls.iter().map(|w| (w.id.as_str(), w)).collect();
     let mut openings_by_wall: HashMap<&str, Vec<usize>> = HashMap::new();
@@ -1055,151 +1798,40 @@ fn finish(
             requires_review: true,
         });
     }
-    // Peel dangling branches for cycle walking, retaining the original graph and
-    // diagnostics. Pruning is not a supported gap connection.
-    let mut cycle_adj = adj.clone();
-    let mut todo: VecDeque<_> = cycle_adj
-        .iter()
-        .enumerate()
-        .filter(|(_, a)| a.len() < 2)
-        .map(|(i, _)| i)
-        .collect();
-    while let Some(i) = todo.pop_front() {
-        for (j, _) in std::mem::take(&mut cycle_adj[i]) {
-            charge(work, cycle_adj[j].len() + 1)?;
-            cycle_adj[j].retain(|&(n, _)| n != i);
-            if cycle_adj[j].len() == 1 {
-                todo.push_back(j);
-            }
-        }
-    }
-    for (i, neighbors) in cycle_adj.iter_mut().enumerate() {
-        neighbors.sort_by(|&(a, ea), &(b, eb)| {
-            let x = report.nodes[a].position - report.nodes[i].position;
-            let y = report.nodes[b].position - report.nodes[i].position;
-            x.y.atan2(x.x).total_cmp(&y.y.atan2(y.x)).then(ea.cmp(&eb))
-        });
-    }
-    let mut seen = HashSet::new();
-    let mut face_limit_reached = false;
-    for start in 0..cycle_adj.len() {
-        for &(next, edge) in &cycle_adj[start] {
-            if seen.contains(&(start, next, edge)) {
-                continue;
-            }
-            let mut ns = vec![];
-            let mut es = vec![];
-            let (mut a, mut b, mut e) = (start, next, edge);
-            loop {
-                charge(work, 1)?;
-                if !seen.insert((a, b, e)) {
-                    break;
-                }
-                if ns.len() >= MAX_FACE_VERTICES {
-                    face_limit_reached = true;
-                    break;
-                }
-                ns.push(a);
-                es.push(e);
-                charge(work, cycle_adj[b].len())?;
-                let Some(at) = cycle_adj[b].iter().position(|&(n, x)| n == a && x == e) else {
-                    break;
-                };
-                let (c, ce) = cycle_adj[b][(at + cycle_adj[b].len() - 1) % cycle_adj[b].len()];
-                a = b;
-                b = c;
-                e = ce;
-                if (a, b, e) == (start, next, edge) {
-                    break;
-                }
-            }
-            if (a, b, e) != (start, next, edge)
-                || ns.len() < 3
-                || ns.iter().collect::<HashSet<_>>().len() != ns.len()
-            {
-                continue;
-            }
-            let polygon: Vec<_> = ns.iter().map(|&i| report.nodes[i].position).collect();
-            let origin = polygon[0];
-            let signed: f64 = polygon
-                .iter()
-                .zip(polygon.iter().cycle().skip(1))
-                .map(|(a, b)| (*a - origin).cross(*b - origin) * 0.5)
-                .sum();
-            // Keep only the outer face of a connected cycle component, not each
-            // interior room. Its architectural exterior role still needs evidence.
-            if signed >= -eps * eps {
-                continue;
-            }
-            let perimeter: f64 = polygon
-                .iter()
-                .zip(polygon.iter().cycle().skip(1))
-                .map(|(a, b)| a.distance(*b))
-                .sum();
-            let wall_ids = ids(es
-                .iter()
-                .flat_map(|&i| report.edges[i].wall_ids.iter().cloned()));
-            charge(work, wall_ids.len())?;
-            let thick = wall_ids
-                .iter()
-                .filter_map(|id| wall_by_id.get(id.as_str()))
-                .map(|w| w.thickness)
-                .fold(0_f64, f64::max);
-            if -signed <= perimeter * thick * 2. || !simple(&polygon, eps, work)? {
-                continue;
-            }
-            let mut known = false;
-            for c in page
-                .exterior_enclosures
-                .iter()
-                .flatten()
-                .filter(|c| c.closed)
-            {
-                charge(
-                    work,
-                    polygon
-                        .len()
-                        .checked_mul(c.polygon.len())
-                        .and_then(|n| n.checked_mul(4))
-                        .ok_or("connection enclosure comparison work overflow")?,
-                )?;
-                if rings_near(&polygon, &c.polygon, thick + eps) {
-                    known = true;
-                    break;
-                }
-            }
-            let mut polygon = polygon;
-            polygon.reverse();
-            ns.reverse();
-            es.reverse();
-            es.rotate_left(1);
-            report.boundary_candidates.push(BoundaryCandidate {
-                id: format!(
-                    "p{}:connection-boundary:{}",
-                    page.page_number,
-                    report.boundary_candidates.len() + 1
-                ),
-                node_ids: ns.iter().map(|&i| report.nodes[i].id.clone()).collect(),
-                edge_ids: es.iter().map(|&i| report.edges[i].id.clone()).collect(),
-                polygon,
-                area_drawing_units_squared: -signed,
-                area_basis: "wall_axis_connection_boundary".into(),
-                wall_ids,
-                opening_ids: ids(es
+    append_boundaries(page, report, &adj, &wall_by_id, None, eps, work)?;
+    if report.boundary_candidates.is_empty() && !exterior_walls.is_empty() {
+        // Interior branches can change the face walk of the complete graph.
+        // Replay its existing measured edges on the authored exterior subset.
+        let exterior: Vec<Vec<_>> = adj
+            .iter()
+            .map(|links| {
+                links
                     .iter()
-                    .flat_map(|&i| report.edges[i].opening_ids.iter().cloned())),
-                exterior_status: if known {
-                    "matches_existing_source_exterior_enclosure"
-                } else {
-                    "exterior_role_unresolved"
-                }
-                .into(),
-                requires_review: true,
-            });
-        }
+                    .copied()
+                    .filter(|&(_, i)| {
+                        let edge = &report.edges[i];
+                        !edge.wall_ids.is_empty()
+                            && edge
+                                .wall_ids
+                                .iter()
+                                .all(|id| exterior_walls.contains(id.as_str()))
+                    })
+                    .collect()
+            })
+            .collect();
+        append_boundaries(page, report, &exterior, &wall_by_id, None, eps, work)?;
     }
-    if face_limit_reached {
-        report.diagnostics.push(format!("Connection boundary review is incomplete: a supported graph face exceeded the {MAX_FACE_VERTICES}-vertex review limit; that walk does not establish a closed boundary candidate."));
+    if exterior.exact_contacts() {
+        exterior_boundaries::append(
+            page,
+            report,
+            &adj,
+            &wall_by_id,
+            exterior.stepped_jambs(),
+            exterior == ExteriorLinks::CertifiedFacades,
+            eps,
+            work,
+        );
     }
     let ends: Vec<_> = adj
         .iter()
@@ -1289,6 +1921,191 @@ fn finish(
     Ok(())
 }
 
+fn append_boundaries(
+    page: &PageScan,
+    report: &mut ConnectionPass,
+    adj: &[Vec<(usize, usize)>],
+    wall_by_id: &HashMap<&str, &crate::model::Wall>,
+    exterior: Option<&exterior_boundaries::Proof<'_>>,
+    eps: f64,
+    work: &mut usize,
+) -> Result<(), String> {
+    // Peel dangling branches for cycle walking, retaining the original graph and
+    // diagnostics. Pruning is not a supported gap connection.
+    let mut cycle_adj = adj.to_vec();
+    let mut todo: VecDeque<_> = cycle_adj
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| a.len() < 2)
+        .map(|(i, _)| i)
+        .collect();
+    while let Some(i) = todo.pop_front() {
+        for (j, _) in std::mem::take(&mut cycle_adj[i]) {
+            charge(work, cycle_adj[j].len() + 1)?;
+            cycle_adj[j].retain(|&(n, _)| n != i);
+            if cycle_adj[j].len() == 1 {
+                todo.push_back(j);
+            }
+        }
+    }
+    for (i, neighbors) in cycle_adj.iter_mut().enumerate() {
+        neighbors.sort_by(|&(a, ea), &(b, eb)| {
+            let x = report.nodes[a].position - report.nodes[i].position;
+            let y = report.nodes[b].position - report.nodes[i].position;
+            x.y.atan2(x.x).total_cmp(&y.y.atan2(y.x)).then(ea.cmp(&eb))
+        });
+    }
+    let mut seen = HashSet::new();
+    let mut face_limit_reached = false;
+    for start in 0..cycle_adj.len() {
+        for &(next, edge) in &cycle_adj[start] {
+            if seen.contains(&(start, next, edge)) {
+                continue;
+            }
+            let mut ns = vec![];
+            let mut es = vec![];
+            let (mut a, mut b, mut e) = (start, next, edge);
+            loop {
+                charge(work, 1)?;
+                if !seen.insert((a, b, e)) {
+                    break;
+                }
+                if ns.len() >= MAX_FACE_VERTICES {
+                    face_limit_reached = true;
+                    break;
+                }
+                ns.push(a);
+                es.push(e);
+                charge(work, cycle_adj[b].len())?;
+                let Some(at) = cycle_adj[b].iter().position(|&(n, x)| n == a && x == e) else {
+                    break;
+                };
+                let (c, ce) = cycle_adj[b][(at + cycle_adj[b].len() - 1) % cycle_adj[b].len()];
+                a = b;
+                b = c;
+                e = ce;
+                if (a, b, e) == (start, next, edge) {
+                    break;
+                }
+            }
+            if (a, b, e) != (start, next, edge)
+                || ns.len() < 3
+                || ns.iter().collect::<HashSet<_>>().len() != ns.len()
+                || exterior.is_some_and(|proof| !es.iter().any(|i| proof.exact_edges.contains(i)))
+            {
+                continue;
+            }
+            let polygon: Vec<_> = ns.iter().map(|&i| report.nodes[i].position).collect();
+            let origin = polygon[0];
+            let signed: f64 = polygon
+                .iter()
+                .zip(polygon.iter().cycle().skip(1))
+                .map(|(a, b)| (*a - origin).cross(*b - origin) * 0.5)
+                .sum();
+            // Keep only the outer face of a connected cycle component, not each
+            // interior room. Its architectural exterior role still needs evidence.
+            if signed >= -eps * eps {
+                continue;
+            }
+            let perimeter: f64 = polygon
+                .iter()
+                .zip(polygon.iter().cycle().skip(1))
+                .map(|(a, b)| a.distance(*b))
+                .sum();
+            let wall_ids = ids(es
+                .iter()
+                .flat_map(|&i| report.edges[i].wall_ids.iter().cloned()));
+            charge(work, wall_ids.len())?;
+            let thick = wall_ids
+                .iter()
+                .filter_map(|id| wall_by_id.get(id.as_str()))
+                .map(|w| w.thickness)
+                .fold(0_f64, f64::max);
+            if -signed <= perimeter * thick * 2. || !simple(&polygon, eps, work)? {
+                continue;
+            }
+            if let Some(proof) = exterior {
+                if !exterior_boundaries::contains_source_lane(
+                    report, proof.lane, &ns, &es, &polygon, wall_by_id, eps, work,
+                )? {
+                    continue;
+                }
+                let mut duplicate = false;
+                for old in &report.boundary_candidates {
+                    charge(
+                        work,
+                        polygon
+                            .len()
+                            .saturating_mul(old.polygon.len())
+                            .saturating_mul(4),
+                    )?;
+                    if rings_near(&polygon, &old.polygon, thick + eps) {
+                        duplicate = true;
+                        break;
+                    }
+                }
+                if duplicate {
+                    continue;
+                }
+            }
+            let mut known = false;
+            for c in page
+                .exterior_enclosures
+                .iter()
+                .flatten()
+                .filter(|c| c.closed)
+            {
+                charge(
+                    work,
+                    polygon
+                        .len()
+                        .checked_mul(c.polygon.len())
+                        .and_then(|n| n.checked_mul(4))
+                        .ok_or("connection enclosure comparison work overflow")?,
+                )?;
+                if rings_near(&polygon, &c.polygon, thick + eps) {
+                    known = true;
+                    break;
+                }
+            }
+            let mut polygon = polygon;
+            polygon.reverse();
+            ns.reverse();
+            es.reverse();
+            es.rotate_left(1);
+            report.boundary_candidates.push(BoundaryCandidate {
+                id: format!(
+                    "p{}:connection-boundary:{}",
+                    page.page_number,
+                    report.boundary_candidates.len() + 1
+                ),
+                node_ids: ns.iter().map(|&i| report.nodes[i].id.clone()).collect(),
+                edge_ids: es.iter().map(|&i| report.edges[i].id.clone()).collect(),
+                polygon,
+                area_drawing_units_squared: -signed,
+                area_basis: "wall_axis_connection_boundary".into(),
+                wall_ids,
+                opening_ids: ids(es
+                    .iter()
+                    .flat_map(|&i| report.edges[i].opening_ids.iter().cloned())),
+                exterior_status: if known {
+                    "matches_existing_source_exterior_enclosure"
+                } else if exterior.is_some() {
+                    "source_authored_exterior_wall_axis_cycle"
+                } else {
+                    "exterior_role_unresolved"
+                }
+                .into(),
+                requires_review: true,
+            });
+        }
+    }
+    if face_limit_reached {
+        report.diagnostics.push(format!("Connection boundary review is incomplete: a supported graph face exceeded the {MAX_FACE_VERTICES}-vertex review limit; that walk does not establish a closed boundary candidate."));
+    }
+    Ok(())
+}
+
 fn simple(ps: &[Point], eps: f64, work: &mut usize) -> Result<bool, String> {
     for i in 0..ps.len() {
         let (a, b) = (ps[i], ps[(i + 1) % ps.len()]);
@@ -1342,6 +2159,13 @@ mod tests {
                     material_tiles: vec![],
                     placement_paint_ids: None,
                     placement_polygon_paint_ids: None,
+                    placement_contact_paint: vec![],
+                    placement_paint_remainders: vec![],
+                    white_nested_walls: vec![],
+                    terminal_stock: vec![],
+                    local_stock: vec![],
+                    stepped_stock: vec![],
+                    capped_stock: vec![],
                 }],
                 warnings: vec![],
             },
@@ -1433,6 +2257,7 @@ mod tests {
                 b: p.openings[0].end,
                 half: 1.,
             },
+            framed_door: None,
         };
         assert!(
             crosses_aperture(
@@ -1472,6 +2297,7 @@ mod tests {
                 b: p.openings[0].end,
                 half: 0.,
             },
+            framed_door: None,
         };
         assert!(
             crosses_aperture(
@@ -1549,6 +2375,13 @@ mod tests {
                         material_tiles: vec![],
                         placement_paint_ids: None,
                         placement_polygon_paint_ids: None,
+                        placement_contact_paint: vec![],
+                        placement_paint_remainders: vec![],
+                        white_nested_walls: vec![],
+                        terminal_stock: vec![],
+                        local_stock: vec![],
+                        stepped_stock: vec![],
+                        capped_stock: vec![],
                     }],
                     warnings: vec![],
                 },
@@ -1747,6 +2580,103 @@ mod tests {
         );
     }
     #[test]
+    fn measured_raster_jambs_attach_to_the_original_laterally_offset_portal() {
+        let mut p = house(0., true, false);
+        opening(&mut p, OpeningKind::Door, true, 0.);
+        let o = &mut p.openings[0];
+        o.evidence = OpeningEvidence::RasterFiniteHingedDoor;
+        o.host_wall_ids.clear();
+        o.host_wall_id.clear();
+        o.start.y += 0.6;
+        o.end.y += 0.6;
+        let original = o.clone();
+        for d in p.placement_decisions.iter_mut().flatten().take(2) {
+            d.reason = WallReason::SourceBoundedRasterJambStock;
+            d.opening_ids.push(original.id.clone());
+        }
+        let graph = build(&p).unwrap();
+        let edge = graph
+            .edges
+            .iter()
+            .find(|e| e.kind == ConnectionKind::DoorThreshold)
+            .unwrap();
+        assert_eq!(edge.evidence, FRAMED_DOOR_THRESHOLD);
+        assert!(!edge.adds_wall_material && !edge.contributes_wall_material);
+        let position = |id: &str| graph.nodes.iter().find(|n| n.id == id).unwrap().position;
+        assert_eq!(position(&edge.start_node_id), original.start);
+        assert_eq!(position(&edge.end_node_id), original.end);
+        assert_eq!(
+            graph
+                .edges
+                .iter()
+                .filter(|e| {
+                    e.kind == ConnectionKind::OpeningJambContact
+                        && !e.adds_wall_material
+                        && e.contributes_wall_material
+                })
+                .count(),
+            2
+        );
+        assert_eq!(p.openings[0], original);
+        p.walls[1].start.x += 0.1;
+        assert!(
+            build(&p)
+                .unwrap()
+                .edges
+                .iter()
+                .all(|e| e.kind != ConnectionKind::DoorThreshold)
+        );
+    }
+    #[test]
+    fn signed_exterior_caps_connect_actual_doorway_without_moving_the_observation() {
+        let mut p = house(0., true, false);
+        opening(&mut p, OpeningKind::Door, true, 0.);
+        let o = &mut p.openings[0];
+        o.host_wall_id = "reviewed-frame".into();
+        o.host_wall_ids = vec![o.host_wall_id.clone()];
+        o.evidence = OpeningEvidence::FiniteJambSwing;
+        o.start = Point::new(254., 200.6);
+        o.end = Point::new(236., 200.6);
+        o.swing_observations.push(SwingObservation {
+            arc_source_id: "signed-leaf".into(),
+            segment_source_ids: vec![],
+            hinge: o.start,
+            closed_tip: o.end,
+            open_tip: Point::new(254., 218.6),
+            leaf_tolerance: 0.01,
+            open_leaf_source_ids: vec![],
+            closed_leaf_source_ids: vec![],
+        });
+        let observed = o.clone();
+        for d in p.placement_decisions.iter_mut().flatten().take(2) {
+            d.reason = WallReason::SourceBoundedExteriorCore;
+            d.opening_ids.push(observed.id.clone());
+        }
+        let graph = build(&p).unwrap();
+        let edge = graph
+            .edges
+            .iter()
+            .find(|e| e.kind == ConnectionKind::DoorThreshold)
+            .unwrap();
+        assert_eq!(edge.evidence, FRAMED_DOOR_THRESHOLD);
+        assert_eq!(edge.opening_ids, [observed.id.clone()]);
+        assert!(!edge.adds_wall_material && !edge.contributes_wall_material);
+        let position = |id: &str| graph.nodes.iter().find(|n| n.id == id).unwrap().position;
+        assert_eq!(position(&edge.start_node_id), Point::new(255., 200.));
+        assert_eq!(position(&edge.end_node_id), Point::new(235., 200.));
+        assert_eq!(p.openings[0], observed);
+        p.placement_decisions.as_mut().unwrap()[0]
+            .opening_ids
+            .clear();
+        assert!(
+            build(&p)
+                .unwrap()
+                .edges
+                .iter()
+                .all(|e| e.kind != ConnectionKind::DoorThreshold)
+        );
+    }
+    #[test]
     fn source_door_gap_closes_graph_without_wall_material_and_ignores_swing_extent() {
         for angle in [0., 0.67] {
             let mut p = house(angle, true, false);
@@ -1763,6 +2693,7 @@ mod tests {
             let (start, end) = (p.openings[0].start, p.openings[0].end);
             p.openings[0].swing_observations.push(SwingObservation {
                 arc_source_id: "display-only-arc".into(),
+                segment_source_ids: vec![],
                 hinge: start,
                 closed_tip: end,
                 open_tip: Point::new(900., 900.),
@@ -2001,7 +2932,15 @@ mod tests {
         }
         report.nodes = graph.nodes;
         report.edges = graph.edges;
-        finish(&p, &mut report, epsilon(&p), &mut MAX_WORK.clone()).unwrap();
+        finish(
+            &p,
+            &mut report,
+            epsilon(&p),
+            &mut MAX_WORK.clone(),
+            &HashSet::new(),
+            ExteriorLinks::None,
+        )
+        .unwrap();
         assert!(report.components[0].closed);
         assert!(report.boundary_candidates.is_empty());
         assert!(
@@ -2011,4 +2950,38 @@ mod tests {
                 .any(|d| d.contains("4096-vertex review limit"))
         );
     }
+}
+#[test]
+fn measured_terminal_corner_has_no_direct_shortcut_across_empty_quadrant() {
+    let a = Solid {
+        axis_offset: Point::default(),
+        a: Point::new(0., 0.),
+        b: Point::new(10., 0.),
+        half: 1.,
+        wall: 0,
+        cuts: vec![0., 1.],
+    };
+    let mut b = Solid {
+        axis_offset: Point::default(),
+        a: Point::new(11., 1.),
+        b: Point::new(11., 8.),
+        half: 1.,
+        wall: 1,
+        cuts: vec![0., 1.],
+    };
+    let eps = 1e-10;
+    assert!(contact(&a, &b, eps).is_none());
+    let point = shared_terminal_corner(&a, &b, eps).unwrap();
+    assert_eq!(point, Point::new(10., 1.));
+    for s in [&a, &b] {
+        assert!(covered_by_union(
+            s.project(point).0,
+            point,
+            &[s.rect()],
+            eps
+        ));
+    }
+    b.a.x += 0.001;
+    b.b.x += 0.001;
+    assert!(shared_terminal_corner(&a, &b, eps).is_none());
 }

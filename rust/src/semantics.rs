@@ -983,6 +983,22 @@ fn cluster_root(parents: &mut [usize], mut idx: usize) -> usize {
     }
     idx
 }
+pub(crate) fn wall_route(w: &Wall) -> RoutingItem {
+    RoutingItem {
+        kind: RoutingKind::WallBarrierCandidate,
+        entity_id: w.id.clone(),
+        source_ids: w.source_ids.clone(),
+        span: w.curve.is_none().then_some(Span {
+            start: w.start,
+            end: w.end,
+        }),
+        curve: w.curve,
+        room_ids: Vec::new(),
+        usable_for_routing: false,
+        requires_review: true,
+    }
+}
+
 fn project(
     page: u32,
     walls: &[Wall],
@@ -1001,23 +1017,8 @@ fn project(
         .iter()
         .map(|c| (c.opening_id.as_str(), &c.room_ids))
         .collect();
-    let mut routing = Vec::new();
+    let mut routing: Vec<_> = walls.iter().map(wall_route).collect();
     let mut observed = Vec::new();
-    for w in walls {
-        routing.push(RoutingItem {
-            kind: RoutingKind::WallBarrierCandidate,
-            entity_id: w.id.clone(),
-            source_ids: w.source_ids.clone(),
-            span: w.curve.is_none().then_some(Span {
-                start: w.start,
-                end: w.end,
-            }),
-            curve: w.curve,
-            room_ids: Vec::new(),
-            usable_for_routing: false,
-            requires_review: true,
-        });
-    }
     for o in openings {
         let door = o.kind == OpeningKind::Door;
         let room_ids: Vec<_> = links
@@ -1453,6 +1454,13 @@ mod tests {
             number: 1,
             placement_paint_ids: None,
             placement_polygon_paint_ids: None,
+            placement_paint_remainders: vec![],
+            white_nested_walls: vec![],
+            terminal_stock: vec![],
+            local_stock: vec![],
+            stepped_stock: vec![],
+            capped_stock: vec![],
+            placement_contact_paint: vec![],
             material_tiles: vec![],
             width: 800.,
             height: 600.,

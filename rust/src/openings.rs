@@ -1,21 +1,94 @@
 //! Find host-specific apertures from finite drawing evidence. Never change an observed wall.
 use crate::model::*;
 use std::collections::BTreeSet;
+pub(crate) mod dashed_swing;
+mod exterior_frame;
+pub(crate) mod exterior_swing;
+pub(crate) use exterior_frame::{
+    append as append_exterior_window_frames, validate as validate_exterior_window_frames,
+};
+pub(crate) mod layerless_overhead;
+pub(crate) mod overhead_frame;
 pub mod physical_jambs;
 mod physical_view;
 pub(crate) use physical_view::{
     apply as refine_physical_jambs, validate as validate_physical_jambs,
 };
+mod paired_gap;
+pub(crate) use paired_gap::validate as validate_paired_gap_openings;
+mod segmented_caps;
+mod short_swing;
+mod single_gap;
 mod swing;
 #[cfg(test)]
 mod tests;
 pub use swing::door_leaf_walls;
+
+pub(crate) fn append_authored_interior_gaps(page: &mut PageScan) -> Result<(), String> {
+    let recovered = single_gap::proposals(page)?;
+    for o in &recovered {
+        page.semantics.routing.push(crate::semantics::RoutingItem {
+            kind: crate::semantics::RoutingKind::DoorPassageCandidate,
+            entity_id: o.id.clone(),
+            source_ids: o.source_ids.clone(),
+            span: Some(crate::semantics::Span {
+                start: o.start,
+                end: o.end,
+            }),
+            curve: None,
+            room_ids: vec![],
+            usable_for_routing: false,
+            requires_review: true,
+        });
+    }
+    page.openings.extend(recovered);
+    Ok(())
+}
+
+pub(crate) fn validate_authored_interior_gaps(
+    replayed: &PageScan,
+    saved: &PageScan,
+) -> Result<(), String> {
+    let expected = single_gap::proposals(replayed)?;
+    if saved
+        .openings
+        .iter()
+        .filter(|o| o.evidence == OpeningEvidence::AuthoredInteriorGap)
+        .eq(expected.iter())
+    {
+        Ok(())
+    } else {
+        Err("authored interior door geometry failed source replay".into())
+    }
+}
 /// V2 doors retain each source swing behind a physical cut. Check direct primitive
 /// identity and the finite radial endpoint, including when the cut has two observed hands.
 pub(crate) fn validate_swing_sources(
     o: &Opening,
     sources: &std::collections::HashMap<&str, &Primitive>,
 ) -> bool {
+    if o.evidence == OpeningEvidence::LayerlessDashedSwing {
+        return dashed_swing::validate_swing(o, sources);
+    }
+    if o.swing_observations
+        .iter()
+        .any(|s| !s.segment_source_ids.is_empty())
+    {
+        return false;
+    }
+    if matches!(
+        o.evidence,
+        OpeningEvidence::AuthoredExteriorOverheadFrame
+            | OpeningEvidence::LayerlessOverheadProjection
+    ) {
+        return o.kind == OpeningKind::Door
+            && o.operation == "Overhead"
+            && matches!(o.host_wall_ids.as_slice(), [a, b] if a == &o.host_wall_id && a != b)
+            && o.hinge.is_none()
+            && o.swing_observations.is_empty()
+            && o.physical_jambs.is_none()
+            && o.requires_review;
+    }
     if o.kind != OpeningKind::Door {
         return o.swing_observations.is_empty();
     }
@@ -149,6 +222,35 @@ fn projected(w: &Wall, p: Point) -> Point {
 fn same_axis(w: &Wall, d: Point) -> bool {
     w.curve.is_none() && (w.end - w.start).unit().dot(d).abs() >= 0.995
 }
+
+pub(crate) fn validate_short_swing_sources(
+    opening: &Opening,
+    sources: &std::collections::HashMap<&str, &Primitive>,
+) -> bool {
+    if opening.evidence == OpeningEvidence::LayerlessDashedSwing {
+        return dashed_swing::validate_swing(opening, sources);
+    }
+    opening.swing_observations.iter().all(|swing| {
+        let Some(arc) = sources.get(swing.arc_source_id.as_str()).copied() else {
+            return false;
+        };
+        let Shape::Arc { radius, sweep, .. } = arc.shape else {
+            return false;
+        };
+        !short_swing::is_short(sweep)
+            || (!swing.open_leaf_source_ids.is_empty()
+                && !swing.closed_leaf_source_ids.is_empty()
+                && swing.leaf_tolerance == radius * 0.045
+                && short_swing::Signs::new(
+                    opening
+                        .source_ids
+                        .iter()
+                        .filter_map(|id| sources.get(id.as_str()).copied()),
+                )
+                .at(arc, swing.hinge, swing.closed_tip)
+                .is_some())
+    })
+}
 fn interval_overlap(a: &Opening, b: &Opening) -> bool {
     if !a.host_wall_ids.iter().any(|h| b.host_wall_ids.contains(h)) {
         return false;
@@ -160,6 +262,38 @@ fn interval_overlap(a: &Opening, b: &Opening) -> bool {
     let x = (b.start - a.start).dot(v);
     let y = (b.end - a.start).dot(v);
     x.min(y).max(0.) + 1e-6 < x.max(y).min(a.start.distance(a.end))
+}
+
+fn window_competes_with_door(
+    pane: &Opening,
+    door: &Opening,
+    walls: &std::collections::HashMap<&str, &Wall>,
+) -> bool {
+    if interval_overlap(pane, door) {
+        return true;
+    }
+    let along = (pane.end - pane.start).unit();
+    let length = pane.start.distance(pane.end);
+    let other = door.end - door.start;
+    if along.dot(other.unit()).abs() < 0.995 {
+        return false;
+    }
+    let coords = [door.start - pane.start, door.end - pane.start];
+    let [a, b] = coords.map(|p| p.dot(along));
+    let intersection = a.max(b).min(length) - a.min(b).max(0.);
+    if intersection < 0.5 * length.min(other.norm()) || intersection <= 0. {
+        return false;
+    }
+    let radius = [pane, door]
+        .into_iter()
+        .filter_map(|o| walls.get(o.host_wall_id.as_str()))
+        .map(|w| w.thickness * 0.5)
+        .sum::<f64>();
+    coords.iter().all(|p| p.cross(along).abs() <= radius)
+        && pane
+            .source_ids
+            .iter()
+            .any(|id| door.source_ids.contains(id))
 }
 pub fn detect(page: &Page, walls: &[Wall], o: &Options) -> Result<Vec<Opening>, String> {
     let tol = (2. * o.snap_tolerance).max(4.);
@@ -204,15 +338,18 @@ pub fn detect(page: &Page, walls: &[Wall], o: &Options) -> Result<Vec<Opening>, 
         Ok(jamb)
     };
     let mut door_proposals = Vec::new();
+    let mut paired_leaves = Vec::new();
     let source_by_id: std::collections::HashMap<_, _> = page
         .primitives
         .iter()
         .map(|p| (p.id.as_str(), &p.shape))
         .collect();
+    let frame_sources = std::cell::OnceCell::new();
     let wall_by_id: std::collections::HashMap<_, _> =
         walls.iter().map(|w| (w.id.as_str(), w)).collect();
     let explicit_wall_sources = swing::explicit_wall_sources(page);
     let mut strokes = swing::LeafStrokes::new(page, o);
+    let mut short_signs = None;
     let paint_tolerance = o.snap_tolerance * 0.25;
     let mut visits = 0usize;
     for p in &page.primitives {
@@ -232,9 +369,10 @@ pub fn detect(page: &Page, walls: &[Wall], o: &Options) -> Result<Vec<Opening>, 
         else {
             continue;
         };
+        let short = short_swing::is_short(sweep);
         if radius < o.min_opening_gap
             || radius > o.max_opening_gap
-            || !(45.0..=140.0).contains(&sweep.abs().to_degrees())
+            || (!short && !(45.0..=140.0).contains(&sweep.abs().to_degrees()))
             || layer == LayerKind::Window
         {
             continue;
@@ -243,8 +381,23 @@ pub fn detect(page: &Page, walls: &[Wall], o: &Options) -> Result<Vec<Opening>, 
         let mut contained_hosts = BTreeSet::new();
         let angles = [start_angle, start_angle + sweep];
         let tips = angles.map(|a| center + Point::new(a.cos(), a.sin()) * radius);
+        let signs = if short {
+            let index =
+                short_signs.get_or_insert_with(|| short_swing::Signs::new(page.primitives.iter()));
+            let signs = tips.map(|tip| index.at(p, center, tip));
+            if signs.iter().all(Option::is_none) {
+                continue;
+            }
+            signs
+        } else {
+            [None; 2]
+        };
         // A loose graph snap setting must never authorize a stroke far from the authored radius.
-        let leaf_tolerance = paint_tolerance.min(radius / 16.);
+        let leaf_tolerance = if short {
+            radius * 0.045
+        } else {
+            paint_tolerance.min(radius / 16.)
+        };
         let ink = [
             strokes.fit(center, tips[0], leaf_tolerance)?,
             strokes.fit(center, tips[1], leaf_tolerance)?,
@@ -256,6 +409,15 @@ pub fn detect(page: &Page, walls: &[Wall], o: &Options) -> Result<Vec<Opening>, 
             let j2 = find_jambs(end, d)?;
             let open_ink = &ink[1 - direction];
             let closed_ink = &ink[direction];
+            if short
+                && (signs[direction].is_none()
+                    || open_ink.ids.is_empty()
+                    || open_ink.error > paint_tolerance.max(radius * 0.01)
+                    || closed_ink.ids.is_empty()
+                    || open_ink.ids.iter().any(|id| closed_ink.ids.contains(id)))
+            {
+                continue;
+            }
             let fit_error = if closed_ink.ids.is_empty() {
                 f64::INFINITY
             } else {
@@ -263,6 +425,7 @@ pub fn detect(page: &Page, walls: &[Wall], o: &Options) -> Result<Vec<Opening>, 
             };
             let swing = SwingObservation {
                 arc_source_id: p.id.clone(),
+                segment_source_ids: vec![],
                 hinge: center,
                 closed_tip: end,
                 open_tip: tips[1 - direction],
@@ -270,6 +433,12 @@ pub fn detect(page: &Page, walls: &[Wall], o: &Options) -> Result<Vec<Opening>, 
                 open_leaf_source_ids: open_ink.ids.clone(),
                 closed_leaf_source_ids: closed_ink.ids.clone(),
             };
+            if !short
+                && !swing.open_leaf_source_ids.is_empty()
+                && !swing.closed_leaf_source_ids.is_empty()
+            {
+                paired_leaves.push(swing.clone());
+            }
             let mut left = Vec::new();
             let mut right = Vec::new();
             for w in walls {
@@ -331,6 +500,7 @@ pub fn detect(page: &Page, walls: &[Wall], o: &Options) -> Result<Vec<Opening>, 
                     continue;
                 }
                 let mut ids = BTreeSet::from([p.id.clone()]);
+                ids.extend(signs[direction].into_iter().flatten().map(str::to_owned));
                 if long_jambs {
                     ids.extend(j1.ordinary.iter().chain(&j2.ordinary).cloned());
                 }
@@ -390,6 +560,7 @@ pub fn detect(page: &Page, walls: &[Wall], o: &Options) -> Result<Vec<Opening>, 
                         .chain(&right)
                         .flat_map(|w| w.source_ids.iter().cloned())
                         .chain([p.id.clone()])
+                        .chain(signs[direction].into_iter().flatten().map(str::to_owned))
                         .collect();
                     matches.push(DoorMatch {
                         primary: left[0],
@@ -446,6 +617,22 @@ pub fn detect(page: &Page, walls: &[Wall], o: &Options) -> Result<Vec<Opening>, 
                     matches.remove(if leaf_a { 0 } else { 1 });
                 }
             }
+        }
+        if matches.len() > 1
+            && p.layer.as_deref().is_some_and(crate::layers::is_named_wall)
+            && (p.layer_category_override.is_none() || p.layer_kind() == LayerKind::Wall)
+        {
+            let primitives = frame_sources
+                .get_or_init(|| page.primitives.iter().map(|p| (p.id.as_str(), p)).collect());
+            segmented_caps::resolve(
+                &mut matches,
+                &ticks,
+                primitives,
+                p,
+                tol,
+                o.max_wall_pair_separation + 2. * tol,
+                &mut visits,
+            )?;
         }
         if matches.len() == 1 {
             let DoorMatch {
@@ -563,7 +750,7 @@ pub fn detect(page: &Page, walls: &[Wall], o: &Options) -> Result<Vec<Opening>, 
         }
         if !proposals
             .iter()
-            .any(|p| p.kind == OpeningKind::Door && interval_overlap(&w, p))
+            .any(|p| p.kind == OpeningKind::Door && window_competes_with_door(&w, p, &wall_by_id))
         {
             proposals.push(w)
         }
@@ -628,5 +815,13 @@ pub fn detect(page: &Page, walls: &[Wall], o: &Options) -> Result<Vec<Opening>, 
             out.push(p)
         }
     }
+    paired_gap::append(
+        page,
+        walls,
+        &ticks,
+        &paired_leaves,
+        &mut find_jambs,
+        &mut out,
+    )?;
     Ok(out)
 }

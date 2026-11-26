@@ -14,6 +14,8 @@ pub mod placement;
 mod room_fill;
 pub mod room_labels;
 pub mod semantics;
+#[doc(hidden)]
+pub mod stage_profile;
 pub mod topology;
 pub mod visual;
 pub mod walls;

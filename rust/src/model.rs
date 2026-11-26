@@ -159,11 +159,35 @@ pub struct Page {
     pub placement_paint_ids: Option<Vec<String>>,
     /// Conservatively visible opaque convex nonrectangular PDF fills.
     pub placement_polygon_paint_ids: Option<Vec<String>>,
+    pub placement_paint_remainders: Vec<PaintRemainder>,
+    pub white_nested_walls: Vec<crate::input::white_nested::Receipt>,
+    pub terminal_stock: Vec<crate::input::terminal_stock::Receipt>,
+    pub local_stock: Vec<crate::input::local_stock::Receipt>,
+    pub stepped_stock: Vec<crate::input::stepped_stock::Receipt>,
+    pub capped_stock: Vec<crate::input::capped_stock::Receipt>,
+    pub placement_contact_paint: Vec<ContactPaint>,
     pub material_tiles: Vec<crate::placement::insulation::MaterialTile>,
     pub width: f64,
     pub height: f64,
     pub units_to_mm: Option<f64>,
     pub primitives: Vec<Primitive>,
+}
+
+/// A finite rectangular remnant with authored paint that establishes its new end.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PaintRemainder {
+    pub source_id: String,
+    pub outline: [Point; 4],
+    pub occluder_source_ids: Vec<String>,
+}
+
+/// An opaque authored cell and the original later polygons that obscure parts of it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ContactPaint {
+    pub source_id: String,
+    pub occluder_source_ids: Vec<String>,
 }
 #[derive(Clone, Debug)]
 pub struct Document {
@@ -223,7 +247,7 @@ pub enum BodyEvidence {
     ConcentricArcs,
     ExplicitCenterline,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Wall {
     pub id: String,
@@ -268,12 +292,24 @@ pub enum OpeningEvidence {
     WallGapSwing,
     ExplicitWindowFrame,
     FiniteWindowAssembly,
+    ExteriorFrameGap,
+    AuthoredInteriorGap,
+    CompositeWindowFrame,
+    AuthoredWindowFrame,
+    AuthoredExteriorSwingCasing,
+    AuthoredExteriorOverheadFrame,
+    AuthoredExteriorRoughGlazing,
+    LayerlessOverheadProjection,
+    RasterFiniteHingedDoor,
+    LayerlessDashedSwing,
 }
 /// The authored radial swing stays in source coordinates even when its aperture is on a wall axis.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SwingObservation {
     pub arc_source_id: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub segment_source_ids: Vec<String>,
     pub hinge: Point,
     pub closed_tip: Point,
     pub open_tip: Point,
@@ -301,12 +337,36 @@ pub struct Opening {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub physical_jambs: Option<crate::openings::physical_jambs::PhysicalJambEvidence>,
 }
+
+/// A pane observation within an independently measured physical window frame.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowPane {
+    pub frame_opening_id: String,
+    /// Original observation order for replay of the wall-selection stages.
+    pub opening_index: usize,
+    pub observation: Opening,
+}
+
 impl Opening {
     /// The occupied part of this straight host's observed axis, in host-relative units.
     /// A door between two wall ends has no solid material on either host to cut.
     pub fn interval_on(&self, wall: &Wall) -> Option<(f64, f64)> {
         if wall.curve.is_some()
-            || self.evidence == OpeningEvidence::WallGapSwing
+            || matches!(
+                self.evidence,
+                OpeningEvidence::WallGapSwing
+                    | OpeningEvidence::ExteriorFrameGap
+                    | OpeningEvidence::AuthoredInteriorGap
+                    | OpeningEvidence::CompositeWindowFrame
+                    | OpeningEvidence::AuthoredWindowFrame
+                    | OpeningEvidence::AuthoredExteriorSwingCasing
+                    | OpeningEvidence::AuthoredExteriorOverheadFrame
+                    | OpeningEvidence::AuthoredExteriorRoughGlazing
+                    | OpeningEvidence::LayerlessOverheadProjection
+                    | OpeningEvidence::RasterFiniteHingedDoor
+                    | OpeningEvidence::LayerlessDashedSwing
+            )
             || !self.host_wall_ids.contains(&wall.id)
         {
             return None;
@@ -466,6 +526,20 @@ pub struct PageScan {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub placement_polygon_paint_ids: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub placement_paint_remainders: Vec<PaintRemainder>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub white_nested_walls: Vec<crate::input::white_nested::Receipt>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terminal_stock: Vec<crate::input::terminal_stock::Receipt>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub local_stock: Vec<crate::input::local_stock::Receipt>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stepped_stock: Vec<crate::input::stepped_stock::Receipt>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub capped_stock: Vec<crate::input::capped_stock::Receipt>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub placement_contact_paint: Vec<ContactPaint>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub material_tiles: Vec<crate::placement::insulation::MaterialTile>,
     pub width: f64,
     pub height: f64,
@@ -480,6 +554,8 @@ pub struct PageScan {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub withheld_walls: Option<Vec<WithheldWall>>,
     pub openings: Vec<Opening>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub window_panes: Vec<WindowPane>,
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
     pub rooms: Vec<Room>,
@@ -490,6 +566,14 @@ pub struct PageScan {
     pub semantics: crate::semantics::PageSemantics,
     pub room_annotations: Vec<crate::room_labels::RoomAnnotation>,
     pub warnings: Vec<String>,
+}
+impl PageScan {
+    /// Include pane observations when reporting how an observed wall was cut.
+    pub(crate) fn opening_evidence(&self) -> impl Iterator<Item = &Opening> {
+        self.openings
+            .iter()
+            .chain(self.window_panes.iter().map(|pane| &pane.observation))
+    }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

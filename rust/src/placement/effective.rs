@@ -12,6 +12,7 @@ pub fn effective_wall<'a>(wall: &'a Wall, decision: Option<&WallDecision>) -> Co
         let mut measured = wall.clone();
         measured.start = extent.start;
         measured.end = extent.end;
+        measured.thickness = extent.thickness.unwrap_or(wall.thickness);
         Cow::Owned(measured)
     } else {
         Cow::Borrowed(wall)
@@ -41,6 +42,7 @@ pub(crate) fn effective_page(page: &PageScan) -> Cow<'_, PageScan> {
         {
             wall.start = extent.start;
             wall.end = extent.end;
+            wall.thickness = extent.thickness.unwrap_or(wall.thickness);
         }
     }
     Cow::Owned(measured)
@@ -78,7 +80,9 @@ pub(crate) fn corner_joints(page: &PageScan) -> Vec<super::stroked::CornerJoint>
         .placement_decisions
         .iter()
         .flatten()
-        .filter(|d| d.placement_extent.is_some())
+        .filter(|d| {
+            d.placement_extent.is_some() || d.reason == super::WallReason::SourceBoundedExteriorCore
+        })
         .map(|d| d.wall_id.as_str())
         .collect();
     super::stroked::corner_joints(page)

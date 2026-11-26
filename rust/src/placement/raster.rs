@@ -1,5 +1,13 @@
 //! Pixel-derived strips require material contrast and a building-scale connected network.
+mod bounded_course;
+mod companion;
+mod isolated_course;
+mod offset_pair;
 mod preview10;
+pub(crate) use bounded_course::select as select_bounded_courses;
+pub(super) use companion::select as select_companion;
+pub(crate) use isolated_course::select as select_isolated_courses;
+pub(super) use offset_pair::select as select_offset_pair;
 
 use super::{WallDecision, WallReason, WallStatus, overlap};
 use crate::{input::raster::RasterBand, model::*};
@@ -205,12 +213,24 @@ fn hatch_material(b: &RasterBand) -> bool {
         })
 }
 
+fn corroborated_hatch(band: &RasterBand) -> bool {
+    material(band)
+        && band.boundary_coverage.iter().all(|&v| v >= 0.95)
+        && band.hatch.as_ref().is_some_and(|h| {
+            h.crossing_count >= 8
+                && h.diagonal_support - h.stationary_correlation >= 0.95
+                && h.stationary_correlation <= -0.2
+                && h.pitch_cv <= 0.35
+                && h.longitudinal_coverage >= 0.82
+        })
+}
+
 fn material(b: &RasterBand) -> bool {
     hatch_material(b)
         || b.width_pixels >= 3.
             && b.boundary_coverage.iter().all(|v| *v >= 0.8)
             && b.start.distance(b.end) >= b.thickness * 6.0
-            && (b.dark_fraction >= 0.28 && b.mean_luma <= 220. || b.mean_luma <= 175.)
+            && crate::input::raster::dense_material_tone(b.dark_fraction, b.mean_luma)
 }
 
 struct MeasuredContact {
@@ -542,6 +562,136 @@ pub(crate) fn select(page: &PageScan, out: &mut [WallDecision]) {
     }
 }
 
+/// A small partition assembly can be real even when it cannot satisfy the
+/// building-scale gate. Require two independently textured flanks of one
+/// measured face, plus a distinct solid wall physically meeting a flank.
+/// The gap between the flanks is never part of the placed material or graph.
+pub(super) fn select_local_partitions(page: &PageScan, decisions: &mut [WallDecision]) {
+    let Some(info) = page.pdf_input.as_ref().filter(|p| {
+        p.route == crate::input::raster::PdfRoute::Raster
+            && p.analysis_revision == 1
+            && p.render_width > 0
+            && p.render_height > 0
+    }) else {
+        return;
+    };
+    if !page.walls.iter().any(is_raster) {
+        return;
+    }
+    let pixel =
+        (page.width / info.render_width as f64).max(page.height / info.render_height as f64);
+    let mut groups: HashMap<&str, Vec<usize>> = HashMap::new();
+    let mut ready = Vec::new();
+    for (i, d) in decisions.iter().enumerate() {
+        if d.status == WallStatus::Ready {
+            ready.push(super::effective_wall(&page.walls[i], Some(d)));
+        } else if d.reason == WallReason::RasterFacesNeedReview && d.component_wall_count == 3 {
+            groups.entry(&d.component_id).or_default().push(i);
+        }
+    }
+    if groups.is_empty() {
+        return;
+    }
+    let bands = BandIndex::new(info);
+    let mut proposals = Vec::new();
+    for group in groups.values() {
+        let &[a, b, c] = group.as_slice() else {
+            continue;
+        };
+        for (a, b, c) in [(a, b, c), (a, c, b), (b, c, a)] {
+            let [first, second, return_wall] = [a, b, c].map(|i| &page.walls[i]);
+            let [Some(x), Some(y), Some(z)] = [first, second, return_wall].map(|w| bands.get(w))
+            else {
+                continue;
+            };
+            if let Some(at_first) = partition_turn(first, second, return_wall, [x, y, z], pixel) {
+                proposals.push((a, b, c, at_first));
+                break;
+            }
+        }
+    }
+    proposals.sort_unstable();
+    for (a, b, c, at_first) in proposals {
+        let walls = [a, b, c].map(|i| &page.walls[i]);
+        if walls.iter().any(|w| {
+            ready
+                .iter()
+                .any(|other| overlap::parallel_bodies_overlap(w, other))
+                || page
+                    .openings
+                    .iter()
+                    .any(|o| overlap::aperture_crosses(w, o))
+        }) {
+            continue;
+        }
+        ready.extend(walls.map(std::borrow::Cow::Borrowed));
+        let joined = if at_first { a } else { b };
+        // Only the actual turn is emitted as a physical contact. The second
+        // flank supplies placement context without a link over the opening.
+        for (i, support) in [(a, b), (b, a), (c, joined)] {
+            let d = &mut decisions[i];
+            d.status = WallStatus::Ready;
+            d.reason = WallReason::SourceBoundedRasterPartition;
+            d.support_source_ids.clone_from(&page.walls[i].source_ids);
+            d.support_wall_ids = vec![page.walls[support].id.clone()];
+        }
+    }
+}
+
+fn partition_turn(
+    a: &Wall,
+    b: &Wall,
+    c: &Wall,
+    [x, y, z]: [&RasterBand; 3],
+    pixel: f64,
+) -> Option<bool> {
+    let (Some(x_hatch), Some(y_hatch)) = (&x.hatch, &y.hatch) else {
+        return None;
+    };
+    let pitch = x_hatch.mean_pitch_pixels.min(y_hatch.mean_pitch_pixels);
+    let same_span = |w: &Wall, m: &RasterBand| w.start == m.start && w.end == m.end;
+    if ![(a, x), (b, y), (c, z)]
+        .into_iter()
+        .all(|(w, m)| same_span(w, m))
+        || !corroborated_hatch(x)
+        || !corroborated_hatch(y)
+        || (x_hatch.mean_pitch_pixels - y_hatch.mean_pitch_pixels).abs() > pitch * 0.25
+        || z.hatch.is_some()
+        || z.dark_fraction < 0.55
+        || z.mean_luma > 175.
+        || z.boundary_coverage.iter().any(|&v| v < 0.95)
+        || c.start.distance(c.end) < 12. * c.thickness
+        || (a.thickness - b.thickness).abs() > pixel
+        || (b.start - a.start).cross((a.end - a.start).unit()).abs() > pixel
+        || !related_flanks(a, b, pixel, true)
+        || a.source_ids
+            .iter()
+            .filter(|id| b.source_ids.contains(id))
+            .count()
+            != 1
+        || c.source_ids
+            .iter()
+            .any(|id| a.source_ids.contains(id) || b.source_ids.contains(id))
+    {
+        return None;
+    }
+    let u = (c.end - c.start).unit();
+    let terminates_at = |w: &Wall| {
+        u.dot((w.end - w.start).unit()).abs() <= 0.05
+            && measured_contact(w, c).is_some_and(|joint| {
+                c.start
+                    .distance(joint.axis_points[1])
+                    .min(c.end.distance(joint.axis_points[1]))
+                    <= w.thickness * 0.5 + pixel
+            })
+    };
+    match (terminates_at(a), terminates_at(b)) {
+        (true, false) => Some(true),
+        (false, true) => Some(false),
+        _ => None,
+    }
+}
+
 pub(crate) fn validate_observations(page: &PageScan) -> Result<(), String> {
     if page
         .pdf_input
@@ -590,6 +740,20 @@ pub(crate) fn corner_joints(page: &PageScan) -> Vec<super::stroked::CornerJoint>
         .iter()
         .flatten()
         .filter(|d| d.status == WallStatus::Ready)
+        .map(|d| d.wall_id.as_str())
+        .collect();
+    let local_partitions: HashSet<_> = page
+        .placement_decisions
+        .iter()
+        .flatten()
+        .filter(|d| {
+            matches!(
+                d.reason,
+                WallReason::SourceBoundedRasterPartition
+                    | WallReason::SourceBoundedRasterCompanion
+                    | WallReason::SourceBoundedRasterOffsetPair
+            )
+        })
         .map(|d| d.wall_id.as_str())
         .collect();
     let walls: Vec<_> = page
@@ -645,7 +809,10 @@ pub(crate) fn corner_joints(page: &PageScan) -> Vec<super::stroked::CornerJoint>
                 });
                 continue;
             }
-            if u.dot(v).abs() > 0.001 {
+            if local_partitions.contains(a.id.as_str())
+                || local_partitions.contains(b.id.as_str())
+                || u.dot(v).abs() > 0.001
+            {
                 continue;
             }
             let at = a.start + u * ((b.start - a.start).cross(v) / u.cross(v));
@@ -751,6 +918,13 @@ mod tests {
             material_tiles: vec![],
             placement_paint_ids: None,
             placement_polygon_paint_ids: None,
+            placement_paint_remainders: vec![],
+            white_nested_walls: vec![],
+            terminal_stock: vec![],
+            local_stock: vec![],
+            stepped_stock: vec![],
+            capped_stock: vec![],
+            placement_contact_paint: vec![],
             pdf_input: Some(PdfInput {
                 analysis_revision: 1,
                 route: PdfRoute::Raster,
@@ -761,9 +935,70 @@ mod tests {
                 render_height: 180,
                 threshold: 174,
                 raster_source_ids: vec![],
+                raster_course_receipts: vec![],
+                raster_face_continuations: vec![],
+                raster_hinged_doors: vec![],
+                raster_jamb_stocks: vec![],
+                raster_narrow_courses: vec![],
+                raster_section_courses: vec![],
+                raster_jamb_returns: vec![],
                 bands,
             }),
         }
+    }
+
+    #[test]
+    fn local_partition_requires_an_actual_turn_and_independent_flanks() {
+        let mut left = band(Point::new(20., 50.), Point::new(70., 50.), 8., "left");
+        let mut right = band(Point::new(100., 50.), Point::new(142., 50.), 8., "right");
+        right.face_source_ids[0] = left.face_source_ids[0].clone();
+        let hatch = crate::input::raster::RasterHatch {
+            crossing_count: 16,
+            mean_pitch_pixels: 3.,
+            pitch_cv: 0.3,
+            diagonal_support: 0.65,
+            stationary_correlation: -0.65,
+            contrast: 90.,
+            longitudinal_coverage: 0.9,
+            face_ink_half_widths_pixels: [0.5; 2],
+        };
+        left.hatch = Some(hatch.clone());
+        right.hatch = Some(hatch);
+        let side = band(Point::new(22., 52.), Point::new(22., 120.), 4., "side");
+        let input = page(vec![left.clone(), right.clone(), side.clone()]);
+        let mut walls = vec![];
+        observe(&input, &mut walls, &Options::default());
+        let wall = |b: &RasterBand| {
+            walls
+                .iter()
+                .find(|w| w.start == b.start && w.end == b.end)
+                .unwrap()
+                .clone()
+        };
+        let (a, b, c) = (wall(&left), wall(&right), wall(&side));
+        assert_eq!(
+            partition_turn(&a, &b, &c, [&left, &right, &side], 1.),
+            Some(true)
+        );
+        assert!(measured_contact(&a, &b).is_none());
+
+        let mut detached = c.clone();
+        let mut detached_band = side.clone();
+        detached.start.y = 54.5;
+        detached_band.start = detached.start;
+        assert!(partition_turn(&a, &b, &detached, [&left, &right, &detached_band], 1.).is_none());
+
+        let mut uncorroborated = right.clone();
+        uncorroborated
+            .hatch
+            .as_mut()
+            .unwrap()
+            .stationary_correlation = 0.7;
+        assert!(partition_turn(&a, &b, &c, [&left, &uncorroborated, &side], 1.).is_none());
+
+        let mut borrowed = b.clone();
+        borrowed.source_ids = a.source_ids.clone();
+        assert!(partition_turn(&a, &borrowed, &c, [&left, &right, &side], 1.).is_none());
     }
 
     #[test]

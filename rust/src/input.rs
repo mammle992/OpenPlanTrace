@@ -2,11 +2,24 @@
 mod dxf;
 mod pdf;
 pub mod raster;
+#[doc(hidden)]
+pub use pdf::capped_stock;
+#[doc(hidden)]
+pub use pdf::local_stock;
+#[doc(hidden)]
+pub use pdf::stepped_stock;
+#[doc(hidden)]
+pub use pdf::terminal_stock;
+pub(crate) use pdf::validate_contact_paint;
+pub(crate) use pdf::validate_paint_remainders;
+#[doc(hidden)]
+pub use pdf::white_nested;
 
 use crate::model::{Document, Point};
 use std::{collections::BTreeMap, fs::File, io::Read, path::Path};
 
 const MAX_FILE: u64 = 128 << 20;
+const MAX_LOCAL_PDF: u64 = 512 << 20;
 const MAX_ITEMS: usize = 1_000_000;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -29,8 +42,23 @@ impl DrawingFormat {
 }
 
 pub fn load(path: &Path) -> Result<Document, String> {
+    load_selected(path, None)
+}
+
+pub(crate) fn load_selected(path: &Path, page: Option<u32>) -> Result<Document, String> {
+    let stage = crate::stage_profile::scope("read_input_file");
     let format = DrawingFormat::of(path).ok_or("Unsupported input format; use PDF or ASCII DXF")?;
     let file = File::open(path).map_err(|e| format!("Could not open drawing: {e}"))?;
+    let needs_owned_pdf = format == DrawingFormat::Pdf
+        && (page.is_some()
+            || file
+                .metadata()
+                .is_ok_and(|metadata| metadata.is_file() && metadata.len() > MAX_FILE));
+    if needs_owned_pdf {
+        let bytes = read_owned_local_pdf(file, page.is_some())?;
+        drop(stage);
+        return load_owned_pdf(bytes, page);
+    }
     let mut bytes = Vec::new();
     file.take(MAX_FILE + 1)
         .read_to_end(&mut bytes)
@@ -38,21 +66,83 @@ pub fn load(path: &Path) -> Result<Document, String> {
     if bytes.len() as u64 > MAX_FILE {
         return Err("Drawing exceeds 128 MiB input limit".into());
     }
-    load_bytes(format, &bytes)
+    drop(stage);
+    load_bytes_selected(format, &bytes, page)
 }
 
-/// Read an uploaded or embedded drawing with the same limits as a local file.
+// A large or selected local PDF owns one bounded buffer. Hayro can take over that
+// allocation after vector extraction and raster preflight have borrowed it.
+fn read_owned_local_pdf(mut file: File, selected: bool) -> Result<Vec<u8>, String> {
+    let subject = if selected {
+        "Selected PDF"
+    } else {
+        "Local PDF"
+    };
+    let metadata = file
+        .metadata()
+        .map_err(|e| format!("Could not measure {subject}: {e}"))?;
+    if !metadata.is_file() {
+        return Err(format!("{subject} must be a regular file"));
+    }
+    let length = metadata.len();
+    if length > MAX_LOCAL_PDF {
+        return Err(format!("{subject} exceeds 512 MiB input limit"));
+    }
+    let length = usize::try_from(length).map_err(|_| format!("{subject} size is unsupported"))?;
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(length)
+        .map_err(|_| format!("Insufficient memory for {subject} input"))?;
+    bytes.resize(length, 0);
+    file.read_exact(&mut bytes)
+        .map_err(|e| format!("Could not read {subject}: {e}"))?;
+    if file
+        .read(&mut [0])
+        .map_err(|e| format!("Could not verify {subject} length: {e}"))?
+        != 0
+    {
+        return Err(format!("{subject} grew while being read"));
+    }
+    Ok(bytes)
+}
+
+fn load_owned_pdf(bytes: Vec<u8>, page: Option<u32>) -> Result<Document, String> {
+    let (pdf, mut doc) = {
+        let _profile = crate::stage_profile::scope("pdf_vector_import");
+        let pdf = pdf::parse(&bytes)?;
+        let doc = pdf::read_document(&pdf, page)?;
+        (pdf, doc)
+    };
+    raster::interpret_owned_with_residual_hatch(bytes, pdf, &mut doc, page)?;
+    Ok(doc)
+}
+
+/// Read an uploaded or embedded drawing with the 128 MiB standard limit.
 pub fn load_bytes(format: DrawingFormat, bytes: &[u8]) -> Result<Document, String> {
+    load_bytes_selected(format, bytes, None)
+}
+
+fn load_bytes_selected(
+    format: DrawingFormat,
+    bytes: &[u8],
+    page: Option<u32>,
+) -> Result<Document, String> {
     if bytes.len() as u64 > MAX_FILE {
         return Err("Drawing exceeds 128 MiB input limit".into());
     }
     match format {
         DrawingFormat::Pdf => {
-            let mut doc = pdf::read(bytes)?;
-            raster::interpret(bytes, &mut doc)?;
+            let mut doc = pdf::read_selected(bytes, page)?;
+            raster::interpret_with_residual_hatch(bytes, &mut doc, page)?;
             Ok(doc)
         }
-        DrawingFormat::Dxf => dxf::read(bytes),
+        DrawingFormat::Dxf => {
+            if let Some(page) = page.filter(|n| *n != 1) {
+                return Err(format!("page {page} was not found"));
+            }
+            let _profile = crate::stage_profile::scope("dxf_import");
+            dxf::read(bytes)
+        }
     }
 }
 

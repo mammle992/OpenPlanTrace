@@ -2,20 +2,50 @@
 //!
 //! No OCR result, file name or drawing coordinate grants structural authority.
 //! The measurements below remain observations: placement must corroborate them.
-use super::RasterBand;
+use super::{RasterBand, RasterHatch};
 use crate::model::{Point, Primitive, Shape};
+mod course_receipts;
+mod face_continuation;
 mod hatch;
+mod hinged_doors;
+mod jamb_stocks;
+mod narrow_courses;
+mod residual_hatch;
+mod rule_matrix;
+pub(crate) use course_receipts::{MAX_COURSE_RECEIPTS, VerifiedRasterCourse, verified_course};
+pub(crate) use face_continuation::verified_face_continuations;
+pub(crate) use hinged_doors::verified_hinged_doors;
+pub(crate) use jamb_stocks::verified_jamb_stocks;
+pub(crate) use narrow_courses::{
+    VerifiedRasterJambReturn, VerifiedRasterNarrowCourse, VerifiedRasterSectionCourse,
+    verified_jamb_returns, verified_narrow_courses, verified_section_courses,
+};
 
 pub struct Extracted {
     pub primitives: Vec<Primitive>,
     pub bands: Vec<RasterBand>,
     pub threshold: u8,
+    /// The exact band prefix to retain if the document budget drops recovery.
+    pub(super) bands_before_residuals: usize,
+    pub(super) raster_course_receipts: Vec<super::RasterCourseReceipt>,
+    pub(super) raster_face_continuations: Vec<super::RasterFaceContinuationReceipt>,
+    pub(super) raster_hinged_doors: Vec<super::RasterHingedDoorReceipt>,
+    pub(super) raster_jamb_stocks: Vec<super::RasterJambStockReceipt>,
+    pub(super) raster_narrow_courses: Vec<super::RasterNarrowCourseReceipt>,
+    pub(super) raster_section_courses: Vec<super::RasterSectionCourseReceipt>,
+    pub(super) raster_jamb_returns: Vec<super::RasterJambReturnReceipt>,
 }
 
 const THRESHOLD: u8 = 174;
 const MAX_PIXELS: usize = 32 * 1024 * 1024;
 const MAX_FACES: usize = 12_000;
 const MAX_BANDS: usize = 12_000;
+
+/// Existing dense-material tone evidence, shared with placement. Recovered
+/// faces need this evidence before they can add a non-hatch observation.
+pub(crate) fn dense_material_tone(dark_fraction: f64, mean_luma: f64) -> bool {
+    dark_fraction >= 0.28 && mean_luma <= 220. || mean_luma <= 175.
+}
 
 #[derive(Clone, Copy, Debug)]
 struct Face {
@@ -69,6 +99,78 @@ fn edge_support(
         .filter(|&along| at(along, inside) && outside.is_none_or(|v| !at(along, v)))
         .count() as f64
         / n as f64
+}
+
+/// Recover only a rejected thin pen whose directly observed outer fringe is
+/// one pixel wider on some scanlines. The extra ink is part of the pen, not
+/// material between two faces. This does not apply to a broad filled stripe.
+#[allow(clippy::too_many_arguments)]
+fn fringed_thin_face(
+    ink: &[bool],
+    width: usize,
+    height: usize,
+    vertical: bool,
+    first: usize,
+    last: usize,
+    start: usize,
+    end: usize,
+    thin_limit: f64,
+) -> Option<Face> {
+    let limit = if vertical { width } else { height };
+    let left = first.checked_sub(2).is_some_and(|outside| {
+        edge_support(
+            ink,
+            width,
+            height,
+            vertical,
+            first,
+            Some(outside),
+            start,
+            end,
+        ) >= 0.80
+    });
+    let right = last
+        .checked_add(2)
+        .filter(|v| *v < limit)
+        .is_some_and(|outside| {
+            edge_support(
+                ink,
+                width,
+                height,
+                vertical,
+                last,
+                Some(outside),
+                start,
+                end,
+            ) >= 0.80
+        });
+    if !left && !right {
+        return None;
+    }
+    let first = first - usize::from(left);
+    let last = last + usize::from(right);
+    let thickness = (last - first + 1) as f64;
+    (thickness < thin_limit).then_some(Face {
+        vertical,
+        coordinate: (first + last + 1) as f64 * 0.5,
+        start: start as f64,
+        end: end as f64,
+        ink_half_width: thickness * 0.5,
+    })
+}
+
+fn parallel_bands_overlap(a: &RasterBand, b: &RasterBand) -> bool {
+    let vertical = a.start.x == a.end.x;
+    if vertical != (b.start.x == b.end.x) {
+        return false;
+    }
+    let (normal_a, normal_b, a0, a1, b0, b1) = if vertical {
+        (a.start.x, b.start.x, a.start.y, a.end.y, b.start.y, b.end.y)
+    } else {
+        (a.start.y, b.start.y, a.start.x, a.end.x, b.start.x, b.end.x)
+    };
+    (normal_a - normal_b).abs() < (a.thickness + b.thickness) * 0.5
+        && a0.min(a1).max(b0.min(b1)) < a0.max(a1).min(b0.max(b1))
 }
 
 /// Blocked prefix sums keep exact pixel measurements with substantially less
@@ -150,6 +252,9 @@ impl<'a> CrossSums<'a> {
 /// Extract orthogonal faces at the actual rendered scale. `region_mask` limits
 /// eligibility to painted image footprints on a mixed page. White compositing,
 /// image masks and clipping belong to the renderer, before this operation.
+/// Thin-fringe recovery is an explicit pure-raster opt-in. Mixed pages retain
+/// the established face interpretation beside their authoritative vectors.
+#[cfg(test)]
 pub fn extract(
     width: usize,
     height: usize,
@@ -157,7 +262,47 @@ pub fn extract(
     page_width: f64,
     page_height: f64,
     region_mask: Option<&[bool]>,
+    recover_thin_fringe: bool,
 ) -> Result<Extracted, String> {
+    extract_with_residual_hatch(
+        width,
+        height,
+        rgba,
+        page_width,
+        page_height,
+        region_mask,
+        recover_thin_fringe,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn extract_with_residual_hatch(
+    width: usize,
+    height: usize,
+    rgba: &[u8],
+    page_width: f64,
+    page_height: f64,
+    region_mask: Option<&[bool]>,
+    recover_thin_fringe: bool,
+    recover_residual_hatch: bool,
+    recover_course_receipts: bool,
+    recover_face_continuations: bool,
+    recover_hinged_doors: bool,
+    recover_jamb_stocks: bool,
+    recover_narrow_courses: bool,
+    recover_section_courses: bool,
+    recover_jamb_returns: bool,
+) -> Result<Extracted, String> {
+    let recover_residual_hatch = recover_thin_fringe && recover_residual_hatch;
+    let mut stage = crate::stage_profile::scope("raster_luma_mask");
     let pixels = width
         .checked_mul(height)
         .filter(|n| *n > 0 && *n <= MAX_PIXELS)
@@ -189,7 +334,9 @@ pub fn extract(
     }
     let min_run = ((width.min(height) as f64 * 0.007).round() as usize).max(12);
     let max_width = (width.min(height) as f64 * 0.030).max(8.);
+    stage.next("raster_stripe_faces");
     let mut faces = Vec::new();
+    let mut recovered_faces = Vec::new();
     for vertical in [false, true] {
         let stripes = stripes(&ink, width, height, vertical, min_run)?;
         let mut thin_widths: Vec<_> = stripes
@@ -289,6 +436,23 @@ pub fn extract(
                         b as usize,
                     ) < 0.80
                 {
+                    if recover_thin_fringe
+                        && let Some(face) = fringed_thin_face(
+                            &ink,
+                            width,
+                            height,
+                            vertical,
+                            stripe.first,
+                            stripe.last,
+                            a as usize,
+                            b as usize,
+                            (pen as f64 * 2.5).max(4.),
+                        )
+                    {
+                        if recovered_faces.len() < MAX_FACES {
+                            recovered_faces.push(face);
+                        }
+                    }
                     continue;
                 }
                 faces.push(Face {
@@ -319,8 +483,31 @@ pub fn extract(
             && a.start == b.start
             && a.end == b.end
     });
+    // Preserve every established face ID. New observations are appended and
+    // their pairings run only after the original band sequence is complete.
+    let original_faces = faces.len();
+    if original_faces + recovered_faces.len() <= MAX_FACES {
+        faces.extend(recovered_faces);
+    }
+    let mut face_order: Vec<_> = (0..faces.len()).collect();
+    face_order.sort_by(|&a, &b| {
+        faces[a]
+            .vertical
+            .cmp(&faces[b].vertical)
+            .then(faces[a].coordinate.total_cmp(&faces[b].coordinate))
+            .then(faces[a].start.total_cmp(&faces[b].start))
+            .then(faces[a].end.total_cmp(&faces[b].end))
+    });
     let sx = page_width / width as f64;
     let sy = page_height / height as f64;
+    let source_pixels = residual_hatch::Pixels {
+        width,
+        height,
+        luma: &luma,
+        ink: &ink,
+        mask: region_mask,
+        scale: [sx, sy],
+    };
     let point = |face: Face, along: f64, across: f64| {
         if face.vertical {
             Point::new(across * sx, along * sy)
@@ -328,7 +515,7 @@ pub fn extract(
             Point::new(along * sx, across * sy)
         }
     };
-    let primitives: Vec<_> = faces
+    let mut primitives: Vec<_> = faces
         .iter()
         .enumerate()
         .map(|(i, f)| Primitive {
@@ -347,14 +534,24 @@ pub fn extract(
     let mut sample_budget = 180_000_000usize;
     let mut hatch_work_budget = 180_000_000usize;
     let mut sums: Option<CrossSums<'_>> = None;
-    for i in 0..faces.len() {
+    let mut recovered_bands = Vec::new();
+    let mut recovered_hatch_bands = Vec::new();
+    // Additional work cannot consume the old extraction's allowance. If it
+    // exhausts the shared limit, discard recovery and retain the old result.
+    let mut recovery_sample_budget = sample_budget;
+    let mut recovery_hatch_budget = hatch_work_budget;
+    // An optional layout veto must never consume extraction's proof budget.
+    let mut rule_work_budget = 250_000;
+    let mut recovery_exhausted = false;
+    stage.next("raster_band_measurement");
+    for (position, &i) in face_order.iter().enumerate() {
         let a = faces[i];
         if sums.as_ref().is_none_or(|s| s.vertical != a.vertical) {
             drop(sums.take());
             sums = Some(CrossSums::new(&ink, &luma, width, height, a.vertical));
         }
         let sums = sums.as_ref().unwrap();
-        for j in i + 1..faces.len() {
+        for &j in &face_order[position + 1..] {
             let b = faces[j];
             if a.vertical != b.vertical {
                 break;
@@ -364,6 +561,10 @@ pub fn extract(
                 break;
             }
             if thickness < 3. {
+                continue;
+            }
+            let recovered_pair = i >= original_faces || j >= original_faces;
+            if recovered_pair && recovery_exhausted {
                 continue;
             }
             let lo = a.start.max(b.start).ceil() as usize;
@@ -378,6 +579,18 @@ pub fn extract(
             if cross_hi <= cross_lo {
                 continue;
             }
+            let quarter = ((cross_hi - cross_lo) / 4).clamp(1, 2);
+            let third = ((cross_hi - cross_lo) / 3).max(1);
+            let middle_lo = cross_lo + (cross_hi - cross_lo - third) / 2;
+            // A recovered pen may not reuse the same pixel as its near-face,
+            // central and opposite-face evidence. These are independent
+            // material checks only when their measured sample ranges are
+            // disjoint. Preserve the established interpretation of old pairs.
+            if recovered_pair
+                && (cross_lo + quarter > middle_lo || middle_lo + third > cross_hi - quarter)
+            {
+                continue;
+            }
             // Rejected corridors also consume work: adaptive column histograms
             // and any accepted segment's second profile pass are both bounded.
             // Include the 256-bin histogram traversal even for very short spans.
@@ -385,9 +598,19 @@ pub fn extract(
                 .saturating_add(256)
                 .saturating_mul(cross_hi - cross_lo)
                 .saturating_mul(2);
-            hatch_work_budget = hatch_work_budget
-                .checked_sub(hatch_work)
-                .ok_or("Raster hatch analysis exceeds pixel work budget")?;
+            let budget = if recovered_pair {
+                &mut recovery_hatch_budget
+            } else {
+                &mut hatch_work_budget
+            };
+            if let Some(remaining) = budget.checked_sub(hatch_work) {
+                *budget = remaining;
+            } else if recovered_pair {
+                recovery_exhausted = true;
+                continue;
+            } else {
+                return Err("Raster hatch analysis exceeds pixel work budget".into());
+            }
             // Repeated diagonal material is measured separately from the
             // strict achromatic fill path. In particular, tinted insulation
             // does not become furniture or lose its outer faces merely because
@@ -407,69 +630,52 @@ pub fn extract(
                 if end <= first || end - first < hatch_min_length {
                     continue;
                 }
-                let work = (end - first).saturating_mul(cross_hi - cross_lo);
-                let mut dark = 0usize;
-                let mut total = 0usize;
-                for along in first..end {
-                    for across in cross_lo..cross_hi {
-                        let i = if a.vertical {
-                            along * width + across
-                        } else {
-                            across * width + along
-                        };
-                        let value = if region_mask.is_none_or(|m| m[i]) {
-                            luma[i]
-                        } else {
-                            255
-                        };
-                        dark += usize::from(value < THRESHOLD);
-                        total += value as usize;
-                    }
+                let seed = residual_hatch::Seed {
+                    indices: [i, j],
+                    along: [first, end],
+                    interior: [cross_lo, cross_hi],
+                    min_length: hatch_min_length,
+                };
+                let band = source_pixels.band(seed, &faces, &primitives, witness);
+                if recovered_pair {
+                    recovered_hatch_bands.push((band, seed));
+                } else {
+                    hatch_bands.push(band);
                 }
-                let count = work as f64;
-                let left = a.coordinate - a.ink_half_width;
-                let right = b.coordinate + b.ink_half_width;
-                let boundary_coverage = [a.coordinate, b.coordinate].map(|coordinate| {
-                    let supported = (first..end)
-                        .filter(|&along| {
-                            (-1..=1).any(|offset| {
-                                let across = coordinate.floor() as isize + offset;
-                                let limit = if a.vertical { width } else { height };
-                                if across < 0 || across as usize >= limit {
-                                    return false;
-                                }
-                                ink[if a.vertical {
-                                    along * width + across as usize
-                                } else {
-                                    across as usize * width + along
-                                }]
-                            })
-                        })
-                        .count();
-                    supported as f64 / (end - first) as f64
-                });
-                hatch_bands.push(RasterBand {
-                    hatch: Some(witness),
-                    face_source_ids: [primitives[i].id.clone(), primitives[j].id.clone()],
-                    start: point(a, first as f64, (left + right) * 0.5),
-                    end: point(a, end as f64, (left + right) * 0.5),
-                    thickness: (right - left) * if a.vertical { sx } else { sy },
-                    dark_fraction: dark as f64 / count,
-                    mean_luma: total as f64 / count,
-                    boundary_coverage,
-                    width_pixels: right - left,
-                });
-                if hatch_bands.len() + bands.len() > MAX_BANDS {
+                if bands.len() + hatch_bands.len() > MAX_BANDS {
                     return Err("Raster page exceeds 12000 measured material bands".into());
                 }
+                if recovered_pair
+                    && bands.len()
+                        + hatch_bands.len()
+                        + recovered_bands.len()
+                        + recovered_hatch_bands.len()
+                        > MAX_BANDS
+                {
+                    recovery_exhausted = true;
+                    break;
+                }
+            }
+            if recovered_pair && recovery_exhausted {
+                continue;
             }
             if hi - lo < min_length {
                 continue;
             }
             let work = (hi - lo).saturating_mul(cross_hi - cross_lo);
-            sample_budget = sample_budget
-                .checked_sub(work)
-                .ok_or("Raster band measurement exceeds pixel work budget")?;
+            let budget = if recovered_pair {
+                &mut recovery_sample_budget
+            } else {
+                &mut sample_budget
+            };
+            if let Some(remaining) = budget.checked_sub(work) {
+                *budget = remaining;
+            } else if recovered_pair {
+                recovery_exhausted = true;
+                continue;
+            } else {
+                return Err("Raster band measurement exceeds pixel work budget".into());
+            }
             let mut density = Vec::with_capacity(hi - lo);
             let mut brightness = Vec::with_capacity(hi - lo);
             let mut edges = Vec::with_capacity(hi - lo);
@@ -478,14 +684,11 @@ pub fn extract(
                 // Material must meet each measured face after its pen is
                 // excluded. A broad quarter can reach a remote real wall
                 // across white space and falsely validate a nearby grid line.
-                let quarter = ((cross_hi - cross_lo) / 4).clamp(1, 2);
                 let [count, total] = sums.sum(along, cross_lo, cross_hi);
                 let edge_count = [
                     sums.sum(along, cross_lo, cross_lo + quarter)[0],
                     sums.sum(along, cross_hi - quarter, cross_hi)[0],
                 ];
-                let third = ((cross_hi - cross_lo) / 3).max(1);
-                let middle_lo = cross_lo + (cross_hi - cross_lo - third) / 2;
                 core.push(sums.sum(along, middle_lo, middle_lo + third)[0] as f64 / third as f64);
                 density.push(count as f64 / (cross_hi - cross_lo) as f64);
                 brightness.push(total as f64 / (cross_hi - cross_lo) as f64);
@@ -535,6 +738,7 @@ pub fn extract(
                 if end - first >= min_length {
                     let n = (end - first) as f64;
                     let dark = density[first..end].iter().sum::<f64>() / n;
+                    let mean_luma = brightness[first..end].iter().sum::<f64>() / n;
                     let inner_support =
                         [0, 1].map(|s| edges[first..end].iter().map(|e| e[s]).sum::<f64>() / n);
                     // A wall face paired with a remote grid/dimension line has
@@ -565,6 +769,18 @@ pub fn extract(
                         && central_support >= 0.065
                         && continuous_core
                         && inner_support.iter().all(|v| *v >= 0.065)
+                        && (!recovered_pair || dense_material_tone(dark, mean_luma))
+                        && !(recovered_pair
+                            && mean_luma > 180.
+                            && dark <= 0.45
+                            && rule_matrix::contains(
+                                &faces[..original_faces],
+                                [a, b],
+                                [lo + first, lo + end],
+                                [width, height],
+                                sums,
+                                &mut rule_work_budget,
+                            ))
                     {
                         let from = (lo + first) as f64;
                         let to = (lo + end) as f64;
@@ -590,19 +806,34 @@ pub fn extract(
                             }
                             supported as f64 / n
                         });
-                        bands.push(RasterBand {
+                        let target = if recovered_pair {
+                            &mut recovered_bands
+                        } else {
+                            &mut bands
+                        };
+                        target.push(RasterBand {
                             hatch: None,
                             face_source_ids: [primitives[i].id.clone(), primitives[j].id.clone()],
                             start: point(a, from, (a.coordinate + b.coordinate) * 0.5),
                             end: point(a, to, (a.coordinate + b.coordinate) * 0.5),
                             thickness: thickness * if a.vertical { sx } else { sy },
                             dark_fraction: dark,
-                            mean_luma: brightness[first..end].iter().sum::<f64>() / n,
+                            mean_luma,
                             boundary_coverage,
                             width_pixels: thickness,
                         });
                         if bands.len() + hatch_bands.len() > MAX_BANDS {
                             return Err("Raster page exceeds 12000 measured material bands".into());
+                        }
+                        if recovered_pair
+                            && bands.len()
+                                + hatch_bands.len()
+                                + recovered_bands.len()
+                                + recovered_hatch_bands.len()
+                                > MAX_BANDS
+                        {
+                            recovery_exhausted = true;
+                            break;
                         }
                     }
                 }
@@ -615,13 +846,140 @@ pub fn extract(
             }
         }
     }
-    // Keep existing strict band measurements and ordering stable. New hatch
-    // envelopes carry their own typed evidence and finite source boundaries.
-    bands.extend(hatch_bands);
+    // Complete the old strict + hatch sequence before adding any recovery.
+    bands.append(&mut hatch_bands);
+    let original_bands = bands.len();
+    // Recovery is additive: it may not replace an established parallel body,
+    // even if a new observation appears wider or has a higher material score.
+    if recovery_exhausted
+        || 180_000_000 - recovery_sample_budget > sample_budget
+        || 180_000_000 - recovery_hatch_budget > hatch_work_budget
+        || original_bands + recovered_bands.len() + recovered_hatch_bands.len() > MAX_BANDS
+    {
+        recovered_bands.clear();
+        recovered_hatch_bands.clear();
+    }
+    let mut rejected_hatch = Vec::new();
+    for (band, seed) in recovered_bands.into_iter().map(|band| (band, None)).chain(
+        recovered_hatch_bands
+            .into_iter()
+            .map(|(band, seed)| (band, Some(seed))),
+    ) {
+        if bands[..original_bands]
+            .iter()
+            .any(|old| parallel_bands_overlap(old, &band))
+        {
+            if recover_residual_hatch && let Some(seed) = seed {
+                rejected_hatch.push(seed);
+            }
+        } else {
+            bands.push(band);
+        }
+    }
+    let bands_before_residuals = bands.len();
+    let raster_course_receipts = if recover_thin_fringe && recover_course_receipts {
+        let _profile = crate::stage_profile::scope("raster_course_receipt_measurement");
+        course_receipts::derive(&source_pixels, &bands, &primitives)
+    } else {
+        Vec::new()
+    };
+    if !rejected_hatch.is_empty() {
+        let _profile = crate::stage_profile::scope("raster_residual_hatch_measurement");
+        // Use only already-emitted face primitives so a residual cannot add
+        // another face, renumber any source, or change previous witnesses.
+        let kept: std::collections::HashSet<_> = bands[original_bands..]
+            .iter()
+            .flat_map(|b| b.face_source_ids.iter().map(String::as_str))
+            .collect();
+        rejected_hatch.retain(|seed| {
+            seed.indices
+                .iter()
+                .all(|&i| i < original_faces || kept.contains(primitives[i].id.as_str()))
+        });
+        let capacity = MAX_BANDS - bands.len();
+        residual_hatch::append(
+            &source_pixels,
+            &faces,
+            &primitives,
+            &mut bands,
+            &rejected_hatch,
+            capacity,
+        );
+    }
+    let supported_faces: std::collections::HashSet<_> = bands[original_bands..]
+        .iter()
+        .flat_map(|b| b.face_source_ids.iter().map(String::as_str))
+        .collect();
+    let mut index = 0;
+    primitives.retain(|p| {
+        let keep = index < original_faces || supported_faces.contains(p.id.as_str());
+        index += 1;
+        keep
+    });
+    let raster_face_continuations = if recover_thin_fringe && recover_face_continuations {
+        let _profile = crate::stage_profile::scope("raster_face_continuation_measurement");
+        face_continuation::collect(&source_pixels, &bands, &primitives)
+    } else {
+        vec![]
+    };
+    let raster_hinged_doors = if recover_thin_fringe && recover_hinged_doors {
+        let _profile = crate::stage_profile::scope("raster_hinged_door_measurement");
+        hinged_doors::collect(&source_pixels, &faces[..original_faces])
+    } else {
+        vec![]
+    };
+    let raster_jamb_stocks = if recover_jamb_stocks && !raster_hinged_doors.is_empty() {
+        let _profile = crate::stage_profile::scope("raster_jamb_stock_measurement");
+        jamb_stocks::collect(&source_pixels, &raster_hinged_doors, &bands)
+    } else {
+        vec![]
+    };
+    let raster_narrow_courses = if recover_narrow_courses && !raster_jamb_stocks.is_empty() {
+        let _profile = crate::stage_profile::scope("raster_narrow_course_measurement");
+        narrow_courses::collect(
+            &source_pixels,
+            &raster_hinged_doors,
+            &raster_jamb_stocks,
+            &bands,
+        )
+    } else {
+        vec![]
+    };
+    let raster_section_courses = if recover_section_courses && !raster_narrow_courses.is_empty() {
+        let _profile = crate::stage_profile::scope("raster_section_course_measurement");
+        narrow_courses::collect_sections(
+            &source_pixels,
+            &raster_hinged_doors,
+            &raster_jamb_stocks,
+            &bands,
+            &raster_narrow_courses,
+        )
+    } else {
+        vec![]
+    };
+    let raster_jamb_returns = if recover_jamb_returns && !raster_jamb_stocks.is_empty() {
+        let _profile = crate::stage_profile::scope("raster_jamb_return_measurement");
+        narrow_courses::collect_jamb_returns(
+            &source_pixels,
+            &raster_hinged_doors,
+            &raster_jamb_stocks,
+            &bands,
+        )
+    } else {
+        vec![]
+    };
     Ok(Extracted {
         primitives,
         bands,
         threshold: THRESHOLD,
+        bands_before_residuals,
+        raster_course_receipts,
+        raster_face_continuations,
+        raster_hinged_doors,
+        raster_jamb_stocks,
+        raster_narrow_courses,
+        raster_section_courses,
+        raster_jamb_returns,
     })
 }
 
@@ -741,7 +1099,7 @@ mod tests {
         ] {
             rect(&mut p, w, a, b, c, d, 30);
         }
-        let r = extract(w, h, &p, 600., 400., None).unwrap();
+        let r = extract(w, h, &p, 600., 400., None, false).unwrap();
         assert!(
             r.bands
                 .iter()
@@ -767,7 +1125,7 @@ mod tests {
         rect(&mut p, w, 20, 40, 180, 52, 70);
         let empty = vec![false; w * h];
         assert!(
-            extract(w, h, &p, 200., 160., Some(&empty))
+            extract(w, h, &p, 200., 160., Some(&empty), false)
                 .unwrap()
                 .primitives
                 .is_empty()
@@ -776,20 +1134,20 @@ mod tests {
             a[3] = 0;
         }
         assert!(
-            extract(w, h, &p, 200., 160., None)
+            extract(w, h, &p, 200., 160., None, false)
                 .unwrap()
                 .primitives
                 .is_empty()
         );
-        assert!(extract(w, h, &p[..4], 200., 160., None).is_err());
+        assert!(extract(w, h, &p[..4], 200., 160., None, false).is_err());
     }
     #[test]
     fn material_measurement_scales_in_source_coordinates() {
         let (w, h) = (600, 400);
         let mut p = canvas(w, h);
         rect(&mut p, w, 50, 80, 550, 92, 110);
-        let a = extract(w, h, &p, 600., 400., None).unwrap();
-        let b = extract(w, h, &p, 1200., 800., None).unwrap();
+        let a = extract(w, h, &p, 600., 400., None, false).unwrap();
+        let b = extract(w, h, &p, 1200., 800., None, false).unwrap();
         assert_eq!(a.bands.len(), b.bands.len());
         assert!(!a.bands.is_empty());
         for (a, b) in a.bands.iter().zip(&b.bands) {
@@ -809,7 +1167,7 @@ mod tests {
             rect(&mut p, w, x, y, x + 20, y + 6, 255);
         }
         rect(&mut p, w, 50, 280, 550, 292, 100);
-        let r = extract(w, h, &p, 600., 400., None).unwrap();
+        let r = extract(w, h, &p, 600., 400., None, false).unwrap();
         assert!(r.bands.iter().any(|b| b.start.y >= 280.
             && b.start.y <= 292.
             && b.start.x <= 52.
@@ -825,7 +1183,7 @@ mod tests {
         }
         rect(&mut p, w, 40, 70, 560, 74, 25);
         rect(&mut p, w, 40, 82, 560, 86, 25);
-        let r = extract(w, h, &p, 600., 400., None).unwrap();
+        let r = extract(w, h, &p, 600., 400., None, false).unwrap();
         // The two bold boundary pens have a genuinely white central core.
         assert!(!r.bands.iter().any(|b| b.start.y > 74. && b.start.y < 82.));
     }
@@ -852,7 +1210,7 @@ mod tests {
                 }
             }
         }
-        let r = extract(w, h, &p, 800., 600., None).unwrap();
+        let r = extract(w, h, &p, 800., 600., None, false).unwrap();
         assert!(
             r.bands
                 .iter()
@@ -902,7 +1260,7 @@ mod tests {
         ] {
             rect(&mut p, w, a, b, c, d, 25);
         }
-        let r = extract(w, h, &p, 800., 600., None).unwrap();
+        let r = extract(w, h, &p, 800., 600., None, false).unwrap();
         let bands: Vec<_> = r.bands.iter().filter(|b| b.hatch.is_some()).collect();
         assert!(bands.iter().any(|b| b.start.x < 50.
             && b.end.x > 310.
@@ -915,7 +1273,7 @@ mod tests {
         for y in 102..117 {
             mask[y * w + 380..y * w + 740].fill(false);
         }
-        let masked = extract(w, h, &p, 800., 600., Some(&mask)).unwrap();
+        let masked = extract(w, h, &p, 800., 600., Some(&mask), false).unwrap();
         assert!(
             !masked
                 .bands
@@ -923,6 +1281,229 @@ mod tests {
                 .any(|b| b.hatch.is_some() && b.end.x > 380.)
         );
         assert!(r.primitives.iter().all(|p| p.stroke_width.is_none()));
+    }
+    fn fringed_hatched_wall() -> (usize, usize, Vec<u8>) {
+        let (w, h) = (800, 800);
+        let mut p = canvas(w, h);
+        rect(&mut p, w, 40, 80, 740, 82, 35);
+        rect(&mut p, w, 40, 98, 740, 100, 35);
+        for x in 40..740 {
+            // The thin face is continuous; its outside pen edge varies by
+            // exactly one observed pixel, in runs too short to be a new face.
+            if x % 8 < 4 {
+                rect(&mut p, w, x, 79, x + 1, 80, 35);
+            }
+            if (320..380).contains(&x) {
+                continue;
+            }
+            let phase = (x % 8) as f64;
+            let at = if phase <= 4. {
+                phase / 4.
+            } else {
+                (8. - phase) / 4.
+            } * 15.;
+            for y in 82..98 {
+                if ((y - 82) as f64 - at).abs() <= 4. {
+                    rect(&mut p, w, x, y, x + 1, y + 1, 35);
+                }
+            }
+        }
+        (w, h, p)
+    }
+    #[test]
+    fn thin_pen_fringe_recovers_finite_hatched_faces_without_filling_an_aperture() {
+        let (w, h, p) = fringed_hatched_wall();
+        let r = extract(w, h, &p, w as f64, h as f64, None, true).unwrap();
+        let wall: Vec<_> = r
+            .bands
+            .iter()
+            .filter(|b| b.start.y > 79. && b.start.y < 100.)
+            .collect();
+        assert!(wall.iter().any(|b| b.start.x <= 42. && b.end.x >= 310.));
+        assert!(wall.iter().any(|b| b.start.x >= 380. && b.end.x >= 730.));
+        assert!(wall.iter().all(|b| b.end.x <= 320. || b.start.x >= 380.));
+        assert!(wall.iter().all(|b| b.start.x >= 40. && b.end.x <= 740.));
+        assert!(
+            wall.iter().all(
+                |b| b.start.y - b.thickness / 2. >= 79. && b.start.y + b.thickness / 2. <= 100.
+            )
+        );
+        // The directly measured pen envelope is excluded from the material
+        // core rather than borrowing its ink as proof of a wall body.
+        assert!(wall.iter().any(|b| {
+            b.hatch
+                .as_ref()
+                .is_some_and(|h| h.face_ink_half_widths_pixels[0] >= 1.5)
+        }));
+    }
+    #[test]
+    fn thin_pen_fringe_does_not_make_a_pen_only_white_core_material() {
+        let (w, h, mut p) = fringed_hatched_wall();
+        rect(&mut p, w, 40, 82, 740, 98, 255);
+        // Fringes on both pen edges do not constitute interior wall material.
+        for x in (40..740).filter(|x| x % 8 < 4) {
+            rect(&mut p, w, x, 82, x + 1, 83, 35);
+            rect(&mut p, w, x, 97, x + 1, 98, 35);
+        }
+        let r = extract(w, h, &p, w as f64, h as f64, None, true).unwrap();
+        assert!(!r.bands.iter().any(|b| b.start.y > 79. && b.start.y < 100.));
+    }
+    #[test]
+    fn thin_pen_fringe_does_not_turn_internal_notches_into_slab_faces() {
+        let (w, h) = (800, 600);
+        let mut p = canvas(w, h);
+        rect(&mut p, w, 40, 60, 740, 280, 100);
+        // One-pixel white scars inside a broad slab can expose occasional
+        // run boundaries. They are not an outward boundary of a thin pen.
+        for x in (40..740).filter(|x| x % 8 < 4) {
+            rect(&mut p, w, x, 79, x + 1, 80, 255);
+            rect(&mut p, w, x, 98, x + 1, 99, 255);
+        }
+        let r = extract(w, h, &p, w as f64, h as f64, None, true).unwrap();
+        assert!(!r.bands.iter().any(|b| b.start.y < 280.));
+    }
+    #[test]
+    fn thin_pen_fringe_preserves_existing_face_ids_and_band_order() {
+        let (w, h, mut p) = fringed_hatched_wall();
+        rect(&mut p, w, 30, 200, 770, 212, 100);
+        let r = extract(w, h, &p, w as f64, h as f64, None, true).unwrap();
+        assert_eq!(r.primitives[0].id, "raster:face:1");
+        assert!(matches!(r.primitives[0].shape, Shape::Line { start, end }
+            if start == Point::new(40., 99.) && end == Point::new(740., 99.)));
+        let original = &r.bands[0];
+        assert_eq!(original.start, Point::new(30., 206.));
+        assert_eq!(original.end, Point::new(770., 206.));
+        assert_eq!(original.thickness, 12.);
+        assert_eq!(original.face_source_ids, ["raster:face:2", "raster:face:3"]);
+        assert!(r.bands[1..].iter().any(|b| b.start.y < 100.));
+        assert!(
+            !r.bands[1..]
+                .iter()
+                .any(|b| parallel_bands_overlap(original, b))
+        );
+        // Every appended face must actually witness an additional band.
+        assert!(r.primitives[3..].iter().all(|p| {
+            r.bands[1..]
+                .iter()
+                .any(|b| b.face_source_ids.contains(&p.id))
+        }));
+    }
+    #[test]
+    fn thin_pen_fringe_respects_axis_calibration_and_masks() {
+        let (w, h, p) = fringed_hatched_wall();
+        let a = extract(w, h, &p, w as f64, h as f64, None, true).unwrap();
+        let disabled = extract(w, h, &p, w as f64, h as f64, None, false).unwrap();
+        assert!(disabled.bands.is_empty());
+        assert!(!a.bands.is_empty());
+        assert_eq!(disabled.primitives.len(), 1);
+        assert_eq!(
+            serde_json::to_value(&disabled.primitives).unwrap(),
+            serde_json::to_value(&a.primitives[..disabled.primitives.len()]).unwrap()
+        );
+        let b = extract(w, h, &p, w as f64 * 2., h as f64 * 0.5, None, true).unwrap();
+        assert_eq!(a.bands.len(), b.bands.len());
+        for (a, b) in a.bands.iter().zip(&b.bands) {
+            assert_eq!(a.start.x * 2., b.start.x);
+            assert_eq!(a.start.y * 0.5, b.start.y);
+            assert_eq!(a.thickness * 0.5, b.thickness);
+            assert_eq!(a.face_source_ids, b.face_source_ids);
+        }
+        let mut transposed = vec![255; p.len()];
+        for y in 0..h {
+            for x in 0..w {
+                transposed[(x * h + y) * 4..(x * h + y + 1) * 4]
+                    .copy_from_slice(&p[(y * w + x) * 4..(y * w + x + 1) * 4]);
+            }
+        }
+        let rotated = extract(h, w, &transposed, h as f64, w as f64, None, true).unwrap();
+        assert!(a.bands.iter().all(|a| {
+            rotated.bands.iter().any(|b| {
+                b.start == Point::new(a.start.y, a.start.x)
+                    && b.end == Point::new(a.end.y, a.end.x)
+                    && b.thickness == a.thickness
+            })
+        }));
+        let empty = vec![false; w * h];
+        let masked = extract(w, h, &p, w as f64, h as f64, Some(&empty), true).unwrap();
+        assert!(masked.bands.is_empty() && masked.primitives.is_empty());
+    }
+    fn fringed_narrow_core(core_width: usize) -> (usize, usize, Vec<u8>) {
+        let (w, h) = (800, 800);
+        let bottom = 84 + core_width;
+        let mut p = canvas(w, h);
+        rect(&mut p, w, 40, 80, 740, 82, 35);
+        rect(&mut p, w, 40, bottom, 740, bottom + 1, 35);
+        for x in 40..740 {
+            if x % 8 < 4 {
+                rect(&mut p, w, x, 79, x + 1, 80, 35);
+            }
+            for y in 82..bottom {
+                if (x + y) % 8 < 6 {
+                    rect(&mut p, w, x, y, x + 1, y + 1, 110);
+                }
+            }
+        }
+        (w, h, p)
+    }
+    #[test]
+    fn recovered_pen_core_cannot_reuse_one_pixel_as_independent_material_support() {
+        for core_width in [1, 2] {
+            let (w, h, p) = fringed_narrow_core(core_width);
+            let r = extract(w, h, &p, w as f64, h as f64, None, true).unwrap();
+            assert!(
+                r.bands.is_empty(),
+                "{core_width}-pixel core reused: {:?}",
+                r.bands
+            );
+            // Recovery-only face metadata cannot survive without a body.
+            let original = extract(w, h, &p, w as f64, h as f64, None, false).unwrap();
+            assert_eq!(
+                serde_json::to_value(r.primitives).unwrap(),
+                serde_json::to_value(original.primitives).unwrap()
+            );
+        }
+    }
+    #[test]
+    fn three_distinct_core_samples_keep_a_thin_finite_material_strip() {
+        let (w, h, p) = fringed_narrow_core(3);
+        let r = extract(w, h, &p, w as f64, h as f64, None, true).unwrap();
+        assert!(r.bands.iter().any(|b| b.start.x <= 42. && b.end.x >= 730.));
+        assert!(r.bands.iter().all(|b| b.start.x >= 40. && b.end.x <= 740.));
+    }
+    #[test]
+    fn recovered_dense_tone_rejects_sparse_grid_but_preserves_material_and_old_pairs() {
+        let (w, h) = (800, 800);
+        for columns in [1, 2] {
+            let mut p = canvas(w, h);
+            rect(&mut p, w, 40, 80, 740, 82, 35);
+            rect(&mut p, w, 40, 100, 740, 102, 35);
+            for x in 40..740 {
+                if x % 8 < 4 {
+                    rect(&mut p, w, x, 79, x + 1, 80, 35);
+                }
+                if x % 4 < columns {
+                    rect(&mut p, w, x, 82, x + 1, 100, 35);
+                }
+            }
+            // A separate established body is unaffected by recovery policy.
+            rect(&mut p, w, 30, 200, 770, 212, 100);
+            let original = extract(w, h, &p, w as f64, h as f64, None, false).unwrap();
+            let r = extract(w, h, &p, w as f64, h as f64, None, true).unwrap();
+            assert_eq!(r.bands[..original.bands.len()], original.bands);
+            let additions: Vec<_> = r.bands[original.bands.len()..].iter().collect();
+            if columns == 1 {
+                assert!(
+                    additions.is_empty(),
+                    "sparse grid recovered as material: {additions:?}"
+                );
+            } else {
+                assert!(
+                    additions
+                        .iter()
+                        .any(|b| b.start.x <= 42. && b.end.x >= 730.)
+                );
+            }
+        }
     }
     #[test]
     fn blocked_sums_match_exact_pixels_and_do_not_add_color_ink() {
@@ -958,7 +1539,7 @@ mod tests {
             }
         }
         assert!(
-            extract(w, h, &p, 400., 200., None)
+            extract(w, h, &p, 400., 200., None, false)
                 .unwrap()
                 .primitives
                 .is_empty()
@@ -987,6 +1568,7 @@ mod tests {
             image.width as f64,
             image.height as f64,
             None,
+            false,
         )
         .unwrap();
         let report = serde_json::json!({"width":image.width,"height":image.height,"primitives":extracted.primitives,"bands":extracted.bands,"threshold":extracted.threshold});

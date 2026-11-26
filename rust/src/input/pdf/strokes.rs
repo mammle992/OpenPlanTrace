@@ -78,7 +78,7 @@ impl StrokeWidths {
                     Point::new(r.r + reach, r.b + reach),
                     Point::new(r.l - reach, r.b + reach),
                 ];
-                if width.is_finite() && corners.iter().all(|p| g.inside(*p)) {
+                if width.is_finite() && g.contains_footprint(&corners) {
                     self.footprints.add(id, corners);
                     self.pending.push((idx, width, 1));
                 }
@@ -129,7 +129,7 @@ impl StrokeWidths {
                 q + u * tip - n * half,
                 p - u * tip - n * half,
             ];
-            if !corners.iter().all(|p| g.inside(*p)) {
+            if !g.contains_footprint(&corners) {
                 return;
             }
             self.footprints.add(id, corners);

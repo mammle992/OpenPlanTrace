@@ -156,15 +156,32 @@ fn same_strip(w: &Wall, tile: &MaterialTile) -> bool {
 }
 
 pub(super) fn aligned_row(w: &Wall, tile: &MaterialTile) -> bool {
+    aligned_row_with_width_roundoff(w, tile, 1e-5)
+}
+
+pub(super) fn aligned_row_with_width_roundoff(
+    w: &Wall,
+    tile: &MaterialTile,
+    relative_roundoff: f64,
+) -> bool {
+    aligned_row_with_minimum_cells(w, tile, relative_roundoff, 2.)
+}
+
+pub(super) fn aligned_row_with_minimum_cells(
+    w: &Wall,
+    tile: &MaterialTile,
+    relative_roundoff: f64,
+    minimum_cells: f64,
+) -> bool {
     let axis = (w.end - w.start).unit();
-    let eps = super::roundoff(w).max(w.thickness * 1e-5);
+    let eps = super::roundoff(w).max(w.thickness * relative_roundoff);
     let across = tile.across.unit();
     let v = (tile.outline[1] - tile.outline[0]).dot(across).abs();
     let u = (tile.outline[3] - tile.outline[0]).dot(across).abs();
     if tile.repeat.unit().cross(axis).abs() > 1e-5
         || v.min(u) > eps
         || (v.max(u) - tile.across.norm()).abs() > eps
-        || w.start.distance(w.end) < 2. * tile.repeat.norm()
+        || w.start.distance(w.end) < minimum_cells * tile.repeat.norm()
     {
         return false;
     }

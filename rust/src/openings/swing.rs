@@ -21,7 +21,10 @@ impl<'a> LeafStrokes<'a> {
     pub fn new(page: &'a Page, o: &Options) -> Self {
         Self::from_primitives(page.primitives.iter(), o.max_opening_gap + o.snap_tolerance)
     }
-    fn from_primitives(primitives: impl Iterator<Item = &'a Primitive>, max_length: f64) -> Self {
+    pub(super) fn from_primitives(
+        primitives: impl Iterator<Item = &'a Primitive>,
+        max_length: f64,
+    ) -> Self {
         let mut strokes = Vec::new();
         for p in primitives {
             if !matches!(

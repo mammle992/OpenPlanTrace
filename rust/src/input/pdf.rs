@@ -1,21 +1,32 @@
 use super::{MAX_ITEMS, Mat, Warnings, finite};
+mod clip;
+mod contact_paint;
 mod finish;
 mod material;
+mod rectangular_remainders;
 mod strokes;
+pub mod terminal_stock;
 mod visibility;
+pub mod white_nested;
 use crate::model::{Document, Page, Point, Primitive, Shape};
 use crate::placement::insulation::MaterialTile;
+pub(crate) use contact_paint::validate as validate_contact_paint;
 use lopdf::{
     Dictionary, Document as Pdf, Encoding, LoadOptions, Object, ObjectId, content::Content,
 };
+pub(crate) use rectangular_remainders::validate as validate_paint_remainders;
 use std::{
     collections::{HashMap, HashSet},
     f64::consts::{PI, TAU},
     rc::Rc,
 };
+pub use terminal_stock::capped_stock;
+pub use terminal_stock::local_stock;
+pub use terminal_stock::stepped_stock;
 
 const STREAM_LIMIT: usize = 48 << 20;
 const DOC_BUDGET: usize = 384 << 20;
+const POINT_WORK_LIMIT: usize = 8_000_000;
 fn num(o: &Object) -> Option<f64> {
     match o {
         Object::Integer(i) => Some(*i as f64),
@@ -70,6 +81,14 @@ struct Rect {
     b: f64,
 }
 impl Rect {
+    fn corners(self) -> [Point; 4] {
+        [
+            Point::new(self.l, self.t),
+            Point::new(self.r, self.t),
+            Point::new(self.r, self.b),
+            Point::new(self.l, self.b),
+        ]
+    }
     fn union(self, other: Self) -> Self {
         Self {
             l: self.l.min(other.l),
@@ -248,6 +267,8 @@ struct Graphics {
     clip: Option<Rect>,
     // Inward half-planes for oblique convex clip polygons; axis-aligned clips use only the AABB.
     clip_planes: Vec<(Point, Point)>,
+    // These finite, simple rings are additional intersections, never alternate clips.
+    concave_clips: Vec<Rc<clip::Ring>>,
     masked: bool,
     // Glyph clipping is not resolved by the vector importer. Keep this uncertainty
     // separate from frozen observations and suppress new finish source authority.
@@ -258,7 +279,10 @@ struct Graphics {
     stroke_alpha: f64,
     white_pen: bool,
     stroke_device: Option<strokes::Device>,
+    stroke_ink: Option<visibility::NativeInk>,
     fill_device: Option<strokes::Device>,
+    fill_ink: Option<visibility::NativeInk>,
+    default_rendering_intent: bool,
     black_pen: bool,
     black_fill: bool,
     pen_width: f64,
@@ -288,6 +312,7 @@ impl Graphics {
             ctm,
             clip: Some(clip),
             clip_planes: Vec::new(),
+            concave_clips: Vec::new(),
             masked: false,
             finish_clip_unsafe: false,
             fill: true,
@@ -296,7 +321,10 @@ impl Graphics {
             stroke_alpha: 1.,
             white_pen: false,
             stroke_device: Some(strokes::Device::Gray),
+            stroke_ink: Some(visibility::NativeInk::Gray([0])),
             fill_device: Some(strokes::Device::Gray),
+            fill_ink: Some(visibility::NativeInk::Gray([0])),
+            default_rendering_intent: true,
             black_pen: true,
             black_fill: true,
             pen_width: 1.,
@@ -321,14 +349,57 @@ impl Graphics {
             uncertain_clip: None,
         }
     }
+    fn opaque_native_ink(&self) -> Option<visibility::NativeInk> {
+        if self.fill_device.is_some()
+            && self.default_rendering_intent
+            && self.fill
+            && self.fill_alpha == 1.0
+            && self.solid_fill_safe
+            && self.material_state_safe
+            && self.pen_state_safe
+            && !self.masked
+        {
+            self.fill_ink
+        } else {
+            None
+        }
+    }
+
     fn inside(&self, p: Point) -> bool {
         self.clip.is_some_and(|r| r.inside(p))
             && self
                 .clip_planes
                 .iter()
                 .all(|(a, n)| (p - *a).dot(*n) >= -1e-7)
+            && self.concave_clips.iter().all(|clip| clip.contains(p))
     }
-    fn segment(&self, a: Point, b: Point) -> Option<(Point, Point)> {
+    fn concave_edge_count(&self) -> usize {
+        self.concave_clips.iter().map(|ring| ring.len()).sum()
+    }
+    fn contains_footprint(&self, points: &[Point]) -> bool {
+        self.contains_path(points, true)
+    }
+    fn contains_path(&self, points: &[Point], closed: bool) -> bool {
+        points.iter().all(|p| self.inside(*p))
+            && self.concave_clips.iter().all(|clip| {
+                points
+                    .windows(2)
+                    .all(|pair| clip.covers_segment(pair[0], pair[1]))
+                    && (!closed
+                        || points.len() < 2
+                        || clip.covers_segment(points[0], points[points.len() - 1]))
+            })
+    }
+    fn contains_subpath(&self, sub: &Subpath, closed: bool) -> bool {
+        if !self.concave_clips.is_empty() && sub.curves != 0 {
+            // The complete control hull is bounded even between sampled points.
+            return sub
+                .bounds()
+                .is_some_and(|r| self.contains_footprint(&r.corners()));
+        }
+        self.contains_path(&sub.ps, closed)
+    }
+    fn segment_convex(&self, a: Point, b: Point) -> Option<(Point, Point)> {
         let (a, b) = self.clip?.clip(a, b)?;
         let (mut lo, mut hi) = (0_f64, 1_f64);
         let d = b - a;
@@ -346,6 +417,24 @@ impl Graphics {
             }
         }
         (lo < hi).then(|| (a + d * lo, a + d * hi))
+    }
+    fn segments(&self, a: Point, b: Point) -> Vec<(Point, Point)> {
+        let Some(first) = self.segment_convex(a, b) else {
+            return vec![];
+        };
+        let mut spans = vec![first];
+        for clip in &self.concave_clips {
+            spans = spans
+                .into_iter()
+                .flat_map(|(a, b)| {
+                    let d = b - a;
+                    clip.intervals(a, b)
+                        .into_iter()
+                        .map(move |(lo, hi)| (a + d * lo, a + d * hi))
+                })
+                .collect();
+        }
+        spans
     }
     fn clip_to_polygon(&mut self, points: &[Point]) -> bool {
         if let Some(r) = rectangular(points) {
@@ -368,6 +457,10 @@ impl Graphics {
             self.clip = None;
             return false;
         }
+        let used_edges = self.clip_planes.len() + self.concave_edge_count();
+        if used_edges + points.len() > 256 {
+            return false;
+        }
         let mut planes = vec![];
         for i in 0..points.len() {
             let p = points[i];
@@ -377,14 +470,14 @@ impl Graphics {
             }
             let n = Point::new(-d.y, d.x).unit() * area.signum();
             if points.iter().any(|q| (*q - p).dot(n) < -1e-7) {
-                self.clip = None;
-                return false;
+                let Some(ring) = clip::Ring::simple(points, r) else {
+                    return false;
+                };
+                self.concave_clips.push(Rc::new(ring));
+                self.clip = self.clip.and_then(|c| c.intersect(r));
+                return true;
             }
             planes.push((p, n));
-        }
-        if self.clip_planes.len() + planes.len() > 256 {
-            self.clip = None;
-            return false;
         }
         self.clip_planes.extend(planes);
         self.clip = self.clip.and_then(|c| c.intersect(r));
@@ -397,8 +490,12 @@ struct Draw<'a> {
     page: u32,
     items: Vec<Primitive>,
     material_tiles: Vec<MaterialTile>,
-    placement_paint: visibility::VisibleFills,
+    placement_paint: visibility::RectangularFills,
     placement_polygon_paint: visibility::VisibleFills,
+    placement_remainders: rectangular_remainders::Tracker,
+    white_nested: white_nested::Tracker,
+    contact_paint: contact_paint::Tracker,
+    terminal_stock: terminal_stock::Tracker,
     stroke_widths: strokes::StrokeWidths,
     material_cells: HashMap<Vec<u8>, Option<Rc<material::Cell>>>,
     cell_budget: usize,
@@ -554,7 +651,11 @@ impl<'a> Draw<'a> {
         }
         self.placement_paint.unknown(bounds);
         self.placement_polygon_paint.unknown(bounds);
+        self.placement_remainders.unknown(bounds);
+        self.white_nested.unknown(self.path_count as u64, bounds);
+        self.contact_paint.unknown(bounds);
         self.stroke_widths.footprints.unknown(bounds);
+        self.terminal_stock.unknown(self.path_count, bounds);
     }
     fn emit(&mut self, id: String, layer: Option<&str>, shape: Shape) -> Result<(), String> {
         if self.items.len() >= self.limit {
@@ -578,7 +679,46 @@ impl<'a> Draw<'a> {
         layer: Option<&str>,
         even_odd: bool,
     ) -> Result<(), String> {
+        let clip_edges = g.concave_edge_count();
+        if clip_edges > 0 {
+            // Boundary intersections create at most one interval per edge.
+            // Account for nested masks and the interior tests of those intervals.
+            let points = subs.iter().map(|sub| sub.ps.len()).sum::<usize>();
+            self.point_work = self
+                .point_work
+                .saturating_add(points.saturating_mul(clip_edges.saturating_pow(2)));
+            if self.point_work > POINT_WORK_LIMIT {
+                return Err("PDF expanded geometry budget exceeded".into());
+            }
+        }
         self.path_count += 1;
+        self.terminal_stock.paint(
+            self.path_count,
+            subs,
+            g,
+            fill,
+            stroke,
+            self.stack.is_empty() && layer.is_none(),
+        );
+        self.contact_paint
+            .paint(self.path_count, subs, g, fill, stroke, layer);
+        self.white_nested.observe(
+            self.path_count as u64,
+            subs,
+            g,
+            fill,
+            stroke,
+            layer,
+            even_odd,
+        );
+        self.placement_remainders.paint(
+            &format!("pdf:p{}:path:{}:subpath:1", self.page, self.path_count),
+            layer,
+            subs,
+            g,
+            fill,
+            stroke,
+        );
         finish::paint(
             &mut self.finish_history,
             subs,
@@ -592,7 +732,7 @@ impl<'a> Draw<'a> {
         // conservatively retiring nonrectangular receipts under later paint.
         if fill && g.fill_alpha != 0. {
             self.placement_polygon_paint
-                .paint(subs, g.clip.or(g.uncertain_clip), even_odd);
+                .paint_clipped(subs, g, even_odd, |_| true);
         }
         if stroke
             && g.stroke_alpha != 0.
@@ -601,19 +741,19 @@ impl<'a> Draw<'a> {
             self.placement_polygon_paint.white_stroke(subs, g);
         }
         if fill && (g.fill_alpha == 1. || !g.material_state_safe && g.fill_alpha != 0.) {
-            self.placement_paint
-                .paint(subs, g.clip.or(g.uncertain_clip), even_odd);
+            // A combined operation may cover the crossing with different stroke ink.
+            let ink = if stroke { None } else { g.opaque_native_ink() };
+            self.placement_paint.paint(subs, g, even_odd, ink);
             // Opaque black composited over identical native black leaves that
             // pen visible; a black glyph can still obscure a colored stroke.
             let black = g
                 .fill_device
                 .filter(|_| g.black_fill && g.fill_alpha == 1. && g.pen_state_safe && !g.masked);
-            self.stroke_widths.footprints.paint_where(
-                subs,
-                g.clip.or(g.uncertain_clip),
-                even_odd,
-                |&(_, source)| black.is_none() || black != source,
-            );
+            self.stroke_widths
+                .footprints
+                .paint_clipped(subs, g, even_odd, |&(_, source)| {
+                    black.is_none() || black != source
+                });
         }
         let erasing_stroke = stroke && g.white_pen && g.stroke_alpha == 1. && g.material_state_safe;
         if erasing_stroke {
@@ -650,6 +790,10 @@ impl<'a> Draw<'a> {
                 self.material_tiles.retain(|t| {
                     !Rect::points(&t.outline).is_some_and(|bounds| bounds.intersect(clip).is_some())
                         || !material::overlaps(&outline, &t.outline)
+                        || !g
+                            .concave_clips
+                            .iter()
+                            .all(|c| c.overlaps_footprint(&t.outline))
                 });
             }
             if g.fill_alpha == 1.
@@ -657,7 +801,7 @@ impl<'a> Draw<'a> {
                 && g.material_state_safe
                 && self.stack.is_empty()
                 && let Some(cell) = &g.material_cell
-                && outline.iter().all(|p| g.inside(*p))
+                && g.contains_footprint(&outline)
             {
                 self.material_strokes += cell.strokes.len();
                 if self.material_strokes > MAX_ITEMS {
@@ -694,7 +838,7 @@ impl<'a> Draw<'a> {
                 self.path_count,
                 i + 1
             );
-            let inside = ps.iter().all(|p| g.inside(*p));
+            let inside = g.contains_subpath(sub, fill || sub.closed);
             // A compound fill can describe a hole. Do not report such subpaths as independent solid observations.
             let solid = fill
                 && ps.len() >= 3
@@ -713,7 +857,10 @@ impl<'a> Draw<'a> {
                 if (ps.len() == 4 || ps.first() == ps.last())
                     && let Some(corners) = rectangular_fill
                 {
-                    self.placement_paint.add(id.clone(), corners);
+                    self.placement_remainders
+                        .observe(id.clone(), layer, corners, g, stroke);
+                    self.placement_paint
+                        .add((id.clone(), g.opaque_native_ink()), corners);
                 }
                 if g.fill_alpha == 1.
                     && g.material_state_safe
@@ -723,7 +870,11 @@ impl<'a> Draw<'a> {
                     && material::paint_rectangle(std::slice::from_ref(sub)).is_none()
                     && let Some(bounds) = convex_paint_bounds(sub)
                 {
-                    self.placement_polygon_paint.add(id.clone(), bounds);
+                    let exact = layer
+                        .filter(|name| crate::layers::is_named_exterior_wall(name))
+                        .and_then(|_| visibility::exterior_footprint(sub));
+                    self.placement_polygon_paint
+                        .add_footprint(id.clone(), bounds, exact);
                 }
                 self.emit(
                     id,
@@ -782,15 +933,14 @@ impl<'a> Draw<'a> {
                     .chain(sub.closed.then(|| (*ps.last().unwrap(), ps[0])))
                     .enumerate()
                 {
-                    if let Some((start, end)) = g.segment(p, q) {
+                    for (k, (start, end)) in g.segments(p, q).into_iter().enumerate() {
                         if start.distance(end) > 1e-8 {
-                            self.emit_stroke(
-                                format!("{id}:clip:{}", j + 1),
-                                layer,
-                                Shape::Line { start, end },
-                                sub,
-                                g,
-                            )?
+                            let cut_id = if k == 0 {
+                                format!("{id}:clip:{}", j + 1)
+                            } else {
+                                format!("{id}:clip:{}:part:{}", j + 1, k + 1)
+                            };
+                            self.emit_stroke(cut_id, layer, Shape::Line { start, end }, sub, g)?
                         }
                     }
                 }
@@ -818,17 +968,27 @@ impl<'a> Draw<'a> {
         else {
             if has_text {
                 finish::unknown_text(&mut self.finish_history, g, self.path_count * 2 + 1);
+                self.placement_remainders.text(g, false);
+                self.contact_paint.text(g, false);
+                self.white_nested.text(self.path_count as u64, g, false);
+                self.terminal_stock.text(self.path_count, g, false);
             }
             self.warnings
                 .add("PDF text without resolvable font omitted");
             return Ok(());
         };
-        if has_text
-            && !matches!(
-                font.get(b"Subtype").ok().and_then(|o| o.as_name().ok()),
-                Some(b"Type1" | b"MMType1" | b"TrueType" | b"Type0")
-            )
-        {
+        let known_font = matches!(
+            font.get(b"Subtype").ok().and_then(|o| o.as_name().ok()),
+            Some(b"Type1" | b"MMType1" | b"TrueType" | b"Type0")
+        );
+        if has_text {
+            self.placement_remainders.text(g, known_font);
+            self.contact_paint.text(g, known_font);
+            self.white_nested
+                .text(self.path_count as u64, g, known_font);
+            self.terminal_stock.text(self.path_count, g, known_font);
+        }
+        if has_text && !known_font {
             finish::unknown_text(&mut self.finish_history, g, self.path_count * 2 + 1);
         }
         let key = font as *const _ as usize;
@@ -841,6 +1001,10 @@ impl<'a> Draw<'a> {
             } else {
                 if has_text {
                     finish::unknown_text(&mut self.finish_history, g, self.path_count * 2 + 1);
+                    self.placement_remainders.text(g, false);
+                    self.contact_paint.text(g, false);
+                    self.white_nested.text(self.path_count as u64, g, false);
+                    self.terminal_stock.text(self.path_count, g, false);
                 }
                 self.warnings.add("PDF font encoding unavailable");
                 return Ok(());
@@ -995,10 +1159,12 @@ impl<'a> Draw<'a> {
         Ok(())
     }
     fn image(&mut self, g: &Graphics, layer: Option<&str>) -> Result<(), String> {
+        let footprint = rect_path(g.ctm, [0., 0., 1., 1.]);
+        let bounds = Rect::points(&footprint);
+        let covered = bounds.and_then(|r| g.clip.or(g.uncertain_clip)?.intersect(r));
         if g.fill_alpha == 0. && (!g.pen_state_safe || g.masked) {
-            if let Some(bounds) = Rect::points(&rect_path(g.ctm, [0., 0., 1., 1.]))
-                .and_then(|r| g.clip.or(g.uncertain_clip)?.intersect(r))
-            {
+            self.terminal_stock.unknown(self.path_count, covered);
+            if let Some(bounds) = covered {
                 self.finish_history.record_bounds(
                     self.path_count * 2 + 1,
                     Point::new(bounds.l, bounds.t),
@@ -1007,26 +1173,32 @@ impl<'a> Draw<'a> {
             }
         }
         if g.fill_alpha > 0. {
-            self.cover(
-                Rect::points(&rect_path(g.ctm, [0., 0., 1., 1.]))
-                    .and_then(|bounds| g.clip.or(g.uncertain_clip)?.intersect(bounds)),
-            );
+            self.cover(covered);
+            if let Some(bounds) = covered
+                && !self.material_tiles.is_empty()
+            {
+                // The image can conceal patterned material already painted
+                // beneath it, even though it does not emit a vector fill.
+                self.point_work = self.point_work.saturating_add(self.material_tiles.len());
+                if self.point_work > POINT_WORK_LIMIT {
+                    return Err("PDF expanded geometry budget exceeded".into());
+                }
+                let cover = bounds.corners();
+                self.material_tiles
+                    .retain(|tile| !material::overlaps(&cover, &tile.outline));
+            }
         }
         if g.masked || g.fill_alpha <= 0. {
             return Ok(());
         }
-        if !g.clip_planes.is_empty()
-            && !rect_path(g.ctm, [0., 0., 1., 1.])
-                .iter()
-                .all(|p| g.inside(*p))
+        if (!g.clip_planes.is_empty() || !g.concave_clips.is_empty())
+            && !g.contains_footprint(&footprint)
         {
             self.warnings
                 .add("Partially clipped oblique PDF image footprint omitted");
             return Ok(());
         }
-        if let Some(r) = Rect::points(&rect_path(g.ctm, [0., 0., 1., 1.]))
-            .and_then(|r| g.clip.and_then(|c| c.intersect(r)))
-        {
+        if let Some(r) = bounds.and_then(|r| g.clip.and_then(|c| c.intersect(r))) {
             self.emit(
                 format!("pdf:p{}:image:{}", self.page, self.operations),
                 layer,
@@ -1067,7 +1239,7 @@ impl<'a> Draw<'a> {
         for op in Content::decode_iter(data) {
             let op = op.map_err(|e| format!("Invalid PDF content: {e}"))?;
             self.operations += 1;
-            if self.operations > 6_000_000 || self.point_work > 8_000_000 {
+            if self.operations > 6_000_000 || self.point_work > POINT_WORK_LIMIT {
                 return Err("PDF expanded geometry budget exceeded".into());
             }
             let a = &op.operands;
@@ -1206,7 +1378,15 @@ impl<'a> Draw<'a> {
                     }
                     if clipping {
                         let before = g.clip.or(g.uncertain_clip);
-                        if paths.len() != 1 || !g.clip_to_polygon(&paths[0].ps) {
+                        if paths.len() == 1 && paths[0].curves == 0 && paths[0].ps.len() <= 128 {
+                            self.point_work = self
+                                .point_work
+                                .saturating_add(paths[0].ps.len().saturating_pow(2));
+                        }
+                        if paths.len() != 1
+                            || paths[0].curves != 0
+                            || !g.clip_to_polygon(&paths[0].ps)
+                        {
                             self.warnings
                                 .add("Complex PDF clip: uncertain geometry omitted until restore");
                             g.clip = None;
@@ -1302,6 +1482,8 @@ impl<'a> Draw<'a> {
                     let black = selected.is_some_and(|s| s.exact_black(a));
                     if stroke {
                         g.stroke_device = selected;
+                        g.stroke_ink =
+                            selected.and_then(|d| visibility::NativeInk::from_operands(d, a));
                         g.black_pen = black;
                         g.white_pen = match space {
                             b"DeviceGray" | b"G" => numbers(a) == Some([1.]),
@@ -1313,6 +1495,8 @@ impl<'a> Draw<'a> {
                         g.stroke = ink
                     } else {
                         g.fill_device = selected;
+                        g.fill_ink =
+                            selected.and_then(|d| visibility::NativeInk::from_operands(d, a));
                         g.black_fill = black;
                         // Only valid, bounded components in a device colour space authorize a solid receipt.
                         g.solid_fill_safe = matches!(
@@ -1337,9 +1521,11 @@ impl<'a> Draw<'a> {
                     };
                     if code == "CS" {
                         g.stroke_device = device;
+                        g.stroke_ink = None;
                         g.black_pen = device.is_some();
                     } else {
                         g.fill_device = device;
+                        g.fill_ink = None;
                         g.black_fill = device.is_some();
                     }
                     if code == "CS" {
@@ -1399,6 +1585,8 @@ impl<'a> Draw<'a> {
                         }
                     }
                 }
+                // Color management can remap otherwise identical component values.
+                "ri" => g.default_rendering_intent = false,
                 "gs" => {
                     let ext = a
                         .first()
@@ -1619,6 +1807,12 @@ impl<'a> Draw<'a> {
                                 let ps =
                                     rect_path(child.ctm, [b[0], b[1], b[2] - b[0], b[3] - b[1]]);
                                 if !child.clip_to_polygon(&ps) {
+                                    self.terminal_stock.unknown(
+                                        self.path_count,
+                                        Rect::points(&ps).and_then(|r| {
+                                            r.intersect(g.clip.or(g.uncertain_clip)?)
+                                        }),
+                                    );
                                     self.warnings.add(
                                         "Oblique form bounding clip unsupported; form omitted",
                                     );
@@ -1662,21 +1856,36 @@ impl<'a> Draw<'a> {
     }
 }
 
-pub(super) fn read(bytes: &[u8]) -> Result<Document, String> {
-    let doc = Pdf::load_mem_with_options(
+pub(super) fn read_selected(bytes: &[u8], selected: Option<u32>) -> Result<Document, String> {
+    let _profile = crate::stage_profile::scope("pdf_vector_import");
+    read_document(&parse(bytes)?, selected)
+}
+
+pub(super) fn parse(bytes: &[u8]) -> Result<Pdf, String> {
+    let _stage = crate::stage_profile::scope("pdf_document_decode");
+    Pdf::load_mem_with_options(
         bytes,
         LoadOptions {
             max_decompressed_size: Some(STREAM_LIMIT),
             ..Default::default()
         },
     )
-    .map_err(|e| format!("Invalid PDF: {e}"))?;
+    .map_err(|e| format!("Invalid PDF: {e}"))
+}
+
+pub(super) fn read_document(doc: &Pdf, selected: Option<u32>) -> Result<Document, String> {
+    let stage = crate::stage_profile::scope("pdf_document_setup");
     if doc.is_encrypted() {
         return Err("Encrypted PDF requires a decrypted input".into());
     }
     let pages = doc.get_pages();
     if pages.is_empty() || pages.len() > 2048 {
         return Err("PDF page count outside supported range".into());
+    }
+    if let Some(number) = selected
+        && !pages.contains_key(&number)
+    {
+        return Err(format!("page {number} was not found"));
     }
     let mut result = vec![];
     let mut warnings = Warnings::default();
@@ -1685,14 +1894,14 @@ pub(super) fn read(bytes: &[u8]) -> Result<Document, String> {
         .catalog()
         .ok()
         .and_then(|d| d.get(b"OCProperties").ok())
-        .and_then(|o| dict(&doc, o))
+        .and_then(|o| dict(doc, o))
         .and_then(|d| d.get(b"D").ok())
-        .and_then(|o| dict(&doc, o))
+        .and_then(|o| dict(doc, o))
     {
         if let Some(arr) = cfg
             .get(b"OFF")
             .ok()
-            .and_then(|o| obj(&doc, o))
+            .and_then(|o| obj(doc, o))
             .and_then(|o| o.as_array().ok())
         {
             for o in arr {
@@ -1707,9 +1916,15 @@ pub(super) fn read(bytes: &[u8]) -> Result<Document, String> {
         }
     }
     let (mut decoded, mut point_work, mut operations, mut nitems) = (0, 0, 0, 0);
+    drop(stage);
     for (number, id) in pages {
+        if selected.is_some_and(|n| n != number) {
+            continue;
+        }
+        let _profile = crate::stage_profile::page("pdf_vector_page", number);
+        let mut stage = crate::stage_profile::scope("pdf_page_content_decode");
         let box_of = |k| {
-            inherited(&doc, id, k)
+            inherited(doc, id, k)
                 .and_then(|o| o.as_array().ok())
                 .and_then(|v| numbers::<4>(v))
                 .map(|[x, y, r, t]| Rect {
@@ -1738,7 +1953,7 @@ pub(super) fn read(bytes: &[u8]) -> Result<Document, String> {
         if !(w > 0. && h > 0. && w.is_finite() && h.is_finite()) {
             return Err("Invalid PDF page bounds".into());
         }
-        let r = inherited(&doc, id, b"Rotate")
+        let r = inherited(doc, id, b"Rotate")
             .and_then(num)
             .unwrap_or(0.)
             .rem_euclid(360.);
@@ -1752,7 +1967,7 @@ pub(super) fn read(bytes: &[u8]) -> Result<Document, String> {
             270 => (Mat([0., -unit, -unit, 0., b.b * unit, b.r * unit]), h, w),
             _ => return Err("Unsupported PDF page rotation".into()),
         };
-        let res = inherited(&doc, id, b"Resources").and_then(|o| o.as_dict().ok());
+        let res = inherited(doc, id, b"Resources").and_then(|o| o.as_dict().ok());
         let bytes = doc
             .get_page_content_with_limit(id, STREAM_LIMIT.min(DOC_BUDGET - decoded))
             .map_err(|e| format!("PDF page content decoding failed: {e}"))?;
@@ -1764,12 +1979,16 @@ pub(super) fn read(bytes: &[u8]) -> Result<Document, String> {
         };
         let mut draw = Draw {
             finish_history: crate::finish_visibility::PaintHistory::default(),
-            doc: &doc,
+            doc,
             page: number,
             items: vec![],
             material_tiles: vec![],
             placement_paint: visibility::VisibleFills::new(page_bounds),
             placement_polygon_paint: visibility::VisibleFills::new(page_bounds),
+            placement_remainders: rectangular_remainders::Tracker::new(page_bounds),
+            white_nested: white_nested::Tracker::new(number, page_bounds),
+            contact_paint: contact_paint::Tracker::new(page_bounds),
+            terminal_stock: terminal_stock::Tracker::new(),
             stroke_widths: strokes::StrokeWidths::new(page_bounds),
             material_cells: HashMap::new(),
             cell_budget: STREAM_LIMIT.min(DOC_BUDGET - decoded),
@@ -1785,7 +2004,9 @@ pub(super) fn read(bytes: &[u8]) -> Result<Document, String> {
             previous_text: None,
             limit: MAX_ITEMS - nitems,
         };
+        stage.next("pdf_draw_operators");
         draw.run(&bytes, res, Graphics::new(ctm, page_bounds), None)?;
+        stage.next("pdf_finish_source_inventory");
         operations = draw.operations;
         decoded = draw.decoded;
         point_work = draw.point_work;
@@ -1802,6 +2023,18 @@ pub(super) fn read(bytes: &[u8]) -> Result<Document, String> {
         }
         draw.stroke_widths.finish(&mut draw.items);
         draw.finish_history.last_order(draw.path_count * 2 + 1);
+        let placement_paint_remainders = draw.placement_remainders.finish(&draw.items, number);
+        let white_nested_walls = draw.white_nested.finish(&draw.items);
+        let polygon_paint = draw.placement_polygon_paint.ids();
+        let placement_contact_paint =
+            draw.contact_paint
+                .finish(&draw.items, number, &polygon_paint);
+        let local_stock = draw
+            .terminal_stock
+            .local_stock(&draw.items, &polygon_paint, number);
+        let stepped_stock = draw.terminal_stock.stepped_stock(&draw.items, number);
+        let capped_stock = draw.terminal_stock.capped_stock(&draw.items, number);
+        let terminal_stock = draw.terminal_stock.finish(&draw.items, number);
         result.push(Page {
             finish_history: Some(draw.finish_history),
             pdf_input: None,
@@ -1811,8 +2044,21 @@ pub(super) fn read(bytes: &[u8]) -> Result<Document, String> {
             units_to_mm: None,
             primitives: draw.items,
             material_tiles: draw.material_tiles,
-            placement_paint_ids: Some(draw.placement_paint.ids()),
-            placement_polygon_paint_ids: Some(draw.placement_polygon_paint.ids()),
+            placement_paint_ids: Some(
+                draw.placement_paint
+                    .ids()
+                    .into_iter()
+                    .map(|(id, _)| id)
+                    .collect(),
+            ),
+            placement_polygon_paint_ids: Some(polygon_paint),
+            placement_paint_remainders,
+            white_nested_walls,
+            placement_contact_paint,
+            terminal_stock,
+            local_stock,
+            stepped_stock,
+            capped_stock,
         });
     }
     Ok(Document {
@@ -1825,6 +2071,10 @@ pub(super) fn read(bytes: &[u8]) -> Result<Document, String> {
 mod tests {
     use super::*;
     use lopdf::{Stream, dictionary};
+
+    fn read(bytes: &[u8]) -> Result<Document, String> {
+        read_selected(bytes, None)
+    }
 
     fn bytes(content: &str, rotate: i64, resources: Dictionary, mut d: Pdf) -> Vec<u8> {
         let tree = d.new_object_id();
@@ -1853,6 +2103,173 @@ mod tests {
             Pdf::with_version("1.5"),
         ))
         .unwrap()
+    }
+
+    const TERMINAL_SOURCE_STOCK: &str = concat!(
+        "0.35 g 20 40 52 2 re f ",
+        "0 G 0.28 w 20 40 m 72 40 l S 20 42 m 72 42 l S ",
+    );
+
+    #[test]
+    fn terminal_stock_keeps_only_the_exposed_native_paint_and_two_pens() {
+        let art = concat!("0.72 G 18 40 m 74 40 l S ", "1 g 16 36 28 12 re f");
+        let content = format!("{TERMINAL_SOURCE_STOCK} {art}");
+        for angle in [0, 90, 180, 270] {
+            let doc = simple(&content, angle);
+            let page = &doc.pages[0];
+            let [proof] = page.terminal_stock.as_slice() else {
+                panic!("expected one exposed source terminal at rotation {angle}");
+            };
+            assert_eq!(proof.paint_source_id, "pdf:p1:path:1:subpath:1");
+            assert_eq!(proof.occluder_source_id, "pdf:p1:path:5:subpath:1");
+            assert_eq!(
+                proof
+                    .face_overlay_source_ids
+                    .iter()
+                    .flatten()
+                    .collect::<Vec<_>>(),
+                [&"pdf:p1:path:4:subpath:1".to_owned()]
+            );
+            let p = |id: &str| page.primitives.iter().find(|p| p.id == id).unwrap();
+            assert!(
+                proof
+                    .face_source_ids
+                    .iter()
+                    .all(|id| p(id).stroke_width.is_none()),
+                "a partly erased pin must not acquire a whole-source width"
+            );
+            assert!((proof.outline[0].distance(proof.outline[3]) - 2.).abs() < 1e-6);
+            let expected = 28. - 0.28 * std::f64::consts::FRAC_1_SQRT_2;
+            assert!((proof.outline[0].distance(proof.outline[1]) - expected).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn terminal_stock_withholds_interior_or_ambiguous_source_visibility() {
+        for (name, after) in [
+            ("interior", "1 g 40 36 8 12 re f"),
+            ("covers only one face", "1 g 16 41 28 6 re f"),
+            ("covers everything", "1 g 16 36 70 12 re f"),
+            ("competing masks", "1 g 16 36 28 12 re f 41 36 8 12 re f"),
+            (
+                "duplicate face",
+                "0 G 20 40 m 72 40 l S 1 g 16 36 28 12 re f",
+            ),
+            (
+                "colored overwrite",
+                "0 1 0 RG 18 40 m 74 40 l S 1 g 16 36 28 12 re f",
+            ),
+            (
+                "unknown partial fill",
+                "1 g 16 36 28 12 re f 1 0 0 rg 55 40 8 1 re f",
+            ),
+            ("missing original cap limit", "1 g 17 41.9 28 6 re f"),
+        ] {
+            let doc = simple(&format!("{TERMINAL_SOURCE_STOCK} {after}"), 0);
+            assert!(doc.pages[0].terminal_stock.is_empty(), "{name}");
+        }
+    }
+
+    #[test]
+    fn terminal_stock_traces_the_body_and_each_pen_from_their_own_paint_order() {
+        let stock = "0.35 g 20 40 52 2 re f ";
+        let neighboring_trim = "0.65 g 53 39.9 6 0.07 re f ";
+        let faces = "0 G 0.28 w 20 40 m 72 40 l S 20 42 m 72 42 l S ";
+        let mask = "1 g 16 36 28 12 re f";
+        let early = simple(&format!("{stock}{neighboring_trim}{faces}{mask}"), 0);
+        let late = simple(&format!("{stock}{faces}{neighboring_trim}{mask}"), 0);
+        assert_eq!(early.pages[0].terminal_stock.len(), 1);
+        assert!(late.pages[0].terminal_stock.is_empty());
+    }
+
+    #[test]
+    fn local_stock_uses_only_both_faces_inside_the_visible_source_paint() {
+        let paint = |notch: &str| {
+            format!(
+                "0.35 g 20 40 m 72 40 l 72 42 l {notch} 20 42 l h 85 40 m 105 40 l 105 42 l 95 42 l 85 42 l h f "
+            )
+        };
+        let upstream = paint("31 42 l 31 41.8 l 27 41.8 l 27 42 l");
+        let crossing = paint("56 42 l 56 41.8 l 52 41.8 l 52 42 l");
+        let hatch = "0.47 G 0.28 w 46 40 m 48 42 l S 53 40 m 55 42 l S 60 40 m 62 42 l S ";
+        let pens = "0 G 0.28 w 40 40 m 72 40 l S 45 42 m 72 42 l S 0.7 w 72 39.95 m 72 42.05 l S";
+        let safe = simple(&format!("{upstream}{hatch}{pens}"), 0);
+        let [proof] = safe.pages[0].local_stock.as_slice() else {
+            panic!("the short rectangle is inside the original upstream-notched stock");
+        };
+        assert!((proof.outline[0].distance(proof.outline[1]) - 27.).abs() < 1e-6);
+        // Extend one hatch stroke beyond the authorized finite rectangle.
+        let disjoint_hatch = "0.47 G 0.28 w 44 40 m 46 42 l S ";
+        for after in [
+            format!("{crossing}{pens}"),
+            format!("{upstream}{pens} 1 g 52 38 5 6 re f"),
+            format!("{upstream}{pens} {hatch}"),
+            format!("{upstream}{disjoint_hatch}{pens}"),
+        ] {
+            let blocked = simple(&after, 0);
+            assert!(blocked.pages[0].local_stock.is_empty(), "{after}");
+        }
+    }
+
+    #[test]
+    fn stepped_stock_preserves_finite_returns_and_limits_late_crossings() {
+        let paint = concat!(
+            "0.35 g 20 40 m 100 40 l 100 42 l 78 42 l 78 41.75 l ",
+            "75 41.75 l 75 42 l 47 42 l 47 41.75 l 44 41.75 l 44 42 l 20.05 42 l h f ",
+        );
+        let pens = concat!(
+            "0 G 0.28 w 20.05 40 m 100 40 l S 20.05 42 m 44 42 l S ",
+            "44 41.75 m 47 41.75 l S 47 42 m 75 42 l S 75 41.75 m 78 41.75 l S ",
+            "78 42 m 100 42 l S 44 42 m 44 41.75 l S 47 41.75 m 47 42 l S ",
+            "75 42 m 75 41.75 l S 78 41.75 m 78 42 l S 100 40 m 100 42 l S ",
+        );
+        let survey = "0.75 G 45.5 25 m 45.5 55 l S";
+        let visible = simple(&format!("{paint}{pens}{survey}"), 0);
+        let [proof] = visible.pages[0].stepped_stock.as_slice() else {
+            panic!("expected the two visible source returns and narrow survey crossing");
+        };
+        assert_eq!(proof.inner_face_source_ids.len(), 5);
+        assert_eq!(proof.return_source_ids.len(), 4);
+        assert_eq!(proof.neutral_crossing_source_ids.len(), 1);
+        for cover in [
+            "1 g 45 38 1 6 re f",
+            "0.75 G 0.6 w 45.5 25 m 45.5 55 l S",
+            "0.75 G 45.5 39 m 45.5 43 l S",
+        ] {
+            let obscured = simple(&format!("{paint}{pens}{cover}"), 0);
+            assert!(obscured.pages[0].stepped_stock.is_empty(), "{cover}");
+        }
+    }
+
+    #[test]
+    fn capped_stock_uses_terminal_trim_and_independently_surviving_pen() {
+        let paint = concat!(
+            "0.35 g 20 40 m 100 40 l 100 42 l 20.05 42 l h f ",
+            "0.35 g 16 39.95 4.75 2 re f 0.9 g 16 41.95 4.75 0.05 re f ",
+        );
+        let rails = "0 G 0.28 w 20.05 40 m 100 40 l S 20.05 42 m 98 42 l S ";
+        let backing = concat!(
+            "0 G 0.7 w 20.05 39.95 m 100.05 39.95 l S ",
+            "20.05 42.05 m 97.95 42.05 l S 100.05 40 m 100.05 42 l S ",
+        );
+        let exposed = "0.75 G 0.28 w 30 42 m 65 42 l S";
+        let doc = simple(&format!("{paint}{rails}{backing}{exposed}"), 0);
+        let [proof] = doc.pages[0].capped_stock.as_slice() else {
+            panic!("the backed native strip survives the measured terminal trim");
+        };
+        assert_eq!(proof.terminal_trim_source_ids.len(), 2);
+        assert_eq!(proof.neutral_overlap_source_ids.len(), 1);
+        assert!((proof.outline[0].distance(proof.outline[1]) - 79.25).abs() < 1e-6);
+        for invalid in [
+            format!("{paint}{rails}{exposed}"),
+            format!("{paint}{rails}{backing} 1 g 45 38 2 6 re f"),
+            format!("{paint}{rails}{backing} 0.75 G 0.6 w 30 42 m 65 42 l S"),
+        ] {
+            assert!(
+                simple(&invalid, 0).pages[0].capped_stock.is_empty(),
+                "{invalid}"
+            );
+        }
     }
 
     #[test]
@@ -1885,6 +2302,57 @@ mod tests {
     }
 
     #[test]
+    fn concave_clip_retains_a_visible_arc_and_splits_a_crossing_stroke() {
+        let doc = simple(
+            "0 g 56 86 10 14 re f \
+             q 20 40 m 100 40 l 100 140 l 75 140 l 75 70 l 45 70 l 45 140 l 20 140 l h W* n \
+             q 25 60 60 100 re W n 0.5 w 15 110 m 105 110 l S Q \
+             0.5 w 25 80 m 25 88.284271 31.715729 95 40 95 c S \
+             20 105 80 10 re f 1 g 59 90 4 6 re f Q \
+             15 120 m 105 120 l S",
+            0,
+        );
+        let page = &doc.pages[0];
+        let strokes: Vec<_> = page
+            .primitives
+            .iter()
+            .filter_map(|p| match p.shape {
+                Shape::Line { start, end } => Some([start, end]),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            strokes,
+            vec![
+                [Point::new(15., 110.), Point::new(35., 110.)],
+                [Point::new(65., 110.), Point::new(75., 110.)],
+                [Point::new(5., 100.), Point::new(95., 100.)],
+            ]
+        );
+        assert_eq!(
+            page.primitives
+                .iter()
+                .filter(|p| matches!(p.shape, Shape::Arc { .. }))
+                .count(),
+            1
+        );
+        let fills: Vec<_> = page
+            .primitives
+            .iter()
+            .filter(|p| matches!(p.shape, Shape::Polyline { filled: true, .. }))
+            .collect();
+        assert_eq!(
+            fills.len(),
+            1,
+            "a rectangle with four visible corners can still cross the notch"
+        );
+        assert_eq!(
+            page.placement_paint_ids.as_deref(),
+            Some([fills[0].id.clone()].as_slice())
+        );
+    }
+
+    #[test]
     fn source_stroke_width_uses_the_transformed_normal_and_survives_round_trip() {
         let input = "q 2 0 0 3 10 20 cm 2 w 10 10 m 30 10 l S 10 10 m 10 30 l S 10 10 m 30 10 l 30 30 l S Q 0 w 40 60 m 80 60 l S";
         let doc = simple(input, 90);
@@ -1900,7 +2368,7 @@ mod tests {
             crate::pipeline::scan_document(doc, &Default::default(), None, true).unwrap();
         let bytes = serde_json::to_vec(&scan).unwrap();
         scan = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(scan.schema_version, "openplantrace.rust.scan.v16");
+        assert_eq!(scan.schema_version, "openplantrace.rust.scan.v43");
         crate::export::validate(&scan).unwrap();
         scan.schema_version = "openplantrace.rust.scan.v7".into();
         assert!(crate::export::validate(&scan).is_err());
@@ -2193,6 +2661,45 @@ mod tests {
         assert_eq!(receipts("/Wrong gs", false), 0);
         assert_eq!(receipts("q /Wrong gs Q", false), 1);
         assert_eq!(receipts("", true), 0);
+    }
+    #[test]
+    fn image_overpaint_retires_only_touched_prior_insulation_tiles() {
+        let mut pdf = Pdf::with_version("1.6");
+        let pattern = pdf.add_object(Stream::new(
+            dictionary! {
+                "PatternType"=>1, "PaintType"=>1, "TilingType"=>1,
+                "BBox"=>vec![0.into(),0.into(),100.into(),100.into()],
+                "XStep"=>100, "YStep"=>100, "Resources"=>dictionary!{}
+            },
+            b"0 G 1 w 0 100 m 18 80 l 9 20 l 25 0 l 41 20 l 32 80 l 50 100 l 68 80 l 59 20 l 75 0 l 91 20 l 82 80 l 100 100 l S".to_vec(),
+        ));
+        let image = pdf.add_object(Stream::new(
+            dictionary! {
+                "Type"=>"XObject", "Subtype"=>"Image", "Width"=>1, "Height"=>1,
+                "BitsPerComponent"=>8, "ColorSpace"=>"DeviceGray"
+            },
+            vec![255],
+        ));
+        let resources = dictionary! {
+            "Pattern"=>dictionary!{"Bat"=>pattern},
+            "XObject"=>dictionary!{"Patch"=>image},
+            "ExtGState"=>dictionary!{"Clear"=>dictionary!{"ca"=>0}}
+        };
+        let paint = "/Pattern cs /Bat scn 20 40 60 8 re f 20 60 60 8 re f";
+        let hit = "q 8 0 0 16 45 36 cm /Patch Do Q";
+        for (before, after, remaining) in [
+            (hit, "", 2),
+            ("", hit, 1),
+            ("", "q 5 0 0 8 80 40 cm /Patch Do Q", 2),
+            ("", "q 90 90 10 10 re W n 8 0 0 16 45 36 cm /Patch Do Q", 2),
+            ("", "q /Clear gs 8 0 0 16 45 36 cm /Patch Do Q", 2),
+        ] {
+            let content = format!("{before} {paint} {after}");
+            let doc = read(&bytes(&content, 0, resources.clone(), pdf.clone())).unwrap();
+            let tiles = &doc.pages[0].material_tiles;
+            assert_eq!(tiles.len(), remaining, "{content}");
+            assert!(tiles.iter().any(|t| t.outline[0].y == 160.));
+        }
     }
     #[test]
     fn only_visible_paint_and_finite_clipped_line_are_ingested() {

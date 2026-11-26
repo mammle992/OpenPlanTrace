@@ -175,6 +175,24 @@ pub(crate) fn is_named_wall(name: &str) -> bool {
         && names.next().is_none()
 }
 
+pub(crate) fn named_exterior_wall(primitive: &Primitive) -> Option<&str> {
+    let layer = primitive.layer.as_deref()?;
+    if primitive.layer_category_override.is_some()
+        && primitive.layer_kind() != crate::model::LayerKind::Wall
+    {
+        return None;
+    }
+    is_named_exterior_wall(layer).then_some(layer)
+}
+
+pub(crate) fn is_named_exterior_wall(layer: &str) -> bool {
+    layer
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .any(|word| matches!(word, "exterior" | "external" | "yttervegg" | "yttervegger"))
+        && is_named_wall(layer)
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LayerSummary {

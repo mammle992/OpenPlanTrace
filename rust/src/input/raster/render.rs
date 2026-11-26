@@ -33,6 +33,8 @@ pub struct RasterImage {
     pub rgba: Vec<u8>,
 }
 
+pub(super) type PageBudgets = Vec<Option<Result<(), String>>>;
+
 /// Parsed PDF state shared by a sequence of page renders. This avoids loading
 /// the entire PDF with both parsers again for every page in a drawing set.
 pub struct Renderer {
@@ -40,7 +42,7 @@ pub struct Renderer {
     /// Keep the validation result, not a second complete copy of every PDF stream.
     /// Errors stay page-local, so an unused oversized resource on another page
     /// cannot prevent rendering a supported selected page.
-    page_budgets: Vec<Result<(), String>>,
+    page_budgets: PageBudgets,
 }
 
 impl Renderer {
@@ -58,29 +60,57 @@ impl Renderer {
         Ok((f64::from(w), f64::from(h)))
     }
     pub fn new(bytes: &[u8]) -> Result<Self, String> {
+        Self::with_page(bytes, None)
+    }
+
+    pub(super) fn with_page(bytes: &[u8], selected: Option<u32>) -> Result<Self, String> {
         if bytes.len() > MAX_INPUT_BYTES {
             return Err("PDF raster input exceeds 128 MiB".into());
         }
-        let page_budgets = {
-            let preflight = Document::load_mem(bytes)
-                .map_err(|e| format!("PDF raster preflight failed: {e}"))?;
-            let pages = preflight.get_pages();
-            if pages.is_empty() || pages.len() > MAX_PAGES {
-                return Err(format!(
-                    "PDF raster page count must be between 1 and {MAX_PAGES}"
-                ));
-            }
-            pages
-                .values()
-                .map(|&id| preflight_images(&preflight, id))
-                .collect::<Vec<_>>()
-        };
-        let pdf =
-            Pdf::new(bytes.to_vec()).map_err(|e| format!("PDF raster parser failed: {e:?}"))?;
+        let preflight =
+            Document::load_mem(bytes).map_err(|e| format!("PDF raster preflight failed: {e}"))?;
+        let budgets = Self::preflight(&preflight, selected)?;
+        drop(preflight);
+        Self::from_preflight(bytes.to_vec(), budgets)
+    }
+
+    pub(super) fn preflight(doc: &Document, selected: Option<u32>) -> Result<PageBudgets, String> {
+        let pages = doc.get_pages();
+        if pages.is_empty() || pages.len() > MAX_PAGES {
+            return Err(format!(
+                "PDF raster page count must be between 1 and {MAX_PAGES}"
+            ));
+        }
+        Ok(pages
+            .iter()
+            .map(|(&number, &id)| {
+                selected
+                    .is_none_or(|page| page == number)
+                    .then(|| preflight_images(doc, id))
+            })
+            .collect())
+    }
+
+    pub(super) fn from_preflight(
+        bytes: Vec<u8>,
+        page_budgets: PageBudgets,
+    ) -> Result<Self, String> {
+        let pdf = Pdf::new(bytes).map_err(|e| format!("PDF raster parser failed: {e:?}"))?;
         if pdf.pages().len() != page_budgets.len() {
             return Err("PDF parsers disagree about raster page inventory".into());
         }
         Ok(Self { pdf, page_budgets })
+    }
+
+    fn check_page_budget(&self, index: usize) -> Result<(), String> {
+        self.page_budgets
+            .get(index)
+            .ok_or_else(|| format!("PDF raster page {} does not exist", index + 1))?
+            .as_ref()
+            .ok_or_else(|| format!("PDF raster page {} was not selected", index + 1))?
+            .as_ref()
+            .map(|_| ())
+            .map_err(Clone::clone)
     }
 
     /// Release decoded scans after each page, while reusing both PDF parsers.
@@ -141,12 +171,7 @@ impl RenderSession<'_> {
         {
             return Err("invalid PDF source-region dimensions or bounds".into());
         }
-        self.renderer
-            .page_budgets
-            .get(page_index)
-            .ok_or_else(|| format!("PDF raster page {} does not exist", page_index + 1))?
-            .as_ref()
-            .map_err(Clone::clone)?;
+        self.renderer.check_page_budget(page_index)?;
         let page = &self.renderer.pdf.pages()[page_index];
         let (pw, ph) = page.render_dimensions();
         let x = region[0] * f64::from(pw);
@@ -239,12 +264,7 @@ impl RenderSession<'_> {
                 "PDF raster dimension must be between 1 and {MAX_DIMENSION}"
             ));
         }
-        self.renderer
-            .page_budgets
-            .get(page_index)
-            .ok_or_else(|| format!("PDF raster page {} does not exist", page_index + 1))?
-            .as_ref()
-            .map_err(Clone::clone)?;
+        self.renderer.check_page_budget(page_index)?;
         let pages = self.renderer.pdf.pages();
         let page = pages
             .get(page_index)
@@ -1028,7 +1048,7 @@ mod tests {
         let renderer = Renderer::new(&bytes).unwrap();
         // Existing ordinary XObjects fit the fast bound, but BI forces bounded
         // inline parsing and rejection before invoking Hayro pixel allocation.
-        assert!(renderer.page_budgets[0].is_err());
+        assert!(matches!(renderer.page_budgets[0], Some(Err(_))));
         assert!(renderer.render(0, 100).is_err());
     }
 

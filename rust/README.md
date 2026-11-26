@@ -1,6 +1,6 @@
-# OpenPlanTrace Rust 0.12.32-alpha.20
+# OpenPlanTrace Rust 0.12.60-alpha.48
 
-Experimental floor-plan scanning for vector, raster and mixed PDF and ASCII DXF. Native scan schema **v16** keeps observations separate from Ready wall material and source-supported connections. Structure v2 and placement v3 remain derived projections.
+Experimental floor-plan scanning for vector, raster and mixed PDF and ASCII DXF. Native scan schema **v43** keeps observations separate from Ready wall material and source-supported connections. Structure v2 and placement v3 remain derived projections.
 
 ```sh
 cargo test --locked --jobs 2 --manifest-path rust/Cargo.toml --features onnx

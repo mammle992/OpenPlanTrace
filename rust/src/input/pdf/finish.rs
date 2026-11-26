@@ -74,7 +74,12 @@ pub(super) fn paint(
 ) {
     if fill && (g.fill_alpha != 0. || !g.pen_state_safe || g.masked) {
         let count = subs.iter().map(|p| p.ps.len()).sum::<usize>();
-        if g.masked || g.clip.is_none() || count > 512 || subs.iter().any(|p| p.curves != 0) {
+        if g.masked
+            || g.clip.is_none()
+            || count > 512
+            || subs.iter().any(|p| p.curves != 0)
+            || (!g.concave_clips.is_empty() && !subs.iter().all(|p| g.contains_subpath(p, true)))
+        {
             unknown(
                 history,
                 order,
@@ -129,17 +134,17 @@ pub(super) fn paint(
             } else {
                 Point::default()
             };
-            history.record_paths(
-                order,
-                vec![vec![
-                    *p - tip + off,
-                    *q + tip + off,
-                    *q + tip - off,
-                    *p - tip - off,
-                ]],
-                false,
-                clip_polygon(g),
-            );
+            let footprint = [
+                *p - tip + off,
+                *q + tip + off,
+                *q + tip - off,
+                *p - tip - off,
+            ];
+            if g.concave_clips.is_empty() || g.contains_footprint(&footprint) {
+                history.record_paths(order, vec![footprint.to_vec()], false, clip_polygon(g));
+            } else {
+                unknown(history, order, Rect::points(&footprint), g);
+            }
         } else if let Some(r) = path.bounds() {
             let reach = radius * g.miter_limit.max(2_f64.sqrt());
             let dx = reach * a.hypot(c);

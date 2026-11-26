@@ -43,6 +43,8 @@ pub(super) fn svg(page: &PageScan) -> String {
             ConnectionKind::Wall => ("#257c40", false),
             ConnectionKind::DoorThreshold => ("#245fb8", true),
             ConnectionKind::WindowThreshold => ("#008eab", true),
+            ConnectionKind::SectionMarkContact => ("#0f766e", true),
+            ConnectionKind::RasterShoulderContact => ("#0f766e", true),
             _ => ("#008575", false),
         };
         let dash = if dashed {

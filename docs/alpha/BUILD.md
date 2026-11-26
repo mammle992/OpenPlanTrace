@@ -1,6 +1,6 @@
 # Public build provenance
 
-The experimental distribution is rebuilt from the exact frozen Rust production sources used for preview 20. Public source hashes and executable checksums identify the released snapshot. No scanner-rule, threshold or source-geometry changes are made for publication.
+The experimental distribution is rebuilt from the exact frozen Rust production sources used for alpha 48. Public source hashes and executable checksums identify the released snapshot. No scanner-rule, threshold or source-geometry changes are made for publication.
 
 The original local executable contains compiler/dependency source paths identifying its build environment. It remains local. The public executable uses Rust source-path remapping for both Windows path separator forms and a basename-only PDB reference. No PDB, compiler cache, private input, screenshot, scan bundle or original local runtime-freeze metadata is distributed.
 
