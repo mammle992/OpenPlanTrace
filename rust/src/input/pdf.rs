@@ -3,6 +3,7 @@ mod clip;
 mod contact_paint;
 mod finish;
 mod material;
+pub mod pocket_stock;
 mod rectangular_remainders;
 mod strokes;
 pub mod terminal_stock;
@@ -22,6 +23,8 @@ use std::{
 };
 pub use terminal_stock::capped_stock;
 pub use terminal_stock::local_stock;
+pub use terminal_stock::masked_junction_stock;
+pub use terminal_stock::recessed_stock;
 pub use terminal_stock::stepped_stock;
 
 const STREAM_LIMIT: usize = 48 << 20;
@@ -496,6 +499,7 @@ struct Draw<'a> {
     white_nested: white_nested::Tracker,
     contact_paint: contact_paint::Tracker,
     terminal_stock: terminal_stock::Tracker,
+    pocket_stock: pocket_stock::Tracker,
     stroke_widths: strokes::StrokeWidths,
     material_cells: HashMap<Vec<u8>, Option<Rc<material::Cell>>>,
     cell_budget: usize,
@@ -656,6 +660,7 @@ impl<'a> Draw<'a> {
         self.contact_paint.unknown(bounds);
         self.stroke_widths.footprints.unknown(bounds);
         self.terminal_stock.unknown(self.path_count, bounds);
+        self.pocket_stock.unknown(bounds);
     }
     fn emit(&mut self, id: String, layer: Option<&str>, shape: Shape) -> Result<(), String> {
         if self.items.len() >= self.limit {
@@ -699,6 +704,15 @@ impl<'a> Draw<'a> {
             fill,
             stroke,
             self.stack.is_empty() && layer.is_none(),
+        );
+        self.pocket_stock.paint(
+            self.path_count as u64,
+            subs,
+            g,
+            fill,
+            stroke,
+            layer,
+            even_odd,
         );
         self.contact_paint
             .paint(self.path_count, subs, g, fill, stroke, layer);
@@ -972,6 +986,7 @@ impl<'a> Draw<'a> {
                 self.contact_paint.text(g, false);
                 self.white_nested.text(self.path_count as u64, g, false);
                 self.terminal_stock.text(self.path_count, g, false);
+                self.pocket_stock.text(g, false);
             }
             self.warnings
                 .add("PDF text without resolvable font omitted");
@@ -987,6 +1002,7 @@ impl<'a> Draw<'a> {
             self.white_nested
                 .text(self.path_count as u64, g, known_font);
             self.terminal_stock.text(self.path_count, g, known_font);
+            self.pocket_stock.text(g, known_font);
         }
         if has_text && !known_font {
             finish::unknown_text(&mut self.finish_history, g, self.path_count * 2 + 1);
@@ -1005,6 +1021,7 @@ impl<'a> Draw<'a> {
                     self.contact_paint.text(g, false);
                     self.white_nested.text(self.path_count as u64, g, false);
                     self.terminal_stock.text(self.path_count, g, false);
+                    self.pocket_stock.text(g, false);
                 }
                 self.warnings.add("PDF font encoding unavailable");
                 return Ok(());
@@ -1164,6 +1181,7 @@ impl<'a> Draw<'a> {
         let covered = bounds.and_then(|r| g.clip.or(g.uncertain_clip)?.intersect(r));
         if g.fill_alpha == 0. && (!g.pen_state_safe || g.masked) {
             self.terminal_stock.unknown(self.path_count, covered);
+            self.pocket_stock.unknown(covered);
             if let Some(bounds) = covered {
                 self.finish_history.record_bounds(
                     self.path_count * 2 + 1,
@@ -1807,12 +1825,10 @@ impl<'a> Draw<'a> {
                                 let ps =
                                     rect_path(child.ctm, [b[0], b[1], b[2] - b[0], b[3] - b[1]]);
                                 if !child.clip_to_polygon(&ps) {
-                                    self.terminal_stock.unknown(
-                                        self.path_count,
-                                        Rect::points(&ps).and_then(|r| {
-                                            r.intersect(g.clip.or(g.uncertain_clip)?)
-                                        }),
-                                    );
+                                    let cover = Rect::points(&ps)
+                                        .and_then(|r| r.intersect(g.clip.or(g.uncertain_clip)?));
+                                    self.terminal_stock.unknown(self.path_count, cover);
+                                    self.pocket_stock.unknown(cover);
                                     self.warnings.add(
                                         "Oblique form bounding clip unsupported; form omitted",
                                     );
@@ -1989,6 +2005,7 @@ pub(super) fn read_document(doc: &Pdf, selected: Option<u32>) -> Result<Document
             white_nested: white_nested::Tracker::new(number, page_bounds),
             contact_paint: contact_paint::Tracker::new(page_bounds),
             terminal_stock: terminal_stock::Tracker::new(),
+            pocket_stock: pocket_stock::Tracker::new(page_bounds),
             stroke_widths: strokes::StrokeWidths::new(page_bounds),
             material_cells: HashMap::new(),
             cell_budget: STREAM_LIMIT.min(DOC_BUDGET - decoded),
@@ -2034,6 +2051,22 @@ pub(super) fn read_document(doc: &Pdf, selected: Option<u32>) -> Result<Document
             .local_stock(&draw.items, &polygon_paint, number);
         let stepped_stock = draw.terminal_stock.stepped_stock(&draw.items, number);
         let capped_stock = draw.terminal_stock.capped_stock(&draw.items, number);
+        let recessed_stock = draw.terminal_stock.recessed_stock(&draw.items, number);
+        let masked_junction_stock = draw.terminal_stock.masked_junction_stock(
+            &draw.items,
+            &capped_stock,
+            &recessed_stock,
+            number,
+        );
+        let placement_paint_ids: Vec<_> = draw
+            .placement_paint
+            .ids()
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+        let pocket_stock = draw
+            .pocket_stock
+            .finish(&draw.items, &placement_paint_ids, number);
         let terminal_stock = draw.terminal_stock.finish(&draw.items, number);
         result.push(Page {
             finish_history: Some(draw.finish_history),
@@ -2044,13 +2077,7 @@ pub(super) fn read_document(doc: &Pdf, selected: Option<u32>) -> Result<Document
             units_to_mm: None,
             primitives: draw.items,
             material_tiles: draw.material_tiles,
-            placement_paint_ids: Some(
-                draw.placement_paint
-                    .ids()
-                    .into_iter()
-                    .map(|(id, _)| id)
-                    .collect(),
-            ),
+            placement_paint_ids: Some(placement_paint_ids),
             placement_polygon_paint_ids: Some(polygon_paint),
             placement_paint_remainders,
             white_nested_walls,
@@ -2059,6 +2086,9 @@ pub(super) fn read_document(doc: &Pdf, selected: Option<u32>) -> Result<Document
             local_stock,
             stepped_stock,
             capped_stock,
+            recessed_stock,
+            masked_junction_stock,
+            pocket_stock,
         });
     }
     Ok(Document {
@@ -2368,7 +2398,7 @@ mod tests {
             crate::pipeline::scan_document(doc, &Default::default(), None, true).unwrap();
         let bytes = serde_json::to_vec(&scan).unwrap();
         scan = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(scan.schema_version, "openplantrace.rust.scan.v43");
+        assert_eq!(scan.schema_version, "openplantrace.rust.scan.v45");
         crate::export::validate(&scan).unwrap();
         scan.schema_version = "openplantrace.rust.scan.v7".into();
         assert!(crate::export::validate(&scan).is_err());

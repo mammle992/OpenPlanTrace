@@ -12,7 +12,11 @@ pub(crate) use section::{append_section_courses, before_section_replay, section_
 const PREFIX: &str = "raster-narrow-course:";
 const REASON: WallReason = WallReason::SourceBoundedRasterNarrowCourse;
 
-fn ready_wall(page: &PageScan, geometry: (Point, Point, f64), reason: WallReason) -> Option<&Wall> {
+pub(super) fn ready_wall(
+    page: &PageScan,
+    geometry: (Point, Point, f64),
+    reason: WallReason,
+) -> Option<&Wall> {
     let mut found = page
         .walls
         .iter()
@@ -45,12 +49,18 @@ fn verified(page: &PageScan) -> Result<Vec<VerifiedRasterNarrowCourse>, String> 
 }
 
 pub(super) fn occupied(page: &PageScan) -> Vec<[Point; 4]> {
+    occupied_except(page, &[])
+}
+
+pub(super) fn occupied_except(page: &PageScan, ignored_walls: &[&str]) -> Vec<[Point; 4]> {
     let mut footprints = exterior_piers::aperture_guard(page);
     footprints.extend(
         page.walls
             .iter()
             .zip(page.placement_decisions.iter().flatten())
-            .filter(|(_, d)| d.status == WallStatus::Ready)
+            .filter(|(w, d)| {
+                d.status == WallStatus::Ready && !ignored_walls.contains(&w.id.as_str())
+            })
             .map(|(wall, decision)| {
                 let w = effective_wall(wall, Some(decision));
                 if let Some(curve) = w.curve {
@@ -159,7 +169,7 @@ pub(crate) fn append(page: &mut PageScan) -> Result<bool, String> {
     append_rows(page, measured, "raster narrow course")
 }
 
-fn append_rows(
+pub(super) fn append_rows(
     page: &mut PageScan,
     measured: Vec<(Wall, WallDecision)>,
     description: &str,
@@ -195,7 +205,7 @@ pub(crate) fn before_replay(page: &PageScan, supported: bool) -> Result<Cow<'_, 
     )
 }
 
-fn replay_rows<'a>(
+pub(super) fn replay_rows<'a>(
     page: &'a PageScan,
     supported: bool,
     has_proof: bool,

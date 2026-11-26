@@ -10,6 +10,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 const MAX_WORK: usize = 8_000_000;
 pub(crate) mod coextensive;
 pub(crate) mod exterior_lining;
+pub(crate) mod jamb_backing;
 
 #[derive(Clone, Copy)]
 struct Paint<'a> {

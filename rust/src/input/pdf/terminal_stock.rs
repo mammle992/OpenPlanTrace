@@ -3,6 +3,10 @@
 pub mod capped_stock;
 #[path = "local_stock.rs"]
 pub mod local_stock;
+#[path = "masked_junction_stock.rs"]
+pub mod masked_junction_stock;
+#[path = "recessed_stock.rs"]
+pub mod recessed_stock;
 #[path = "stepped_stock.rs"]
 pub mod stepped_stock;
 use super::{Graphics, Point, Rect, Subpath, visibility::NativeInk};
@@ -27,7 +31,7 @@ pub struct Receipt {
     pub occluder_outline: [Point; 4],
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct Key(u64, usize);
 
 impl Key {
@@ -261,6 +265,7 @@ enum Cover {
     Mask(Mask),
     Stroke(Pen),
     NeutralArea { key: Key },
+    RecessedArea { key: Key },
 }
 
 struct Event {
@@ -279,6 +284,8 @@ pub(super) struct Tracker {
     seeds: Vec<Seed>,
     local_sources: Vec<Key>,
     stepped_sources: Vec<Key>,
+    recessed_sources: Vec<Key>,
+    masked_junction_sources: Vec<Key>,
     capped_sources: Vec<Key>,
     events: Vec<Event>,
     masks: usize,
@@ -291,6 +298,8 @@ impl Tracker {
             seeds: vec![],
             local_sources: vec![],
             stepped_sources: vec![],
+            recessed_sources: vec![],
+            masked_junction_sources: vec![],
             capped_sources: vec![],
             events: vec![],
             masks: 0,
@@ -384,7 +393,8 @@ impl Tracker {
                         let Some(r) = s.bounds() else {
                             continue;
                         };
-                        let cover = if !self.capped_sources.is_empty()
+                        let cover = if (!self.capped_sources.is_empty()
+                            || !self.recessed_sources.is_empty())
                             && fill_tone.is_some_and(|gray| (0.08..=0.95).contains(&gray))
                             && layerless
                             && s.curves == 0
@@ -392,8 +402,11 @@ impl Tracker {
                             && !subs.iter().enumerate().any(|(j, other)| {
                                 j != i && other.bounds().is_some_and(|b| r.intersect(b).is_some())
                             }) {
-                            Cover::NeutralArea {
-                                key: Key(path, i + 1),
+                            let key = Key(path, i + 1);
+                            if self.capped_sources.is_empty() {
+                                Cover::RecessedArea { key }
+                            } else {
+                                Cover::NeutralArea { key }
                             }
                         } else {
                             Cover::Other
@@ -436,6 +449,36 @@ impl Tracker {
                     })
                 {
                     self.stepped_sources.push(Key(path, i + 1));
+                }
+                if self.recessed_sources.len() < 32
+                    && recessed_stock::eligible(&s.ps)
+                    && g.contains_footprint(&s.ps)
+                    && let Some(bounds) = s.bounds()
+                    && !subs.iter().enumerate().any(|(j, other)| {
+                        j != i
+                            && other
+                                .bounds()
+                                .is_some_and(|b| bounds.intersect(b).is_some())
+                    })
+                {
+                    self.recessed_sources.push(Key(path, i + 1));
+                }
+                // This stock requires two previously tracked owner families.
+                // It can consume their ordered events without changing when
+                // the older parsers begin recording or exhaust their budget.
+                if self.tracking()
+                    && self.masked_junction_sources.len() < 48
+                    && masked_junction_stock::eligible(&s.ps)
+                    && g.contains_footprint(&s.ps)
+                    && let Some(bounds) = s.bounds()
+                    && !subs.iter().enumerate().any(|(j, other)| {
+                        j != i
+                            && other
+                                .bounds()
+                                .is_some_and(|b| bounds.intersect(b).is_some())
+                    })
+                {
+                    self.masked_junction_sources.push(Key(path, i + 1));
                 }
                 if self.local_sources.len() < 64
                     && subs.len() > 1
@@ -484,6 +527,7 @@ impl Tracker {
     fn tracking(&self) -> bool {
         !self.seeds.is_empty()
             || !self.stepped_sources.is_empty()
+            || !self.recessed_sources.is_empty()
             || !self.capped_sources.is_empty()
     }
 
@@ -613,6 +657,37 @@ impl Tracker {
             return vec![];
         }
         capped_stock::derive(&self.capped_sources, &self.events, primitives, page)
+    }
+
+    pub(super) fn recessed_stock(
+        &self,
+        primitives: &[Primitive],
+        page: u32,
+    ) -> Vec<recessed_stock::Receipt> {
+        if self.exhausted {
+            return vec![];
+        }
+        recessed_stock::derive(&self.recessed_sources, &self.events, primitives, page)
+    }
+
+    pub(super) fn masked_junction_stock(
+        &self,
+        primitives: &[Primitive],
+        capped: &[capped_stock::Receipt],
+        recessed: &[recessed_stock::Receipt],
+        page: u32,
+    ) -> Vec<masked_junction_stock::Receipt> {
+        if self.exhausted {
+            return vec![];
+        }
+        masked_junction_stock::derive(
+            &self.masked_junction_sources,
+            &self.events,
+            primitives,
+            capped,
+            recessed,
+            page,
+        )
     }
 
     fn receipts(self, page: u32) -> Option<Vec<Receipt>> {

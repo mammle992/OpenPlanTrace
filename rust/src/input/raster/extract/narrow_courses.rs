@@ -12,8 +12,14 @@ use crate::{
     },
     model::{Point, Primitive},
 };
+mod aligned_course;
 mod jamb_return;
 mod section;
+pub(crate) use aligned_course::{
+    VerifiedRasterAlignedCourse, VerifiedRasterCornerCourse, verified_aligned_courses,
+    verified_corner_courses,
+};
+pub(super) use aligned_course::{collect_aligned_courses, collect_corner_courses};
 pub(super) use jamb_return::collect_jamb_returns;
 pub(crate) use jamb_return::{VerifiedRasterJambReturn, verified_jamb_returns};
 pub(super) use section::collect_sections;

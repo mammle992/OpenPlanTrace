@@ -24,20 +24,20 @@ pub(crate) struct Verified {
 }
 
 #[derive(Clone, Copy)]
-struct Band {
-    a: f64,
-    b: f64,
-    depth: f64,
+pub(super) struct Band {
+    pub(super) a: f64,
+    pub(super) b: f64,
+    pub(super) depth: f64,
 }
 
-struct Form {
-    origin: Point,
-    axis: Point,
-    side: f64,
-    length: f64,
-    width: f64,
-    eps: f64,
-    bands: Vec<Band>,
+pub(super) struct Form {
+    pub(super) origin: Point,
+    pub(super) axis: Point,
+    pub(super) side: f64,
+    pub(super) length: f64,
+    pub(super) width: f64,
+    pub(super) eps: f64,
+    pub(super) bands: Vec<Band>,
 }
 
 fn range(a: f64, b: f64) -> [f64; 2] {
@@ -48,7 +48,7 @@ fn eq(a: f64, b: f64, eps: f64) -> bool {
 }
 
 impl Form {
-    fn new(points: &[Point]) -> Option<Self> {
+    pub(super) fn new(points: &[Point]) -> Option<Self> {
         if !(10..=24).contains(&points.len()) || !points.iter().all(|p| p.finite()) {
             return None;
         }
@@ -159,12 +159,12 @@ impl Form {
         None
     }
 
-    fn local(&self, p: Point) -> Point {
+    pub(super) fn local(&self, p: Point) -> Point {
         let d = p - self.origin;
         Point::new(d.dot(self.axis), self.side * self.axis.cross(d))
     }
 
-    fn world(&self, x: f64, y: f64) -> Point {
+    pub(super) fn world(&self, x: f64, y: f64) -> Point {
         self.origin + self.axis * x + Point::new(-self.axis.y, self.axis.x) * (self.side * y)
     }
 
@@ -175,7 +175,7 @@ impl Form {
         })
     }
 
-    fn outline(&self, b: Band) -> [Point; 4] {
+    pub(super) fn outline(&self, b: Band) -> [Point; 4] {
         [
             self.world(b.a, b.depth),
             self.world(b.b, b.depth),

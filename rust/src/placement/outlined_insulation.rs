@@ -1351,6 +1351,7 @@ mod tests {
             page_number: 1,
             exterior_enclosures: None,
             exterior_connections: None,
+            exterior_jamb_backings: vec![],
             placement_paint_ids: Some(vec![]),
             placement_polygon_paint_ids: Some(vec![]),
             placement_paint_remainders: vec![],
@@ -1359,6 +1360,9 @@ mod tests {
             local_stock: vec![],
             stepped_stock: vec![],
             capped_stock: vec![],
+            recessed_stock: vec![],
+            masked_junction_stock: vec![],
+            pocket_stock: vec![],
             placement_contact_paint: vec![],
             material_tiles: vec![],
             width: 1000.,
@@ -2107,6 +2111,9 @@ mod tests {
             local_stock: vec![],
             stepped_stock: vec![],
             capped_stock: vec![],
+            recessed_stock: vec![],
+            masked_junction_stock: vec![],
+            pocket_stock: vec![],
             placement_contact_paint: vec![],
         };
         page.semantics = crate::semantics::interpret(
@@ -2166,6 +2173,9 @@ mod tests {
             local_stock: vec![],
             stepped_stock: vec![],
             capped_stock: vec![],
+            recessed_stock: vec![],
+            masked_junction_stock: vec![],
+            pocket_stock: vec![],
             placement_contact_paint: vec![],
         };
         page.semantics = crate::semantics::interpret(

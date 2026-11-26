@@ -164,6 +164,8 @@ pub fn view(scan: &Scan, name: &str) -> Value {
                 | "openplantrace.rust.scan.v41"
                 | "openplantrace.rust.scan.v42"
                 | "openplantrace.rust.scan.v43"
+                | "openplantrace.rust.scan.v44"
+                | "openplantrace.rust.scan.v45"
         ) {
             if let Value::Object(fields) = openplantrace_rs::export::placement_overlays(p) {
                 page.as_object_mut().unwrap().extend(fields);

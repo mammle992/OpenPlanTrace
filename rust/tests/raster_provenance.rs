@@ -54,6 +54,8 @@ fn measurements(revision: u32) -> (PdfInput, Vec<Primitive>) {
         raster_narrow_courses: vec![],
         raster_section_courses: vec![],
         raster_jamb_returns: vec![],
+        raster_aligned_courses: vec![],
+        raster_corner_courses: vec![],
         bands: vec![RasterBand {
             hatch: None,
             face_source_ids: ["raster:face:1".into(), "raster:face:2".into()],
@@ -120,6 +122,9 @@ fn a_review_wall_still_requires_original_page_band_provenance() {
                 local_stock: vec![],
                 stepped_stock: vec![],
                 capped_stock: vec![],
+                recessed_stock: vec![],
+                masked_junction_stock: vec![],
+                pocket_stock: vec![],
                 placement_contact_paint: vec![],
                 material_tiles: vec![],
                 width: 100.,

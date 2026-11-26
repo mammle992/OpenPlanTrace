@@ -679,9 +679,25 @@ pub(crate) fn verified_face_continuations(
     }
     let image = [info.render_width, info.render_height];
     let scale = [page_width / image[0] as f64, page_height / image[1] as f64];
+    verify_continuation_inventory(&info.bands, sources, scale, image, records)
+}
+
+pub(super) fn verify_continuation_inventory(
+    bands: &[RasterBand],
+    sources: &[Primitive],
+    scale: [f64; 2],
+    image: [usize; 2],
+    records: &[RasterFaceContinuationReceipt],
+) -> Result<Vec<VerifiedRasterFaceContinuation>, String> {
+    if records.is_empty() {
+        return Ok(vec![]);
+    }
+    if records.len() > MAX_RECEIPTS {
+        return Err("invalid measured raster face continuation inventory".into());
+    }
     let err =
         || "raster face continuation disagrees with its measured sources or pixels".to_string();
-    let native = NativeFrame::new(&info.bands, sources, scale, image).ok_or_else(err)?;
+    let native = NativeFrame::new(bands, sources, scale, image).ok_or_else(err)?;
     let mut work = MAX_WORK;
     let mut used = HashSet::new();
     let mut accepted: Vec<Span> = Vec::new();
@@ -713,7 +729,7 @@ pub(crate) fn verified_face_continuations(
         let mut source_ids: Vec<_> = indices
             .into_iter()
             .flatten()
-            .flat_map(|i| info.bands[i].face_source_ids.iter().cloned())
+            .flat_map(|i| bands[i].face_source_ids.iter().cloned())
             .collect();
         source_ids.sort_unstable();
         source_ids.dedup();

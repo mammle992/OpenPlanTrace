@@ -1,12 +1,12 @@
 # OpenPlanTrace Rust alpha
 
-**Experimental prerelease 0.12.60-alpha.48. Check placement against the original drawing.**
+**Experimental prerelease 0.12.62-alpha.50. Check placement against the original drawing.**
 
 OpenPlanTrace reads vector, raster and mixed PDFs and ASCII DXF. It exports observed geometry, ready wall spans, doors, windows and supported connections. Production PDF scanning runs in Rust. The earlier scanner is available on the [legacy C# branch](https://github.com/mammle992/OpenPlanTrace/tree/codex/legacy-csharp-before-rust).
 
 ## Try the Windows build
 
-Extract the [Windows x64 ZIP](https://github.com/mammle992/OpenPlanTrace/releases/download/v0.12.60-alpha.48/OpenPlanTrace-Rust-0.12.60-alpha.48-Windows-x64.zip) from the [prerelease](https://github.com/mammle992/OpenPlanTrace/releases/tag/v0.12.60-alpha.48). From the extracted Windows-x64 folder in PowerShell:
+Extract the [Windows x64 ZIP](https://github.com/mammle992/OpenPlanTrace/releases/download/v0.12.62-alpha.50/OpenPlanTrace-Rust-0.12.62-alpha.50-Windows-x64.zip) from the [prerelease](https://github.com/mammle992/OpenPlanTrace/releases/tag/v0.12.62-alpha.50). From the extracted Windows-x64 folder in PowerShell:
 
 ~~~powershell
 .\openplantrace-rs.exe --version
@@ -19,7 +19,7 @@ Use a fresh output directory. The five bundled synthetic PDF examples exercise s
 
 ## Placement and QA
 
-Alpha 48 adds source-supported exterior material and a raster wall return. It verifies the exterior role of a previously connected complex vector perimeter. Uncertain joints and incomplete walls still require review. The [public QA report](docs/alpha/PUBLIC-QA.md) covers the tested controls, runtime and limits.
+Since alpha 48, Rust recovers additional pocket-wall material in vector drawings, joins measured raster wall courses, and reconnects supported vector wall ends. The medium test drawings preserve their wall, door, window and exterior geometry. Uncertain joints and incomplete walls still require review. The [public QA report](docs/alpha/PUBLIC-QA.md) covers the tested controls, runtime and limits.
 
 ## Build from source
 

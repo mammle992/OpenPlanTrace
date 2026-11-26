@@ -1,9 +1,9 @@
-# OpenPlanTrace Rust alpha 48
+# OpenPlanTrace Rust alpha 50
 
-Experimental Windows x64 release. The scanner handles native vector, raster and mixed PDF pages using a single Rust entry point. In this release, it places two more verified wall runs on the test drawings, connects their supported ends and identifies the existing main perimeter on a large vector drawing as exterior. The medium controls preserve 54 Ready walls, 11 doors, 8 windows and one closed exterior on each PDF version.
+Experimental Windows x64 release for vector, raster and mixed PDFs. Since alpha 48, the scanner places eleven more pocket-wall spans on the large vector control, three more wall spans on the eight-sheet raster control and six more wall spans on the masked vector control. Existing openings and the medium plan's closed exterior are preserved.
 
-The source evaluation used 110 scans in five paired rounds, 385 deep checks and source-aligned comparison images. A synthetic 507 MB, 33-sheet check passed separately. The large vector plan still has missing interior walls. Review every proposed placement and any incomplete perimeter against the original plan.
+Independent alpha 50 QA covered 110 scans, 385 deep checks and 110 source-aligned image comparisons. A separate 507 MB synthetic PDF passed five full scans. The large vector control took 3.91 seconds at the median, up from 3.32 seconds in alpha 49. Review incomplete perimeters, sliding doors and other proposed placements against the original drawing.
 
-The Windows download includes the scanner, dependency notices, public QA and five authored synthetic PDFs. The same PDFs are also available as a separate self-test ZIP. Use SHA256SUMS.txt to verify the downloads.
+The Windows ZIP includes the Rust scanner, five synthetic self-test PDFs and dependency notices. Verify the downloads with SHA256SUMS.txt.
 
-Read the [public QA report](https://github.com/mammle992/OpenPlanTrace/blob/v0.12.60-alpha.48/docs/alpha/PUBLIC-QA.md) for counts, performance and distribution parity.
+Read the [public QA report](https://github.com/mammle992/OpenPlanTrace/blob/v0.12.62-alpha.50/docs/alpha/PUBLIC-QA.md) for the results, limitations and verification details.

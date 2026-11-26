@@ -117,6 +117,8 @@ pub(super) fn draft(path: &Path, args: &Args) -> Result<Value, String> {
             | "openplantrace.rust.scan.v41"
             | "openplantrace.rust.scan.v42"
             | "openplantrace.rust.scan.v43"
+            | "openplantrace.rust.scan.v44"
+            | "openplantrace.rust.scan.v45"
     ) {
         let typed: Scan = serde_json::from_value(scan).map_err(|e| e.to_string())?;
         export::validate(&typed)?;

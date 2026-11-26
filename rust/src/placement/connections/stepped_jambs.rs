@@ -11,7 +11,7 @@ use crate::model::{Primitive, Shape};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 pub(super) const THRESHOLD: &str = "source_bounded_stepped_exterior_aperture_threshold";
-const JAMB: &str = "source_bounded_transverse_exterior_jamb_paint";
+pub(super) const JAMB: &str = "source_bounded_transverse_exterior_jamb_paint";
 const MAX_WORK: usize = 3_000_000;
 
 #[derive(Clone, Copy)]

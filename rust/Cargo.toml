@@ -1,6 +1,6 @@
 [package]
 name = "openplantrace-rs"
-version = "0.12.60-alpha.48"
+version = "0.12.62-alpha.50"
 edition = "2024"
 rust-version = "1.99"
 license = "BSD-2-Clause"

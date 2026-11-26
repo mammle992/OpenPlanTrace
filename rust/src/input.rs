@@ -7,6 +7,12 @@ pub use pdf::capped_stock;
 #[doc(hidden)]
 pub use pdf::local_stock;
 #[doc(hidden)]
+pub use pdf::masked_junction_stock;
+#[doc(hidden)]
+pub use pdf::pocket_stock;
+#[doc(hidden)]
+pub use pdf::recessed_stock;
+#[doc(hidden)]
 pub use pdf::stepped_stock;
 #[doc(hidden)]
 pub use pdf::terminal_stock;

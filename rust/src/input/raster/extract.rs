@@ -17,8 +17,10 @@ pub(crate) use face_continuation::verified_face_continuations;
 pub(crate) use hinged_doors::verified_hinged_doors;
 pub(crate) use jamb_stocks::verified_jamb_stocks;
 pub(crate) use narrow_courses::{
-    VerifiedRasterJambReturn, VerifiedRasterNarrowCourse, VerifiedRasterSectionCourse,
-    verified_jamb_returns, verified_narrow_courses, verified_section_courses,
+    VerifiedRasterAlignedCourse, VerifiedRasterCornerCourse, VerifiedRasterJambReturn,
+    VerifiedRasterNarrowCourse, VerifiedRasterSectionCourse, verified_aligned_courses,
+    verified_corner_courses, verified_jamb_returns, verified_narrow_courses,
+    verified_section_courses,
 };
 
 pub struct Extracted {
@@ -34,6 +36,8 @@ pub struct Extracted {
     pub(super) raster_narrow_courses: Vec<super::RasterNarrowCourseReceipt>,
     pub(super) raster_section_courses: Vec<super::RasterSectionCourseReceipt>,
     pub(super) raster_jamb_returns: Vec<super::RasterJambReturnReceipt>,
+    pub(super) raster_aligned_courses: Vec<super::RasterAlignedCourseReceipt>,
+    pub(super) raster_corner_courses: Vec<super::RasterCornerCourseReceipt>,
 }
 
 const THRESHOLD: u8 = 174;
@@ -280,6 +284,8 @@ pub fn extract(
         false,
         false,
         false,
+        false,
+        false,
     )
 }
 
@@ -300,6 +306,8 @@ pub(super) fn extract_with_residual_hatch(
     recover_narrow_courses: bool,
     recover_section_courses: bool,
     recover_jamb_returns: bool,
+    recover_aligned_courses: bool,
+    recover_corner_courses: bool,
 ) -> Result<Extracted, String> {
     let recover_residual_hatch = recover_thin_fringe && recover_residual_hatch;
     let mut stage = crate::stage_profile::scope("raster_luma_mask");
@@ -968,6 +976,36 @@ pub(super) fn extract_with_residual_hatch(
     } else {
         vec![]
     };
+    let raster_aligned_courses = if recover_aligned_courses
+        && !raster_section_courses.is_empty()
+        && !raster_face_continuations.is_empty()
+    {
+        let _profile = crate::stage_profile::scope("raster_aligned_course_measurement");
+        narrow_courses::collect_aligned_courses(
+            &source_pixels,
+            &primitives,
+            &bands,
+            &raster_face_continuations,
+            &raster_section_courses,
+            &raster_hinged_doors,
+        )
+    } else {
+        vec![]
+    };
+    let raster_corner_courses = if recover_corner_courses && !raster_aligned_courses.is_empty() {
+        let _profile = crate::stage_profile::scope("raster_corner_course_measurement");
+        narrow_courses::collect_corner_courses(
+            &source_pixels,
+            &primitives,
+            &bands,
+            &raster_face_continuations,
+            &raster_section_courses,
+            &raster_aligned_courses,
+            &raster_hinged_doors,
+        )
+    } else {
+        vec![]
+    };
     Ok(Extracted {
         primitives,
         bands,
@@ -980,6 +1018,8 @@ pub(super) fn extract_with_residual_hatch(
         raster_narrow_courses,
         raster_section_courses,
         raster_jamb_returns,
+        raster_aligned_courses,
+        raster_corner_courses,
     })
 }
 

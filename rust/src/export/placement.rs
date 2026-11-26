@@ -213,6 +213,20 @@ pub(super) fn page(
                 layer(a.owner, a.center_source, a.center),
             ]);
         }
+        for a in &page.exterior_jamb_backings {
+            let layers = source_finishes.entry(a.owner_wall_id.as_str()).or_default();
+            for (paint, outline) in [
+                (&a.core_source_id, a.core),
+                (&a.separator_source_id, a.separator),
+            ] {
+                layers.push(json!({
+                    "observedWallId": a.owner_wall_id,
+                    "sourcePaintId": paint,
+                    "outline": outline,
+                    "sourceIds": a.source_ids,
+                }));
+            }
+        }
         for a in cavity_material::exterior_lining::linings(page) {
             for ((source, outline), id) in a.materials.into_iter().zip([a.leaf, a.owner]) {
                 source_finishes.entry(a.owner).or_default().push(json!({

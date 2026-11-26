@@ -229,6 +229,8 @@ pub fn decode(compact: &Value) -> Result<Value, String> {
                 | "openplantrace.rust.scan.v41"
                 | "openplantrace.rust.scan.v42"
                 | "openplantrace.rust.scan.v43"
+                | "openplantrace.rust.scan.v44"
+                | "openplantrace.rust.scan.v45"
         ),
         _ => false,
     };

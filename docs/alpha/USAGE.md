@@ -2,7 +2,7 @@
 
 ## Public build status
 
-The Windows alpha 48 package ships with a scanner, dependency notices and five generated synthetic PDFs. Verify the downloadable archive with SHA256SUMS.txt. The executable checksum is in [build provenance](BUILD-PROVENANCE.json). See [distribution parity](PUBLIC-PARITY-SUMMARY.json) for the checks against the sealed reference build and [public QA](PUBLIC-QA.md) for the original evaluation.
+The Windows alpha 50 package ships with a scanner, dependency notices and five generated synthetic PDFs. Verify the downloadable archive with SHA256SUMS.txt. The executable checksum is in [build provenance](BUILD-PROVENANCE.json). See [distribution parity](PUBLIC-PARITY-SUMMARY.json) for the checks against the sealed reference build and [public QA](PUBLIC-QA.md) for the original evaluation.
 
 The reported wall-scanning checks used no learned inference. Optional trained models, model metadata and evaluator binaries stay outside the public package.
 

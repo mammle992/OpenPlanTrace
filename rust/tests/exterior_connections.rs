@@ -42,6 +42,9 @@ fn scan() -> Scan {
                 local_stock: vec![],
                 stepped_stock: vec![],
                 capped_stock: vec![],
+                recessed_stock: vec![],
+                masked_junction_stock: vec![],
+                pocket_stock: vec![],
                 placement_contact_paint: vec![],
             }],
         },
@@ -55,7 +58,7 @@ fn scan() -> Scan {
 #[test]
 fn connection_report_round_trips_without_changing_physical_placement() {
     let current = scan();
-    assert_eq!(current.schema_version, "openplantrace.rust.scan.v43");
+    assert_eq!(current.schema_version, "openplantrace.rust.scan.v45");
     export::validate(&current).unwrap();
     let report = current.pages[0].exterior_connections.as_ref().unwrap();
     assert!(!report.nodes.is_empty());

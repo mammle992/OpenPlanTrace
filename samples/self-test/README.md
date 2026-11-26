@@ -38,4 +38,4 @@ From the `samples/self-test` directory, an optional byte-for-byte regeneration c
 python .\regenerate.py --check
 ```
 
-These fixtures were authored for alpha 20. Alpha 48 uses the same fixture bytes. For the current executable checksum and verification results, see the [alpha 48 release](https://github.com/mammle992/OpenPlanTrace/releases/tag/v0.12.60-alpha.48).
+These fixtures were authored for alpha 20. Alpha 48 uses the same fixture bytes. For the current executable checksum and verification results, see the [alpha 50 release](https://github.com/mammle992/OpenPlanTrace/releases/tag/v0.12.62-alpha.50).

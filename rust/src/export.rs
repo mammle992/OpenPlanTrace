@@ -145,6 +145,8 @@ pub fn placement(scan: &Scan) -> Value {
             | "openplantrace.rust.scan.v41"
             | "openplantrace.rust.scan.v42"
             | "openplantrace.rust.scan.v43"
+            | "openplantrace.rust.scan.v44"
+            | "openplantrace.rust.scan.v45"
     );
     let (version, pages): (_, Vec<_>) = if matches!(
         scan.schema_version.as_str(),
@@ -189,6 +191,8 @@ pub fn placement(scan: &Scan) -> Value {
             | "openplantrace.rust.scan.v41"
             | "openplantrace.rust.scan.v42"
             | "openplantrace.rust.scan.v43"
+            | "openplantrace.rust.scan.v44"
+            | "openplantrace.rust.scan.v45"
     ) {
         (
             if with_enclosures {
@@ -216,6 +220,8 @@ pub fn placement(scan: &Scan) -> Value {
                                 | "openplantrace.rust.scan.v41"
                                 | "openplantrace.rust.scan.v42"
                                 | "openplantrace.rust.scan.v43"
+                                | "openplantrace.rust.scan.v44"
+                                | "openplantrace.rust.scan.v45"
                         ),
                         matches!(
                             scan.schema_version.as_str(),
@@ -227,6 +233,8 @@ pub fn placement(scan: &Scan) -> Value {
                                 | "openplantrace.rust.scan.v41"
                                 | "openplantrace.rust.scan.v42"
                                 | "openplantrace.rust.scan.v43"
+                                | "openplantrace.rust.scan.v44"
+                                | "openplantrace.rust.scan.v45"
                         ),
                     )
                 })
@@ -488,7 +496,9 @@ pub fn validate(s: &Scan) -> Result<(), String> {
         | "openplantrace.rust.scan.v40"
         | "openplantrace.rust.scan.v41"
         | "openplantrace.rust.scan.v42"
-        | "openplantrace.rust.scan.v43" => true,
+        | "openplantrace.rust.scan.v43"
+        | "openplantrace.rust.scan.v44"
+        | "openplantrace.rust.scan.v45" => true,
         _ => return Err("unsupported native scan schema".into()),
     };
     if s.pages.is_empty() {
@@ -516,6 +526,8 @@ pub fn validate(s: &Scan) -> Result<(), String> {
             | "openplantrace.rust.scan.v41"
             | "openplantrace.rust.scan.v42"
             | "openplantrace.rust.scan.v43"
+            | "openplantrace.rust.scan.v44"
+            | "openplantrace.rust.scan.v45"
     );
     let composite_schema = matches!(
         s.schema_version.as_str(),
@@ -537,6 +549,8 @@ pub fn validate(s: &Scan) -> Result<(), String> {
             | "openplantrace.rust.scan.v41"
             | "openplantrace.rust.scan.v42"
             | "openplantrace.rust.scan.v43"
+            | "openplantrace.rust.scan.v44"
+            | "openplantrace.rust.scan.v45"
     );
     let frame_schema = matches!(
         s.schema_version.as_str(),
@@ -557,8 +571,14 @@ pub fn validate(s: &Scan) -> Result<(), String> {
             | "openplantrace.rust.scan.v41"
             | "openplantrace.rust.scan.v42"
             | "openplantrace.rust.scan.v43"
+            | "openplantrace.rust.scan.v44"
+            | "openplantrace.rust.scan.v45"
     );
-    let north_facade_schema = s.schema_version == "openplantrace.rust.scan.v43";
+    let joined_stock_schema = s.schema_version == "openplantrace.rust.scan.v45";
+    let detailed_stock_schema =
+        joined_stock_schema || s.schema_version == "openplantrace.rust.scan.v44";
+    let north_facade_schema =
+        detailed_stock_schema || s.schema_version == "openplantrace.rust.scan.v43";
     let facade_stock_schema =
         north_facade_schema || s.schema_version == "openplantrace.rust.scan.v42";
     let connected_stock_schema =
@@ -587,10 +607,16 @@ pub fn validate(s: &Scan) -> Result<(), String> {
             page,
             raster_continuation_schema,
         )?;
-        let pre_jamb_return = crate::placement::raster_jamb_return::before_replay(
+        let pre_corner = crate::placement::raster_corner_course::before_replay(
             &pre_continuations,
-            north_facade_schema,
+            joined_stock_schema,
         )?;
+        let pre_aligned = crate::placement::raster_aligned_course::before_replay(
+            &pre_corner,
+            detailed_stock_schema,
+        )?;
+        let pre_jamb_return =
+            crate::placement::raster_jamb_return::before_replay(&pre_aligned, north_facade_schema)?;
         let pre_section_course = crate::placement::raster_narrow_course::before_section_replay(
             &pre_jamb_return,
             facade_stock_schema,
@@ -626,7 +652,21 @@ pub fn validate(s: &Scan) -> Result<(), String> {
         {
             return Err("layerless overhead projections require scan v39 or newer".into());
         }
-        let before_capped_facade = crate::placement::capped_facade::before_recovery(physical_page)?;
+        let before_masked_stock =
+            crate::placement::masked_junction_stock::before_recovery(physical_page)?;
+        if !joined_stock_schema && matches!(before_masked_stock, std::borrow::Cow::Owned(_)) {
+            return Err("masked junction stock placement requires scan v45 or newer".into());
+        }
+        let before_pocket = crate::placement::pocket_stock::before_recovery(&before_masked_stock)?;
+        let before_recessed = crate::placement::recessed_stock::before_recovery(&before_pocket)?;
+        if !detailed_stock_schema
+            && (matches!(before_pocket, std::borrow::Cow::Owned(_))
+                || matches!(before_recessed, std::borrow::Cow::Owned(_)))
+        {
+            return Err("detailed stock placement requires scan v44 or newer".into());
+        }
+        let before_capped_facade =
+            crate::placement::capped_facade::before_recovery(&before_recessed)?;
         if !north_facade_schema && matches!(before_capped_facade, std::borrow::Cow::Owned(_)) {
             return Err("capped facade requires scan v43 or newer".into());
         }
@@ -778,6 +818,8 @@ pub fn validate(s: &Scan) -> Result<(), String> {
                     | "openplantrace.rust.scan.v41"
                     | "openplantrace.rust.scan.v42"
                     | "openplantrace.rust.scan.v43"
+                    | "openplantrace.rust.scan.v44"
+                    | "openplantrace.rust.scan.v45"
             )
         {
             return Err("material tile evidence requires scan v5 or newer".into());
@@ -822,6 +864,8 @@ pub fn validate(s: &Scan) -> Result<(), String> {
                 | "openplantrace.rust.scan.v41"
                 | "openplantrace.rust.scan.v42"
                 | "openplantrace.rust.scan.v43"
+                | "openplantrace.rust.scan.v44"
+                | "openplantrace.rust.scan.v45"
         );
         if uses_paint && p.placement_paint_ids.is_none() {
             return Err("missing placement paint inventory".into());
@@ -872,6 +916,8 @@ pub fn validate(s: &Scan) -> Result<(), String> {
                 | "openplantrace.rust.scan.v41"
                 | "openplantrace.rust.scan.v42"
                 | "openplantrace.rust.scan.v43"
+                | "openplantrace.rust.scan.v44"
+                | "openplantrace.rust.scan.v45"
         ) && p.walls.iter().any(crate::placement::stroked::is_recovered)
         {
             return Err("recovered stroke-pair walls require scan v8 or newer".into());
@@ -915,6 +961,8 @@ pub fn validate(s: &Scan) -> Result<(), String> {
                 | "openplantrace.rust.scan.v41"
                 | "openplantrace.rust.scan.v42"
                 | "openplantrace.rust.scan.v43"
+                | "openplantrace.rust.scan.v44"
+                | "openplantrace.rust.scan.v45"
         ) && p
             .primitives
             .iter()
@@ -958,7 +1006,9 @@ pub fn validate(s: &Scan) -> Result<(), String> {
                 | "openplantrace.rust.scan.v40"
                 | "openplantrace.rust.scan.v41"
                 | "openplantrace.rust.scan.v42"
-                | "openplantrace.rust.scan.v43" => 1,
+                | "openplantrace.rust.scan.v43"
+                | "openplantrace.rust.scan.v44"
+                | "openplantrace.rust.scan.v45" => 1,
                 _ => return Err("automatic PDF metadata requires scan v9 or newer".into()),
             };
             if info.analysis_revision != revision {
@@ -1013,6 +1063,8 @@ pub fn validate(s: &Scan) -> Result<(), String> {
                 | "openplantrace.rust.scan.v41"
                 | "openplantrace.rust.scan.v42"
                 | "openplantrace.rust.scan.v43"
+                | "openplantrace.rust.scan.v44"
+                | "openplantrace.rust.scan.v45"
         );
         if !matches!(
             s.schema_version.as_str(),
@@ -1045,6 +1097,8 @@ pub fn validate(s: &Scan) -> Result<(), String> {
                 | "openplantrace.rust.scan.v41"
                 | "openplantrace.rust.scan.v42"
                 | "openplantrace.rust.scan.v43"
+                | "openplantrace.rust.scan.v44"
+                | "openplantrace.rust.scan.v45"
         ) && p.placement_decisions.iter().flatten().any(|d| {
             matches!(
                 d.reason,
@@ -1083,6 +1137,8 @@ pub fn validate(s: &Scan) -> Result<(), String> {
                 | "openplantrace.rust.scan.v41"
                 | "openplantrace.rust.scan.v42"
                 | "openplantrace.rust.scan.v43"
+                | "openplantrace.rust.scan.v44"
+                | "openplantrace.rust.scan.v45"
         ) {
             crate::finish_visibility::validate(p)?;
         } else if p.finish_visibility.is_some()
@@ -1129,6 +1185,21 @@ pub fn validate(s: &Scan) -> Result<(), String> {
             crate::input::capped_stock::validate(p)?;
         } else if !p.capped_stock.is_empty() {
             return Err("capped exterior stock requires scan v43 or newer".into());
+        }
+        if joined_stock_schema {
+            crate::input::masked_junction_stock::validate(p)?;
+        } else if !p.masked_junction_stock.is_empty()
+            || p.pocket_stock.iter().any(|r| r.authored_faces.is_some())
+        {
+            return Err(
+                "authored pocket faces and masked junction stock require scan v45 or newer".into(),
+            );
+        }
+        if detailed_stock_schema {
+            crate::input::recessed_stock::validate(p)?;
+            crate::input::pocket_stock::validate(p)?;
+        } else if !p.recessed_stock.is_empty() || !p.pocket_stock.is_empty() {
+            return Err("detailed stock evidence requires scan v44 or newer".into());
         }
         if contacts_schema {
             crate::input::validate_contact_paint(
@@ -1184,6 +1255,8 @@ pub fn validate(s: &Scan) -> Result<(), String> {
                 | "openplantrace.rust.scan.v41"
                 | "openplantrace.rust.scan.v42"
                 | "openplantrace.rust.scan.v43"
+                | "openplantrace.rust.scan.v44"
+                | "openplantrace.rust.scan.v45"
         ) {
             crate::openings::validate_paired_gap_openings(p)?;
         }
@@ -1216,6 +1289,8 @@ pub fn validate(s: &Scan) -> Result<(), String> {
                 | "openplantrace.rust.scan.v41"
                 | "openplantrace.rust.scan.v42"
                 | "openplantrace.rust.scan.v43"
+                | "openplantrace.rust.scan.v44"
+                | "openplantrace.rust.scan.v45"
         ) && p
             .openings
             .iter()
@@ -1247,6 +1322,8 @@ pub fn validate(s: &Scan) -> Result<(), String> {
                 | "openplantrace.rust.scan.v41"
                 | "openplantrace.rust.scan.v42"
                 | "openplantrace.rust.scan.v43"
+                | "openplantrace.rust.scan.v44"
+                | "openplantrace.rust.scan.v45"
         ) && p
             .openings
             .iter()
@@ -1577,6 +1654,8 @@ pub fn validate(s: &Scan) -> Result<(), String> {
                     | "openplantrace.rust.scan.v41"
                     | "openplantrace.rust.scan.v42"
                     | "openplantrace.rust.scan.v43"
+                    | "openplantrace.rust.scan.v44"
+                    | "openplantrace.rust.scan.v45"
             ),
         )?;
         for v in &p.objects {
@@ -1713,7 +1792,9 @@ pub fn validate(s: &Scan) -> Result<(), String> {
             | "openplantrace.rust.scan.v40"
             | "openplantrace.rust.scan.v41"
             | "openplantrace.rust.scan.v42"
-            | "openplantrace.rust.scan.v43" => {
+            | "openplantrace.rust.scan.v43"
+            | "openplantrace.rust.scan.v44"
+            | "openplantrace.rust.scan.v45" => {
                 if paint_remainders {
                     if !replay_late_selection {
                         crate::placement::validate(p, true)?;
@@ -1804,6 +1885,8 @@ pub fn validate(s: &Scan) -> Result<(), String> {
                 | "openplantrace.rust.scan.v41"
                 | "openplantrace.rust.scan.v42"
                 | "openplantrace.rust.scan.v43"
+                | "openplantrace.rust.scan.v44"
+                | "openplantrace.rust.scan.v45"
         ) && p.exterior_enclosures.is_some()
         {
             return Err("exterior enclosure inventory requires scan v8 or newer".into());
@@ -1829,6 +1912,8 @@ pub fn validate(s: &Scan) -> Result<(), String> {
                     exterior_wall_linings: facade_stock_schema,
                     stepped_facade: facade_stock_schema,
                     capped_facade: north_facade_schema,
+                    detailed_wall_stock: detailed_stock_schema,
+                    joined_wall_stock: joined_stock_schema,
                 },
             )?;
         }
@@ -1866,6 +1951,8 @@ pub fn validate(s: &Scan) -> Result<(), String> {
                 | "openplantrace.rust.scan.v41"
                 | "openplantrace.rust.scan.v42"
                 | "openplantrace.rust.scan.v43"
+                | "openplantrace.rust.scan.v44"
+                | "openplantrace.rust.scan.v45"
         ) {
             let saved = p
                 .exterior_connections
@@ -1890,7 +1977,9 @@ pub fn validate(s: &Scan) -> Result<(), String> {
                 | "openplantrace.rust.scan.v40"
                 | "openplantrace.rust.scan.v41"
                 | "openplantrace.rust.scan.v42"
-                | "openplantrace.rust.scan.v43" => {
+                | "openplantrace.rust.scan.v43"
+                | "openplantrace.rust.scan.v44"
+                | "openplantrace.rust.scan.v45" => {
                     let graph_page = if raster_stock_graph {
                         &pre_continuations
                     } else {
@@ -1922,6 +2011,16 @@ pub fn validate(s: &Scan) -> Result<(), String> {
             }
         } else if p.exterior_connections.is_some() {
             return Err("exterior connection pass requires scan v12 or newer".into());
+        }
+        if detailed_stock_schema {
+            validation_stage.next("validate_exterior_jamb_backings");
+            if page.exterior_jamb_backings
+                != crate::placement::cavity_material::jamb_backing::derive(&pre_continuations)
+            {
+                return Err("exterior jamb backing disagrees with source evidence".into());
+            }
+        } else if !page.exterior_jamb_backings.is_empty() {
+            return Err("exterior jamb backing requires scan v44 or newer".into());
         }
         match p.scale_source.as_deref() {
             Some("AgreeingFiniteDimensions") => {
@@ -2071,6 +2170,8 @@ pub fn write_bundle_with_extra(
                 | "openplantrace.rust.scan.v41"
                 | "openplantrace.rust.scan.v42"
                 | "openplantrace.rust.scan.v43"
+                | "openplantrace.rust.scan.v44"
+                | "openplantrace.rust.scan.v45"
         ) {
             json_file(temp.join("connections.json"), &connections(scan), false)?;
         }

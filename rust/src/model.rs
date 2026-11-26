@@ -165,6 +165,9 @@ pub struct Page {
     pub local_stock: Vec<crate::input::local_stock::Receipt>,
     pub stepped_stock: Vec<crate::input::stepped_stock::Receipt>,
     pub capped_stock: Vec<crate::input::capped_stock::Receipt>,
+    pub recessed_stock: Vec<crate::input::recessed_stock::Receipt>,
+    pub masked_junction_stock: Vec<crate::input::masked_junction_stock::Receipt>,
+    pub pocket_stock: Vec<crate::input::pocket_stock::Receipt>,
     pub placement_contact_paint: Vec<ContactPaint>,
     pub material_tiles: Vec<crate::placement::insulation::MaterialTile>,
     pub width: f64,
@@ -521,6 +524,8 @@ pub struct PageScan {
     /// Source-backed boundary connectivity, kept separate from physical wall solids.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exterior_connections: Option<crate::placement::connections::ConnectionPass>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exterior_jamb_backings: Vec<crate::placement::cavity_material::jamb_backing::Backing>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub placement_paint_ids: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -537,6 +542,12 @@ pub struct PageScan {
     pub stepped_stock: Vec<crate::input::stepped_stock::Receipt>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub capped_stock: Vec<crate::input::capped_stock::Receipt>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recessed_stock: Vec<crate::input::recessed_stock::Receipt>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub masked_junction_stock: Vec<crate::input::masked_junction_stock::Receipt>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pocket_stock: Vec<crate::input::pocket_stock::Receipt>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub placement_contact_paint: Vec<ContactPaint>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

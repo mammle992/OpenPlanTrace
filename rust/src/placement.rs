@@ -23,14 +23,19 @@ mod hatching;
 pub mod insulation;
 pub(crate) mod jamb;
 mod laminates;
+pub(crate) mod masked_junction_stock;
 mod material;
 mod overlap;
+pub(crate) mod pocket_stock;
 pub(crate) mod raster;
+pub(crate) mod raster_aligned_course;
 pub(crate) mod raster_continuations;
+pub(crate) mod raster_corner_course;
 pub(crate) mod raster_hinged_doors;
 pub(crate) mod raster_jamb_return;
 pub(crate) mod raster_jamb_stocks;
 pub(crate) mod raster_narrow_course;
+pub(crate) mod recessed_stock;
 mod skew_cores;
 mod staggered_cores;
 pub(crate) mod stepped_facade;
@@ -114,6 +119,11 @@ pub enum WallReason {
     SourceBoundedSteppedFacade,
     SourceBoundedCappedFacade,
     SourceBoundedRasterJambReturn,
+    SourceBoundedRasterAlignedCourse,
+    SourceBoundedRecessedStock,
+    SourceBoundedPocketStock,
+    SourceBoundedMaskedJunctionStock,
+    SourceBoundedRasterCornerCourse,
     RasterFacesNeedReview,
     RasterContextBudgetExceeded,
 }
@@ -577,6 +587,8 @@ pub(crate) struct ExteriorReplayPolicy {
     pub exterior_wall_linings: bool,
     pub stepped_facade: bool,
     pub capped_facade: bool,
+    pub detailed_wall_stock: bool,
+    pub joined_wall_stock: bool,
 }
 
 pub(crate) fn validate_exterior_recovery(
@@ -628,6 +640,13 @@ pub(crate) fn validate_exterior_recovery(
     if policy.capped_facade {
         capped_facade::append(&mut measured)?;
     }
+    if policy.detailed_wall_stock {
+        recessed_stock::append(&mut measured)?;
+        pocket_stock::append(&mut measured)?;
+    }
+    if policy.joined_wall_stock {
+        masked_junction_stock::append(&mut measured)?;
+    }
     if measured.walls.len() != saved.walls.len() || measured.walls[first..] != saved.walls[first..]
     {
         return Err(format!(
@@ -670,6 +689,9 @@ pub(crate) fn validate_exterior_recovery(
                             || crate::openings::dashed_swing::is_stock(w)
                             || stepped_facade::is_stock(w)
                             || capped_facade::is_stock(w)
+                            || recessed_stock::is_stock(w)
+                            || pocket_stock::is_stock(w)
+                            || masked_junction_stock::is_stock(w)
                     })
                     .map(|w| w.id.as_str()),
             )

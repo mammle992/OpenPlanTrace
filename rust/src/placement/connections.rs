@@ -25,6 +25,7 @@ const MAX_FACE_VERTICES: usize = 4096;
 const MAX_GAPS: usize = 4096;
 const BODY_CONTACT: &str = "finite_aperture_clipped_wall_material_contact";
 pub(crate) const STEPPED_APERTURE_THRESHOLD: &str = stepped_jambs::THRESHOLD;
+pub(crate) const STEPPED_APERTURE_JAMB: &str = stepped_jambs::JAMB;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -59,6 +60,10 @@ pub enum ConnectionKind {
     WindowThreshold,
     SectionMarkContact,
     RasterShoulderContact,
+    RasterCourseContact,
+    RecessedStockContact,
+    RasterCornerSeat,
+    MaskedStockContact,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -805,6 +810,10 @@ impl Builder {
                     | ConnectionKind::WindowThreshold
                     | ConnectionKind::SectionMarkContact
                     | ConnectionKind::RasterShoulderContact
+                    | ConnectionKind::RasterCourseContact
+                    | ConnectionKind::RecessedStockContact
+                    | ConnectionKind::RasterCornerSeat
+                    | ConnectionKind::MaskedStockContact
             ),
             adds_wall_material: false,
             requires_review: true,
@@ -1369,7 +1378,50 @@ fn build_measured(
             kind: ConnectionKind::RasterShoulderContact,
             evidence: "source_bounded_raster_jamb_shoulder",
         });
-    for proof in facade_paths.chain(shoulders) {
+    let aligned_courses = super::raster_aligned_course::contacts(page)?
+        .into_iter()
+        .map(|p| SourcePath {
+            wall_ids: p.wall_ids,
+            path: p.points.to_vec(),
+            source_ids: p.source_ids,
+            kind: ConnectionKind::RasterCourseContact,
+            evidence: "source_bounded_raster_course_seam",
+        });
+    let recessed_branches = super::recessed_stock::branches(page)
+        .into_iter()
+        .filter(|p| page.openings.iter().any(|o| o.id == p.opening_id))
+        .map(|p| SourcePath {
+            wall_ids: [p.branch_wall_id, p.stock_wall_id],
+            path: vec![p.branch_point, p.toe, p.stock_point],
+            source_ids: p.source_ids,
+            kind: ConnectionKind::RecessedStockContact,
+            evidence: "source_bounded_recessed_stock_branch",
+        });
+    let raster_corner_seats = super::raster_corner_course::contacts(page)?
+        .into_iter()
+        .map(|p| SourcePath {
+            wall_ids: p.wall_ids,
+            path: p.path,
+            source_ids: p.source_ids,
+            kind: ConnectionKind::RasterCornerSeat,
+            evidence: "source_bounded_raster_corner_seat",
+        });
+    let masked_junctions = super::masked_junction_stock::joints(page)
+        .into_iter()
+        .map(|p| SourcePath {
+            wall_ids: p.wall_ids,
+            path: p.points.to_vec(),
+            source_ids: p.source_ids,
+            kind: ConnectionKind::MaskedStockContact,
+            evidence: "source_bounded_masked_stock_junction",
+        });
+    for proof in facade_paths
+        .chain(shoulders)
+        .chain(aligned_courses)
+        .chain(recessed_branches)
+        .chain(raster_corner_seats)
+        .chain(masked_junctions)
+    {
         let mut path = proof.path;
         path.dedup_by(|a, b| a.distance(*b) <= eps);
         if path.len() < 2 {
@@ -2166,6 +2218,9 @@ mod tests {
                     local_stock: vec![],
                     stepped_stock: vec![],
                     capped_stock: vec![],
+                    recessed_stock: vec![],
+                    masked_junction_stock: vec![],
+                    pocket_stock: vec![],
                 }],
                 warnings: vec![],
             },
@@ -2382,6 +2437,9 @@ mod tests {
                         local_stock: vec![],
                         stepped_stock: vec![],
                         capped_stock: vec![],
+                        recessed_stock: vec![],
+                        masked_junction_stock: vec![],
+                        pocket_stock: vec![],
                     }],
                     warnings: vec![],
                 },

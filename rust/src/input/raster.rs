@@ -7,6 +7,10 @@ pub(crate) use extract::dense_material_tone;
 pub(crate) use extract::verified_face_continuations;
 pub(crate) use extract::verified_hinged_doors;
 pub(crate) use extract::verified_jamb_stocks;
+pub(crate) use extract::{
+    VerifiedRasterAlignedCourse, VerifiedRasterCornerCourse, verified_aligned_courses,
+    verified_corner_courses,
+};
 pub(crate) use extract::{VerifiedRasterCourse, verified_course};
 pub(crate) use extract::{VerifiedRasterJambReturn, verified_jamb_returns};
 pub(crate) use extract::{VerifiedRasterNarrowCourse, verified_narrow_courses};
@@ -134,6 +138,29 @@ pub struct RasterSectionCourseReceipt {
     pub section_patch: RasterCoursePatch,
 }
 
+/// Native pixels along exact continuations of an already verified wall course.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RasterAlignedCourseReceipt {
+    pub section_course_index: usize,
+    pub first: RasterCoursePatch,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub second: Option<RasterCoursePatch>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seam: Option<RasterCoursePatch>,
+}
+
+/// Native wall and contact witnesses against two independently measured adjacent courses.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RasterCornerCourseReceipt {
+    pub aligned_course_index: usize,
+    pub incoming_band_index: usize,
+    pub body: RasterCoursePatch,
+    pub north_seat: RasterCoursePatch,
+    pub corner_seat: RasterCoursePatch,
+}
+
 /// Pixels for a transverse wall where two verified hosts seat on opposite sides.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -173,6 +200,10 @@ pub struct PdfInput {
     pub raster_section_courses: Vec<RasterSectionCourseReceipt>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub raster_jamb_returns: Vec<RasterJambReturnReceipt>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub raster_aligned_courses: Vec<RasterAlignedCourseReceipt>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub raster_corner_courses: Vec<RasterCornerCourseReceipt>,
 }
 
 const COVERAGE_SIDE: usize = 256;
@@ -184,6 +215,8 @@ const MAX_DOCUMENT_JAMB_STOCK_SAMPLES: usize = 131_072;
 const MAX_DOCUMENT_NARROW_COURSE_SAMPLES: usize = 131_072;
 const MAX_DOCUMENT_SECTION_COURSE_SAMPLES: usize = 131_072;
 const MAX_DOCUMENT_JAMB_RETURN_SAMPLES: usize = 131_072;
+const MAX_DOCUMENT_ALIGNED_COURSE_SAMPLES: usize = 131_072;
+const MAX_DOCUMENT_CORNER_COURSE_SAMPLES: usize = 131_072;
 
 fn image_rectangles(primitives: &[Primitive]) -> Vec<(&str, Point, Point)> {
     primitives
@@ -284,6 +317,10 @@ fn interpret_with(
     let mut section_course_pages = Vec::new();
     let mut jamb_return_samples = 0usize;
     let mut jamb_return_pages = Vec::new();
+    let mut aligned_course_samples = 0usize;
+    let mut aligned_course_pages = Vec::new();
+    let mut corner_course_samples = 0usize;
+    let mut corner_course_pages = Vec::new();
     let renderer = doc
         .pages
         .iter()
@@ -337,6 +374,8 @@ fn interpret_with(
             raster_narrow_courses: vec![],
             raster_section_courses: vec![],
             raster_jamb_returns: vec![],
+            raster_aligned_courses: vec![],
+            raster_corner_courses: vec![],
         };
         if route != PdfRoute::Vector {
             // Spend fewer pixels on small raster assets without discarding their provenance.
@@ -380,6 +419,8 @@ fn interpret_with(
                 pure_raster && narrow_course_samples <= MAX_DOCUMENT_NARROW_COURSE_SAMPLES,
                 pure_raster && section_course_samples <= MAX_DOCUMENT_SECTION_COURSE_SAMPLES,
                 pure_raster && jamb_return_samples <= MAX_DOCUMENT_JAMB_RETURN_SAMPLES,
+                pure_raster && aligned_course_samples <= MAX_DOCUMENT_ALIGNED_COURSE_SAMPLES,
+                pure_raster && corner_course_samples <= MAX_DOCUMENT_CORNER_COURSE_SAMPLES,
             )?;
             stage.next("raster_source_inventory");
             // A raster face can coincide with a vector grid or a real vector
@@ -480,6 +521,30 @@ fn interpret_with(
                 info.raster_jamb_returns = extracted.raster_jamb_returns;
                 jamb_return_pages.push(page_index);
             }
+            if !extracted.raster_aligned_courses.is_empty() {
+                let samples = extracted
+                    .raster_aligned_courses
+                    .iter()
+                    .map(|r| {
+                        r.first.luma.len()
+                            + r.second.as_ref().map_or(0, |p| p.luma.len())
+                            + r.seam.as_ref().map_or(0, |p| p.luma.len())
+                    })
+                    .sum::<usize>();
+                aligned_course_samples = aligned_course_samples.saturating_add(samples);
+                info.raster_aligned_courses = extracted.raster_aligned_courses;
+                aligned_course_pages.push(page_index);
+            }
+            if !extracted.raster_corner_courses.is_empty() {
+                let samples = extracted
+                    .raster_corner_courses
+                    .iter()
+                    .map(|r| r.body.luma.len() + r.north_seat.luma.len() + r.corner_seat.luma.len())
+                    .sum::<usize>();
+                corner_course_samples = corner_course_samples.saturating_add(samples);
+                info.raster_corner_courses = extracted.raster_corner_courses;
+                corner_course_pages.push(page_index);
+            }
             page.primitives.extend(raster);
             doc.warnings.push(format!("PDF page {} automatically selected {:?}: {:.1}% combined image coverage, {} vector primitives, {} pixel-derived faces.", page.number, route, coverage*100., vectors, info.raster_source_ids.len()));
         }
@@ -496,6 +561,8 @@ fn interpret_with(
                     info.raster_jamb_returns.clear();
                     info.raster_narrow_courses.clear();
                     info.raster_section_courses.clear();
+                    info.raster_aligned_courses.clear();
+                    info.raster_corner_courses.clear();
                 }
             }
         }
@@ -510,6 +577,8 @@ fn interpret_with(
             for page_index in continuation_pages.drain(..) {
                 if let Some(info) = &mut doc.pages[page_index].pdf_input {
                     info.raster_face_continuations.clear();
+                    info.raster_aligned_courses.clear();
+                    info.raster_corner_courses.clear();
                 }
             }
         }
@@ -521,6 +590,8 @@ fn interpret_with(
                     info.raster_jamb_returns.clear();
                     info.raster_narrow_courses.clear();
                     info.raster_section_courses.clear();
+                    info.raster_aligned_courses.clear();
+                    info.raster_corner_courses.clear();
                 }
             }
         }
@@ -531,6 +602,8 @@ fn interpret_with(
                     info.raster_jamb_returns.clear();
                     info.raster_narrow_courses.clear();
                     info.raster_section_courses.clear();
+                    info.raster_aligned_courses.clear();
+                    info.raster_corner_courses.clear();
                 }
             }
         }
@@ -539,6 +612,8 @@ fn interpret_with(
                 if let Some(info) = &mut doc.pages[page_index].pdf_input {
                     info.raster_narrow_courses.clear();
                     info.raster_section_courses.clear();
+                    info.raster_aligned_courses.clear();
+                    info.raster_corner_courses.clear();
                 }
             }
         }
@@ -546,6 +621,23 @@ fn interpret_with(
             for page_index in section_course_pages.drain(..) {
                 if let Some(info) = &mut doc.pages[page_index].pdf_input {
                     info.raster_section_courses.clear();
+                    info.raster_aligned_courses.clear();
+                    info.raster_corner_courses.clear();
+                }
+            }
+        }
+        if aligned_course_samples > MAX_DOCUMENT_ALIGNED_COURSE_SAMPLES {
+            for page_index in aligned_course_pages.drain(..) {
+                if let Some(info) = &mut doc.pages[page_index].pdf_input {
+                    info.raster_aligned_courses.clear();
+                    info.raster_corner_courses.clear();
+                }
+            }
+        }
+        if corner_course_samples > MAX_DOCUMENT_CORNER_COURSE_SAMPLES {
+            for page_index in corner_course_pages.drain(..) {
+                if let Some(info) = &mut doc.pages[page_index].pdf_input {
+                    info.raster_corner_courses.clear();
                 }
             }
         }
@@ -775,6 +867,11 @@ pub fn validate(
     verified_face_continuations(info, sources, width, height)?;
     if !info.raster_jamb_returns.is_empty() {
         verified_jamb_returns(info, sources, width, height)?;
+    }
+    if !info.raster_corner_courses.is_empty() {
+        verified_corner_courses(info, sources, width, height)?;
+    } else if !info.raster_aligned_courses.is_empty() {
+        verified_aligned_courses(info, sources, width, height)?;
     }
     if !info.raster_section_courses.is_empty() {
         verified_section_courses(info, sources, width, height).map(|_| ())

@@ -375,7 +375,7 @@ pub fn scan_document_with_layers(
     };
     let mut scan = Scan {
         visual_classification: None,
-        schema_version: "openplantrace.rust.scan.v43".into(),
+        schema_version: "openplantrace.rust.scan.v45".into(),
         object_label_profile: None,
         layer_profile: (!rules.is_empty()).then(|| AppliedLayerProfile {
             source_format: format.to_owned(),
@@ -576,6 +576,7 @@ pub fn scan_document_with_layers(
             page_number: page.number,
             exterior_enclosures: None,
             exterior_connections: None,
+            exterior_jamb_backings: vec![],
             placement_paint_ids: Some(page.placement_paint_ids.unwrap_or_else(|| {
                 let mut ids: Vec<_> = page
                     .primitives
@@ -594,6 +595,9 @@ pub fn scan_document_with_layers(
             local_stock: page.local_stock,
             stepped_stock: page.stepped_stock,
             capped_stock: page.capped_stock,
+            recessed_stock: page.recessed_stock,
+            masked_junction_stock: page.masked_junction_stock,
+            pocket_stock: page.pocket_stock,
             placement_contact_paint: page.placement_contact_paint,
             width: page.width,
             height: page.height,
@@ -703,6 +707,12 @@ pub fn scan_document_with_layers(
         crate::placement::stepped_facade::append(&mut scanned)?;
         stage.next("capped_exterior_facade");
         crate::placement::capped_facade::append(&mut scanned)?;
+        stage.next("recessed_wall_stock");
+        crate::placement::recessed_stock::append(&mut scanned)?;
+        stage.next("pocket_wall_stock");
+        crate::placement::pocket_stock::append(&mut scanned)?;
+        stage.next("masked_junction_stock");
+        crate::placement::masked_junction_stock::append(&mut scanned)?;
         stage.next("exterior_connections");
         scanned.exterior_connections = Some(crate::placement::connections::build(&scanned)?);
         stage.next("raster_hinged_doors");
@@ -716,9 +726,22 @@ pub fn scan_document_with_layers(
             crate::placement::raster_narrow_course::append_section_courses(&mut scanned)?;
         stage.next("raster_jamb_return");
         let placed_jamb_return = crate::placement::raster_jamb_return::apply(&mut scanned)?;
-        if placed_jambs || placed_narrow_course || placed_section_course || placed_jamb_return {
+        stage.next("raster_aligned_courses");
+        let placed_aligned_courses = crate::placement::raster_aligned_course::append(&mut scanned)?;
+        stage.next("raster_corner_courses");
+        let placed_corner_courses = crate::placement::raster_corner_course::append(&mut scanned)?;
+        if placed_jambs
+            || placed_narrow_course
+            || placed_section_course
+            || placed_jamb_return
+            || placed_aligned_courses
+            || placed_corner_courses
+        {
             scanned.exterior_connections = Some(crate::placement::connections::build(&scanned)?);
         }
+        stage.next("exterior_jamb_backing");
+        scanned.exterior_jamb_backings =
+            crate::placement::cavity_material::jamb_backing::derive(&scanned);
         stage.next("raster_face_continuation_observations");
         crate::placement::raster_continuations::append(&mut scanned)?;
         scan.pages.push(scanned);

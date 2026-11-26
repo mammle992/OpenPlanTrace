@@ -46,6 +46,9 @@ fn basin() -> Scan {
             local_stock: vec![],
             stepped_stock: vec![],
             capped_stock: vec![],
+            recessed_stock: vec![],
+            masked_junction_stock: vec![],
+            pocket_stock: vec![],
             placement_contact_paint: vec![],
             pdf_input: None,
             primitives: vec![

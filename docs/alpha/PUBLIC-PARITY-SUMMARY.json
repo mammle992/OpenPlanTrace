@@ -1,7 +1,8 @@
 {
   "status": "PASS",
-  "publicScannerSha256": "6af5cb2738ce66fabe79b747004e3978064e671d8d0eb0302b9181194a9ffce1",
-  "referenceScannerSha256": "9a1f804e909048ad37083764ad10b04c17f35dec19b569b2d0debe673a1c0235",
+  "publicScannerSha256": "6f9df9f9f9c1171c154219be84c68afd8c06e4116f0aa610fd2a5af3764c5d28",
+  "referenceScannerSha256": "0739093aa0a309360a6c40a9a375b9b0b8437e8176d2b383e85e639fd904a26b",
+  "engineVersion": "0.12.62-alpha.50",
   "privateInputScopes": 11,
   "rounds": 5,
   "privateScans": 55,
@@ -14,5 +15,15 @@
     0,
     0,
     0
-  ]
+  ],
+  "historicalReadSchemas": [
+    "v38",
+    "v44"
+  ],
+  "historicalDeepValidations": 6,
+  "largeSyntheticBytes": 506959100,
+  "largeSyntheticSheets": 33,
+  "largeSmokeScans": 1,
+  "largeExactArtifactComparisons": 6,
+  "largeDeepValidations": 6
 }

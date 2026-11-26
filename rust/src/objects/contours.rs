@@ -611,6 +611,9 @@ mod tests {
             local_stock: vec![],
             stepped_stock: vec![],
             capped_stock: vec![],
+            recessed_stock: vec![],
+            masked_junction_stock: vec![],
+            pocket_stock: vec![],
             placement_contact_paint: vec![],
             primitives: vec![
                 polygon("rim", Point::new(20., 20.), Point::new(70., 55.)),
